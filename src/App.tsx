@@ -31,9 +31,9 @@ import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { Card } from "./components/ui/card";
 import { Input } from "./components/ui/input";
-import { createWorkspace, openExternalUrl, openPath as openPathInDesktop, readTextFile, scanSourceRepos, scanWorkspaces, writeWidgetSnapshot, type SourceRepo } from "./desktop";
+import { checkEnvironment, createWorkspace, openExternalUrl, openPath as openPathInDesktop, readTextFile, scanSourceRepos, scanWorkspaces, writeWidgetSnapshot, type EnvironmentHealth, type SourceRepo } from "./desktop";
 import { cn, riskTone } from "./lib";
-import { normalizeServiceList, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceScore } from "./workspace-model";
+import { buildWorktreeCommand, normalizeServiceList, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceScore } from "./workspace-model";
 import type { DashboardData, Workspace } from "./types";
 
 const initialData = rawData as DashboardData;
@@ -104,6 +104,30 @@ function shouldShowOnboarding() {
   } catch {
     return false;
   }
+}
+
+function browserEnvironmentFallback(settings: NexusSettings, dashboard: DashboardData, sourceRepos: SourceRepo[]): EnvironmentHealth {
+  const checks = [
+    { key: "workspacesRoot", label: "工作区目录", path: settings.workspacesRoot },
+    { key: "sourceReposRoot", label: "源仓库目录", path: settings.sourceReposRoot },
+    { key: "docsRoot", label: "交付文档目录", path: settings.docsRoot }
+  ];
+  return {
+    generatedAt: new Date().toISOString(),
+    ready: true,
+    pathChecks: checks.map((check) => ({
+      ...check,
+      exists: true,
+      isDir: true,
+      writable: true,
+      summary: "浏览器预览模式下未检查本机目录"
+    })),
+    toolChecks: [{ key: "git", label: "Git", available: true, summary: "浏览器预览模式" }],
+    workspaceCount: dashboard.workspaces.length,
+    sourceRepoCount: sourceRepos.length,
+    blockers: [],
+    warnings: ["浏览器预览模式不会读取真实本机目录，打包应用内会执行原生检查。"]
+  };
 }
 
 function toneForRisk(count: number) {
@@ -431,6 +455,11 @@ function WorkspaceCard({
                       分支文档
                     </button>
                   )}
+                  {risk.includes("worktree") && workspace.links.worktreeScript && (
+                    <button className="rounded border border-amber-200 bg-white px-2 py-1 text-[11px] text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("worktree-commands.sh", workspace.links.worktreeScript)}>
+                      worktree 脚本
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -453,6 +482,16 @@ function WorkspaceCard({
           <button className="rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50" onClick={onCopyCommand}>
             复制 worktree 命令
           </button>
+          {workspace.links.worktreeScript && (
+            <button className="rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50" onClick={() => onOpenDocument("worktree-commands.sh", workspace.links.worktreeScript)}>
+              worktree 脚本
+            </button>
+          )}
+          {workspace.links.bootstrap && (
+            <button className="rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50" onClick={() => onOpenDocument("bootstrap-report.md", workspace.links.bootstrap)}>
+              状态报告
+            </button>
+          )}
           <button className="rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50" onClick={() => onCopyInstruction("continue")}>
             复制续做指令
           </button>
@@ -817,8 +856,10 @@ function WorkspaceDrawer({
                 ["分支", workspace.links.branches],
                 ["任务", workspace.links.tasks],
                 ["交付", workspace.links.delivery],
+                ["报告", workspace.links.bootstrap],
+                ["Worktree", workspace.links.worktreeScript],
                 ["SQL", workspace.links.sql]
-              ].map(([label, href]) => (
+              ].filter(([, href]) => Boolean(href)).map(([label, href]) => (
                 <button key={label} className="rounded-md border border-neutral-200 px-3 py-2 text-left text-neutral-700 hover:bg-neutral-50" onClick={() => onOpenDocument(`${label}.md`, href)}>
                   {label}
                 </button>
@@ -845,6 +886,16 @@ function WorkspaceDrawer({
                       {risk.includes("服务范围") && (
                         <button className="rounded-md border border-amber-200 bg-white px-2 py-1 text-xs text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("services.md", workspace.links.services)}>
                           打开服务文档
+                        </button>
+                      )}
+                      {risk.includes("交付") && (
+                        <button className="rounded-md border border-amber-200 bg-white px-2 py-1 text-xs text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("交付记录.md", workspace.links.delivery)}>
+                          打开交付记录
+                        </button>
+                      )}
+                      {risk.includes("worktree") && workspace.links.worktreeScript && (
+                        <button className="rounded-md border border-amber-200 bg-white px-2 py-1 text-xs text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("worktree-commands.sh", workspace.links.worktreeScript)}>
+                          打开 worktree 脚本
                         </button>
                       )}
                     </div>
@@ -886,26 +937,109 @@ function WorkspaceDrawer({
   );
 }
 
+function EnvironmentHealthPanel({
+  health,
+  compact = false,
+  onRefresh
+}: {
+  health?: EnvironmentHealth;
+  compact?: boolean;
+  onRefresh: () => void;
+}) {
+  const ready = health?.ready ?? false;
+  const blockers = health?.blockers.length ?? 0;
+  const warnings = health?.warnings.length ?? 0;
+
+  return (
+    <Card className={cn("p-4", compact && "p-3")}>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            {ready ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <AlertTriangle className="h-4 w-4 text-amber-600" />}
+            <div className="text-sm font-medium text-neutral-950">环境健康检查 / Environment</div>
+          </div>
+          <p className="mt-1 text-sm leading-6 text-neutral-500">
+            {ready ? "本机路径和基础工具可用，可以继续创建或推进工作区。" : "存在需要处理的路径或工具问题，建议先修复再创建工作区。"}
+          </p>
+        </div>
+        <Button variant="outline" onClick={onRefresh}>
+          <RefreshCw className="h-4 w-4" />
+          检查
+        </Button>
+      </div>
+
+      <div className={cn("mt-3 grid gap-2", compact ? "grid-cols-1" : "md:grid-cols-3")}>
+        {(health?.pathChecks ?? []).map((check) => (
+          <div key={check.key} className="rounded-md bg-neutral-50 px-3 py-2 ring-1 ring-neutral-200">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs font-medium text-neutral-700">{check.label}</div>
+              <Badge tone={!check.exists || !check.isDir ? "red" : check.writable ? "green" : "amber"}>
+                {!check.exists ? "missing" : check.writable ? "ok" : "check"}
+              </Badge>
+            </div>
+            <div className="mono mt-1 truncate text-[11px] text-neutral-500">{check.path}</div>
+            <div className="mt-1 text-xs text-neutral-500">{check.summary}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className={cn("mt-3 grid gap-2", compact ? "grid-cols-2" : "sm:grid-cols-4")}>
+        <div className="rounded-md bg-white px-3 py-2 ring-1 ring-neutral-200">
+          <div className="text-xs text-neutral-400">工作区</div>
+          <div className="mono mt-1 text-lg text-neutral-950">{health?.workspaceCount ?? 0}</div>
+        </div>
+        <div className="rounded-md bg-white px-3 py-2 ring-1 ring-neutral-200">
+          <div className="text-xs text-neutral-400">服务仓库</div>
+          <div className="mono mt-1 text-lg text-neutral-950">{health?.sourceRepoCount ?? 0}</div>
+        </div>
+        <div className="rounded-md bg-white px-3 py-2 ring-1 ring-neutral-200">
+          <div className="text-xs text-neutral-400">阻塞</div>
+          <div className="mono mt-1 text-lg text-neutral-950">{blockers}</div>
+        </div>
+        <div className="rounded-md bg-white px-3 py-2 ring-1 ring-neutral-200">
+          <div className="text-xs text-neutral-400">提示</div>
+          <div className="mono mt-1 text-lg text-neutral-950">{warnings}</div>
+        </div>
+      </div>
+
+      {(health?.blockers.length || health?.warnings.length) ? (
+        <div className="mt-3 grid gap-1 text-xs">
+          {health.blockers.map((item) => (
+            <div key={item} className="rounded-md bg-red-50 px-2 py-1.5 text-red-700">{item}</div>
+          ))}
+          {health.warnings.map((item) => (
+            <div key={item} className="rounded-md bg-amber-50 px-2 py-1.5 text-amber-700">{item}</div>
+          ))}
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
 function SettingsPanel({
   open,
   settings,
   sourceRepos,
+  environmentHealth,
   sourceScanning,
   onChange,
   onClose,
   onSave,
   onOpenPath,
-  onScanSourceRepos
+  onScanSourceRepos,
+  onCheckEnvironment
 }: {
   open: boolean;
   settings: NexusSettings;
   sourceRepos: SourceRepo[];
+  environmentHealth?: EnvironmentHealth;
   sourceScanning: boolean;
   onChange: (settings: NexusSettings) => void;
   onClose: () => void;
   onSave: () => void;
   onOpenPath: (path: string) => void;
   onScanSourceRepos: () => void;
+  onCheckEnvironment: () => void;
 }) {
   if (!open) return null;
 
@@ -963,6 +1097,8 @@ function SettingsPanel({
               </div>
             </Card>
 
+            <EnvironmentHealthPanel health={environmentHealth} onRefresh={onCheckEnvironment} />
+
             <Card className="p-4">
               <div className="text-sm font-medium text-neutral-950">应用行为 / Behavior</div>
               <div className="mt-4 grid gap-4">
@@ -1018,22 +1154,26 @@ function OnboardingPanel({
   open,
   settings,
   sourceRepos,
+  environmentHealth,
   sourceScanning,
   onChange,
   onSave,
   onSkip,
   onOpenPath,
-  onScanSourceRepos
+  onScanSourceRepos,
+  onCheckEnvironment
 }: {
   open: boolean;
   settings: NexusSettings;
   sourceRepos: SourceRepo[];
+  environmentHealth?: EnvironmentHealth;
   sourceScanning: boolean;
   onChange: (settings: NexusSettings) => void;
   onSave: () => void;
   onSkip: () => void;
   onOpenPath: (path: string) => void;
   onScanSourceRepos: () => void;
+  onCheckEnvironment: () => void;
 }) {
   if (!open) return null;
 
@@ -1102,6 +1242,8 @@ function OnboardingPanel({
                 />
               </div>
             </Card>
+
+            <EnvironmentHealthPanel health={environmentHealth} compact onRefresh={onCheckEnvironment} />
 
             <Card className="p-4">
               <div className="flex items-start justify-between gap-4">
@@ -1380,6 +1522,8 @@ export function App() {
   const [toast, setToast] = useState("");
   const [sourceRepos, setSourceRepos] = useState<SourceRepo[]>([]);
   const [sourceScanning, setSourceScanning] = useState(false);
+  const [environmentHealth, setEnvironmentHealth] = useState<EnvironmentHealth>(() => browserEnvironmentFallback(settings, initialData, []));
+  const [environmentChecking, setEnvironmentChecking] = useState(false);
 
   const refreshData = useCallback(async () => {
     const scanned = await scanWorkspaces({
@@ -1422,6 +1566,26 @@ export function App() {
     }
   }, [dashboard.workspaces, settings.sourceReposRoot]);
 
+  const refreshEnvironmentHealth = useCallback(async () => {
+    setEnvironmentChecking(true);
+    try {
+      const checked = await checkEnvironment({
+        workspacesRoot: settings.workspacesRoot,
+        sourceReposRoot: settings.sourceReposRoot,
+        docsRoot: settings.docsRoot
+      });
+      if (checked) {
+        setEnvironmentHealth(checked);
+        return checked;
+      }
+      const fallback = browserEnvironmentFallback(settings, dashboard, sourceRepos);
+      setEnvironmentHealth(fallback);
+      return fallback;
+    } finally {
+      setEnvironmentChecking(false);
+    }
+  }, [dashboard, settings, sourceRepos]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
@@ -1440,6 +1604,10 @@ export function App() {
   useEffect(() => {
     void refreshSourceRepos();
   }, [settings.sourceReposRoot]);
+
+  useEffect(() => {
+    void refreshEnvironmentHealth();
+  }, [settings.workspacesRoot, settings.sourceReposRoot, settings.docsRoot]);
 
   useEffect(() => {
     if (!refreshEnabled) return;
@@ -1524,6 +1692,7 @@ export function App() {
     showToast("已保存 Nexus 本机配置");
     void refreshData();
     void refreshSourceRepos();
+    void refreshEnvironmentHealth();
   };
 
   const dismissOnboarding = () => {
@@ -1538,6 +1707,11 @@ export function App() {
   const handleScanSourceRepos = async () => {
     const repos = await refreshSourceRepos();
     showToast(`已识别 ${repos.length} 个源仓库服务`);
+  };
+
+  const handleCheckEnvironment = async () => {
+    const health = await refreshEnvironmentHealth();
+    showToast(health.ready ? "环境检查通过" : `环境检查发现 ${health.blockers.length} 个阻塞项`);
   };
 
   const openDocument = async (title: string, path: string) => {
@@ -1570,8 +1744,15 @@ export function App() {
         tasks: `${path}/tasks.md`,
         delivery: `${path}/交付记录.md`,
         handoff: `${path}/handoff.md`,
+        bootstrap: `${path}/bootstrap-report.md`,
+        worktreeScript: `${path}/scripts/worktree-commands.sh`,
         sql: `${path}/sql`
       };
+      const workspaceRisks = [
+        ...(targetBranch === "待确认" ? ["目标分支未确认"] : []),
+        ...(input.services.length ? [`worktree 未创建: ${input.services.join(", ")}`] : ["服务范围未确认"]),
+        "交付记录待补充"
+      ];
       const workspace: Workspace = {
         name: input.name,
         folder: input.folder,
@@ -1590,14 +1771,11 @@ export function App() {
           worktree: { exists: false, branch: "未创建", dirty: false, summary: "未创建" },
           source: { exists: true, branch: "未检查", dirty: false, summary: "待刷新" }
         })),
-        risks: [
-          ...(targetBranch === "待确认" ? ["目标分支未确认"] : []),
-          ...(input.services.length ? [`worktree 未创建: ${input.services.join(", ")}`] : ["服务范围未确认"])
-        ],
-        riskCount: targetBranch === "待确认" ? 2 : 1,
+        risks: workspaceRisks,
+        riskCount: workspaceRisks.length,
         updated: todayString(),
         links,
-        worktreeCommand: `python3 /path/to/ks-project-demand-workspace/scripts/create_worktrees.py --workspace ${path} --services ${input.services.join(",") || "<services>"} --branch <target-branch>`
+        worktreeCommand: buildWorktreeCommand(path, settings.sourceReposRoot, input.services, targetBranch)
       };
       setDashboard((currentData) => ({ ...currentData, workspaces: [workspace, ...currentData.workspaces] }));
       setActive(input.folder);
@@ -1652,6 +1830,16 @@ export function App() {
           </div>
 
           <div className="mb-5 rounded-lg border border-neutral-200 bg-white p-3 text-sm text-neutral-600">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-neutral-100 pb-3">
+              <div className="flex items-center gap-2">
+                {environmentHealth.ready ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <AlertTriangle className="h-4 w-4 text-amber-600" />}
+                <span className="font-medium text-neutral-900">环境状态 / Environment</span>
+                <Badge tone={environmentHealth.ready ? "green" : "amber"}>{environmentHealth.ready ? "ready" : "attention"}</Badge>
+              </div>
+              <button className="rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50" onClick={handleCheckEnvironment}>
+                {environmentChecking ? "检查中" : "重新检查"}
+              </button>
+            </div>
             <div className="font-medium text-neutral-900">如何阅读 / How to read</div>
             <div className="mt-2 grid gap-2 md:grid-cols-3">
               <div>风险项提示当前需要优先确认的阻塞点。</div>
@@ -1705,23 +1893,27 @@ export function App() {
         open={settingsOpen}
         settings={settings}
         sourceRepos={sourceRepos}
+        environmentHealth={environmentHealth}
         sourceScanning={sourceScanning}
         onChange={setSettings}
         onClose={() => setSettingsOpen(false)}
         onSave={saveSettings}
         onOpenPath={openConfiguredPath}
         onScanSourceRepos={handleScanSourceRepos}
+        onCheckEnvironment={handleCheckEnvironment}
       />
       <OnboardingPanel
         open={onboardingOpen}
         settings={settings}
         sourceRepos={sourceRepos}
+        environmentHealth={environmentHealth}
         sourceScanning={sourceScanning}
         onChange={setSettings}
         onSave={saveSettings}
         onSkip={dismissOnboarding}
         onOpenPath={openConfiguredPath}
         onScanSourceRepos={handleScanSourceRepos}
+        onCheckEnvironment={handleCheckEnvironment}
       />
       <WorkspaceDrawer
         workspace={drawerWorkspace}

@@ -39,8 +39,8 @@
           }
         }
       ],
-      "risks": ["目标分支未确认", "worktree 未创建: order"],
-      "riskCount": 2,
+      "risks": ["目标分支未确认", "worktree 未创建: order", "交付记录待补充"],
+      "riskCount": 3,
       "updated": "2026-01-01",
       "links": {
         "folder": "~/ks_project/workspaces/2026-01-01-sample-workspace",
@@ -51,9 +51,11 @@
         "tasks": "~/ks_project/workspaces/2026-01-01-sample-workspace/tasks.md",
         "delivery": "~/ks_project/workspaces/2026-01-01-sample-workspace/交付记录.md",
         "handoff": "~/ks_project/workspaces/2026-01-01-sample-workspace/handoff.md",
+        "bootstrap": "~/ks_project/workspaces/2026-01-01-sample-workspace/bootstrap-report.md",
+        "worktreeScript": "~/ks_project/workspaces/2026-01-01-sample-workspace/scripts/worktree-commands.sh",
         "sql": "~/ks_project/workspaces/2026-01-01-sample-workspace/sql"
       },
-      "worktreeCommand": "python3 /path/to/ks-project-demand-workspace/scripts/create_worktrees.py --workspace ~/ks_project/workspaces/2026-01-01-sample-workspace --services order --branch <target-branch>"
+      "worktreeCommand": "# order\ngit -C '~/ks_project/source-repos/order' fetch origin\ngit -C '~/ks_project/source-repos/order' worktree add '~/ks_project/workspaces/2026-01-01-sample-workspace/repos/order' '<target-branch>'"
     }
   ]
 }

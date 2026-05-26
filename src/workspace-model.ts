@@ -23,6 +23,25 @@ export function normalizeServiceList(values: string[]) {
   );
 }
 
+export function shellQuote(value: string) {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+export function buildWorktreeCommand(workspacePath: string, sourceRoot: string, services: string[], targetBranch: string) {
+  const branch = targetBranch.trim() && !targetBranch.includes("待确认") ? targetBranch.trim() : "<target-branch>";
+  const normalized = normalizeServiceList(services);
+  if (!normalized.length) {
+    return "# No services are confirmed yet. Add services before creating worktrees.";
+  }
+  return normalized
+    .map((service) => {
+      const sourcePath = `${sourceRoot}/${service}`;
+      const targetPath = `${workspacePath}/repos/${service}`;
+      return [`# ${service}`, `git -C ${shellQuote(sourcePath)} fetch origin`, `git -C ${shellQuote(sourcePath)} worktree add ${shellQuote(targetPath)} ${shellQuote(branch)}`].join("\n");
+    })
+    .join("\n\n");
+}
+
 export function workspaceScore(workspace: Workspace) {
   return workspace.riskCount * 10 + workspace.gitRows.filter((row) => row.worktree.dirty).length * 3;
 }

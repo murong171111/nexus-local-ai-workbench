@@ -14,8 +14,11 @@ Nexus 是一个面向 macOS 的本地 AI 开发工作台，用来管理需求工
 - 支持在应用内预览 Markdown 文档，包括状态、服务范围、分支说明、任务、决策和交付记录。
 - 支持配置本地工作区目录、源仓库目录和交付文档目录。
 - 首次启动向导会引导配置工作区、源仓库和交付文档路径。
+- 支持环境健康检查，用于确认本地路径和 Git 是否可用。
 - 打包后的应用通过原生命令扫描配置路径，不依赖本地 Python 脚本。
 - 支持原生扫描源仓库目录，新建工作区时可以从真实本地服务仓库中勾选服务。
+- 新建工作区时生成 `bootstrap-report.md` 和 `scripts/worktree-commands.sh`，用于半自动创建 worktree。
+- 当 `交付记录.md` 仍是占位内容时，会提示交付记录待补充。
 - 提供 Codex 启动入口和可复制 Prompt，用于继续工作区、检查 git 状态、更新交付文档和分析风险。
 - 生成小组件快照文件：`~/Library/Application Support/com.ks.nexus/widget-snapshot.json`。
 - 注册 `nexus://workspace/<workspace-folder>` URL Scheme，可用于从小组件或其他工具跳转到指定工作区。
@@ -54,9 +57,11 @@ Nexus 默认识别每个需求工作区下的 Markdown 文档和本地 worktree 
   handoff.md
   delivery.md
   交付记录.md
+  bootstrap-report.md
   logs/
   sql/
   repos/
+  scripts/
 ```
 
 其中 `repos/<service>` 建议作为 git worktree 使用，便于多个需求、多条分支并行开发，避免频繁切换同一个源仓库分支互相影响。
@@ -65,7 +70,9 @@ Nexus 默认识别每个需求工作区下的 Markdown 文档和本地 worktree 
 
 点击左侧 `New Workspace` 新建需求工作区。Nexus 会基于已配置的源仓库目录扫描服务列表，新建时可以直接勾选涉及服务；如果某个服务还不在源仓库目录中，也可以手动输入。
 
-创建动作会写入标准 Markdown 文档，并把选中的服务记录到 `services.md` 和 `branches.md`。它不会自动创建 git worktree；目标分支确认和 worktree 创建仍然保持显式操作。
+创建动作会写入标准 Markdown 文档，并把选中的服务记录到 `services.md` 和 `branches.md`。同时会生成 `bootstrap-report.md` 和 `scripts/worktree-commands.sh`。
+
+Nexus 不会自动执行 worktree 命令。你需要先确认分支和服务范围，再人工执行生成的脚本。
 
 ## 本地开发
 

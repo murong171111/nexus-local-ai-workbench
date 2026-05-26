@@ -37,8 +37,10 @@ src-tauri/target/release/bundle/dmg/Nexus_0.1.0_aarch64.dmg
 - Open the built app and confirm:
   - First-run onboarding opens when no local settings exist.
   - Settings opens.
+  - Environment health check reports configured path status and Git availability.
   - Workspace scanning works after setting local paths.
   - Source repository scanning populates the create-workspace service picker.
+  - Creating a workspace writes `bootstrap-report.md` and `scripts/worktree-commands.sh`.
   - Markdown preview works.
   - `~/Library/Application Support/com.ks.nexus/widget-snapshot.json` is generated.
   - `nexus://workspace/<folder>` opens Nexus.

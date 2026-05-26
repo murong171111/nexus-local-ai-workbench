@@ -34,6 +34,14 @@ struct ScanSourceReposRequest {
     source_repos_root: String,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EnvironmentHealthRequest {
+    workspaces_root: String,
+    source_repos_root: String,
+    docs_root: String,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DashboardData {
@@ -100,6 +108,40 @@ struct SourceRepo {
     branch: String,
     dirty: bool,
     summary: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PathCheck {
+    key: String,
+    label: String,
+    path: String,
+    exists: bool,
+    is_dir: bool,
+    writable: bool,
+    summary: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ToolCheck {
+    key: String,
+    label: String,
+    available: bool,
+    summary: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EnvironmentHealth {
+    generated_at: String,
+    ready: bool,
+    path_checks: Vec<PathCheck>,
+    tool_checks: Vec<ToolCheck>,
+    workspace_count: usize,
+    source_repo_count: usize,
+    blockers: Vec<String>,
+    warnings: Vec<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -229,6 +271,51 @@ fn scan_source_repos(request: ScanSourceReposRequest) -> Result<Vec<SourceRepo>,
 }
 
 #[tauri::command]
+fn check_environment(request: EnvironmentHealthRequest) -> Result<EnvironmentHealth, String> {
+    let workspace_root = expand_user_path(&request.workspaces_root);
+    let source_root = expand_user_path(&request.source_repos_root);
+    let path_checks = vec![
+        path_check("workspacesRoot", "工作区目录", &request.workspaces_root),
+        path_check("sourceReposRoot", "源仓库目录", &request.source_repos_root),
+        path_check("docsRoot", "交付文档目录", &request.docs_root),
+    ];
+    let tool_checks = vec![tool_check("git", "Git", "git", &["--version"])];
+    let workspace_count = count_child_dirs(&workspace_root, Some("dashboard"));
+    let source_repo_count = count_git_like_dirs(&source_root);
+
+    let mut blockers = Vec::new();
+    let mut warnings = Vec::new();
+    for check in &path_checks {
+        if !check.exists {
+            blockers.push(format!("{}不存在: {}", check.label, check.path));
+        } else if !check.is_dir {
+            blockers.push(format!("{}不是目录: {}", check.label, check.path));
+        } else if !check.writable {
+            warnings.push(format!("{}可能不可写: {}", check.label, check.path));
+        }
+    }
+    for check in &tool_checks {
+        if !check.available {
+            blockers.push(format!("{}不可用: {}", check.label, check.summary));
+        }
+    }
+    if source_repo_count == 0 {
+        warnings.push("源仓库目录下暂未识别到 git 服务仓库".to_string());
+    }
+
+    Ok(EnvironmentHealth {
+        generated_at: generated_at(),
+        ready: blockers.is_empty(),
+        path_checks,
+        tool_checks,
+        workspace_count,
+        source_repo_count,
+        blockers,
+        warnings,
+    })
+}
+
+#[tauri::command]
 fn write_widget_snapshot(app: tauri::AppHandle, snapshot: WidgetSnapshot) -> Result<WidgetSnapshotResponse, String> {
     let app_data_dir = app.path().app_data_dir().map_err(|error| error.to_string())?;
     fs::create_dir_all(&app_data_dir).map_err(|error| error.to_string())?;
@@ -251,6 +338,7 @@ fn create_workspace(request: CreateWorkspaceRequest) -> Result<CreateWorkspaceRe
     fs::create_dir_all(workspace.join("logs")).map_err(|error| error.to_string())?;
     fs::create_dir_all(workspace.join("sql")).map_err(|error| error.to_string())?;
     fs::create_dir_all(workspace.join("repos")).map_err(|error| error.to_string())?;
+    fs::create_dir_all(workspace.join("scripts")).map_err(|error| error.to_string())?;
 
     let services = normalized_services(&request.services);
     let target_branch = if request.target_branch.trim().is_empty() {
@@ -281,8 +369,16 @@ fn create_workspace(request: CreateWorkspaceRequest) -> Result<CreateWorkspaceRe
     write_file(
         &workspace.join("STATUS.md"),
         &format!(
-            "# STATUS\n\n- 状态: analyzing\n- 当前焦点: 需求范围确认\n- 下一步: 确认服务范围、目标分支、是否创建 worktree\n- 更新时间: {}\n\n## Blockers\n\n- 目标分支待确认时，不自动创建 worktree。\n",
-            today
+            "# STATUS\n\n- 状态: analyzing\n- 当前焦点: 需求范围确认\n- 下一步: 确认服务范围、目标分支、是否创建 worktree\n- 更新时间: {}\n\n## Bootstrap Summary\n\n- 服务数量: {}\n- 目标分支: {}\n- 源仓库目录: `{}`\n- Worktree 命令: `scripts/worktree-commands.sh`\n- 创建报告: `bootstrap-report.md`\n\n## Blockers\n\n{}\n",
+            today,
+            services.len(),
+            target_branch,
+            request.source_repos_root,
+            if target_branch == "待确认" {
+                "- 目标分支待确认时，不自动创建 worktree。\n"
+            } else {
+                "- worktree 尚未创建，需要人工确认后执行命令。\n"
+            }
         ),
     )?;
 
@@ -310,7 +406,21 @@ fn create_workspace(request: CreateWorkspaceRequest) -> Result<CreateWorkspaceRe
     )?;
     write_file(
         &workspace.join("交付记录.md"),
-        "# 交付记录\n\n## 需求信息\n\n- 需求名称: 待补充\n- 工作区: 待补充\n- 分支: 待确认\n\n## 涉及服务\n\n待确认。\n\n## 代码变更\n\n暂无。\n\n## SQL 变更\n\n暂无。\n\n## 新增逻辑\n\n暂无。\n\n## 验证结果\n\n暂无。\n\n## 遗留风险\n\n暂无。\n",
+        &format!(
+            "# 交付记录\n\n## 需求信息\n\n- 需求名称: {}\n- 工作区: {}\n- 分支: {}\n\n## 涉及服务\n\n{}\n\n## 代码变更\n\n暂无。\n\n## SQL 变更\n\n暂无。\n\n## 新增逻辑\n\n暂无。\n\n## 验证结果\n\n暂无。\n\n## 遗留风险\n\n- 创建后需要确认服务范围、分支和 worktree 状态。\n",
+            request.name,
+            request.folder,
+            target_branch,
+            if services.is_empty() { "待确认。".to_string() } else { services.iter().map(|service| format!("- {}", service)).collect::<Vec<_>>().join("\n") }
+        ),
+    )?;
+    write_file(
+        &workspace.join("bootstrap-report.md"),
+        &bootstrap_report(&request.name, &request.folder, &workspace, &services, target_branch, &request.source_repos_root, today.as_str()),
+    )?;
+    write_file(
+        &workspace.join("scripts").join("worktree-commands.sh"),
+        &worktree_commands(&workspace, &services, target_branch, &request.source_repos_root),
     )?;
     update_index(&root, &request.name, &request.folder, target_branch, &services)?;
 
@@ -409,6 +519,8 @@ fn collect_workspace(path: &Path, default_source_root: &str) -> WorkspaceData {
     }
     if !path.join("交付记录.md").exists() {
         risks.push("缺少交付记录".to_string());
+    } else if delivery_needs_update(&read_text_lossy(&path.join("交付记录.md"))) {
+        risks.push("交付记录待补充".to_string());
     }
     if !path.join("sql").exists() {
         risks.push("缺少 SQL 目录".to_string());
@@ -423,10 +535,13 @@ fn collect_workspace(path: &Path, default_source_root: &str) -> WorkspaceData {
     links.insert("tasks".to_string(), path.join("tasks.md").to_string_lossy().to_string());
     links.insert("delivery".to_string(), path.join("交付记录.md").to_string_lossy().to_string());
     links.insert("handoff".to_string(), path.join("handoff.md").to_string_lossy().to_string());
+    links.insert("bootstrap".to_string(), path.join("bootstrap-report.md").to_string_lossy().to_string());
+    links.insert("worktreeScript".to_string(), path.join("scripts").join("worktree-commands.sh").to_string_lossy().to_string());
     links.insert("sql".to_string(), path.join("sql").to_string_lossy().to_string());
 
     let risk_count = risks.len();
     let folder = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+    let worktree_command = worktree_commands(path, &missing_worktrees, &target_branch, &source_root);
     WorkspaceData {
         name,
         folder,
@@ -443,11 +558,7 @@ fn collect_workspace(path: &Path, default_source_root: &str) -> WorkspaceData {
         risk_count,
         updated: generated_date(),
         links,
-        worktree_command: format!(
-            "python3 /path/to/ks-project-demand-workspace/scripts/create_worktrees.py --workspace {} --services {} --branch <target-branch>",
-            path.to_string_lossy(),
-            if missing_worktrees.is_empty() { "<services>".to_string() } else { missing_worktrees.join(",") }
-        ),
+        worktree_command,
     }
 }
 
@@ -522,6 +633,95 @@ fn count_tasks(rows: &[Vec<String>]) -> TaskCounts {
         }
     }
     counts
+}
+
+fn delivery_needs_update(text: &str) -> bool {
+    let normalized = text.replace(' ', "");
+    normalized.contains("待补充")
+        || normalized.contains("待确认")
+        || normalized.contains("暂无")
+        || normalized.contains("创建后需要确认")
+}
+
+fn path_check(key: &str, label: &str, value: &str) -> PathCheck {
+    let path = expand_user_path(value);
+    let exists = path.exists();
+    let is_dir = path.is_dir();
+    let writable = is_dir && can_write_marker(&path);
+    let summary = if !exists {
+        "目录不存在".to_string()
+    } else if !is_dir {
+        "路径存在但不是目录".to_string()
+    } else if writable {
+        "目录可用".to_string()
+    } else {
+        "目录存在但写入检查未通过".to_string()
+    };
+    PathCheck {
+        key: key.to_string(),
+        label: label.to_string(),
+        path: value.to_string(),
+        exists,
+        is_dir,
+        writable,
+        summary,
+    }
+}
+
+fn can_write_marker(path: &Path) -> bool {
+    let marker = path.join(".nexus-write-check");
+    match fs::write(&marker, "ok") {
+        Ok(_) => {
+            let _ = fs::remove_file(marker);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+fn tool_check(key: &str, label: &str, command: &str, args: &[&str]) -> ToolCheck {
+    let output = Command::new(command).args(args).output();
+    match output {
+        Ok(output) if output.status.success() => ToolCheck {
+            key: key.to_string(),
+            label: label.to_string(),
+            available: true,
+            summary: String::from_utf8_lossy(&output.stdout).trim().to_string(),
+        },
+        Ok(output) => ToolCheck {
+            key: key.to_string(),
+            label: label.to_string(),
+            available: false,
+            summary: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        },
+        Err(error) => ToolCheck {
+            key: key.to_string(),
+            label: label.to_string(),
+            available: false,
+            summary: error.to_string(),
+        },
+    }
+}
+
+fn count_child_dirs(root: &Path, ignored: Option<&str>) -> usize {
+    fs::read_dir(root)
+        .ok()
+        .into_iter()
+        .flat_map(|entries| entries.filter_map(Result::ok))
+        .filter(|entry| {
+            let name = entry.file_name().to_string_lossy().to_string();
+            entry.path().is_dir() && !name.starts_with('.') && ignored != Some(name.as_str())
+        })
+        .count()
+}
+
+fn count_git_like_dirs(root: &Path) -> usize {
+    fs::read_dir(root)
+        .ok()
+        .into_iter()
+        .flat_map(|entries| entries.filter_map(Result::ok))
+        .filter(|entry| entry.path().is_dir() && entry.path().join(".git").exists())
+        .count()
 }
 
 fn git_status(path: &Path) -> GitStatus {
@@ -641,6 +841,64 @@ fn branches_markdown(services: &[String], target_branch: &str, source_root: &str
     )
 }
 
+fn bootstrap_report(name: &str, folder: &str, workspace: &Path, services: &[String], target_branch: &str, source_root: &str, today: &str) -> String {
+    let service_lines = if services.is_empty() {
+        "- 服务范围待确认".to_string()
+    } else {
+        services
+            .iter()
+            .map(|service| format!("- {}: `{}/{}` -> `repos/{}`", service, source_root, service, service))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    format!(
+        "# Bootstrap Report\n\n- 需求名称: {}\n- 工作区: {}\n- 创建日期: {}\n- 目标分支: {}\n- 工作区路径: `{}`\n- 源仓库目录: `{}`\n\n## 服务范围\n\n{}\n\n## 初始风险\n\n{}\n\n## 下一步\n\n- [ ] 补充需求描述和影响范围。\n- [ ] 确认目标分支。\n- [ ] 复核 `scripts/worktree-commands.sh` 后创建 worktree。\n- [ ] 编码或 SQL 变更后更新 `交付记录.md`。\n",
+        name,
+        folder,
+        today,
+        target_branch,
+        workspace.to_string_lossy(),
+        source_root,
+        service_lines,
+        if target_branch == "待确认" {
+            "- 目标分支未确认\n- worktree 尚未创建"
+        } else {
+            "- worktree 尚未创建"
+        }
+    )
+}
+
+fn worktree_commands(workspace: &Path, services: &[String], target_branch: &str, source_root: &str) -> String {
+    let branch = if target_branch.trim().is_empty() || target_branch.contains("待确认") {
+        "<target-branch>"
+    } else {
+        target_branch
+    };
+    let mut content = "#!/usr/bin/env bash\nset -euo pipefail\n\n# Review these commands before running. Nexus does not execute them automatically.\n".to_string();
+    if services.is_empty() {
+        content.push_str("# No services are confirmed yet.\n");
+        content.push_str("# Add services in services.md, then regenerate or edit this file.\n");
+        return content;
+    }
+    for service in services {
+        let source = expand_user_path(source_root).join(service);
+        let target = workspace.join("repos").join(service);
+        content.push_str(&format!(
+            "\n# {}\ngit -C {} fetch origin\ngit -C {} worktree add {} {}\n",
+            service,
+            shell_quote(&source.to_string_lossy()),
+            shell_quote(&source.to_string_lossy()),
+            shell_quote(&target.to_string_lossy()),
+            shell_quote(branch)
+        ));
+    }
+    content
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
 fn update_index(root: &Path, name: &str, folder: &str, target_branch: &str, services: &[String]) -> Result<(), String> {
     let index = root.join("INDEX.md");
     let mut content = fs::read_to_string(&index).unwrap_or_else(|_| {
@@ -676,6 +934,7 @@ pub fn run() {
             read_text_file,
             scan_workspaces,
             scan_source_repos,
+            check_environment,
             write_widget_snapshot,
             create_workspace
         ])

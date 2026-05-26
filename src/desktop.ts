@@ -48,6 +48,40 @@ export type ScanSourceReposPayload = {
   sourceReposRoot: string;
 };
 
+export type PathCheck = {
+  key: string;
+  label: string;
+  path: string;
+  exists: boolean;
+  isDir: boolean;
+  writable: boolean;
+  summary: string;
+};
+
+export type ToolCheck = {
+  key: string;
+  label: string;
+  available: boolean;
+  summary: string;
+};
+
+export type EnvironmentHealth = {
+  generatedAt: string;
+  ready: boolean;
+  pathChecks: PathCheck[];
+  toolChecks: ToolCheck[];
+  workspaceCount: number;
+  sourceRepoCount: number;
+  blockers: string[];
+  warnings: string[];
+};
+
+export type EnvironmentHealthPayload = {
+  workspacesRoot: string;
+  sourceReposRoot: string;
+  docsRoot: string;
+};
+
 export function isDesktopApp() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
@@ -94,9 +128,9 @@ export async function scanWorkspaces(payload: ScanWorkspacesPayload) {
   if (!isDesktopApp()) return null;
   return tauriInvoke<unknown>("scan_workspaces", {
     request: {
-      workspaces_root: payload.workspacesRoot,
-      source_repos_root: payload.sourceReposRoot,
-      docs_root: payload.docsRoot
+      workspacesRoot: payload.workspacesRoot,
+      sourceReposRoot: payload.sourceReposRoot,
+      docsRoot: payload.docsRoot
     }
   });
 }
@@ -105,7 +139,18 @@ export async function scanSourceRepos(payload: ScanSourceReposPayload) {
   if (!isDesktopApp()) return null;
   return tauriInvoke<SourceRepo[]>("scan_source_repos", {
     request: {
-      source_repos_root: payload.sourceReposRoot
+      sourceReposRoot: payload.sourceReposRoot
+    }
+  });
+}
+
+export async function checkEnvironment(payload: EnvironmentHealthPayload) {
+  if (!isDesktopApp()) return null;
+  return tauriInvoke<EnvironmentHealth>("check_environment", {
+    request: {
+      workspacesRoot: payload.workspacesRoot,
+      sourceReposRoot: payload.sourceReposRoot,
+      docsRoot: payload.docsRoot
     }
   });
 }

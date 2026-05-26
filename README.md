@@ -14,8 +14,11 @@ It is designed for teams that work across multiple local service repositories an
 - In-app Markdown document preview for status, service scope, branch notes, tasks, and delivery records.
 - Local path settings for workspaces, source repositories, and delivery document roots.
 - First-run onboarding for configuring local workspace, source repository, and delivery document paths.
+- Environment health checks for configured directories and Git availability.
 - Native workspace scanning from the configured paths; no local Python script is required for the packaged app.
 - Native source repository scanning so workspace creation can select services from real local repositories.
+- Workspace bootstrap reports and reviewable `scripts/worktree-commands.sh` files for semi-automated worktree setup.
+- Delivery-record completeness warnings when `交付记录.md` still needs real change notes.
 - Codex launcher and copyable prompts for continuing a workspace, checking git state, updating delivery notes, and risk analysis.
 - Widget snapshot generation at `~/Library/Application Support/com.ks.nexus/widget-snapshot.json`.
 - `nexus://workspace/<workspace-folder>` URL scheme for deep links from widgets or other tools.
@@ -52,9 +55,11 @@ Nexus expects each requirement workspace to contain Markdown files like:
   handoff.md
   delivery.md
   交付记录.md
+  bootstrap-report.md
   logs/
   sql/
   repos/
+  scripts/
 ```
 
 The `repos/<service>` directories are intended to be git worktrees for isolated multi-branch development.
@@ -63,7 +68,9 @@ The `repos/<service>` directories are intended to be git worktrees for isolated 
 
 Use the `New Workspace` action in the left rail. Nexus can scan the configured source repository root and lets you select services from that local list. You can still type service names manually when a repository is not present yet.
 
-Creating a workspace writes the standard Markdown document set and records selected services in `services.md` and `branches.md`. It does not automatically create git worktrees; branch confirmation and worktree creation remain explicit steps.
+Creating a workspace writes the standard Markdown document set and records selected services in `services.md` and `branches.md`. It also generates `bootstrap-report.md` and `scripts/worktree-commands.sh`.
+
+Nexus does not automatically execute worktree commands. Review the generated script first, then run it manually when the branch and service scope are confirmed.
 
 ## Local Development
 
