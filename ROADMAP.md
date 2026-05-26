@@ -18,7 +18,7 @@ This roadmap describes the next product and engineering steps for Nexus. It is i
 - Add Tauri updater support backed by GitHub Releases.
 - Add release notes automation using `CHANGELOG.md`.
 - Expand first-run onboarding with team profile import and optional demo workspace creation.
-- Add settings export/import for team sharing.
+- Add settings export/import for team sharing. `[done in 0.1.x preview]`
 
 ## 0.3.x: Native Workspace Operations
 

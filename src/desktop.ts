@@ -1,3 +1,5 @@
+import type { NexusSettingsProfile } from "./workspace-model";
+
 async function tauriInvoke<T>(command: string, args?: Record<string, unknown>) {
   if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) {
     return null;
@@ -174,4 +176,9 @@ export async function createWorkspace(payload: CreateWorkspacePayload) {
 export async function writeWidgetSnapshot(snapshot: WidgetSnapshotPayload) {
   if (!isDesktopApp()) return null;
   return tauriInvoke<{ path: string }>("write_widget_snapshot", { snapshot });
+}
+
+export async function exportSettingsProfile(profile: NexusSettingsProfile) {
+  if (!isDesktopApp()) return null;
+  return tauriInvoke<{ path: string }>("export_settings_profile", { profile });
 }
