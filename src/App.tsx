@@ -1215,6 +1215,10 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    void refreshData();
+  }, [refreshData]);
+
+  useEffect(() => {
     if (!refreshEnabled) return;
     const timer = window.setInterval(refreshData, settings.refreshIntervalSeconds * 1000);
     return () => window.clearInterval(timer);
