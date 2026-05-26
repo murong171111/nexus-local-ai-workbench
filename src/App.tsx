@@ -35,7 +35,7 @@ import { Card } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { checkEnvironment, createWorkspace, exportSettingsProfile, openExternalUrl, openPath as openPathInDesktop, readTextFile, scanSourceRepos, scanWorkspaces, writeWidgetSnapshot, type EnvironmentHealth, type SourceRepo } from "./desktop";
 import { cn, riskTone } from "./lib";
-import { buildWorktreeCommand, createSettingsProfile, normalizeServiceList, parseSettingsProfile, settingsProfileFilename, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceScore, type NexusSettingsProfile } from "./workspace-model";
+import { branchAlignmentRows, buildWorktreeCommand, createSettingsProfile, normalizeServiceList, parseSettingsProfile, settingsProfileFilename, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceScore, type NexusSettingsProfile } from "./workspace-model";
 import type { DashboardData, Workspace } from "./types";
 
 const initialData = rawData as DashboardData;
@@ -52,6 +52,7 @@ const stateLabels: Record<string, string> = {
 const filterLabels: Record<string, { title: string; desc: string }> = {
   all: { title: "全部", desc: "All" },
   risk: { title: "有风险", desc: "Risk" },
+  branch: { title: "分支不一致", desc: "Branch" },
   dirty: { title: "有改动", desc: "Dirty" },
   missing: { title: "缺 worktree", desc: "Missing" }
 };
@@ -60,6 +61,7 @@ const statLabels: Record<string, { title: string; desc: string }> = {
   workspaces: { title: "工作区", desc: "Workspaces" },
   services: { title: "服务", desc: "Services" },
   risks: { title: "风险项", desc: "Risks" },
+  branch: { title: "分支不一致", desc: "Branch mismatch" },
   missing: { title: "缺失 Worktree", desc: "Missing worktree" }
 };
 
@@ -169,6 +171,9 @@ function codexInstruction(workspace: Workspace, action: "continue" | "git" | "de
 }
 
 function riskInstruction(workspace: Workspace, risk: string) {
+  if (risk.includes("分支不一致")) {
+    return `工作区 ${workspace.folder} 存在风险：${risk}\n请读取 branches.md 并检查每个 repos/<service> worktree 的实际分支是否等于目标分支 ${workspace.targetBranch}。请列出不一致服务、当前分支、建议切换或重建 worktree 的命令，并提醒不要直接切换源仓库分支。`;
+  }
   if (risk.includes("目标分支")) {
     return `工作区 ${workspace.folder} 存在风险：${risk}\n请读取 branches.md 和 workspace.md，确认目标分支命名，并给出是否需要创建 worktree 的建议。`;
   }
@@ -214,7 +219,7 @@ function Sidebar({
   onOpenCreate: () => void;
   onOpenSettings: () => void;
 }) {
-  const filters = ["all", "risk", "dirty", "missing"];
+  const filters = ["all", "risk", "branch", "dirty", "missing"];
 
   return (
     <aside className="flex max-h-[42vh] flex-col border-b border-neutral-200 bg-neutral-50 px-3 py-4 lg:sticky lg:top-0 lg:h-screen lg:max-h-none lg:border-b-0 lg:border-r">
@@ -259,6 +264,7 @@ function Sidebar({
                 <span className="mono block text-[10px] text-neutral-400">{filterLabels[id].desc}</span>
               </span>
               {id === "risk" && <span className="mono text-[11px]">{workspaces.filter((w) => w.riskCount).length}</span>}
+              {id === "branch" && <span className="mono text-[11px]">{workspaces.filter((w) => branchAlignmentRows(w).length).length}</span>}
             </button>
           ))}
         </div>
@@ -322,6 +328,7 @@ function TopBar({
   onOpenCodex: () => void;
 }) {
   const dirty = dashboard.workspaces.flatMap((workspace) => workspace.gitRows).filter((row) => row.worktree.dirty).length;
+  const branchMismatches = dashboard.workspaces.reduce((sum, workspace) => sum + branchAlignmentRows(workspace).length, 0);
 
   return (
     <header className="sticky top-0 z-20 border-b border-neutral-200 bg-white px-4 py-3 xl:px-5">
@@ -355,6 +362,10 @@ function TopBar({
         <Badge tone={dirty ? "amber" : "green"}>
           <GitCommit className="h-3 w-3" />
           {dirty ? `${dirty} dirty` : "git clean"}
+        </Badge>
+        <Badge tone={branchMismatches ? "amber" : "green"}>
+          <GitBranch className="h-3 w-3" />
+          {branchMismatches ? `${branchMismatches} branch` : "branch aligned"}
         </Badge>
         <Badge tone="blue" className="max-w-full truncate xl:max-w-[320px]">
           <Workflow className="h-3 w-3" />
@@ -392,6 +403,7 @@ function WorkspaceCard({
 }) {
   const missing = workspace.gitRows.filter((row) => !row.worktree.exists).length;
   const dirty = workspace.gitRows.filter((row) => row.worktree.dirty).length;
+  const branchMismatches = branchAlignmentRows(workspace);
   const serviceStatus = workspace.confirmedServices.length ? `${workspace.confirmedServices.length} 个已确认` : "待确认";
 
   return (
@@ -411,11 +423,34 @@ function WorkspaceCard({
 
       <div className="grid gap-4 p-4">
         <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
-          <StatusCell label="分支" subLabel="Branch" value={workspace.targetBranch} icon={GitBranch} />
+          <StatusCell
+            label="分支"
+            subLabel="Branch"
+            value={branchMismatches.length ? `${branchMismatches.length} 个不一致` : workspace.targetBranch}
+            icon={GitBranch}
+            tone={branchMismatches.length ? "warning" : "ok"}
+          />
           <StatusCell label="服务" subLabel="Services" value={serviceStatus} icon={Boxes} />
           <StatusCell label="Worktree" subLabel="本地分支目录" value={missing ? `${missing} 个缺失` : "已就绪"} icon={Terminal} tone={missing ? "warning" : "ok"} />
           <StatusCell label="改动" subLabel="Changes" value={dirty ? `${dirty} 个未提交` : "干净"} icon={CheckCircle2} tone={dirty ? "warning" : "ok"} />
         </div>
+
+        {branchMismatches.length > 0 && (
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+            <div className="flex items-center gap-2 text-xs font-medium text-amber-900">
+              <GitBranch className="h-3.5 w-3.5" />
+              分支一致性 / Branch alignment
+            </div>
+            <div className="mt-2 grid gap-1">
+              {branchMismatches.slice(0, 3).map((row) => (
+                <div key={row.service} className="mono flex min-w-0 items-center justify-between gap-2 text-[11px] text-amber-800">
+                  <span className="truncate">{row.service}</span>
+                  <span className="truncate">{`${row.actualBranch} -> ${row.expectedBranch}`}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="flex flex-wrap gap-1.5">
           {workspace.confirmedServices.length ? (
@@ -465,6 +500,11 @@ function WorkspaceCard({
                     </button>
                   )}
                   {risk.includes("目标分支") && (
+                    <button className="rounded border border-amber-200 bg-white px-2 py-1 text-[11px] text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("branches.md", workspace.links.branches)}>
+                      分支文档
+                    </button>
+                  )}
+                  {risk.includes("分支不一致") && (
                     <button className="rounded border border-amber-200 bg-white px-2 py-1 text-[11px] text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("branches.md", workspace.links.branches)}>
                       分支文档
                     </button>
@@ -527,7 +567,12 @@ function WorkspaceCard({
               <div className="grid gap-2">
                 {workspace.gitRows.map((row) => (
                   <div key={row.service} className="grid gap-2 rounded-md bg-white p-2 text-xs md:grid-cols-[120px_1fr_1fr]">
-                    <div className="font-medium text-neutral-900">{row.service}</div>
+                    <div className="font-medium text-neutral-900">
+                      {row.service}
+                      {branchMismatches.some((item) => item.service === row.service) && (
+                        <Badge tone="amber" className="mt-1">branch</Badge>
+                      )}
+                    </div>
                     <div>
                       <div className="text-neutral-400">工作区 worktree</div>
                       <div className="mono mt-1 text-neutral-700">{row.worktree.branch}</div>
@@ -656,6 +701,16 @@ function CommandPalette({
       }
     },
     {
+      id: "branch",
+      label: "只看分支不一致",
+      hint: "Show branch mismatches",
+      icon: GitBranch,
+      run: () => {
+        setFilter("branch");
+        onOpenChange(false);
+      }
+    },
+    {
       id: "folder",
       label: "打开当前工作区目录",
       hint: current?.folder ?? "No workspace selected",
@@ -730,6 +785,7 @@ function CommandPalette({
 
 function RightRail({ current, visible }: { current?: Workspace; visible: Workspace[] }) {
   const alerts = visible.flatMap((workspace) => workspace.risks.map((risk) => ({ workspace: workspace.name, risk }))).slice(0, 8);
+  const branchMismatches = current ? branchAlignmentRows(current).length : 0;
   const events = visible.slice(0, 6).map((workspace) => ({
     label: workspace.name,
     detail: workspace.riskCount ? `发现 ${workspace.riskCount} 个风险 / risks` : "扫描正常 / Clean"
@@ -760,7 +816,8 @@ function RightRail({ current, visible }: { current?: Workspace; visible: Workspa
         <div className="rounded-lg border border-neutral-200 bg-white p-3 text-sm leading-6 text-neutral-600">
           {current ? (
             <>
-              当前焦点是 <span className="text-neutral-950">{current.name}</span>。优先处理分支确认、worktree 缺失和交付文档完整性。
+              当前焦点是 <span className="text-neutral-950">{current.name}</span>。
+              {branchMismatches ? `有 ${branchMismatches} 个服务 worktree 分支与目标分支不一致，应先校准分支。` : "优先处理分支确认、worktree 缺失和交付文档完整性。"}
             </>
           ) : (
             "选择一个 workspace 查看分析上下文。"
@@ -809,6 +866,7 @@ function WorkspaceDrawer({
 
   const missing = workspace.gitRows.filter((row) => !row.worktree.exists).length;
   const dirty = workspace.gitRows.filter((row) => row.worktree.dirty).length;
+  const branchMismatches = branchAlignmentRows(workspace);
 
   return (
     <div className="fixed inset-0 bg-neutral-950/10" style={{ zIndex: 1000 }} onMouseDown={onClose}>
@@ -835,7 +893,26 @@ function WorkspaceDrawer({
             <Stat label={{ title: "确认服务", desc: "Services" }} value={workspace.confirmedServices.length} icon={Boxes} />
             <Stat label={{ title: "缺 worktree", desc: "Missing" }} value={missing} icon={Terminal} />
             <Stat label={{ title: "未提交改动", desc: "Dirty" }} value={dirty} icon={GitCommit} />
+            <Stat label={{ title: "分支不一致", desc: "Branch" }} value={branchMismatches.length} icon={GitBranch} />
           </section>
+
+          {branchMismatches.length > 0 && (
+            <section className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <div className="mb-2 flex items-center gap-2 text-sm font-medium text-amber-900">
+                <GitBranch className="h-4 w-4" />
+                分支一致性 / Branch alignment
+              </div>
+              <div className="grid gap-2">
+                {branchMismatches.map((row) => (
+                  <div key={row.service} className="rounded-md bg-white px-3 py-2 text-xs">
+                    <div className="font-medium text-neutral-950">{row.service}</div>
+                    <div className="mono mt-1 text-amber-800">worktree: {row.actualBranch}</div>
+                    <div className="mono mt-1 text-neutral-500">target: {row.expectedBranch} / source: {row.sourceBranch || "unknown"}</div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           <section className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
             <div className="mb-3 flex items-center gap-2 text-sm font-medium text-neutral-900">
@@ -897,6 +974,11 @@ function WorkspaceDrawer({
                           打开分支文档
                         </button>
                       )}
+                      {risk.includes("分支不一致") && (
+                        <button className="rounded-md border border-amber-200 bg-white px-2 py-1 text-xs text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("branches.md", workspace.links.branches)}>
+                          打开分支文档
+                        </button>
+                      )}
                       {risk.includes("服务范围") && (
                         <button className="rounded-md border border-amber-200 bg-white px-2 py-1 text-xs text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("services.md", workspace.links.services)}>
                           打开服务文档
@@ -927,7 +1009,10 @@ function WorkspaceDrawer({
               <div className="grid gap-2">
                 {workspace.gitRows.map((row) => (
                   <div key={row.service} className="rounded-md border border-neutral-200 p-3 text-sm">
-                    <div className="font-medium text-neutral-950">{row.service}</div>
+                    <div className="flex items-center gap-2 font-medium text-neutral-950">
+                      {row.service}
+                      {branchMismatches.some((item) => item.service === row.service) && <Badge tone="amber">branch mismatch</Badge>}
+                    </div>
                     <div className="mt-2 grid gap-2 text-xs text-neutral-600">
                       <div>
                         <span className="text-neutral-400">worktree</span>
@@ -1695,6 +1780,7 @@ export function App() {
       const matchesFilter =
         filter === "all" ||
         (filter === "risk" && workspace.riskCount > 0) ||
+        (filter === "branch" && branchAlignmentRows(workspace).length > 0) ||
         (filter === "dirty" && workspace.gitRows.some((row) => row.worktree.dirty)) ||
         (filter === "missing" && workspace.gitRows.some((row) => !row.worktree.exists));
       return matchesQuery && matchesFilter;
@@ -1705,6 +1791,7 @@ export function App() {
   const drawerWorkspace = dashboard.workspaces.find((workspace) => workspace.folder === drawerFolder);
   const services = new Set(dashboard.workspaces.flatMap((workspace) => workspace.confirmedServices)).size;
   const risks = dashboard.workspaces.reduce((sum, workspace) => sum + workspace.riskCount, 0);
+  const branchMismatches = dashboard.workspaces.reduce((sum, workspace) => sum + branchAlignmentRows(workspace).length, 0);
   const missing = dashboard.workspaces.filter((workspace) => workspace.gitRows.some((row) => !row.worktree.exists)).length;
 
   const toggleDetails = (folder: string) => {
@@ -1933,10 +2020,11 @@ export function App() {
             </div>
           </div>
 
-          <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
+          <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-5">
             <Stat label={statLabels.workspaces} value={dashboard.workspaces.length} icon={Workflow} />
             <Stat label={statLabels.services} value={services} icon={Boxes} />
             <Stat label={statLabels.risks} value={risks} icon={AlertTriangle} />
+            <Stat label={statLabels.branch} value={branchMismatches} icon={GitBranch} />
             <Stat label={statLabels.missing} value={missing} icon={Terminal} />
           </div>
 

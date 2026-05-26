@@ -18,6 +18,7 @@ It is designed for teams that work across multiple local service repositories an
 - Environment health checks for configured directories and Git availability.
 - Native workspace scanning from the configured paths; no local Python script is required for the packaged app.
 - Native source repository scanning so workspace creation can select services from real local repositories.
+- Branch alignment checks that flag worktrees whose actual branch does not match the workspace target branch.
 - Workspace bootstrap reports and reviewable `scripts/worktree-commands.sh` files for semi-automated worktree setup.
 - Delivery-record completeness warnings when `交付记录.md` still needs real change notes.
 - Codex launcher and copyable prompts for continuing a workspace, checking git state, updating delivery notes, and risk analysis.
