@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   Boxes,
   Braces,
+  Check,
   Clipboard,
   CheckCircle2,
   ChevronDown,
@@ -10,6 +11,7 @@ import {
   Command,
   ExternalLink,
   FileText,
+  FolderOpen,
   GitBranch,
   GitCommit,
   ListChecks,
@@ -29,9 +31,9 @@ import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { Card } from "./components/ui/card";
 import { Input } from "./components/ui/input";
-import { createWorkspace, openExternalUrl, openPath as openPathInDesktop, readTextFile, scanWorkspaces, writeWidgetSnapshot } from "./desktop";
+import { createWorkspace, openExternalUrl, openPath as openPathInDesktop, readTextFile, scanSourceRepos, scanWorkspaces, writeWidgetSnapshot, type SourceRepo } from "./desktop";
 import { cn, riskTone } from "./lib";
-import { todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceScore } from "./workspace-model";
+import { normalizeServiceList, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceScore } from "./workspace-model";
 import type { DashboardData, Workspace } from "./types";
 
 const initialData = rawData as DashboardData;
@@ -68,6 +70,7 @@ type NexusSettings = {
 };
 
 const settingsStorageKey = "nexus-settings";
+const onboardingStorageKey = "nexus-onboarding-complete";
 
 function settingsFromDashboard(dashboard: DashboardData): NexusSettings {
   return {
@@ -92,6 +95,14 @@ function loadSettings(dashboard: DashboardData) {
     };
   } catch {
     return defaults;
+  }
+}
+
+function shouldShowOnboarding() {
+  try {
+    return !window.localStorage.getItem(settingsStorageKey) && !window.localStorage.getItem(onboardingStorageKey);
+  } catch {
+    return false;
   }
 }
 
@@ -878,17 +889,23 @@ function WorkspaceDrawer({
 function SettingsPanel({
   open,
   settings,
+  sourceRepos,
+  sourceScanning,
   onChange,
   onClose,
   onSave,
-  onOpenPath
+  onOpenPath,
+  onScanSourceRepos
 }: {
   open: boolean;
   settings: NexusSettings;
+  sourceRepos: SourceRepo[];
+  sourceScanning: boolean;
   onChange: (settings: NexusSettings) => void;
   onClose: () => void;
   onSave: () => void;
   onOpenPath: (path: string) => void;
+  onScanSourceRepos: () => void;
 }) {
   if (!open) return null;
 
@@ -972,11 +989,151 @@ function SettingsPanel({
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <Button onClick={onSave}>保存本机配置</Button>
+                <Button variant="outline" onClick={onScanSourceRepos} disabled={sourceScanning}>
+                  <FolderOpen className="h-4 w-4" />
+                  {sourceScanning ? "扫描中" : "扫描源仓库"}
+                </Button>
+              </div>
+              <div className="mt-3 grid gap-2 text-xs text-neutral-500">
+                <div className="flex items-center justify-between rounded-md bg-neutral-50 px-3 py-2">
+                  <span>已识别服务仓库</span>
+                  <span className="mono text-neutral-700">{sourceRepos.length}</span>
+                </div>
+                {sourceRepos.slice(0, 4).map((repo) => (
+                  <div key={repo.path} className="flex min-w-0 items-center justify-between gap-3 rounded-md bg-white px-3 py-2 ring-1 ring-neutral-200">
+                    <span className="truncate text-neutral-700">{repo.name}</span>
+                    <span className={cn("mono shrink-0", repo.dirty ? "text-amber-600" : "text-neutral-400")}>{repo.branch}</span>
+                  </div>
+                ))}
               </div>
             </Card>
           </div>
         </div>
       </aside>
+    </div>
+  );
+}
+
+function OnboardingPanel({
+  open,
+  settings,
+  sourceRepos,
+  sourceScanning,
+  onChange,
+  onSave,
+  onSkip,
+  onOpenPath,
+  onScanSourceRepos
+}: {
+  open: boolean;
+  settings: NexusSettings;
+  sourceRepos: SourceRepo[];
+  sourceScanning: boolean;
+  onChange: (settings: NexusSettings) => void;
+  onSave: () => void;
+  onSkip: () => void;
+  onOpenPath: (path: string) => void;
+  onScanSourceRepos: () => void;
+}) {
+  if (!open) return null;
+
+  const update = (key: keyof NexusSettings, value: string) => {
+    onChange({
+      ...settings,
+      [key]: key === "refreshIntervalSeconds" ? Math.max(3, Number(value) || 10) : value
+    });
+  };
+
+  const steps = [
+    { label: "配置路径", done: Boolean(settings.workspacesRoot && settings.sourceReposRoot && settings.docsRoot) },
+    { label: "扫描服务", done: sourceRepos.length > 0 },
+    { label: "创建工作区", done: false }
+  ];
+
+  return (
+    <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-neutral-950/16 px-4 backdrop-blur-[2px]">
+      <section className="grid max-h-[92vh] w-full max-w-5xl grid-cols-1 overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.16)] lg:grid-cols-[320px_minmax(0,1fr)]">
+        <div className="border-b border-neutral-200 bg-neutral-50 px-5 py-5 lg:border-b-0 lg:border-r">
+          <div className="flex items-center gap-2">
+            <Command className="h-4 w-4 text-blue-600" />
+            <div className="text-sm font-semibold text-neutral-950">Nexus 初始化</div>
+          </div>
+          <h2 className="mt-5 text-2xl font-semibold tracking-tight text-neutral-950">连接你的本地开发目录</h2>
+          <p className="mt-3 text-sm leading-6 text-neutral-500">
+            首次启动只需要确认三个路径。保存后，Nexus 会用这些路径扫描工作区、识别服务仓库，并在新建需求时提供服务选择。
+          </p>
+          <div className="mt-6 grid gap-2">
+            {steps.map((step, index) => (
+              <div key={step.label} className="flex items-center gap-3 rounded-md bg-white px-3 py-2 ring-1 ring-neutral-200">
+                <span className={cn("flex h-6 w-6 items-center justify-center rounded-md text-xs", step.done ? "bg-emerald-50 text-emerald-700" : "bg-neutral-100 text-neutral-500")}>
+                  {step.done ? <Check className="h-3.5 w-3.5" /> : index + 1}
+                </span>
+                <span className="text-sm text-neutral-700">{step.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="overflow-y-auto px-5 py-5">
+          <div className="grid gap-4">
+            <Card className="p-4">
+              <div className="text-sm font-medium text-neutral-950">本地路径</div>
+              <div className="mt-4 grid gap-4">
+                <PathSetting
+                  label="工作区目录"
+                  desc="每个需求 workspace 的根目录。"
+                  value={settings.workspacesRoot}
+                  onChange={(value) => update("workspacesRoot", value)}
+                  onOpen={() => onOpenPath(settings.workspacesRoot)}
+                />
+                <PathSetting
+                  label="源仓库目录"
+                  desc="用于扫描服务列表和读取 source git 状态。"
+                  value={settings.sourceReposRoot}
+                  onChange={(value) => update("sourceReposRoot", value)}
+                  onOpen={() => onOpenPath(settings.sourceReposRoot)}
+                />
+                <PathSetting
+                  label="交付文档目录"
+                  desc="跨需求交付资料归档目录。"
+                  value={settings.docsRoot}
+                  onChange={(value) => update("docsRoot", value)}
+                  onOpen={() => onOpenPath(settings.docsRoot)}
+                />
+              </div>
+            </Card>
+
+            <Card className="p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="text-sm font-medium text-neutral-950">服务仓库扫描</div>
+                  <p className="mt-1 text-sm leading-6 text-neutral-500">扫描结果会出现在新建工作区面板中，可以直接勾选涉及服务。</p>
+                </div>
+                <Button variant="outline" onClick={onScanSourceRepos} disabled={sourceScanning}>
+                  <FolderOpen className="h-4 w-4" />
+                  {sourceScanning ? "扫描中" : "扫描"}
+                </Button>
+              </div>
+              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <div className="rounded-md bg-neutral-50 px-3 py-2">
+                  <div className="text-xs text-neutral-400">识别数量</div>
+                  <div className="mono mt-1 text-lg text-neutral-950">{sourceRepos.length}</div>
+                </div>
+                <div className="rounded-md bg-neutral-50 px-3 py-2">
+                  <div className="text-xs text-neutral-400">源仓库目录</div>
+                  <div className="mono mt-1 truncate text-xs text-neutral-700">{settings.sourceReposRoot}</div>
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          <div className="mt-5 flex flex-wrap justify-end gap-2 border-t border-neutral-200 pt-4">
+            <Button variant="ghost" onClick={onSkip}>稍后设置</Button>
+            <Button variant="outline" onClick={onScanSourceRepos} disabled={sourceScanning}>先扫描服务</Button>
+            <Button onClick={onSave}>保存并开始</Button>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
@@ -1059,24 +1216,42 @@ function DocumentViewer({
 function CreateWorkspacePanel({
   open,
   settings,
+  sourceRepos,
+  sourceScanning,
   onClose,
-  onCreate
+  onCreate,
+  onScanSourceRepos
 }: {
   open: boolean;
   settings: NexusSettings;
+  sourceRepos: SourceRepo[];
+  sourceScanning: boolean;
   onClose: () => void;
   onCreate: (input: { name: string; folder: string; services: string[]; targetBranch: string }) => void;
+  onScanSourceRepos: () => void;
 }) {
   const [name, setName] = useState("");
   const [servicesText, setServicesText] = useState("");
+  const [serviceQuery, setServiceQuery] = useState("");
+  const [selectedServices, setSelectedServices] = useState<string[]>([]);
   const [targetBranch, setTargetBranch] = useState("");
   const folder = workspaceFolderFromName(name);
   if (!open) return null;
 
-  const services = servicesText
+  const manualServices = servicesText
     .split(/[,\n，]/)
     .map((service) => service.trim())
     .filter(Boolean);
+  const services = normalizeServiceList([...selectedServices, ...manualServices]);
+  const serviceMatches = sourceRepos
+    .filter((repo) => repo.name.toLowerCase().includes(serviceQuery.trim().toLowerCase()))
+    .slice(0, 16);
+  const toggleService = (service: string) => {
+    setSelectedServices((current) => {
+      if (current.includes(service)) return current.filter((item) => item !== service);
+      return normalizeServiceList([...current, service]);
+    });
+  };
 
   return (
     <div className="fixed inset-0 z-50 bg-neutral-950/12 backdrop-blur-[2px]">
@@ -1107,10 +1282,63 @@ function CreateWorkspacePanel({
                   <span className="text-xs font-medium text-neutral-500">工作区目录名</span>
                   <Input value={folder} readOnly />
                 </label>
-                <label className="grid gap-2">
-                  <span className="text-xs font-medium text-neutral-500">涉及服务，可选</span>
-                  <Input value={servicesText} onChange={(event) => setServicesText(event.target.value)} placeholder="order, store-cashier, kspay" />
-                </label>
+                <div className="grid gap-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-xs font-medium text-neutral-500">涉及服务，可选</div>
+                      <div className="mt-1 text-xs text-neutral-400">从源仓库扫描结果勾选，也可以手动补充。</div>
+                    </div>
+                    <Button type="button" variant="outline" onClick={onScanSourceRepos} disabled={sourceScanning}>
+                      <Search className="h-4 w-4" />
+                      {sourceScanning ? "扫描中" : "扫描"}
+                    </Button>
+                  </div>
+                  <Input value={serviceQuery} onChange={(event) => setServiceQuery(event.target.value)} placeholder="搜索服务仓库" />
+                  <div className="max-h-48 overflow-auto rounded-md border border-neutral-200 bg-neutral-50 p-1">
+                    {serviceMatches.length ? (
+                      serviceMatches.map((repo) => {
+                        const selected = selectedServices.includes(repo.name);
+                        return (
+                          <button
+                            key={repo.path}
+                            type="button"
+                            className={cn(
+                              "flex w-full items-center justify-between gap-3 rounded px-2 py-2 text-left text-sm transition-colors",
+                              selected ? "bg-blue-50 text-blue-700" : "text-neutral-700 hover:bg-white"
+                            )}
+                            onClick={() => toggleService(repo.name)}
+                          >
+                            <span className="flex min-w-0 items-center gap-2">
+                              <span className={cn("flex h-5 w-5 shrink-0 items-center justify-center rounded border", selected ? "border-blue-300 bg-blue-600 text-white" : "border-neutral-300 bg-white text-transparent")}>
+                                <Check className="h-3.5 w-3.5" />
+                              </span>
+                              <span className="min-w-0">
+                                <span className="block truncate font-medium">{repo.name}</span>
+                                <span className="mono block truncate text-[11px] text-neutral-400">{repo.branch}</span>
+                              </span>
+                            </span>
+                            <span className={cn("mono shrink-0 text-[11px]", repo.dirty ? "text-amber-600" : repo.isGit ? "text-emerald-600" : "text-neutral-400")}>
+                              {repo.isGit ? (repo.dirty ? "dirty" : "clean") : "non-git"}
+                            </span>
+                          </button>
+                        );
+                      })
+                    ) : (
+                      <div className="grid place-items-center gap-2 px-3 py-6 text-center text-sm text-neutral-500">
+                        <FolderOpen className="h-5 w-5 text-neutral-300" />
+                        <div>{sourceRepos.length ? "没有匹配的服务" : "还没有扫描到源仓库服务"}</div>
+                      </div>
+                    )}
+                  </div>
+                  <Input value={servicesText} onChange={(event) => setServicesText(event.target.value)} placeholder="手动补充：order, store-cashier, kspay" />
+                  {services.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {services.map((service) => (
+                        <Badge key={service} tone="blue">{service}</Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <label className="grid gap-2">
                   <span className="text-xs font-medium text-neutral-500">目标分支，可选</span>
                   <Input value={targetBranch} onChange={(event) => setTargetBranch(event.target.value)} placeholder="chen/feature-name，留空则待确认" />
@@ -1143,12 +1371,15 @@ export function App() {
   const [active, setActive] = useState(initialData.workspaces[0]?.folder ?? "");
   const [commandOpen, setCommandOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [onboardingOpen, setOnboardingOpen] = useState(() => shouldShowOnboarding());
   const [createOpen, setCreateOpen] = useState(false);
   const [refreshEnabled, setRefreshEnabled] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [drawerFolder, setDrawerFolder] = useState("");
   const [document, setDocument] = useState<{ title: string; path: string; content: string }>();
   const [toast, setToast] = useState("");
+  const [sourceRepos, setSourceRepos] = useState<SourceRepo[]>([]);
+  const [sourceScanning, setSourceScanning] = useState(false);
 
   const refreshData = useCallback(async () => {
     const scanned = await scanWorkspaces({
@@ -1166,6 +1397,31 @@ export function App() {
     setDashboard((await response.json()) as DashboardData);
   }, [settings.docsRoot, settings.sourceReposRoot, settings.workspacesRoot]);
 
+  const refreshSourceRepos = useCallback(async () => {
+    setSourceScanning(true);
+    try {
+      const scanned = await scanSourceRepos({ sourceReposRoot: settings.sourceReposRoot });
+      if (scanned) {
+        setSourceRepos(scanned);
+        return scanned;
+      }
+
+      const fallbackServices = normalizeServiceList(dashboard.workspaces.flatMap((workspace) => workspace.confirmedServices));
+      const fallbackRepos = fallbackServices.map((service) => ({
+        name: service,
+        path: `${settings.sourceReposRoot}/${service}`,
+        isGit: false,
+        branch: "browser preview",
+        dirty: false,
+        summary: "浏览器预览模式"
+      }));
+      setSourceRepos(fallbackRepos);
+      return fallbackRepos;
+    } finally {
+      setSourceScanning(false);
+    }
+  }, [dashboard.workspaces, settings.sourceReposRoot]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
@@ -1180,6 +1436,10 @@ export function App() {
   useEffect(() => {
     void refreshData();
   }, [refreshData]);
+
+  useEffect(() => {
+    void refreshSourceRepos();
+  }, [settings.sourceReposRoot]);
 
   useEffect(() => {
     if (!refreshEnabled) return;
@@ -1259,11 +1519,25 @@ export function App() {
 
   const saveSettings = () => {
     window.localStorage.setItem(settingsStorageKey, JSON.stringify(settings, null, 2));
+    window.localStorage.setItem(onboardingStorageKey, "true");
+    setOnboardingOpen(false);
     showToast("已保存 Nexus 本机配置");
+    void refreshData();
+    void refreshSourceRepos();
+  };
+
+  const dismissOnboarding = () => {
+    window.localStorage.setItem(onboardingStorageKey, "true");
+    setOnboardingOpen(false);
   };
 
   const openConfiguredPath = async (path: string) => {
     await openPathInDesktop(path);
+  };
+
+  const handleScanSourceRepos = async () => {
+    const repos = await refreshSourceRepos();
+    showToast(`已识别 ${repos.length} 个源仓库服务`);
   };
 
   const openDocument = async (title: string, path: string) => {
@@ -1418,14 +1692,36 @@ export function App() {
       </main>
       <RightRail current={current} visible={visible} />
       <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} current={current} setFilter={setFilter} refreshData={refreshData} onOpenCodex={handleOpenCodex} />
-      <CreateWorkspacePanel open={createOpen} settings={settings} onClose={() => setCreateOpen(false)} onCreate={handleCreateWorkspace} />
+      <CreateWorkspacePanel
+        open={createOpen}
+        settings={settings}
+        sourceRepos={sourceRepos}
+        sourceScanning={sourceScanning}
+        onClose={() => setCreateOpen(false)}
+        onCreate={handleCreateWorkspace}
+        onScanSourceRepos={handleScanSourceRepos}
+      />
       <SettingsPanel
         open={settingsOpen}
         settings={settings}
+        sourceRepos={sourceRepos}
+        sourceScanning={sourceScanning}
         onChange={setSettings}
         onClose={() => setSettingsOpen(false)}
         onSave={saveSettings}
         onOpenPath={openConfiguredPath}
+        onScanSourceRepos={handleScanSourceRepos}
+      />
+      <OnboardingPanel
+        open={onboardingOpen}
+        settings={settings}
+        sourceRepos={sourceRepos}
+        sourceScanning={sourceScanning}
+        onChange={setSettings}
+        onSave={saveSettings}
+        onSkip={dismissOnboarding}
+        onOpenPath={openConfiguredPath}
+        onScanSourceRepos={handleScanSourceRepos}
       />
       <WorkspaceDrawer
         workspace={drawerWorkspace}

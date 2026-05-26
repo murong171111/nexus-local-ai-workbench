@@ -35,8 +35,10 @@ src-tauri/target/release/bundle/dmg/Nexus_0.1.0_aarch64.dmg
 - Run `npm run widget:typecheck`.
 - Run `npm run tauri:build`.
 - Open the built app and confirm:
+  - First-run onboarding opens when no local settings exist.
   - Settings opens.
   - Workspace scanning works after setting local paths.
+  - Source repository scanning populates the create-workspace service picker.
   - Markdown preview works.
   - `~/Library/Application Support/com.ks.nexus/widget-snapshot.json` is generated.
   - `nexus://workspace/<folder>` opens Nexus.

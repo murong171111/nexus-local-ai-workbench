@@ -28,6 +28,12 @@ struct ScanWorkspacesRequest {
     docs_root: String,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ScanSourceReposRequest {
+    source_repos_root: String,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DashboardData {
@@ -80,6 +86,17 @@ struct GitRow {
 #[derive(Serialize)]
 struct GitStatus {
     exists: bool,
+    branch: String,
+    dirty: bool,
+    summary: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SourceRepo {
+    name: String,
+    path: String,
+    is_git: bool,
     branch: String,
     dirty: bool,
     summary: String,
@@ -178,6 +195,37 @@ fn scan_workspaces(request: ScanWorkspacesRequest) -> Result<DashboardData, Stri
         docs_root: request.docs_root,
         workspaces,
     })
+}
+
+#[tauri::command]
+fn scan_source_repos(request: ScanSourceReposRequest) -> Result<Vec<SourceRepo>, String> {
+    let root = expand_user_path(&request.source_repos_root);
+    if !root.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut repos = Vec::new();
+    let entries = fs::read_dir(&root).map_err(|error| error.to_string())?;
+    for entry in entries {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !path.is_dir() || name.starts_with('.') || matches!(name.as_str(), "node_modules" | "target" | "dist") {
+            continue;
+        }
+        let status = git_status(&path);
+        let is_git = path.join(".git").exists();
+        repos.push(SourceRepo {
+            name,
+            path: path.to_string_lossy().to_string(),
+            is_git,
+            branch: status.branch,
+            dirty: status.dirty,
+            summary: status.summary,
+        });
+    }
+    repos.sort_by(|left, right| left.name.cmp(&right.name));
+    Ok(repos)
 }
 
 #[tauri::command]
@@ -627,6 +675,7 @@ pub fn run() {
             open_idea,
             read_text_file,
             scan_workspaces,
+            scan_source_repos,
             write_widget_snapshot,
             create_workspace
         ])

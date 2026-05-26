@@ -17,6 +17,12 @@ export function workspaceFolderFromName(name: string, date = new Date()) {
   return `${todayString(date)}-${slugify(name) || "workspace"}`;
 }
 
+export function normalizeServiceList(values: string[]) {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort((left, right) =>
+    left.localeCompare(right)
+  );
+}
+
 export function workspaceScore(workspace: Workspace) {
   return workspace.riskCount * 10 + workspace.gitRows.filter((row) => row.worktree.dirty).length * 3;
 }
