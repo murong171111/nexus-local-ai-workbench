@@ -21,11 +21,13 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Exportable and importable Nexus team settings profiles for sharing path conventions.
 - Branch alignment checks, filters, prompts, and UI warnings for worktrees that do not match the workspace target branch.
 - Manual service input parsing for commas, spaces, new lines, semicolons, and Chinese separators when creating workspaces.
+- Markdown document rendering with a preview/source toggle inside the workspace document viewer.
 
 ### Fixed
 
 - First-run onboarding now waits for environment health checks, skips itself when the environment is ready, locks background scrolling, and exposes a clear close button.
 - Document preview now opens above workspace details and closes the details drawer to avoid stacked side panels.
+- Closing a document opened from workspace details now returns to the details drawer instead of dismissing both layers.
 
 ## [0.1.0-alpha] - 2026-05-26
 

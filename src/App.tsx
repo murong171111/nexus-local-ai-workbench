@@ -1,6 +1,7 @@
 import {
   Activity,
   AlertTriangle,
+  BookOpen,
   Boxes,
   Braces,
   Check,
@@ -28,6 +29,8 @@ import {
   type LucideIcon
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import rawData from "./data/workspaces.json";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
@@ -1461,6 +1464,57 @@ function PathSetting({
   );
 }
 
+function isMarkdownDocument(path: string) {
+  return /\.(md|markdown|mdown|mkdn)$/i.test(path.trim());
+}
+
+function MarkdownDocument({ content }: { content: string }) {
+  if (!content.trim()) {
+    return <div className="rounded-lg border border-dashed border-neutral-200 bg-white p-6 text-sm text-neutral-500">文档为空。</div>;
+  }
+
+  return (
+    <div className="rounded-lg border border-neutral-200 bg-white px-6 py-5 text-[15px] leading-7 text-neutral-800">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          h1: (props) => <h1 className="mb-4 border-b border-neutral-200 pb-3 text-2xl font-semibold leading-tight text-neutral-950" {...props} />,
+          h2: (props) => <h2 className="mb-3 mt-7 text-xl font-semibold leading-tight text-neutral-950 first:mt-0" {...props} />,
+          h3: (props) => <h3 className="mb-2 mt-5 text-base font-semibold leading-tight text-neutral-950" {...props} />,
+          h4: (props) => <h4 className="mb-2 mt-4 text-sm font-semibold leading-tight text-neutral-900" {...props} />,
+          p: (props) => <p className="my-3 text-neutral-700" {...props} />,
+          ul: (props) => <ul className="my-3 list-disc space-y-1 pl-5" {...props} />,
+          ol: (props) => <ol className="my-3 list-decimal space-y-1 pl-5" {...props} />,
+          li: (props) => <li className="pl-1 marker:text-neutral-400" {...props} />,
+          blockquote: (props) => <blockquote className="my-4 border-l-2 border-blue-300 bg-blue-50/60 px-4 py-2 text-neutral-700" {...props} />,
+          hr: (props) => <hr className="my-6 border-neutral-200" {...props} />,
+          a: (props) => <a className="font-medium text-blue-700 underline decoration-blue-200 underline-offset-4 hover:text-blue-800" target="_blank" rel="noreferrer" {...props} />,
+          strong: (props) => <strong className="font-semibold text-neutral-950" {...props} />,
+          code: ({ children, className, ...props }) => {
+            const text = String(children);
+            const isBlock = text.includes("\n") || className;
+            if (!isBlock) {
+              return <code className="mono rounded bg-neutral-100 px-1.5 py-0.5 text-[0.92em] text-neutral-900" {...props}>{children}</code>;
+            }
+            return <code className={cn("mono text-[13px] leading-6 text-neutral-800", className)} {...props}>{children}</code>;
+          },
+          pre: (props) => <pre className="mono my-4 overflow-x-auto rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-[13px] leading-6 text-neutral-800" {...props} />,
+          table: (props) => (
+            <div className="my-4 overflow-x-auto rounded-lg border border-neutral-200">
+              <table className="w-full border-collapse bg-white text-sm" {...props} />
+            </div>
+          ),
+          th: (props) => <th className="border-b border-neutral-200 bg-neutral-50 px-3 py-2 text-left font-semibold text-neutral-900" {...props} />,
+          td: (props) => <td className="border-b border-neutral-100 px-3 py-2 align-top text-neutral-700 last:border-b-0" {...props} />,
+          input: (props) => <input className="mr-2 align-middle accent-blue-600" disabled {...props} />
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
 function DocumentViewer({
   document,
   onClose,
@@ -1470,6 +1524,14 @@ function DocumentViewer({
   onClose: () => void;
   onOpenExternal: (path: string) => void;
 }) {
+  const markdown = Boolean(document && isMarkdownDocument(document.path));
+  const [mode, setMode] = useState<"preview" | "source">("preview");
+
+  useEffect(() => {
+    if (!document) return;
+    setMode(isMarkdownDocument(document.path) ? "preview" : "source");
+  }, [document?.path]);
+
   if (!document) return null;
 
   return (
@@ -1486,7 +1548,25 @@ function DocumentViewer({
             </div>
             <div className="mono mt-1 truncate text-xs text-neutral-400">{document.path}</div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex shrink-0 gap-2">
+            {markdown && (
+              <div className="flex rounded-md border border-neutral-200 bg-neutral-50 p-0.5">
+                <button
+                  className={cn("inline-flex h-8 items-center gap-1.5 rounded px-2.5 text-xs transition-colors", mode === "preview" ? "bg-white text-neutral-950 shadow-sm" : "text-neutral-500 hover:text-neutral-900")}
+                  onClick={() => setMode("preview")}
+                >
+                  <BookOpen className="h-3.5 w-3.5" />
+                  预览
+                </button>
+                <button
+                  className={cn("inline-flex h-8 items-center gap-1.5 rounded px-2.5 text-xs transition-colors", mode === "source" ? "bg-white text-neutral-950 shadow-sm" : "text-neutral-500 hover:text-neutral-900")}
+                  onClick={() => setMode("source")}
+                >
+                  <Braces className="h-3.5 w-3.5" />
+                  原文
+                </button>
+              </div>
+            )}
             <Button variant="outline" onClick={() => onOpenExternal(document.path)}>
               <ExternalLink className="h-4 w-4" />
               系统打开
@@ -1497,9 +1577,13 @@ function DocumentViewer({
           </div>
         </div>
         <div className="flex-1 overflow-auto overscroll-contain bg-neutral-50 p-5">
-          <pre className="mono min-h-full whitespace-pre-wrap break-words rounded-lg border border-neutral-200 bg-white p-4 text-sm leading-6 text-neutral-800">
-            {document.content || "文档为空。"}
-          </pre>
+          {markdown && mode === "preview" ? (
+            <MarkdownDocument content={document.content} />
+          ) : (
+            <pre className="mono min-h-full whitespace-pre-wrap break-words rounded-lg border border-neutral-200 bg-white p-4 text-sm leading-6 text-neutral-800">
+              {document.content || "文档为空。"}
+            </pre>
+          )}
         </div>
       </aside>
     </div>
@@ -1929,7 +2013,6 @@ export function App() {
   const openDocument = async (title: string, path: string) => {
     try {
       const content = await readTextFile(path);
-      setDrawerFolder("");
       setDocument({ title, path, content });
     } catch (error) {
       showToast(error instanceof Error ? error.message : "文档读取失败");
