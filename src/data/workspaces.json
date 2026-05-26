@@ -1,0 +1,59 @@
+{
+  "generatedAt": "sample",
+  "workspacesRoot": "~/ks_project/workspaces",
+  "sourceReposRoot": "~/ks_project/source-repos",
+  "docsRoot": "~/ks_project/docs",
+  "workspaces": [
+    {
+      "name": "Sample Workspace",
+      "folder": "2026-01-01-sample-workspace",
+      "path": "~/ks_project/workspaces/2026-01-01-sample-workspace",
+      "state": "analyzing",
+      "targetBranch": "待确认",
+      "sourceRoot": "~/ks_project/source-repos",
+      "confirmedServices": ["order"],
+      "candidateServices": [],
+      "taskCounts": {
+        "done": 0,
+        "doing": 0,
+        "todo": 3,
+        "blocked": 0
+      },
+      "decisionCount": 0,
+      "gitRows": [
+        {
+          "service": "order",
+          "worktreePath": "~/ks_project/workspaces/2026-01-01-sample-workspace/repos/order",
+          "sourcePath": "~/ks_project/source-repos/order",
+          "worktree": {
+            "exists": false,
+            "branch": "未创建",
+            "dirty": false,
+            "summary": "未创建"
+          },
+          "source": {
+            "exists": false,
+            "branch": "未创建",
+            "dirty": false,
+            "summary": "未创建"
+          }
+        }
+      ],
+      "risks": ["目标分支未确认", "worktree 未创建: order"],
+      "riskCount": 2,
+      "updated": "2026-01-01",
+      "links": {
+        "folder": "~/ks_project/workspaces/2026-01-01-sample-workspace",
+        "workspace": "~/ks_project/workspaces/2026-01-01-sample-workspace/workspace.md",
+        "status": "~/ks_project/workspaces/2026-01-01-sample-workspace/STATUS.md",
+        "services": "~/ks_project/workspaces/2026-01-01-sample-workspace/services.md",
+        "branches": "~/ks_project/workspaces/2026-01-01-sample-workspace/branches.md",
+        "tasks": "~/ks_project/workspaces/2026-01-01-sample-workspace/tasks.md",
+        "delivery": "~/ks_project/workspaces/2026-01-01-sample-workspace/交付记录.md",
+        "handoff": "~/ks_project/workspaces/2026-01-01-sample-workspace/handoff.md",
+        "sql": "~/ks_project/workspaces/2026-01-01-sample-workspace/sql"
+      },
+      "worktreeCommand": "python3 /path/to/ks-project-demand-workspace/scripts/create_worktrees.py --workspace ~/ks_project/workspaces/2026-01-01-sample-workspace --services order --branch <target-branch>"
+    }
+  ]
+}
