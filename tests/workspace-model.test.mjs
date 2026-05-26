@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildWorktreeCommand,
+  branchAlignmentRows,
   createSettingsProfile,
+  hasConfirmedTargetBranch,
   normalizeServiceList,
+  normalizeGitBranch,
   parseSettingsProfile,
   serializeSettingsProfile,
   settingsProfileFilename,
@@ -84,9 +87,42 @@ test("todayString returns an ISO date", () => {
 test("workspaceScore prioritizes risks and dirty worktrees", () => {
   const scored = workspace({
     riskCount: 2,
-    gitRows: [gitRow("order", { worktree: { dirty: true } }), gitRow("store")]
+    gitRows: [gitRow("order", { worktree: { dirty: true } }), gitRow("store", { worktree: { branch: "chen/other" } })]
   });
-  assert.equal(workspaceScore(scored), 23);
+  assert.equal(workspaceScore(scored), 28);
+});
+
+test("normalizeGitBranch strips git status tracking suffixes", () => {
+  assert.equal(normalizeGitBranch("chen/demo...origin/chen/demo [ahead 1]"), "chen/demo");
+  assert.equal(normalizeGitBranch("## main"), "main");
+});
+
+test("hasConfirmedTargetBranch ignores pending branch placeholders", () => {
+  assert.equal(hasConfirmedTargetBranch("chen/demo"), true);
+  assert.equal(hasConfirmedTargetBranch("待确认"), false);
+  assert.equal(hasConfirmedTargetBranch("<target-branch>"), false);
+});
+
+test("branchAlignmentRows returns worktrees that are not on the target branch", () => {
+  const rows = branchAlignmentRows(
+    workspace({
+      targetBranch: "chen/demo",
+      gitRows: [
+        gitRow("order", { worktree: { branch: "chen/demo...origin/chen/demo" }, source: { branch: "main" } }),
+        gitRow("store", { worktree: { branch: "chen/other" }, source: { branch: "master" } }),
+        gitRow("message", { worktree: { exists: false, branch: "未创建" }, source: { branch: "main" } })
+      ]
+    })
+  );
+
+  assert.deepEqual(rows, [
+    {
+      service: "store",
+      expectedBranch: "chen/demo",
+      actualBranch: "chen/other",
+      sourceBranch: "master"
+    }
+  ]);
 });
 
 test("widgetSnapshotFromDashboard summarizes active workspace state", () => {

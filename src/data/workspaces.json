@@ -9,7 +9,7 @@
       "folder": "2026-01-01-sample-workspace",
       "path": "~/ks_project/workspaces/2026-01-01-sample-workspace",
       "state": "analyzing",
-      "targetBranch": "待确认",
+      "targetBranch": "chen/sample-branch",
       "sourceRoot": "~/ks_project/source-repos",
       "confirmedServices": ["order"],
       "candidateServices": [],
@@ -26,21 +26,21 @@
           "worktreePath": "~/ks_project/workspaces/2026-01-01-sample-workspace/repos/order",
           "sourcePath": "~/ks_project/source-repos/order",
           "worktree": {
-            "exists": false,
-            "branch": "未创建",
+            "exists": true,
+            "branch": "chen/old-branch...origin/chen/old-branch",
             "dirty": false,
-            "summary": "未创建"
+            "summary": "干净"
           },
           "source": {
-            "exists": false,
-            "branch": "未创建",
+            "exists": true,
+            "branch": "main...origin/main",
             "dirty": false,
-            "summary": "未创建"
+            "summary": "干净"
           }
         }
       ],
-      "risks": ["目标分支未确认", "worktree 未创建: order", "交付记录待补充"],
-      "riskCount": 3,
+      "risks": ["分支不一致: order(chen/old-branch)", "交付记录待补充"],
+      "riskCount": 2,
       "updated": "2026-01-01",
       "links": {
         "folder": "~/ks_project/workspaces/2026-01-01-sample-workspace",
@@ -55,7 +55,7 @@
         "worktreeScript": "~/ks_project/workspaces/2026-01-01-sample-workspace/scripts/worktree-commands.sh",
         "sql": "~/ks_project/workspaces/2026-01-01-sample-workspace/sql"
       },
-      "worktreeCommand": "# order\ngit -C '~/ks_project/source-repos/order' fetch origin\ngit -C '~/ks_project/source-repos/order' worktree add '~/ks_project/workspaces/2026-01-01-sample-workspace/repos/order' '<target-branch>'"
+      "worktreeCommand": "# order\ngit -C '~/ks_project/source-repos/order' fetch origin\ngit -C '~/ks_project/source-repos/order' worktree add '~/ks_project/workspaces/2026-01-01-sample-workspace/repos/order' 'chen/sample-branch'"
     }
   ]
 }

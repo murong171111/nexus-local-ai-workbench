@@ -16,6 +16,13 @@ export type NexusSettingsProfile = {
   notes: string[];
 };
 
+export type BranchAlignmentRow = {
+  service: string;
+  expectedBranch: string;
+  actualBranch: string;
+  sourceBranch: string;
+};
+
 export function slugify(value: string) {
   return value
     .trim()
@@ -122,8 +129,36 @@ export function buildWorktreeCommand(workspacePath: string, sourceRoot: string, 
     .join("\n\n");
 }
 
+export function normalizeGitBranch(value: string) {
+  return value
+    .replace(/^##\s*/, "")
+    .split("...")[0]
+    .split(" ")[0]
+    .trim();
+}
+
+export function hasConfirmedTargetBranch(value: string) {
+  const branch = normalizeGitBranch(value);
+  return Boolean(branch) && !branch.includes("待确认") && branch !== "<target-branch>";
+}
+
+export function branchAlignmentRows(workspace: Workspace): BranchAlignmentRow[] {
+  if (!hasConfirmedTargetBranch(workspace.targetBranch)) return [];
+
+  const expectedBranch = normalizeGitBranch(workspace.targetBranch);
+  return workspace.gitRows
+    .filter((row) => row.worktree.exists)
+    .map((row) => ({
+      service: row.service,
+      expectedBranch,
+      actualBranch: normalizeGitBranch(row.worktree.branch),
+      sourceBranch: normalizeGitBranch(row.source.branch)
+    }))
+    .filter((row) => row.actualBranch && row.actualBranch !== expectedBranch);
+}
+
 export function workspaceScore(workspace: Workspace) {
-  return workspace.riskCount * 10 + workspace.gitRows.filter((row) => row.worktree.dirty).length * 3;
+  return workspace.riskCount * 10 + branchAlignmentRows(workspace).length * 5 + workspace.gitRows.filter((row) => row.worktree.dirty).length * 3;
 }
 
 export function widgetSnapshotFromDashboard(dashboard: DashboardData, activeFolder: string) {

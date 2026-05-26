@@ -562,6 +562,18 @@ fn collect_workspace(path: &Path, default_source_root: &str) -> WorkspaceData {
     if !dirty_worktrees.is_empty() {
         risks.push(format!("worktree 有未提交改动: {}", dirty_worktrees.join(", ")));
     }
+    let branch_mismatches = git_rows
+        .iter()
+        .filter(|row| {
+            target_branch_confirmed(&target_branch)
+                && row.worktree.exists
+                && normalize_git_branch(&row.worktree.branch) != normalize_git_branch(&target_branch)
+        })
+        .map(|row| format!("{}({})", row.service, normalize_git_branch(&row.worktree.branch)))
+        .collect::<Vec<_>>();
+    if !branch_mismatches.is_empty() {
+        risks.push(format!("分支不一致: {}", branch_mismatches.join(", ")));
+    }
     if !path.join("交付记录.md").exists() {
         risks.push("缺少交付记录".to_string());
     } else if delivery_needs_update(&read_text_lossy(&path.join("交付记录.md"))) {
@@ -815,6 +827,24 @@ fn git_status(path: &Path) -> GitStatus {
             summary: error.to_string(),
         },
     }
+}
+
+fn normalize_git_branch(value: &str) -> String {
+    value
+        .trim_start_matches("## ")
+        .split("...")
+        .next()
+        .unwrap_or(value)
+        .split(' ')
+        .next()
+        .unwrap_or(value)
+        .trim()
+        .to_string()
+}
+
+fn target_branch_confirmed(value: &str) -> bool {
+    let branch = normalize_git_branch(value);
+    !branch.is_empty() && !branch.contains("待确认") && branch != "<target-branch>"
 }
 
 fn generated_at() -> String {
