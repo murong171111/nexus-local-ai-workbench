@@ -1,5 +1,7 @@
 # Nexus
 
+[简体中文](README.zh-CN.md)
+
 Nexus is a local macOS AI development workbench for managing requirement workspaces, git worktrees, service scope, risk signals, delivery records, and Codex-oriented workflows.
 
 It is designed for teams that work across multiple local service repositories and want a durable, document-first workflow around each requirement.
