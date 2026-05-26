@@ -22,6 +22,10 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Branch alignment checks, filters, prompts, and UI warnings for worktrees that do not match the workspace target branch.
 - Manual service input parsing for commas, spaces, new lines, semicolons, and Chinese separators when creating workspaces.
 
+### Fixed
+
+- First-run onboarding now waits for environment health checks, skips itself when the environment is ready, locks background scrolling, and exposes a clear close button.
+
 ## [0.1.0-alpha] - 2026-05-26
 
 ### Added
