@@ -9,6 +9,7 @@ import {
   ChevronDown,
   CircleDot,
   Command,
+  Download,
   ExternalLink,
   FileText,
   FolderOpen,
@@ -21,19 +22,20 @@ import {
   Settings,
   Sparkles,
   Terminal,
+  Upload,
   Workflow,
   X,
   type LucideIcon
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import rawData from "./data/workspaces.json";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { Card } from "./components/ui/card";
 import { Input } from "./components/ui/input";
-import { checkEnvironment, createWorkspace, openExternalUrl, openPath as openPathInDesktop, readTextFile, scanSourceRepos, scanWorkspaces, writeWidgetSnapshot, type EnvironmentHealth, type SourceRepo } from "./desktop";
+import { checkEnvironment, createWorkspace, exportSettingsProfile, openExternalUrl, openPath as openPathInDesktop, readTextFile, scanSourceRepos, scanWorkspaces, writeWidgetSnapshot, type EnvironmentHealth, type SourceRepo } from "./desktop";
 import { cn, riskTone } from "./lib";
-import { buildWorktreeCommand, normalizeServiceList, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceScore } from "./workspace-model";
+import { buildWorktreeCommand, createSettingsProfile, normalizeServiceList, parseSettingsProfile, settingsProfileFilename, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceScore, type NexusSettingsProfile } from "./workspace-model";
 import type { DashboardData, Workspace } from "./types";
 
 const initialData = rawData as DashboardData;
@@ -128,6 +130,18 @@ function browserEnvironmentFallback(settings: NexusSettings, dashboard: Dashboar
     blockers: [],
     warnings: ["浏览器预览模式不会读取真实本机目录，打包应用内会执行原生检查。"]
   };
+}
+
+function downloadSettingsProfile(profile: NexusSettingsProfile) {
+  const blob = new Blob([JSON.stringify(profile, null, 2)], { type: "application/json" });
+  const url = window.URL.createObjectURL(blob);
+  const link = window.document.createElement("a");
+  link.href = url;
+  link.download = settingsProfileFilename(profile.exportedAt);
+  window.document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
 }
 
 function toneForRisk(count: number) {
@@ -1025,6 +1039,8 @@ function SettingsPanel({
   onChange,
   onClose,
   onSave,
+  onExportSettings,
+  onImportSettings,
   onOpenPath,
   onScanSourceRepos,
   onCheckEnvironment
@@ -1037,10 +1053,14 @@ function SettingsPanel({
   onChange: (settings: NexusSettings) => void;
   onClose: () => void;
   onSave: () => void;
+  onExportSettings: () => void;
+  onImportSettings: (content: string) => void;
   onOpenPath: (path: string) => void;
   onScanSourceRepos: () => void;
   onCheckEnvironment: () => void;
 }) {
+  const importInputRef = useRef<HTMLInputElement>(null);
+
   if (!open) return null;
 
   const update = (key: keyof NexusSettings, value: string) => {
@@ -1048,6 +1068,12 @@ function SettingsPanel({
       ...settings,
       [key]: key === "refreshIntervalSeconds" ? Math.max(3, Number(value) || 10) : value
     });
+  };
+
+  const importFile = async (file?: File) => {
+    if (!file) return;
+    onImportSettings(await file.text());
+    if (importInputRef.current) importInputRef.current.value = "";
   };
 
   return (
@@ -1115,6 +1141,37 @@ function SettingsPanel({
                     onChange={(event) => update("refreshIntervalSeconds", event.target.value)}
                   />
                 </label>
+              </div>
+            </Card>
+
+            <Card className="p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="text-sm font-medium text-neutral-950">团队配置 / Team profile</div>
+                  <p className="mt-2 text-sm leading-6 text-neutral-500">
+                    导出一份不包含工作区内容的 JSON 配置，只保存路径约定、Codex URL 和刷新间隔；导入后会保存为本机配置。
+                  </p>
+                </div>
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <Button variant="outline" onClick={onExportSettings}>
+                  <Download className="h-4 w-4" />
+                  导出配置
+                </Button>
+                <Button variant="outline" onClick={() => importInputRef.current?.click()}>
+                  <Upload className="h-4 w-4" />
+                  导入配置
+                </Button>
+                <input
+                  ref={importInputRef}
+                  type="file"
+                  accept="application/json,.json"
+                  className="hidden"
+                  onChange={(event) => void importFile(event.currentTarget.files?.[0])}
+                />
+              </div>
+              <div className="mt-3 rounded-md bg-neutral-50 px-3 py-2 text-xs leading-5 text-neutral-500">
+                分享给别人前建议把路径改成团队约定写法，例如 `~/ks_project/workspaces`，对方导入后仍可按自己的机器目录再调整。
               </div>
             </Card>
 
@@ -1695,6 +1752,34 @@ export function App() {
     void refreshEnvironmentHealth();
   };
 
+  const handleExportSettings = async () => {
+    const profile = createSettingsProfile(settings);
+    try {
+      const exported = await exportSettingsProfile(profile);
+      if (exported?.path) {
+        showToast(`已导出配置：${exported.path}`);
+        return;
+      }
+      downloadSettingsProfile(profile);
+      showToast("已下载 Nexus 配置文件");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "导出配置失败");
+    }
+  };
+
+  const handleImportSettings = (content: string) => {
+    try {
+      const imported = parseSettingsProfile(content);
+      setSettings(imported);
+      window.localStorage.setItem(settingsStorageKey, JSON.stringify(imported, null, 2));
+      window.localStorage.setItem(onboardingStorageKey, "true");
+      setOnboardingOpen(false);
+      showToast("已导入并保存团队配置");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "导入配置失败");
+    }
+  };
+
   const dismissOnboarding = () => {
     window.localStorage.setItem(onboardingStorageKey, "true");
     setOnboardingOpen(false);
@@ -1898,6 +1983,8 @@ export function App() {
         onChange={setSettings}
         onClose={() => setSettingsOpen(false)}
         onSave={saveSettings}
+        onExportSettings={handleExportSettings}
+        onImportSettings={handleImportSettings}
         onOpenPath={openConfiguredPath}
         onScanSourceRepos={handleScanSourceRepos}
         onCheckEnvironment={handleCheckEnvironment}

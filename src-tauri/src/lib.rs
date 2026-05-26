@@ -165,6 +165,32 @@ struct WidgetSnapshotResponse {
     path: String,
 }
 
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SettingsProfile {
+    schema_version: u8,
+    app: String,
+    exported_at: String,
+    settings: SettingsProfileSettings,
+    notes: Vec<String>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SettingsProfileSettings {
+    workspaces_root: String,
+    source_repos_root: String,
+    docs_root: String,
+    codex_url: String,
+    refresh_interval_seconds: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportSettingsProfileResponse {
+    path: String,
+}
+
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
     open_with_system(&url)
@@ -324,6 +350,25 @@ fn write_widget_snapshot(app: tauri::AppHandle, snapshot: WidgetSnapshot) -> Res
     fs::write(&snapshot_path, payload).map_err(|error| error.to_string())?;
     Ok(WidgetSnapshotResponse {
         path: snapshot_path.to_string_lossy().to_string(),
+    })
+}
+
+#[tauri::command]
+fn export_settings_profile(app: tauri::AppHandle, profile: SettingsProfile) -> Result<ExportSettingsProfileResponse, String> {
+    if profile.app != "Nexus" || profile.schema_version != 1 {
+        return Err("unsupported Nexus settings profile".to_string());
+    }
+
+    let app_data_dir = app.path().app_data_dir().map_err(|error| error.to_string())?;
+    let profile_dir = app_data_dir.join("profiles");
+    fs::create_dir_all(&profile_dir).map_err(|error| error.to_string())?;
+    let export_date = profile.exported_at.chars().take(10).collect::<String>();
+    let filename = format!("nexus-settings-profile-{}.json", sanitize_filename(&export_date));
+    let profile_path = profile_dir.join(filename);
+    let payload = serde_json::to_string_pretty(&profile).map_err(|error| error.to_string())?;
+    fs::write(&profile_path, payload).map_err(|error| error.to_string())?;
+    Ok(ExportSettingsProfileResponse {
+        path: profile_path.to_string_lossy().to_string(),
     })
 }
 
@@ -899,6 +944,24 @@ fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
+fn sanitize_filename(value: &str) -> String {
+    let sanitized = value
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_') {
+                character
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+    if sanitized.is_empty() {
+        "export".to_string()
+    } else {
+        sanitized
+    }
+}
+
 fn update_index(root: &Path, name: &str, folder: &str, target_branch: &str, services: &[String]) -> Result<(), String> {
     let index = root.join("INDEX.md");
     let mut content = fs::read_to_string(&index).unwrap_or_else(|_| {
@@ -936,6 +999,7 @@ pub fn run() {
             scan_source_repos,
             check_environment,
             write_widget_snapshot,
+            export_settings_profile,
             create_workspace
         ])
         .run(tauri::generate_context!())

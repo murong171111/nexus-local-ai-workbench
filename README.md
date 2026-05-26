@@ -13,6 +13,7 @@ It is designed for teams that work across multiple local service repositories an
 - In-app workspace creation using the `ks-project-demand-workspace` layout.
 - In-app Markdown document preview for status, service scope, branch notes, tasks, and delivery records.
 - Local path settings for workspaces, source repositories, and delivery document roots.
+- Exportable and importable team settings profile for sharing local path conventions.
 - First-run onboarding for configuring local workspace, source repository, and delivery document paths.
 - Environment health checks for configured directories and Git availability.
 - Native workspace scanning from the configured paths; no local Python script is required for the packaged app.
@@ -37,6 +38,8 @@ On first launch:
 3. Click `Save`.
 4. Click `Scan source repositories` to populate the service picker.
 5. Click the refresh button in the top bar.
+
+To share Nexus setup with another teammate, open `Settings` and use `Export configuration`. The generated JSON contains only path conventions, the Codex URL scheme, and refresh interval. Teammates can use `Import configuration`, then adjust paths for their own machine if needed.
 
 ## Workspace Layout
 

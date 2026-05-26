@@ -1,5 +1,21 @@
 import type { DashboardData, Workspace } from "./types";
 
+export type ShareableNexusSettings = {
+  workspacesRoot: string;
+  sourceReposRoot: string;
+  docsRoot: string;
+  codexUrl: string;
+  refreshIntervalSeconds: number;
+};
+
+export type NexusSettingsProfile = {
+  schemaVersion: 1;
+  app: "Nexus";
+  exportedAt: string;
+  settings: ShareableNexusSettings;
+  notes: string[];
+};
+
 export function slugify(value: string) {
   return value
     .trim()
@@ -11,6 +27,70 @@ export function slugify(value: string) {
 
 export function todayString(date = new Date()) {
   return date.toISOString().slice(0, 10);
+}
+
+export function settingsProfileFilename(exportedAt = new Date().toISOString()) {
+  return `nexus-settings-profile-${exportedAt.slice(0, 10)}.json`;
+}
+
+export function createSettingsProfile(settings: ShareableNexusSettings, date = new Date()): NexusSettingsProfile {
+  return {
+    schemaVersion: 1,
+    app: "Nexus",
+    exportedAt: date.toISOString(),
+    settings: normalizeSettings(settings),
+    notes: [
+      "This file stores local Nexus path conventions for team sharing.",
+      "Review paths after importing because every machine can use different local roots."
+    ]
+  };
+}
+
+export function serializeSettingsProfile(settings: ShareableNexusSettings, date = new Date()) {
+  return JSON.stringify(createSettingsProfile(settings, date), null, 2);
+}
+
+export function parseSettingsProfile(content: string): ShareableNexusSettings {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error("配置文件不是有效 JSON");
+  }
+
+  if (!isRecord(parsed)) throw new Error("配置文件格式不正确");
+  if (parsed.app !== "Nexus") throw new Error("配置文件不是 Nexus Profile");
+  if (parsed.schemaVersion !== 1) throw new Error("暂不支持该配置版本");
+  if (!isRecord(parsed.settings)) throw new Error("配置文件缺少 settings");
+
+  return normalizeSettings({
+    workspacesRoot: requiredString(parsed.settings.workspacesRoot, "workspacesRoot"),
+    sourceReposRoot: requiredString(parsed.settings.sourceReposRoot, "sourceReposRoot"),
+    docsRoot: requiredString(parsed.settings.docsRoot, "docsRoot"),
+    codexUrl: requiredString(parsed.settings.codexUrl, "codexUrl"),
+    refreshIntervalSeconds: Number(parsed.settings.refreshIntervalSeconds)
+  });
+}
+
+function normalizeSettings(settings: ShareableNexusSettings): ShareableNexusSettings {
+  return {
+    workspacesRoot: settings.workspacesRoot.trim(),
+    sourceReposRoot: settings.sourceReposRoot.trim(),
+    docsRoot: settings.docsRoot.trim(),
+    codexUrl: settings.codexUrl.trim() || "codex://",
+    refreshIntervalSeconds: Math.max(3, Number(settings.refreshIntervalSeconds) || 10)
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function requiredString(value: unknown, label: string) {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`配置文件缺少 ${label}`);
+  }
+  return value;
 }
 
 export function workspaceFolderFromName(name: string, date = new Date()) {

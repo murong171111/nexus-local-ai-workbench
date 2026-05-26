@@ -1,6 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildWorktreeCommand, normalizeServiceList, slugify, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceScore } from "../.tmp-tests/workspace-model.js";
+import {
+  buildWorktreeCommand,
+  createSettingsProfile,
+  normalizeServiceList,
+  parseSettingsProfile,
+  serializeSettingsProfile,
+  settingsProfileFilename,
+  slugify,
+  todayString,
+  widgetSnapshotFromDashboard,
+  workspaceFolderFromName,
+  workspaceScore
+} from "../.tmp-tests/workspace-model.js";
 
 function gitRow(service, overrides = {}) {
   return {
@@ -107,4 +119,53 @@ test("widgetSnapshotFromDashboard summarizes active workspace state", () => {
   assert.deepEqual(snapshot.topRisks, ["Risky Workspace: branch mismatch", "Risky Workspace: missing delivery note"]);
   assert.equal(snapshot.deepLink, "nexus://workspace/2026-01-01-risky");
   assert.match(snapshot.generatedAt, /^\d{4}-\d{2}-\d{2}T/);
+});
+
+test("createSettingsProfile serializes shareable Nexus path settings", () => {
+  const settings = {
+    workspacesRoot: " ~/ks_project/workspaces ",
+    sourceReposRoot: "~/ks_project/source-repos",
+    docsRoot: "~/ks_project/docs",
+    codexUrl: "",
+    refreshIntervalSeconds: 1
+  };
+  const date = new Date("2026-05-26T08:30:00.000Z");
+
+  const profile = createSettingsProfile(settings, date);
+
+  assert.equal(profile.app, "Nexus");
+  assert.equal(profile.schemaVersion, 1);
+  assert.equal(profile.exportedAt, "2026-05-26T08:30:00.000Z");
+  assert.equal(profile.settings.workspacesRoot, "~/ks_project/workspaces");
+  assert.equal(profile.settings.codexUrl, "codex://");
+  assert.equal(profile.settings.refreshIntervalSeconds, 3);
+});
+
+test("parseSettingsProfile validates and normalizes imported settings", () => {
+  const serialized = serializeSettingsProfile(
+    {
+      workspacesRoot: "~/team/workspaces",
+      sourceReposRoot: "~/team/source-repos",
+      docsRoot: "~/team/docs",
+      codexUrl: "codex://",
+      refreshIntervalSeconds: 15
+    },
+    new Date("2026-05-26T08:30:00.000Z")
+  );
+
+  assert.deepEqual(parseSettingsProfile(serialized), {
+    workspacesRoot: "~/team/workspaces",
+    sourceReposRoot: "~/team/source-repos",
+    docsRoot: "~/team/docs",
+    codexUrl: "codex://",
+    refreshIntervalSeconds: 15
+  });
+});
+
+test("parseSettingsProfile rejects unrelated JSON files", () => {
+  assert.throws(() => parseSettingsProfile(JSON.stringify({ app: "Other", schemaVersion: 1, settings: {} })), /不是 Nexus Profile/);
+});
+
+test("settingsProfileFilename uses the export date", () => {
+  assert.equal(settingsProfileFilename("2026-05-26T08:30:00.000Z"), "nexus-settings-profile-2026-05-26.json");
 });
