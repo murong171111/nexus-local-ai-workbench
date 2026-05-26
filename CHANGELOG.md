@@ -15,6 +15,9 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - First-run onboarding for local path setup.
 - Native source repository scanning for service selection and git state awareness.
 - Service picker in the create-workspace flow, backed by scanned local repositories.
+- Native environment health checks for configured paths and Git availability.
+- Workspace bootstrap reports and reviewable worktree command scripts.
+- Delivery-record completeness warnings when records still contain placeholder content.
 
 ## [0.1.0-alpha] - 2026-05-26
 

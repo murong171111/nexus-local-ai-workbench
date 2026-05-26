@@ -17,7 +17,7 @@ This roadmap describes the next product and engineering steps for Nexus. It is i
 - Publish both `aarch64` and `x86_64` DMG assets, or ship a Universal Binary.
 - Add Tauri updater support backed by GitHub Releases.
 - Add release notes automation using `CHANGELOG.md`.
-- Expand first-run onboarding with directory existence checks and team profile import.
+- Expand first-run onboarding with team profile import and optional demo workspace creation.
 - Add settings export/import for team sharing.
 
 ## 0.3.x: Native Workspace Operations

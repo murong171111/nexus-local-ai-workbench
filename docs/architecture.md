@@ -5,7 +5,7 @@ Nexus is split into four layers.
 ## Desktop Shell
 
 - Tauri v2 packages the macOS app.
-- Rust commands provide native file, path, git status, workspace creation, and widget snapshot capabilities.
+- Rust commands provide native file, path, git status, environment health, workspace creation, source repository scanning, and widget snapshot capabilities.
 - The app registers the `nexus://` URL scheme for deep links.
 
 ## Frontend
@@ -41,6 +41,7 @@ Source repositories are read from a separate configured root. Nexus treats sourc
 
 - Read-only operations: scan Markdown files, inspect git status, preview documents.
 - Confirmed local writes: create workspace folders, standard documents, and widget snapshots.
+- Semi-automated worktree setup: Nexus generates reviewable shell commands, but does not execute them automatically.
 - Future dangerous operations such as branch deletion, worktree removal, reset, or clean should require explicit confirmation.
 
 ## Verification And Release Automation

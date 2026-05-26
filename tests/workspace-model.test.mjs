@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { normalizeServiceList, slugify, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceScore } from "../.tmp-tests/workspace-model.js";
+import { buildWorktreeCommand, normalizeServiceList, slugify, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceScore } from "../.tmp-tests/workspace-model.js";
 
 function gitRow(service, overrides = {}) {
   return {
@@ -57,6 +57,12 @@ test("workspaceFolderFromName prefixes a stable date", () => {
 
 test("normalizeServiceList trims, deduplicates, and sorts service names", () => {
   assert.deepEqual(normalizeServiceList([" order ", "store", "order", "", "cashier"]), ["cashier", "order", "store"]);
+});
+
+test("buildWorktreeCommand creates reviewable git worktree commands", () => {
+  const command = buildWorktreeCommand("/workspace/demo", "/source", ["order"], "chen/demo");
+  assert.match(command, /git -C '\/source\/order' fetch origin/);
+  assert.match(command, /git -C '\/source\/order' worktree add '\/workspace\/demo\/repos\/order' 'chen\/demo'/);
 });
 
 test("todayString returns an ISO date", () => {
