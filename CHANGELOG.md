@@ -25,6 +25,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 ### Fixed
 
 - First-run onboarding now waits for environment health checks, skips itself when the environment is ready, locks background scrolling, and exposes a clear close button.
+- Document preview now opens above workspace details and closes the details drawer to avoid stacked side panels.
 
 ## [0.1.0-alpha] - 2026-05-26
 
