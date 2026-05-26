@@ -1473,9 +1473,9 @@ function DocumentViewer({
   if (!document) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-neutral-950/12 backdrop-blur-[2px]" onMouseDown={onClose}>
+    <div className="fixed inset-0 bg-neutral-950/18 backdrop-blur-[3px]" style={{ zIndex: 1300 }} onMouseDown={onClose}>
       <aside
-        className="ml-auto flex h-full w-full max-w-3xl flex-col border-l border-neutral-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.16)]"
+        className="ml-auto flex h-full w-full max-w-4xl flex-col border-l border-neutral-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.18)]"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4 border-b border-neutral-200 px-5 py-4">
@@ -1496,8 +1496,8 @@ function DocumentViewer({
             </Button>
           </div>
         </div>
-        <div className="flex-1 overflow-auto bg-neutral-50 p-5">
-          <pre className="mono min-h-full whitespace-pre-wrap rounded-lg border border-neutral-200 bg-white p-4 text-sm leading-6 text-neutral-800">
+        <div className="flex-1 overflow-auto overscroll-contain bg-neutral-50 p-5">
+          <pre className="mono min-h-full whitespace-pre-wrap break-words rounded-lg border border-neutral-200 bg-white p-4 text-sm leading-6 text-neutral-800">
             {document.content || "文档为空。"}
           </pre>
         </div>
@@ -1929,6 +1929,7 @@ export function App() {
   const openDocument = async (title: string, path: string) => {
     try {
       const content = await readTextFile(path);
+      setDrawerFolder("");
       setDocument({ title, path, content });
     } catch (error) {
       showToast(error instanceof Error ? error.message : "文档读取失败");
