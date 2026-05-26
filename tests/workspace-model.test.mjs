@@ -7,6 +7,7 @@ import {
   hasConfirmedTargetBranch,
   normalizeServiceList,
   normalizeGitBranch,
+  parseServiceInput,
   parseSettingsProfile,
   serializeSettingsProfile,
   settingsProfileFilename,
@@ -72,6 +73,21 @@ test("workspaceFolderFromName prefixes a stable date", () => {
 
 test("normalizeServiceList trims, deduplicates, and sorts service names", () => {
   assert.deepEqual(normalizeServiceList([" order ", "store", "order", "", "cashier"]), ["cashier", "order", "store"]);
+});
+
+test("parseServiceInput accepts common Chinese and English separators", () => {
+  assert.deepEqual(parseServiceInput("order、store-cashier commodity\nmanager；coupon,kspay"), [
+    "order",
+    "store-cashier",
+    "commodity",
+    "manager",
+    "coupon",
+    "kspay"
+  ]);
+});
+
+test("normalizeServiceList parses compound manual service input", () => {
+  assert.deepEqual(normalizeServiceList(["order、store-cashier、commodity", "order"]), ["commodity", "order", "store-cashier"]);
 });
 
 test("buildWorktreeCommand creates reviewable git worktree commands", () => {

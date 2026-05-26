@@ -20,6 +20,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Delivery-record completeness warnings when records still contain placeholder content.
 - Exportable and importable Nexus team settings profiles for sharing path conventions.
 - Branch alignment checks, filters, prompts, and UI warnings for worktrees that do not match the workspace target branch.
+- Manual service input parsing for commas, spaces, new lines, semicolons, and Chinese separators when creating workspaces.
 
 ## [0.1.0-alpha] - 2026-05-26
 
