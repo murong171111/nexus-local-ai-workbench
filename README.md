@@ -70,7 +70,7 @@ The `repos/<service>` directories are intended to be git worktrees for isolated 
 
 ## Creating Workspaces
 
-Use the `New Workspace` action in the left rail. Nexus can scan the configured source repository root and lets you select services from that local list. You can still type service names manually when a repository is not present yet.
+Use the `New Workspace` action in the left rail. Nexus can scan the configured source repository root and lets you select services from that local list. You can still type service names manually when a repository is not present yet. Manual service input supports commas, spaces, new lines, semicolons, and Chinese separators such as `、` and `，`.
 
 Creating a workspace writes the standard Markdown document set and records selected services in `services.md` and `branches.md`. It also generates `bootstrap-report.md` and `scripts/worktree-commands.sh`.
 

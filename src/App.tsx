@@ -35,7 +35,7 @@ import { Card } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { checkEnvironment, createWorkspace, exportSettingsProfile, openExternalUrl, openPath as openPathInDesktop, readTextFile, scanSourceRepos, scanWorkspaces, writeWidgetSnapshot, type EnvironmentHealth, type SourceRepo } from "./desktop";
 import { cn, riskTone } from "./lib";
-import { branchAlignmentRows, buildWorktreeCommand, createSettingsProfile, normalizeServiceList, parseSettingsProfile, settingsProfileFilename, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceScore, type NexusSettingsProfile } from "./workspace-model";
+import { branchAlignmentRows, buildWorktreeCommand, createSettingsProfile, normalizeServiceList, parseServiceInput, parseSettingsProfile, settingsProfileFilename, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceScore, type NexusSettingsProfile } from "./workspace-model";
 import type { DashboardData, Workspace } from "./types";
 
 const initialData = rawData as DashboardData;
@@ -1522,10 +1522,7 @@ function CreateWorkspacePanel({
   const folder = workspaceFolderFromName(name);
   if (!open) return null;
 
-  const manualServices = servicesText
-    .split(/[,\n，]/)
-    .map((service) => service.trim())
-    .filter(Boolean);
+  const manualServices = parseServiceInput(servicesText);
   const services = normalizeServiceList([...selectedServices, ...manualServices]);
   const serviceMatches = sourceRepos
     .filter((repo) => repo.name.toLowerCase().includes(serviceQuery.trim().toLowerCase()))
@@ -1614,7 +1611,7 @@ function CreateWorkspacePanel({
                       </div>
                     )}
                   </div>
-                  <Input value={servicesText} onChange={(event) => setServicesText(event.target.value)} placeholder="手动补充：order, store-cashier, kspay" />
+                  <Input value={servicesText} onChange={(event) => setServicesText(event.target.value)} placeholder="手动补充：order、store-cashier commodity" />
                   {services.length > 0 && (
                     <div className="flex flex-wrap gap-2">
                       {services.map((service) => (

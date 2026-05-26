@@ -72,7 +72,7 @@ Nexus 默认识别每个需求工作区下的 Markdown 文档和本地 worktree 
 
 ## 创建工作区
 
-点击左侧 `New Workspace` 新建需求工作区。Nexus 会基于已配置的源仓库目录扫描服务列表，新建时可以直接勾选涉及服务；如果某个服务还不在源仓库目录中，也可以手动输入。
+点击左侧 `New Workspace` 新建需求工作区。Nexus 会基于已配置的源仓库目录扫描服务列表，新建时可以直接勾选涉及服务；如果某个服务还不在源仓库目录中，也可以手动输入。手动输入支持逗号、空格、换行、分号，以及 `、`、`，` 等中文分隔符。
 
 创建动作会写入标准 Markdown 文档，并把选中的服务记录到 `services.md` 和 `branches.md`。同时会生成 `bootstrap-report.md` 和 `scripts/worktree-commands.sh`。
 

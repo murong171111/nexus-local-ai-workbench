@@ -104,8 +104,15 @@ export function workspaceFolderFromName(name: string, date = new Date()) {
   return `${todayString(date)}-${slugify(name) || "workspace"}`;
 }
 
+export function parseServiceInput(value: string) {
+  return value
+    .split(/[,\n，、;；\s]+/u)
+    .map((service) => service.trim())
+    .filter(Boolean);
+}
+
 export function normalizeServiceList(values: string[]) {
-  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort((left, right) =>
+  return Array.from(new Set(values.flatMap(parseServiceInput))).sort((left, right) =>
     left.localeCompare(right)
   );
 }
