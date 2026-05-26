@@ -34,6 +34,9 @@ The app is designed as a native local tool, not a browser-only dashboard.
 - Added UI actions to open Codex from the workbench.
 - Added "copy instruction and open Codex" flow for a workspace.
 - Added native workspace creation based on the `ks-project-demand-workspace` standard layout.
+- Added native source repository scanning for service selection.
+- Added first-run onboarding for local path setup.
+- Added service picker to the workspace creation flow.
 - Added in-app Markdown document preview for workspace documents.
 - Moved Settings to the lower-left app rail and kept it focused on local path customization for sharing.
 - Added widget snapshot generation through the native `write_widget_snapshot` command.

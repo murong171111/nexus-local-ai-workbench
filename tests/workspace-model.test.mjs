@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { slugify, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceScore } from "../.tmp-tests/workspace-model.js";
+import { normalizeServiceList, slugify, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceScore } from "../.tmp-tests/workspace-model.js";
 
 function gitRow(service, overrides = {}) {
   return {
@@ -53,6 +53,10 @@ test("slugify keeps readable Chinese and normalizes separators", () => {
 test("workspaceFolderFromName prefixes a stable date", () => {
   const date = new Date("2026-05-26T04:00:00.000Z");
   assert.equal(workspaceFolderFromName("示例需求", date), "2026-05-26-示例需求");
+});
+
+test("normalizeServiceList trims, deduplicates, and sorts service names", () => {
+  assert.deepEqual(normalizeServiceList([" order ", "store", "order", "", "cashier"]), ["cashier", "order", "store"]);
 });
 
 test("todayString returns an ISO date", () => {

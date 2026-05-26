@@ -35,6 +35,19 @@ export type ScanWorkspacesPayload = {
   docsRoot: string;
 };
 
+export type SourceRepo = {
+  name: string;
+  path: string;
+  isGit: boolean;
+  branch: string;
+  dirty: boolean;
+  summary: string;
+};
+
+export type ScanSourceReposPayload = {
+  sourceReposRoot: string;
+};
+
 export function isDesktopApp() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
@@ -84,6 +97,15 @@ export async function scanWorkspaces(payload: ScanWorkspacesPayload) {
       workspaces_root: payload.workspacesRoot,
       source_repos_root: payload.sourceReposRoot,
       docs_root: payload.docsRoot
+    }
+  });
+}
+
+export async function scanSourceRepos(payload: ScanSourceReposPayload) {
+  if (!isDesktopApp()) return null;
+  return tauriInvoke<SourceRepo[]>("scan_source_repos", {
+    request: {
+      source_repos_root: payload.sourceReposRoot
     }
   });
 }
