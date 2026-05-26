@@ -1299,6 +1299,7 @@ function OnboardingPanel({
   environmentHealth,
   sourceScanning,
   onChange,
+  onClose,
   onSave,
   onSkip,
   onOpenPath,
@@ -1311,6 +1312,7 @@ function OnboardingPanel({
   environmentHealth?: EnvironmentHealth;
   sourceScanning: boolean;
   onChange: (settings: NexusSettings) => void;
+  onClose: () => void;
   onSave: () => void;
   onSkip: () => void;
   onOpenPath: (path: string) => void;
@@ -1333,8 +1335,15 @@ function OnboardingPanel({
   ];
 
   return (
-    <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-neutral-950/16 px-4 backdrop-blur-[2px]">
-      <section className="grid max-h-[92vh] w-full max-w-5xl grid-cols-1 overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.16)] lg:grid-cols-[320px_minmax(0,1fr)]">
+    <div className="fixed inset-0 z-[1200] flex items-center justify-center overflow-hidden overscroll-contain bg-neutral-950/16 px-4 backdrop-blur-[2px]">
+      <section className="relative grid max-h-[92vh] w-full max-w-5xl grid-cols-1 overflow-hidden overscroll-contain rounded-xl border border-neutral-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.16)] lg:grid-cols-[320px_minmax(0,1fr)]">
+        <button
+          className="absolute right-3 top-3 z-10 rounded-md border border-neutral-200 bg-white p-1.5 text-neutral-500 hover:bg-neutral-50"
+          onClick={onClose}
+          title="关闭初始化 / Close onboarding"
+        >
+          <X className="h-4 w-4" />
+        </button>
         <div className="border-b border-neutral-200 bg-neutral-50 px-5 py-5 lg:border-b-0 lg:border-r">
           <div className="flex items-center gap-2">
             <Command className="h-4 w-4 text-blue-600" />
@@ -1356,7 +1365,7 @@ function OnboardingPanel({
           </div>
         </div>
 
-        <div className="overflow-y-auto px-5 py-5">
+        <div className="overflow-y-auto overscroll-contain px-5 py-5">
           <div className="grid gap-4">
             <Card className="p-4">
               <div className="text-sm font-medium text-neutral-950">本地路径</div>
@@ -1652,7 +1661,8 @@ export function App() {
   const [active, setActive] = useState(initialData.workspaces[0]?.folder ?? "");
   const [commandOpen, setCommandOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [onboardingOpen, setOnboardingOpen] = useState(() => shouldShowOnboarding());
+  const [onboardingRequested, setOnboardingRequested] = useState(() => shouldShowOnboarding());
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [refreshEnabled, setRefreshEnabled] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -1663,6 +1673,7 @@ export function App() {
   const [sourceScanning, setSourceScanning] = useState(false);
   const [environmentHealth, setEnvironmentHealth] = useState<EnvironmentHealth>(() => browserEnvironmentFallback(settings, initialData, []));
   const [environmentChecking, setEnvironmentChecking] = useState(false);
+  const [environmentChecked, setEnvironmentChecked] = useState(false);
 
   const refreshData = useCallback(async () => {
     const scanned = await scanWorkspaces({
@@ -1721,9 +1732,38 @@ export function App() {
       setEnvironmentHealth(fallback);
       return fallback;
     } finally {
+      setEnvironmentChecked(true);
       setEnvironmentChecking(false);
     }
   }, [dashboard, settings, sourceRepos]);
+
+  useEffect(() => {
+    const hasModal = commandOpen || settingsOpen || onboardingOpen || createOpen || Boolean(drawerFolder) || Boolean(document);
+    if (!hasModal) return;
+
+    const previousBodyOverflow = window.document.body.style.overflow;
+    const previousHtmlOverscroll = window.document.documentElement.style.overscrollBehavior;
+    window.document.body.style.overflow = "hidden";
+    window.document.documentElement.style.overscrollBehavior = "none";
+
+    return () => {
+      window.document.body.style.overflow = previousBodyOverflow;
+      window.document.documentElement.style.overscrollBehavior = previousHtmlOverscroll;
+    };
+  }, [commandOpen, createOpen, document, drawerFolder, onboardingOpen, settingsOpen]);
+
+  useEffect(() => {
+    if (!onboardingRequested || !environmentChecked || environmentChecking) return;
+
+    if (environmentHealth.ready) {
+      window.localStorage.setItem(onboardingStorageKey, "true");
+      setOnboardingRequested(false);
+      setOnboardingOpen(false);
+      return;
+    }
+
+    setOnboardingOpen(true);
+  }, [environmentChecked, environmentChecking, environmentHealth.ready, onboardingRequested]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1829,6 +1869,7 @@ export function App() {
   const saveSettings = () => {
     window.localStorage.setItem(settingsStorageKey, JSON.stringify(settings, null, 2));
     window.localStorage.setItem(onboardingStorageKey, "true");
+    setOnboardingRequested(false);
     setOnboardingOpen(false);
     showToast("已保存 Nexus 本机配置");
     void refreshData();
@@ -1857,6 +1898,7 @@ export function App() {
       setSettings(imported);
       window.localStorage.setItem(settingsStorageKey, JSON.stringify(imported, null, 2));
       window.localStorage.setItem(onboardingStorageKey, "true");
+      setOnboardingRequested(false);
       setOnboardingOpen(false);
       showToast("已导入并保存团队配置");
     } catch (error) {
@@ -1866,6 +1908,7 @@ export function App() {
 
   const dismissOnboarding = () => {
     window.localStorage.setItem(onboardingStorageKey, "true");
+    setOnboardingRequested(false);
     setOnboardingOpen(false);
   };
 
@@ -2081,6 +2124,7 @@ export function App() {
         environmentHealth={environmentHealth}
         sourceScanning={sourceScanning}
         onChange={setSettings}
+        onClose={dismissOnboarding}
         onSave={saveSettings}
         onSkip={dismissOnboarding}
         onOpenPath={openConfiguredPath}
