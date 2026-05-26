@@ -2,7 +2,7 @@
 name = "nexus"
 version = "0.1.0"
 description = "Nexus"
-authors = ["chenjing"]
+authors = ["Nexus contributors"]
 edition = "2021"
 
 [lib]

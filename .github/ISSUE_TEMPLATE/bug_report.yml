@@ -1,0 +1,59 @@
+name: Bug report
+description: Report a reproducible Nexus problem
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem. Please remove private workspace names, local paths, tokens, and business data before submitting.
+  - type: input
+    id: version
+    attributes:
+      label: Nexus version
+      placeholder: "0.1.0-alpha"
+    validations:
+      required: true
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Runtime
+      options:
+        - macOS app
+        - Web dev server
+        - Widget
+        - Build or release workflow
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the visible behavior and expected behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Open Nexus
+        2. Configure workspaces root
+        3. Click refresh
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Paste sanitized logs or attach screenshots.
+      render: text
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: |
+        macOS:
+        Node:
+        Rust:
+        Install type: DMG / local build

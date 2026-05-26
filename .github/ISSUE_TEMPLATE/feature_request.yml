@@ -1,0 +1,36 @@
+name: Feature request
+description: Suggest a Nexus improvement
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What workflow pain should Nexus solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the ideal behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Workflow context
+      description: Which part does this affect?
+      placeholder: workspace / git worktree / services / risk analysis / Codex workflow / widget / release packaging
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Local-first safety
+      options:
+        - label: This feature can work without sending private workspace data to a remote service.
+        - label: If remote access is needed, the data flow can be documented clearly.

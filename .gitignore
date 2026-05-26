@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .vite/
+.tmp-tests/
 src-tauri/target/
 src-tauri/gen/
 src-tauri/icons/android/

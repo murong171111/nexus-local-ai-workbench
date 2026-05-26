@@ -45,6 +45,8 @@ The app is designed as a native local tool, not a browser-only dashboard.
 - Added temporary app icon at `src-tauri/icons/icon.png`.
 - Added repeatable icon generation script at `scripts/generate-icon.mjs`; `npm run icon` also runs `tauri icon` to generate `icon.icns`.
 - Built the macOS `.app` and `.dmg` successfully.
+- Added public maintenance docs, issue templates, pull request template, CI workflow, release workflow, and a lightweight Node.js test runner.
+- Added a stricter Tauri content security policy for production builds.
 
 ## Build Outputs
 
@@ -63,14 +65,12 @@ The app should keep three permission levels:
 
 ## Next Engineering Steps
 
-1. Install Rust toolchain.
-2. Run `npm run tauri:dev`.
-3. Validate native commands from the app window.
-4. Add SQLite state index.
-5. Add menu bar status entry.
-6. Add SQLite state index if the scanned dataset becomes large.
-7. Package the WidgetKit extension with a full Xcode target.
-8. Add signed and notarized release automation.
+1. Add Apple Developer signing and notarization.
+2. Add Tauri updater support backed by signed GitHub Releases.
+3. Package the WidgetKit extension with a full Xcode target.
+4. Split large frontend and Rust files into feature modules.
+5. Add SQLite state index if the scanned dataset becomes large.
+6. Add menu bar status entry.
 
 ## Local Build Notes
 
@@ -86,6 +86,8 @@ Use these commands for future builds:
 
 ```bash
 npm run build
+npm run test
+npm run widget:typecheck
 npm run tauri:build
 ```
 

@@ -104,6 +104,12 @@ npm run icon
 npm run widget:typecheck
 ```
 
+运行本地标准验证：
+
+```bash
+npm run verify
+```
+
 ## 小组件状态
 
 主应用已经实现小组件快照写入，并注册了 `nexus://` URL Scheme。WidgetKit 源码位于：
@@ -118,8 +124,13 @@ widget/NexusWidget/NexusWidget.swift
 
 - [架构说明](docs/architecture.md)
 - [分发说明](docs/distribution.md)
+- [发布流程](docs/release-process.md)
 - [小组件实现说明](widget/README.md)
 - [macOS 应用实现记录](docs/mac-app-implementation.md)
+- [路线图](ROADMAP.md)
+- [更新日志](CHANGELOG.md)
+- [贡献指南](CONTRIBUTING.md)
+- [安全策略](SECURITY.md)
 
 ## 分发建议
 

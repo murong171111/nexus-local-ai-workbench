@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
+    "test": "node scripts/run-tests.mjs",
+    "verify": "npm run test && npm run build && npm run widget:typecheck",
     "build": "tsc && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "generate": "python3 generate_dashboard.py",

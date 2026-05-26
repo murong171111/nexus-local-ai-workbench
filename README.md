@@ -102,6 +102,12 @@ Type-check the WidgetKit Swift source:
 npm run widget:typecheck
 ```
 
+Run the standard local verification set:
+
+```bash
+npm run verify
+```
+
 ## Widget Status
 
 The main app already writes the widget snapshot and registers the `nexus://` URL scheme. The WidgetKit source lives in:
@@ -116,8 +122,13 @@ Building and shipping the actual `.appex` requires a full Xcode project with a W
 
 - [Architecture](docs/architecture.md)
 - [Distribution](docs/distribution.md)
+- [Release process](docs/release-process.md)
 - [Widget implementation](widget/README.md)
 - [Mac app implementation notes](docs/mac-app-implementation.md)
+- [Roadmap](ROADMAP.md)
+- [Changelog](CHANGELOG.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security](SECURITY.md)
 
 ## License
 

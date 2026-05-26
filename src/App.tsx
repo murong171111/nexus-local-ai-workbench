@@ -31,6 +31,7 @@ import { Card } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { createWorkspace, openExternalUrl, openPath as openPathInDesktop, readTextFile, scanWorkspaces, writeWidgetSnapshot } from "./desktop";
 import { cn, riskTone } from "./lib";
+import { todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceScore } from "./workspace-model";
 import type { DashboardData, Workspace } from "./types";
 
 const initialData = rawData as DashboardData;
@@ -94,50 +95,12 @@ function loadSettings(dashboard: DashboardData) {
   }
 }
 
-function slugify(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^\p{Letter}\p{Number}]+/gu, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 48);
-}
-
-function todayString() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function workspaceFolderFromName(name: string) {
-  return `${todayString()}-${slugify(name) || "workspace"}`;
-}
-
 function toneForRisk(count: number) {
   const tone = riskTone(count);
   if (tone === "high") return "red";
   if (tone === "medium") return "amber";
   if (tone === "low") return "blue";
   return "green";
-}
-
-function workspaceScore(workspace: Workspace) {
-  return workspace.riskCount * 10 + workspace.gitRows.filter((row) => row.worktree.dirty).length * 3;
-}
-
-function widgetSnapshotFromDashboard(dashboard: DashboardData, activeFolder: string) {
-  const activeWorkspace = dashboard.workspaces.find((workspace) => workspace.folder === activeFolder) ?? dashboard.workspaces[0];
-  const allGitRows = dashboard.workspaces.flatMap((workspace) => workspace.gitRows);
-  return {
-    generatedAt: new Date().toISOString(),
-    workspacesRoot: dashboard.workspacesRoot,
-    activeWorkspace: activeWorkspace?.name,
-    activeWorkspaceFolder: activeWorkspace?.folder,
-    workspaceCount: dashboard.workspaces.length,
-    riskCount: dashboard.workspaces.reduce((sum, workspace) => sum + workspace.riskCount, 0),
-    dirtyServiceCount: allGitRows.filter((row) => row.worktree.dirty).length,
-    missingWorktreeCount: allGitRows.filter((row) => !row.worktree.exists).length,
-    topRisks: dashboard.workspaces.flatMap((workspace) => workspace.risks.map((risk) => `${workspace.name}: ${risk}`)).slice(0, 3),
-    deepLink: activeWorkspace ? `nexus://workspace/${encodeURIComponent(activeWorkspace.folder)}` : "nexus://"
-  };
 }
 
 function codexInstruction(workspace: Workspace, action: "continue" | "git" | "delivery" | "risk" | "worktree") {
