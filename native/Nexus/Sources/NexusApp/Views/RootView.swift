@@ -5,10 +5,14 @@ import SwiftUI
 struct RootView: View {
     @EnvironmentObject private var appState: AppState
     @State private var isCreateWorkspacePresented = false
+    @State private var isSettingsPresented = false
 
     var body: some View {
         HStack(spacing: 0) {
-            SidebarView(isCreateWorkspacePresented: $isCreateWorkspacePresented)
+            SidebarView(
+                isCreateWorkspacePresented: $isCreateWorkspacePresented,
+                isSettingsPresented: $isSettingsPresented
+            )
                 .frame(width: 264)
 
             Divider()
@@ -31,6 +35,14 @@ struct RootView: View {
         }
         .sheet(isPresented: $isCreateWorkspacePresented) {
             CreateWorkspaceSheet()
+                .environmentObject(appState)
+        }
+        .sheet(isPresented: $isSettingsPresented) {
+            SettingsView()
+                .environmentObject(appState)
+        }
+        .sheet(item: $appState.pendingWorktreeSetupWorkspace) { workspace in
+            WorktreeSetupSheet(workspace: workspace)
                 .environmentObject(appState)
         }
     }
@@ -452,6 +464,7 @@ private struct NativeSearchResultRow: View {
 private struct SidebarView: View {
     @EnvironmentObject private var appState: AppState
     @Binding var isCreateWorkspacePresented: Bool
+    @Binding var isSettingsPresented: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -586,6 +599,7 @@ private struct SidebarView: View {
             .buttonStyle(.borderedProminent)
 
             Button {
+                isSettingsPresented = true
             } label: {
                 Label("Settings", systemImage: "gearshape")
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -711,6 +725,177 @@ private struct CreateWorkspaceSheet: View {
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: Date())
+    }
+}
+
+private struct WorktreeSetupSheet: View {
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmed = false
+    let workspace: WorkspaceSummary
+
+    private var missingServices: [String] {
+        appState.missingWorktreeServices(in: workspace)
+    }
+
+    private var canRun: Bool {
+        confirmed && appState.canSetupWorktrees(in: workspace) && !appState.isSettingUpWorktrees
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("创建缺失 worktree / Setup worktrees")
+                        .font(.title3.weight(.semibold))
+                    Text("Nexus will fetch each source repository and create missing workspace-local repos under this workspace.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    WorktreeSetupMetaRow(label: "Workspace", value: workspace.path)
+                    WorktreeSetupMetaRow(label: "Source repos", value: appState.sourceReposRoot)
+                    WorktreeSetupMetaRow(label: "Target branch", value: workspace.branch)
+                }
+
+                SectionBlock(title: "缺失服务 / Missing services") {
+                    if missingServices.isEmpty {
+                        Label("All selected services already have worktrees", systemImage: "checkmark.circle")
+                            .foregroundStyle(NexusPalette.success)
+                    } else {
+                        FlowTags(values: missingServices)
+                    }
+                }
+
+                Toggle("确认执行本地 git fetch 与 git worktree add", isOn: $confirmed)
+
+                HStack {
+                    Button("Close") {
+                        dismiss()
+                    }
+                    .keyboardShortcut(.cancelAction)
+
+                    Spacer()
+
+                    Button(appState.isSettingUpWorktrees ? "Setting up" : "Setup worktrees") {
+                        Task {
+                            await appState.setupMissingWorktrees(for: workspace, confirmed: confirmed)
+                        }
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!canRun)
+                }
+
+                if let response = appState.lastWorktreeSetupResponse {
+                    WorktreeSetupResultView(response: response)
+                }
+
+                if let error = appState.lastError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(NexusPalette.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(22)
+        .frame(width: 620)
+    }
+}
+
+private struct WorktreeSetupMetaRow: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+        }
+    }
+}
+
+private struct WorktreeSetupResultView: View {
+    let response: SetupWorktreesResponse
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(resultSummary, systemImage: response.failed.isEmpty ? "checkmark.circle" : "exclamationmark.triangle")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(response.failed.isEmpty ? NexusPalette.success : NexusPalette.warning)
+
+            if !response.command.isEmpty {
+                Text(response.command)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            WorktreeSetupResultGroup(title: "Created", results: response.created, color: NexusPalette.success)
+            WorktreeSetupResultGroup(title: "Skipped", results: response.skipped, color: .secondary)
+            WorktreeSetupResultGroup(title: "Failed", results: response.failed, color: NexusPalette.danger)
+        }
+        .padding(12)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var resultSummary: String {
+        "\(response.created.count) created · \(response.skipped.count) skipped · \(response.failed.count) failed"
+    }
+}
+
+private struct WorktreeSetupResultGroup: View {
+    let title: String
+    let results: [WorktreeSetupResult]
+    let color: Color
+
+    var body: some View {
+        if !results.isEmpty {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("\(title) \(results.count)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(color)
+                ForEach(results, id: \.service) { result in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(result.service)
+                            .font(.caption.weight(.semibold))
+                        Text(result.detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                        Text(result.worktreePath)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct FlowTags: View {
+    let values: [String]
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], alignment: .leading, spacing: 8) {
+            ForEach(values, id: \.self) { value in
+                Text(value)
+                    .font(.caption.weight(.medium))
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(NexusPalette.badge)
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            }
+        }
     }
 }
 
@@ -855,7 +1040,9 @@ private struct WorkspaceDetailView: View {
             if !workspace.sessionActions.isEmpty {
                 SectionBlock(title: "会话动作 / Session actions") {
                     ForEach(workspace.sessionActions) { action in
-                        SessionActionRow(action: action)
+                        SessionActionRow(action: action) {
+                            run(action)
+                        }
                     }
                 }
             }
@@ -911,10 +1098,25 @@ private struct WorkspaceDetailView: View {
             Spacer()
         }
     }
+
+    private func run(_ action: WorkspaceSessionAction) {
+        if action.instructionType == "worktree" {
+            appState.presentWorktreeSetup(for: workspace)
+            return
+        }
+
+        let documentPath = workspace.documentLinks[action.documentKey]
+            ?? workspace.documentLinks["handoff"]
+            ?? "\(workspace.path)/handoff.md"
+        Task {
+            await appState.loadDocument(path: documentPath)
+        }
+    }
 }
 
 private struct SessionActionRow: View {
     let action: WorkspaceSessionAction
+    let onRun: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 9) {
@@ -943,6 +1145,20 @@ private struct SessionActionRow: View {
                 .padding(.vertical, 3)
                 .background(color.opacity(0.1))
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            Button(actionButtonLabel) {
+                onRun()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+    }
+
+    private var actionButtonLabel: String {
+        switch action.instructionType {
+        case "worktree":
+            "Setup"
+        default:
+            "Open"
         }
     }
 
@@ -1103,24 +1319,64 @@ private struct ActivityTimelineView: View {
 
 struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        Form {
-            Section("Local Paths") {
-                TextField("Workspaces root", text: $appState.workspaceRoot)
-                TextField("Source repositories root", text: $appState.sourceReposRoot)
-                TextField("Delivery documents root", text: $appState.docsRoot)
-            }
-
-            Section("Native Shell") {
-                Text("Bridge mode: \(appState.bridgeMode)")
-                Text("Search scope: \(appState.selectedSearchScope.label) / \(appState.selectedSearchScope.subtitle)")
-                Text("Pinned workspaces: \(appState.pinnedWorkspaceIDs.count)")
-                Text("Set NEXUS_CORE_LIBRARY to a local libnexus_ffi.dylib to load real workspace data through Rust Core during development.")
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("设置 / Settings")
+                    .font(.title3.weight(.semibold))
+                Text("Configure the local roots Nexus uses to scan workspaces, source repositories, and delivery documents.")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            Form {
+                Section("Local Paths") {
+                    TextField("Workspaces root", text: $appState.workspaceRoot)
+                    TextField("Source repositories root", text: $appState.sourceReposRoot)
+                    TextField("Delivery documents root", text: $appState.docsRoot)
+                }
+
+                Section("Native Shell") {
+                    Text("Bridge mode: \(appState.bridgeMode)")
+                    Text("Search scope: \(appState.selectedSearchScope.label) / \(appState.selectedSearchScope.subtitle)")
+                    Text("Pinned workspaces: \(appState.pinnedWorkspaceIDs.count)")
+                    Text("Set NEXUS_CORE_LIBRARY to a local libnexus_ffi.dylib to load real workspace data through Rust Core during development.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            HStack {
+                Button("Reset defaults") {
+                    appState.resetLocalPaths()
+                }
+
+                Spacer()
+
+                Button("Close") {
+                    appState.persistLocalPaths()
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Button(appState.isLoading ? "Reloading" : "Save and reload") {
+                    Task {
+                        await appState.reloadConfiguredPaths()
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(appState.isLoading)
+            }
+        }
+        .onChange(of: appState.workspaceRoot) { _ in appState.persistLocalPaths() }
+        .onChange(of: appState.sourceReposRoot) { _ in appState.persistLocalPaths() }
+        .onChange(of: appState.docsRoot) { _ in appState.persistLocalPaths() }
+        .onDisappear {
+            appState.persistLocalPaths()
         }
         .padding(20)
+        .frame(width: 620, height: 420)
     }
 }
 

@@ -12,6 +12,7 @@ public protocol NexusBridge {
     func rebuildSearchIndex(request: RebuildSearchIndexRequest) async throws -> RebuildSearchIndexResponse
     func searchIndex(request: SearchIndexRequest) async throws -> [SearchResult]
     func createWorkspace(request: CreateWorkspaceRequest) async throws -> CreateWorkspaceResponse
+    func setupWorktrees(request: SetupWorktreesRequest) async throws -> SetupWorktreesResponse
 }
 
 public enum NexusBridgeFactory {
@@ -105,6 +106,13 @@ public final class PreviewNexusBridge: NexusBridge {
         }
         throw NexusBridgeError.coreError("Create workspace requires Rust Core bridge. Set NEXUS_CORE_LIBRARY to a local libnexus_ffi.dylib.")
     }
+
+    public func setupWorktrees(request: SetupWorktreesRequest) async throws -> SetupWorktreesResponse {
+        guard request.confirmed else {
+            throw NexusBridgeError.coreError("worktree setup requires explicit confirmation")
+        }
+        throw NexusBridgeError.coreError("Worktree setup requires Rust Core bridge. Set NEXUS_CORE_LIBRARY to a local libnexus_ffi.dylib.")
+    }
 }
 
 public final class DynamicLibraryNexusBridge: NexusBridge {
@@ -120,6 +128,7 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
     private let rebuildSearchIndexFunction: BridgeCall
     private let searchIndexFunction: BridgeCall
     private let createWorkspaceFunction: BridgeCall
+    private let setupWorktreesFunction: BridgeCall
     private let freeFunction: BridgeFree
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
@@ -164,6 +173,10 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
                 handle: handle,
                 name: "nexus_create_workspace_json"
             )
+            self.setupWorktreesFunction = try Self.loadSymbol(
+                handle: handle,
+                name: "nexus_setup_worktrees_json"
+            )
             self.freeFunction = try Self.loadSymbol(handle: handle, name: "nexus_string_free")
             self.modeDescription = "Rust Core bridge: \(libraryPath)"
         } catch {
@@ -206,6 +219,10 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
 
     public func createWorkspace(request: CreateWorkspaceRequest) async throws -> CreateWorkspaceResponse {
         try call(createWorkspaceFunction, request: request)
+    }
+
+    public func setupWorktrees(request: SetupWorktreesRequest) async throws -> SetupWorktreesResponse {
+        try call(setupWorktreesFunction, request: request)
     }
 
     private static func loadSymbol<T>(handle: UnsafeMutableRawPointer, name: String) throws -> T {

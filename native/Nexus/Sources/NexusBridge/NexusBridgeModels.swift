@@ -101,6 +101,81 @@ public struct CreateWorkspaceResponse: Codable, Equatable, Sendable {
     }
 }
 
+public struct SetupWorktreesRequest: Codable, Equatable, Sendable {
+    public let workspacePath: String
+    public let sourceReposRoot: String
+    public let services: [String]
+    public let targetBranch: String
+    public let confirmed: Bool
+    public let auditRoot: String?
+    public let actor: String?
+
+    public init(
+        workspacePath: String,
+        sourceReposRoot: String,
+        services: [String],
+        targetBranch: String,
+        confirmed: Bool,
+        auditRoot: String? = nil,
+        actor: String? = nil
+    ) {
+        self.workspacePath = workspacePath
+        self.sourceReposRoot = sourceReposRoot
+        self.services = services
+        self.targetBranch = targetBranch
+        self.confirmed = confirmed
+        self.auditRoot = auditRoot
+        self.actor = actor
+    }
+}
+
+public struct SetupWorktreesResponse: Codable, Equatable, Sendable {
+    public let workspacePath: String
+    public let targetBranch: String
+    public let command: String
+    public let created: [WorktreeSetupResult]
+    public let skipped: [WorktreeSetupResult]
+    public let failed: [WorktreeSetupResult]
+
+    public init(
+        workspacePath: String,
+        targetBranch: String,
+        command: String,
+        created: [WorktreeSetupResult],
+        skipped: [WorktreeSetupResult],
+        failed: [WorktreeSetupResult]
+    ) {
+        self.workspacePath = workspacePath
+        self.targetBranch = targetBranch
+        self.command = command
+        self.created = created
+        self.skipped = skipped
+        self.failed = failed
+    }
+}
+
+public struct WorktreeSetupResult: Codable, Equatable, Sendable {
+    public let service: String
+    public let sourcePath: String
+    public let worktreePath: String
+    public let status: String
+    public let detail: String
+
+    public init(
+        service: String,
+        sourcePath: String,
+        worktreePath: String,
+        status: String,
+        detail: String
+    ) {
+        self.service = service
+        self.sourcePath = sourcePath
+        self.worktreePath = worktreePath
+        self.status = status
+        self.detail = detail
+    }
+}
+
 public struct AppendAuditEventRequest: Codable, Equatable, Sendable {
     public let auditRoot: String
     public let event: AuditEventInput

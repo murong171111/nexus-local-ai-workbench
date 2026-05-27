@@ -13,10 +13,12 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - Search result context previews with workspace risk, branch/service summary, and compact activity timeline.
 - Persisted native search scopes for workspace, state, workflow, SQL, and document-focused searches.
 - Pinned workspaces in the sidebar and workspace card flow, stored as local Mac preferences.
+- Sidebar Settings sheet with persisted workspace, source repository, and delivery document roots.
 - Workspace timelines populated from the Rust Core dashboard activity field, including local audit-log events when the bridge is available.
 - Native document opens append audit events and update the visible workspace timeline.
 - Native workspace detail shows Rust Core readiness checks for local development and delivery gates.
 - Native workspace detail shows Rust Core session actions that prioritize the next Codex, worktree, and document follow-up steps.
+- Native worktree setup is available from session actions when the Rust Core bridge is loaded, guarded by an explicit confirmation sheet and result summary.
 - Build-only validation through Swift Package Manager.
 
 ## Build

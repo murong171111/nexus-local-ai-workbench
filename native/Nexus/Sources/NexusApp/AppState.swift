@@ -16,11 +16,14 @@ final class AppState: ObservableObject {
     @Published var isLoading = false
     @Published var isDocumentLoading = false
     @Published var isCreatingWorkspace = false
+    @Published var isSettingUpWorktrees = false
     @Published var lastError: String?
     @Published var bridgeMode: String
     @Published var documentPreview: DocumentSnapshot?
     @Published var widgetSnapshot: WidgetSnapshot?
     @Published var lastCreatedWorkspace: CreateWorkspaceResponse?
+    @Published var pendingWorktreeSetupWorkspace: WorkspaceSummary?
+    @Published var lastWorktreeSetupResponse: SetupWorktreesResponse?
     @Published var searchResults: [SearchResult] = []
     @Published var selectedSearchResultIndex = 0
     @Published var isSearching = false
@@ -34,7 +37,14 @@ final class AppState: ObservableObject {
     private enum DefaultsKey {
         static let pinnedWorkspaceIDs = "nexus.native.pinnedWorkspaceIDs"
         static let selectedSearchScope = "nexus.native.selectedSearchScope"
+        static let workspaceRoot = "nexus.native.workspaceRoot"
+        static let sourceReposRoot = "nexus.native.sourceReposRoot"
+        static let docsRoot = "nexus.native.docsRoot"
     }
+
+    static let defaultWorkspaceRoot = "~/ks_project/workspaces"
+    static let defaultSourceReposRoot = "~/ks_project/source-repos"
+    static let defaultDocsRoot = "~/ks_project/docs"
 
     init(
         workspaces: [WorkspaceSummary],
@@ -50,9 +60,21 @@ final class AppState: ObservableObject {
         self.workspaces = workspaces
         self.agentStatus = agentStatus
         self.bridge = bridge
-        self.workspaceRoot = workspaceRoot
-        self.sourceReposRoot = sourceReposRoot
-        self.docsRoot = docsRoot
+        self.workspaceRoot = Self.storedPath(
+            defaults: defaults,
+            key: DefaultsKey.workspaceRoot,
+            fallback: workspaceRoot
+        )
+        self.sourceReposRoot = Self.storedPath(
+            defaults: defaults,
+            key: DefaultsKey.sourceReposRoot,
+            fallback: sourceReposRoot
+        )
+        self.docsRoot = Self.storedPath(
+            defaults: defaults,
+            key: DefaultsKey.docsRoot,
+            fallback: docsRoot
+        )
         self.bridgeMode = bridge.modeDescription.isEmpty ? bridgeMode : bridge.modeDescription
         self.pinnedWorkspaceIDs = Set(defaults.stringArray(forKey: DefaultsKey.pinnedWorkspaceIDs) ?? [])
         self.selectedSearchScope = SearchScope(
@@ -180,6 +202,36 @@ final class AppState: ObservableObject {
         selectedSearchScope = scope
         selectedSearchResultIndex = 0
         defaults.set(scope.rawValue, forKey: DefaultsKey.selectedSearchScope)
+    }
+
+    func persistLocalPaths() {
+        defaults.set(
+            workspaceRoot.trimmingCharacters(in: .whitespacesAndNewlines),
+            forKey: DefaultsKey.workspaceRoot
+        )
+        defaults.set(
+            sourceReposRoot.trimmingCharacters(in: .whitespacesAndNewlines),
+            forKey: DefaultsKey.sourceReposRoot
+        )
+        defaults.set(
+            docsRoot.trimmingCharacters(in: .whitespacesAndNewlines),
+            forKey: DefaultsKey.docsRoot
+        )
+    }
+
+    func resetLocalPaths() {
+        workspaceRoot = Self.defaultWorkspaceRoot
+        sourceReposRoot = Self.defaultSourceReposRoot
+        docsRoot = Self.defaultDocsRoot
+        persistLocalPaths()
+    }
+
+    func reloadConfiguredPaths() async {
+        persistLocalPaths()
+        clearSearch()
+        selectedWorkspaceID = nil
+        documentPreview = nil
+        await refreshFromBridge()
     }
 
     func workspace(for result: SearchResult) -> WorkspaceSummary? {
@@ -374,6 +426,61 @@ final class AppState: ObservableObject {
         }
     }
 
+    func presentWorktreeSetup(for workspace: WorkspaceSummary) {
+        lastError = nil
+        lastWorktreeSetupResponse = nil
+        pendingWorktreeSetupWorkspace = workspace
+    }
+
+    func missingWorktreeServices(in workspace: WorkspaceSummary) -> [String] {
+        workspace.services
+            .filter { !$0.worktreeExists }
+            .map(\.name)
+    }
+
+    func canSetupWorktrees(in workspace: WorkspaceSummary) -> Bool {
+        !missingWorktreeServices(in: workspace).isEmpty && Self.hasConfirmedTargetBranch(workspace.branch)
+    }
+
+    func setupMissingWorktrees(for workspace: WorkspaceSummary, confirmed: Bool) async {
+        lastError = nil
+        lastWorktreeSetupResponse = nil
+
+        let missingServices = missingWorktreeServices(in: workspace)
+        guard !missingServices.isEmpty else {
+            lastError = "当前工作区没有缺失的 worktree。"
+            return
+        }
+
+        guard Self.hasConfirmedTargetBranch(workspace.branch) else {
+            lastError = "目标分支仍未确认，不能创建 worktree。"
+            return
+        }
+
+        isSettingUpWorktrees = true
+        defer {
+            isSettingUpWorktrees = false
+        }
+
+        do {
+            let response = try await bridge.setupWorktrees(
+                request: SetupWorktreesRequest(
+                    workspacePath: workspace.path,
+                    sourceReposRoot: sourceReposRoot,
+                    services: missingServices,
+                    targetBranch: workspace.branch,
+                    confirmed: confirmed,
+                    auditRoot: auditRootPath,
+                    actor: "Nexus Native"
+                )
+            )
+            lastWorktreeSetupResponse = response
+            await refreshFromBridge()
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
     static func preview() -> AppState {
         AppState(
             workspaces: WorkspaceSummary.previewData,
@@ -488,6 +595,19 @@ final class AppState: ObservableObject {
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd HH:mm"
         return formatter.string(from: Date())
+    }
+
+    private static func hasConfirmedTargetBranch(_ branch: String) -> Bool {
+        let normalizedBranch = branch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalizedBranch.isEmpty else { return false }
+        let pendingMarkers = ["待确认", "未确认", "pending", "tbd", "todo"]
+        return !pendingMarkers.contains { normalizedBranch.contains($0) }
+    }
+
+    private static func storedPath(defaults: UserDefaults, key: String, fallback: String) -> String {
+        let value = defaults.string(forKey: key)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let value, !value.isEmpty else { return fallback }
+        return value
     }
 }
 
