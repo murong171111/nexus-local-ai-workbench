@@ -28,6 +28,28 @@ public struct ReadDocumentRequest: Codable, Equatable, Sendable {
     }
 }
 
+public struct WidgetSnapshotRequest: Codable, Equatable, Sendable {
+    public let workspacesRoot: String
+    public let sourceReposRoot: String
+    public let docsRoot: String
+    public let activeFolder: String
+    public let generatedAt: String
+
+    public init(
+        workspacesRoot: String,
+        sourceReposRoot: String,
+        docsRoot: String,
+        activeFolder: String,
+        generatedAt: String
+    ) {
+        self.workspacesRoot = workspacesRoot
+        self.sourceReposRoot = sourceReposRoot
+        self.docsRoot = docsRoot
+        self.activeFolder = activeFolder
+        self.generatedAt = generatedAt
+    }
+}
+
 public struct DashboardSnapshot: Codable, Equatable, Sendable {
     public let generatedAt: String
     public let workspacesRoot: String
@@ -189,6 +211,43 @@ public struct DocumentSnapshot: Codable, Equatable, Sendable {
     }
 }
 
+public struct WidgetSnapshot: Codable, Equatable, Sendable {
+    public let generatedAt: String
+    public let workspacesRoot: String
+    public let activeWorkspace: String?
+    public let activeWorkspaceFolder: String?
+    public let workspaceCount: Int
+    public let riskCount: Int
+    public let dirtyServiceCount: Int
+    public let missingWorktreeCount: Int
+    public let topRisks: [String]
+    public let deepLink: String
+
+    public init(
+        generatedAt: String,
+        workspacesRoot: String,
+        activeWorkspace: String?,
+        activeWorkspaceFolder: String?,
+        workspaceCount: Int,
+        riskCount: Int,
+        dirtyServiceCount: Int,
+        missingWorktreeCount: Int,
+        topRisks: [String],
+        deepLink: String
+    ) {
+        self.generatedAt = generatedAt
+        self.workspacesRoot = workspacesRoot
+        self.activeWorkspace = activeWorkspace
+        self.activeWorkspaceFolder = activeWorkspaceFolder
+        self.workspaceCount = workspaceCount
+        self.riskCount = riskCount
+        self.dirtyServiceCount = dirtyServiceCount
+        self.missingWorktreeCount = missingWorktreeCount
+        self.topRisks = topRisks
+        self.deepLink = deepLink
+    }
+}
+
 public extension DashboardSnapshot {
     static func preview(
         workspacesRoot: String,
@@ -242,6 +301,38 @@ public extension DashboardSnapshot {
                     worktreeCommand: "git worktree add ..."
                 )
             ]
+        )
+    }
+}
+
+public extension WidgetSnapshot {
+    static func preview(
+        dashboard: DashboardSnapshot,
+        activeFolder: String,
+        generatedAt: String
+    ) -> WidgetSnapshot {
+        let activeWorkspace = dashboard.workspaces.first { $0.folder == activeFolder } ?? dashboard.workspaces.first
+        let allGitRows = dashboard.workspaces.flatMap(\.gitRows)
+        let riskTotal = dashboard.workspaces.reduce(0) { sum, workspace in
+            sum + workspace.riskCount
+        }
+        let topRisks = dashboard.workspaces
+            .flatMap { workspace in
+                workspace.risks.map { risk in "\(workspace.name): \(risk)" }
+            }
+            .prefix(3)
+
+        return WidgetSnapshot(
+            generatedAt: generatedAt,
+            workspacesRoot: dashboard.workspacesRoot,
+            activeWorkspace: activeWorkspace?.name,
+            activeWorkspaceFolder: activeWorkspace?.folder,
+            workspaceCount: dashboard.workspaces.count,
+            riskCount: riskTotal,
+            dirtyServiceCount: allGitRows.filter(\.worktree.dirty).count,
+            missingWorktreeCount: allGitRows.filter { !$0.worktree.exists }.count,
+            topRisks: Array(topRisks),
+            deepLink: activeWorkspace.map { "nexus://workspace/\($0.folder.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? $0.folder)" } ?? "nexus://"
         )
     }
 }

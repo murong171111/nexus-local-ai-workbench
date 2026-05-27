@@ -7,6 +7,7 @@ public protocol NexusBridge {
     func scanWorkspaces(request: ScanWorkspacesRequest) async throws -> DashboardSnapshot
     func scanSourceRepos(request: ScanSourceReposRequest) async throws -> [SourceRepositorySnapshot]
     func readDocument(request: ReadDocumentRequest) async throws -> DocumentSnapshot
+    func widgetSnapshot(request: WidgetSnapshotRequest) async throws -> WidgetSnapshot
 }
 
 public enum NexusBridgeFactory {
@@ -68,6 +69,19 @@ public final class PreviewNexusBridge: NexusBridge {
             content: "# Preview Document\n\nSet NEXUS_CORE_LIBRARY to read real workspace documents through Rust Core."
         )
     }
+
+    public func widgetSnapshot(request: WidgetSnapshotRequest) async throws -> WidgetSnapshot {
+        let dashboard = DashboardSnapshot.preview(
+            workspacesRoot: request.workspacesRoot,
+            sourceReposRoot: request.sourceReposRoot,
+            docsRoot: request.docsRoot
+        )
+        return WidgetSnapshot.preview(
+            dashboard: dashboard,
+            activeFolder: request.activeFolder,
+            generatedAt: request.generatedAt
+        )
+    }
 }
 
 public final class DynamicLibraryNexusBridge: NexusBridge {
@@ -78,6 +92,7 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
     private let scanWorkspacesFunction: BridgeCall
     private let scanSourceReposFunction: BridgeCall
     private let readDocumentFunction: BridgeCall
+    private let widgetSnapshotFunction: BridgeCall
     private let freeFunction: BridgeFree
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
@@ -102,6 +117,10 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
                 handle: handle,
                 name: "nexus_read_document_json"
             )
+            self.widgetSnapshotFunction = try Self.loadSymbol(
+                handle: handle,
+                name: "nexus_widget_snapshot_json"
+            )
             self.freeFunction = try Self.loadSymbol(handle: handle, name: "nexus_string_free")
             self.modeDescription = "Rust Core bridge: \(libraryPath)"
         } catch {
@@ -124,6 +143,10 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
 
     public func readDocument(request: ReadDocumentRequest) async throws -> DocumentSnapshot {
         try call(readDocumentFunction, request: request)
+    }
+
+    public func widgetSnapshot(request: WidgetSnapshotRequest) async throws -> WidgetSnapshot {
+        try call(widgetSnapshotFunction, request: request)
     }
 
     private static func loadSymbol<T>(handle: UnsafeMutableRawPointer, name: String) throws -> T {

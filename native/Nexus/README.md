@@ -21,7 +21,7 @@ This does not produce a signed `.app` bundle yet. Packaging, signing, notarizati
 
 ## Rust Core Bridge
 
-The Swift package includes a `NexusBridge` target with typed DTOs that match the Rust Core dashboard, source repository, and document JSON contracts.
+The Swift package includes a `NexusBridge` target with typed DTOs that match the Rust Core dashboard, source repository, document, and widget snapshot JSON contracts.
 
 For local development, build the bridge library from the repository root:
 

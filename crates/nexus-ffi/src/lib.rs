@@ -1,4 +1,6 @@
-use nexus_core::{read_document, scan_source_repos, scan_workspaces};
+use nexus_core::{
+    read_document, scan_source_repos, scan_workspaces, widget_snapshot_from_dashboard,
+};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -21,6 +23,16 @@ struct ScanSourceReposRequest {
 #[serde(rename_all = "camelCase")]
 struct ReadDocumentRequest {
     path: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WidgetSnapshotRequest {
+    workspaces_root: String,
+    source_repos_root: String,
+    docs_root: String,
+    active_folder: String,
+    generated_at: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -53,6 +65,24 @@ pub unsafe extern "C" fn nexus_scan_source_repos_json(input_json: *const c_char)
 pub unsafe extern "C" fn nexus_read_document_json(input_json: *const c_char) -> *mut c_char {
     bridge_call(input_json, |request: ReadDocumentRequest| {
         read_document(&request.path)
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn nexus_widget_snapshot_json(input_json: *const c_char) -> *mut c_char {
+    bridge_call(input_json, |request: WidgetSnapshotRequest| {
+        scan_workspaces(
+            &request.workspaces_root,
+            &request.source_repos_root,
+            &request.docs_root,
+        )
+        .map(|dashboard| {
+            widget_snapshot_from_dashboard(
+                &dashboard,
+                &request.active_folder,
+                &request.generated_at,
+            )
+        })
     })
 }
 
@@ -202,6 +232,48 @@ mod tests {
         assert_eq!(value["data"]["name"], "handoff.md");
         assert_eq!(value["data"]["isMarkdown"], true);
         assert!(value["data"]["content"].as_str().unwrap().contains("Ready"));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn widget_snapshot_bridge_returns_compact_status_payload() {
+        let root = std::env::temp_dir().join(format!("nexus-ffi-widget-{}", std::process::id()));
+        let workspace = root.join("2026-05-27-widget-demo");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(workspace.join("sql")).unwrap();
+        fs::write(
+            workspace.join("workspace.md"),
+            "# Widget Demo\n\n- 需求名称: Widget Demo\n- 当前状态: developing\n- 目标分支: chen/widget\n- 源仓库集合: ~/source-repos\n",
+        )
+        .unwrap();
+        fs::write(
+            workspace.join("services.md"),
+            "# Services\n\n## 已确认相关\n\n| 服务 | 源仓库 | 说明 |\n| --- | --- | --- |\n| order | ~/source-repos/order | core |\n",
+        )
+        .unwrap();
+        fs::write(workspace.join("tasks.md"), "# Tasks\n").unwrap();
+        fs::write(workspace.join("decisions.md"), "# Decisions\n").unwrap();
+        fs::write(workspace.join("交付记录.md"), "# 交付记录\n\n暂无。\n").unwrap();
+
+        let request = format!(
+            r#"{{"workspacesRoot":"{}","sourceReposRoot":"~/source-repos","docsRoot":"~/docs","activeFolder":"2026-05-27-widget-demo","generatedAt":"2026-05-27T12:30:00"}}"#,
+            root.to_string_lossy()
+        );
+        let input = CString::new(request).unwrap();
+        let output = unsafe { nexus_widget_snapshot_json(input.as_ptr()) };
+        let response = unsafe { CStr::from_ptr(output).to_string_lossy().to_string() };
+        unsafe { nexus_string_free(output) };
+
+        let value = serde_json::from_str::<Value>(&response).unwrap();
+        assert_eq!(value["ok"], true);
+        assert_eq!(value["data"]["activeWorkspace"], "Widget Demo");
+        assert_eq!(value["data"]["workspaceCount"], 1);
+        assert_eq!(value["data"]["generatedAt"], "2026-05-27T12:30:00");
+        assert_eq!(
+            value["data"]["deepLink"],
+            "nexus://workspace/2026-05-27-widget-demo"
+        );
 
         fs::remove_dir_all(root).unwrap();
     }

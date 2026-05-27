@@ -16,6 +16,7 @@ final class AppState: ObservableObject {
     @Published var lastError: String?
     @Published var bridgeMode: String
     @Published var documentPreview: DocumentSnapshot?
+    @Published var widgetSnapshot: WidgetSnapshot?
 
     @Published var agentStatus: AgentStatus
     private let bridge: NexusBridge
@@ -101,6 +102,15 @@ final class AppState: ObservableObject {
             if selectedWorkspaceID == nil || !mappedWorkspaces.contains(where: { $0.id == selectedWorkspaceID }) {
                 selectedWorkspaceID = mappedWorkspaces.first?.id
             }
+            widgetSnapshot = try? await bridge.widgetSnapshot(
+                request: WidgetSnapshotRequest(
+                    workspacesRoot: workspaceRoot,
+                    sourceReposRoot: sourceReposRoot,
+                    docsRoot: docsRoot,
+                    activeFolder: selectedWorkspaceID ?? "",
+                    generatedAt: ISO8601DateFormatter().string(from: Date())
+                )
+            )
             bridgeMode = bridge.modeDescription
             agentStatus = AgentStatus(
                 title: "Ready",

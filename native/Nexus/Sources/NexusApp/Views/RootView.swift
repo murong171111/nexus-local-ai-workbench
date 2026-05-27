@@ -114,6 +114,26 @@ private struct SidebarView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
 
+            if let snapshot = appState.widgetSnapshot {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("小组件摘要 / Widget")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    HStack(spacing: 10) {
+                        SidebarMetric(label: "WS", value: snapshot.workspaceCount)
+                        SidebarMetric(label: "Risk", value: snapshot.riskCount)
+                        SidebarMetric(label: "Dirty", value: snapshot.dirtyServiceCount)
+                    }
+                    Text(snapshot.activeWorkspace ?? "No active workspace")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                .padding(12)
+                .background(NexusPalette.panel)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+
             VStack(alignment: .leading, spacing: 8) {
                 Text("筛选 / Filters")
                     .font(.caption.weight(.semibold))
@@ -419,6 +439,22 @@ private struct Metric: View {
             Text(value)
                 .font(.caption.weight(.medium))
                 .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct SidebarMetric: View {
+    let label: String
+    let value: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundStyle(.secondary)
+            Text("\(value)")
+                .font(.system(.caption, design: .monospaced).weight(.semibold))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
