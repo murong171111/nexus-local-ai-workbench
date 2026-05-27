@@ -35,7 +35,7 @@ This roadmap describes the next product and engineering steps for Nexus. The cur
 - Add safer worktree creation from selected source repositories.
 - Add branch alignment checks across services. `[done in 0.1.x preview]`
 - Add workspace health checks before a development session starts.
-- Add explicit confirmation flows for destructive operations.
+- Add explicit confirmation flows for local write operations. `[started for native workspace creation]`
 - Add local audit logs for workspace creation and file writes.
 
 ## 0.4.x: Search And Local Index

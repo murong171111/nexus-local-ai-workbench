@@ -15,6 +15,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Swift `NexusBridge` target with typed dashboard DTOs, preview fallback data, and optional dynamic library loading through `NEXUS_CORE_LIBRARY`.
 - Rust Core and Swift/Rust bridge document-reading support for native Markdown/document preview workflows.
 - Rust Core widget snapshot computation with FFI and Swift bridge support for native summary surfaces.
+- Swift/Rust bridge workspace creation with an explicit confirmation contract and native Mac shell creation sheet.
 - Native architecture roadmap for the SwiftUI/AppKit + Rust Core migration path.
 - Public maintenance docs and GitHub collaboration templates.
 - CI and release workflow definitions for future automated validation and DMG publishing.
