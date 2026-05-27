@@ -10,6 +10,7 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - AppKit-ready Mac integration boundary.
 - Sample data view model that mirrors the Rust Core dashboard contract.
 - Native top-bar search popover backed by the Swift/Rust SQLite + FTS bridge, with preview metadata fallback.
+- Search result context previews with workspace risk, branch/service summary, and compact activity timeline.
 - Build-only validation through Swift Package Manager.
 
 ## Build

@@ -204,6 +204,16 @@ private struct NativeSearchPopover: View {
                     .padding(10)
                 }
                 .frame(maxHeight: 360)
+
+                if let selectedResult = appState.selectedSearchResult {
+                    Divider()
+                    SearchResultPreview(
+                        result: selectedResult,
+                        workspace: appState.workspace(for: selectedResult)
+                    ) {
+                        appState.openSearchResult(selectedResult)
+                    }
+                }
             }
 
             Divider()
@@ -233,6 +243,89 @@ private struct NativeSearchPopover: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .shadow(color: Color.black.opacity(0.14), radius: 28, x: 0, y: 18)
+    }
+}
+
+private struct SearchResultPreview: View {
+    let result: SearchResult
+    let workspace: WorkspaceSummary?
+    let openAction: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 8) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("结果上下文 / Result context")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                    Text(result.documentName)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    Text(result.documentPath)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Button(action: openAction) {
+                    Label("Open", systemImage: "arrow.turn.down.right")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+
+            Text(result.snippet.isEmpty ? "No snippet available." : result.snippet)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+
+            if let workspace {
+                HStack(spacing: 10) {
+                    PreviewMetric(label: "Branch", value: workspace.branch)
+                    PreviewMetric(label: "Services", value: "\(workspace.services.count)")
+                    PreviewMetric(label: "Risk", value: workspace.riskLevel.label)
+                }
+
+                if let firstRisk = workspace.risks.first {
+                    Label {
+                        Text(firstRisk.detail)
+                            .font(.caption)
+                            .lineLimit(2)
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle")
+                            .foregroundStyle(NexusPalette.warning)
+                    }
+                    .padding(8)
+                    .background(NexusPalette.warning.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                }
+
+                ActivityTimelineView(events: Array(workspace.activities.prefix(3)), compact: true)
+            }
+        }
+        .padding(12)
+        .background(NexusPalette.preview)
+    }
+}
+
+private struct PreviewMetric: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.caption.weight(.medium))
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(NexusPalette.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 }
 
@@ -684,19 +777,7 @@ private struct WorkspaceDetailView: View {
             }
 
             SectionBlock(title: "最近活动 / Activity") {
-                ForEach(workspace.activities) { event in
-                    HStack(alignment: .top, spacing: 8) {
-                        Text(event.time)
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(event.title)
-                            Text(event.detail)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
+                ActivityTimelineView(events: workspace.activities)
             }
 
             SectionBlock(title: "文档预览 / Documents") {
@@ -723,6 +804,52 @@ private struct WorkspaceDetailView: View {
             }
 
             Spacer()
+        }
+    }
+}
+
+private struct ActivityTimelineView: View {
+    let events: [ActivityEvent]
+    var compact = false
+
+    var body: some View {
+        if events.isEmpty {
+            Text("No recent activity")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else {
+            VStack(alignment: .leading, spacing: compact ? 6 : 10) {
+                ForEach(Array(events.enumerated()), id: \.element.id) { index, event in
+                    HStack(alignment: .top, spacing: 9) {
+                        VStack(spacing: 3) {
+                            Circle()
+                                .fill(index == 0 ? NexusPalette.accent : NexusPalette.border)
+                                .frame(width: compact ? 6 : 8, height: compact ? 6 : 8)
+                            if index < events.count - 1 {
+                                Rectangle()
+                                    .fill(NexusPalette.border)
+                                    .frame(width: 1, height: compact ? 22 : 30)
+                            }
+                        }
+                        .padding(.top, 4)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Text(event.time)
+                                    .font(.system(size: compact ? 10 : 11, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                Text(event.title)
+                                    .font(compact ? .caption.weight(.medium) : .subheadline.weight(.medium))
+                                    .lineLimit(1)
+                            }
+                            Text(event.detail)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(compact ? 2 : 3)
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -836,6 +963,7 @@ private enum NexusPalette {
     static let inspector = Color(nsColor: NSColor.textBackgroundColor)
     static let panel = Color(nsColor: NSColor.textBackgroundColor)
     static let selected = Color.blue.opacity(0.08)
+    static let preview = Color(nsColor: NSColor.controlBackgroundColor).opacity(0.72)
     static let badge = Color(nsColor: NSColor.controlBackgroundColor)
     static let border = Color.black.opacity(0.08)
     static let accent = Color.blue
