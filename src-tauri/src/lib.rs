@@ -3,7 +3,7 @@ use nexus_core::{
     export_settings_profile as export_settings_profile_core,
     scan_source_repos as scan_source_repos_core, scan_workspaces as scan_workspaces_core,
     CreateWorkspaceRequest, CreateWorkspaceResponse, DashboardData, ExportSettingsProfileResponse,
-    SettingsProfile, SourceRepo,
+    SettingsProfile, SourceRepo, WidgetSnapshot,
 };
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -65,21 +65,6 @@ struct EnvironmentHealth {
     source_repo_count: usize,
     blockers: Vec<String>,
     warnings: Vec<String>,
-}
-
-#[derive(Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct WidgetSnapshot {
-    generated_at: String,
-    workspaces_root: String,
-    active_workspace: Option<String>,
-    active_workspace_folder: Option<String>,
-    workspace_count: usize,
-    risk_count: usize,
-    dirty_service_count: usize,
-    missing_worktree_count: usize,
-    top_risks: Vec<String>,
-    deep_link: String,
 }
 
 #[derive(Serialize)]
