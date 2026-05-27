@@ -34,6 +34,8 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Grouped global search results with arrow-key selection, Enter-to-open, and Escape-to-clear navigation.
 - Native SwiftUI search popover backed by the Swift/Rust search bridge, with grouped results, keyboard navigation, and workspace metadata fallback.
 - Native search-result context preview with workspace risk, branch/service summary, and compact activity timeline.
+- Native search scope controls for workspace/state/workflow/SQL/document-focused search in the SwiftUI shell.
+- Native pinned workspaces with local persistence so important requirement workspaces stay at the top of the Mac shell.
 - Explicit local-write confirmation in the Tauri create-workspace flow.
 - Branch alignment checks, filters, prompts, and UI warnings for worktrees that do not match the workspace target branch.
 - Manual service input parsing for commas, spaces, new lines, semicolons, and Chinese separators when creating workspaces.

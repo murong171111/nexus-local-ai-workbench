@@ -8,6 +8,8 @@ final class AppState: ObservableObject {
     @Published var selectedFilter: WorkspaceFilter = .all
     @Published var selectedWorkspaceID: WorkspaceSummary.ID?
     @Published var workspaces: [WorkspaceSummary]
+    @Published var pinnedWorkspaceIDs: Set<WorkspaceSummary.ID>
+    @Published var selectedSearchScope: SearchScope
     @Published var workspaceRoot: String
     @Published var sourceReposRoot: String
     @Published var docsRoot: String
@@ -27,6 +29,12 @@ final class AppState: ObservableObject {
 
     @Published var agentStatus: AgentStatus
     private let bridge: NexusBridge
+    private let defaults: UserDefaults
+
+    private enum DefaultsKey {
+        static let pinnedWorkspaceIDs = "nexus.native.pinnedWorkspaceIDs"
+        static let selectedSearchScope = "nexus.native.selectedSearchScope"
+    }
 
     init(
         workspaces: [WorkspaceSummary],
@@ -35,8 +43,10 @@ final class AppState: ObservableObject {
         workspaceRoot: String = "~/ks_project/workspaces",
         sourceReposRoot: String = "~/ks_project/source-repos",
         docsRoot: String = "~/ks_project/docs",
-        bridgeMode: String = "Preview"
+        bridgeMode: String = "Preview",
+        defaults: UserDefaults = .standard
     ) {
+        self.defaults = defaults
         self.workspaces = workspaces
         self.agentStatus = agentStatus
         self.bridge = bridge
@@ -44,6 +54,10 @@ final class AppState: ObservableObject {
         self.sourceReposRoot = sourceReposRoot
         self.docsRoot = docsRoot
         self.bridgeMode = bridge.modeDescription.isEmpty ? bridgeMode : bridge.modeDescription
+        self.pinnedWorkspaceIDs = Set(defaults.stringArray(forKey: DefaultsKey.pinnedWorkspaceIDs) ?? [])
+        self.selectedSearchScope = SearchScope(
+            rawValue: defaults.string(forKey: DefaultsKey.selectedSearchScope) ?? ""
+        ) ?? .all
         self.selectedWorkspaceID = workspaces.first?.id
     }
 
@@ -51,8 +65,20 @@ final class AppState: ObservableObject {
         workspaces.first { $0.id == selectedWorkspaceID } ?? filteredWorkspaces.first
     }
 
+    var pinnedWorkspaces: [WorkspaceSummary] {
+        workspaces.filter { pinnedWorkspaceIDs.contains($0.id) }
+    }
+
+    var scopedSearchResults: [SearchResult] {
+        searchResults.filter { selectedSearchScope.matches($0) }
+    }
+
+    var groupedSearchResults: [SearchResultGroup] {
+        groupSearchResults(scopedSearchResults)
+    }
+
     var orderedSearchResults: [SearchResult] {
-        groupSearchResults(searchResults).flatMap(\.results)
+        groupedSearchResults.flatMap(\.results)
     }
 
     var selectedSearchResult: SearchResult? {
@@ -88,7 +114,8 @@ final class AppState: ObservableObject {
     var filteredWorkspaces: [WorkspaceSummary] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
-        return workspaces.filter { workspace in
+        let matchingWorkspaces = workspaces.enumerated().filter { item in
+            let workspace = item.element
             let matchesFilter: Bool
             switch selectedFilter {
             case .all:
@@ -117,10 +144,42 @@ final class AppState: ObservableObject {
 
             return haystack.contains(trimmedQuery)
         }
+        .sorted { lhs, rhs in
+            let lhsPinned = pinnedWorkspaceIDs.contains(lhs.element.id)
+            let rhsPinned = pinnedWorkspaceIDs.contains(rhs.element.id)
+            if lhsPinned != rhsPinned {
+                return lhsPinned
+            }
+            return lhs.offset < rhs.offset
+        }
+        .map(\.element)
+
+        return matchingWorkspaces
     }
 
     func select(_ workspace: WorkspaceSummary) {
         selectedWorkspaceID = workspace.id
+    }
+
+    func isPinned(_ workspace: WorkspaceSummary) -> Bool {
+        pinnedWorkspaceIDs.contains(workspace.id)
+    }
+
+    func togglePinned(_ workspace: WorkspaceSummary) {
+        var updatedPinnedIDs = pinnedWorkspaceIDs
+        if updatedPinnedIDs.contains(workspace.id) {
+            updatedPinnedIDs.remove(workspace.id)
+        } else {
+            updatedPinnedIDs.insert(workspace.id)
+        }
+        pinnedWorkspaceIDs = updatedPinnedIDs
+        persistPinnedWorkspaces()
+    }
+
+    func setSearchScope(_ scope: SearchScope) {
+        selectedSearchScope = scope
+        selectedSearchResultIndex = 0
+        defaults.set(scope.rawValue, forKey: DefaultsKey.selectedSearchScope)
     }
 
     func workspace(for result: SearchResult) -> WorkspaceSummary? {
@@ -212,7 +271,7 @@ final class AppState: ObservableObject {
 
         do {
             let indexedResults = try await bridge.searchIndex(
-                request: SearchIndexRequest(indexPath: searchIndexPath, query: trimmedQuery, limit: 10)
+                request: SearchIndexRequest(indexPath: searchIndexPath, query: trimmedQuery, limit: 30)
             )
             searchResults = indexedResults.isEmpty ? fallbackSearchResults(matching: trimmedQuery) : indexedResults
             selectedSearchResultIndex = 0
@@ -352,6 +411,17 @@ final class AppState: ObservableObject {
         }
         .prefix(10)
         .map { $0 }
+    }
+
+    private func persistPinnedWorkspaces() {
+        let orderedPinnedIDs = workspaces
+            .map(\.id)
+            .filter { pinnedWorkspaceIDs.contains($0) }
+        let orphanedPinnedIDs = pinnedWorkspaceIDs
+            .filter { pinnedID in !orderedPinnedIDs.contains(pinnedID) }
+            .sorted()
+
+        defaults.set(orderedPinnedIDs + orphanedPinnedIDs, forKey: DefaultsKey.pinnedWorkspaceIDs)
     }
 }
 
