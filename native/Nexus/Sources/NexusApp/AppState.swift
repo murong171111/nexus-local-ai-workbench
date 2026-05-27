@@ -13,10 +13,12 @@ final class AppState: ObservableObject {
     @Published var docsRoot: String
     @Published var isLoading = false
     @Published var isDocumentLoading = false
+    @Published var isCreatingWorkspace = false
     @Published var lastError: String?
     @Published var bridgeMode: String
     @Published var documentPreview: DocumentSnapshot?
     @Published var widgetSnapshot: WidgetSnapshot?
+    @Published var lastCreatedWorkspace: CreateWorkspaceResponse?
 
     @Published var agentStatus: AgentStatus
     private let bridge: NexusBridge
@@ -146,6 +148,33 @@ final class AppState: ObservableObject {
         }
     }
 
+    func createWorkspace(draft: CreateWorkspaceDraft) async {
+        isCreatingWorkspace = true
+        lastError = nil
+        defer {
+            isCreatingWorkspace = false
+        }
+
+        do {
+            let response = try await bridge.createWorkspace(
+                request: CreateWorkspaceRequest(
+                    name: draft.name,
+                    folder: draft.folder,
+                    workspacesRoot: workspaceRoot,
+                    sourceReposRoot: sourceReposRoot,
+                    services: draft.services,
+                    targetBranch: draft.targetBranch,
+                    confirmed: draft.confirmed
+                )
+            )
+            lastCreatedWorkspace = response
+            selectedWorkspaceID = response.folder
+            await refreshFromBridge()
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
     static func preview() -> AppState {
         AppState(
             workspaces: WorkspaceSummary.previewData,
@@ -157,4 +186,12 @@ final class AppState: ObservableObject {
             bridge: NexusBridgeFactory.makeDefault()
         )
     }
+}
+
+struct CreateWorkspaceDraft: Equatable {
+    var name: String
+    var folder: String
+    var services: [String]
+    var targetBranch: String
+    var confirmed: Bool
 }

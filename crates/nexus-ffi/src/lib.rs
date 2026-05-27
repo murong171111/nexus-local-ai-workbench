@@ -1,5 +1,6 @@
 use nexus_core::{
-    read_document, scan_source_repos, scan_workspaces, widget_snapshot_from_dashboard,
+    create_workspace, read_document, scan_source_repos, scan_workspaces,
+    widget_snapshot_from_dashboard, CreateWorkspaceRequest as CoreCreateWorkspaceRequest,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::ffi::{CStr, CString};
@@ -33,6 +34,18 @@ struct WidgetSnapshotRequest {
     docs_root: String,
     active_folder: String,
     generated_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateWorkspaceBridgeRequest {
+    name: String,
+    folder: String,
+    workspaces_root: String,
+    source_repos_root: String,
+    services: Vec<String>,
+    target_branch: String,
+    confirmed: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -82,6 +95,24 @@ pub unsafe extern "C" fn nexus_widget_snapshot_json(input_json: *const c_char) -
                 &request.active_folder,
                 &request.generated_at,
             )
+        })
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn nexus_create_workspace_json(input_json: *const c_char) -> *mut c_char {
+    bridge_call(input_json, |request: CreateWorkspaceBridgeRequest| {
+        if !request.confirmed {
+            return Err("workspace creation requires explicit confirmation".to_string());
+        }
+
+        create_workspace(CoreCreateWorkspaceRequest {
+            name: request.name,
+            folder: request.folder,
+            workspaces_root: request.workspaces_root,
+            source_repos_root: request.source_repos_root,
+            services: request.services,
+            target_branch: request.target_branch,
         })
     })
 }
@@ -274,6 +305,55 @@ mod tests {
             value["data"]["deepLink"],
             "nexus://workspace/2026-05-27-widget-demo"
         );
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn create_workspace_bridge_requires_confirmation() {
+        let root = std::env::temp_dir().join(format!(
+            "nexus-ffi-create-unconfirmed-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let request = format!(
+            r#"{{"name":"No Confirm","folder":"2026-05-27-no-confirm","workspacesRoot":"{}","sourceReposRoot":"~/source-repos","services":["order"],"targetBranch":"chen/no-confirm","confirmed":false}}"#,
+            root.to_string_lossy()
+        );
+        let input = CString::new(request).unwrap();
+        let output = unsafe { nexus_create_workspace_json(input.as_ptr()) };
+        let response = unsafe { CStr::from_ptr(output).to_string_lossy().to_string() };
+        unsafe { nexus_string_free(output) };
+
+        let value = serde_json::from_str::<Value>(&response).unwrap();
+        assert_eq!(value["ok"], false);
+        assert_eq!(
+            value["error"],
+            "workspace creation requires explicit confirmation"
+        );
+        assert!(!root.join("2026-05-27-no-confirm").exists());
+    }
+
+    #[test]
+    fn create_workspace_bridge_writes_standard_workspace() {
+        let root = std::env::temp_dir().join(format!("nexus-ffi-create-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let request = format!(
+            r#"{{"name":"Bridge Create","folder":"2026-05-27-bridge-create","workspacesRoot":"{}","sourceReposRoot":"~/source-repos","services":["order","store-cashier"],"targetBranch":"chen/bridge-create","confirmed":true}}"#,
+            root.to_string_lossy()
+        );
+        let input = CString::new(request).unwrap();
+        let output = unsafe { nexus_create_workspace_json(input.as_ptr()) };
+        let response = unsafe { CStr::from_ptr(output).to_string_lossy().to_string() };
+        unsafe { nexus_string_free(output) };
+
+        let value = serde_json::from_str::<Value>(&response).unwrap();
+        assert_eq!(value["ok"], true);
+        assert_eq!(value["data"]["folder"], "2026-05-27-bridge-create");
+        let workspace = root.join("2026-05-27-bridge-create");
+        assert!(workspace.join("AGENTS.md").exists());
+        assert!(workspace.join("交付记录.md").exists());
+        assert!(workspace.join("scripts/worktree-commands.sh").exists());
 
         fs::remove_dir_all(root).unwrap();
     }

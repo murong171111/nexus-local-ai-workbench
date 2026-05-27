@@ -50,6 +50,44 @@ public struct WidgetSnapshotRequest: Codable, Equatable, Sendable {
     }
 }
 
+public struct CreateWorkspaceRequest: Codable, Equatable, Sendable {
+    public let name: String
+    public let folder: String
+    public let workspacesRoot: String
+    public let sourceReposRoot: String
+    public let services: [String]
+    public let targetBranch: String
+    public let confirmed: Bool
+
+    public init(
+        name: String,
+        folder: String,
+        workspacesRoot: String,
+        sourceReposRoot: String,
+        services: [String],
+        targetBranch: String,
+        confirmed: Bool
+    ) {
+        self.name = name
+        self.folder = folder
+        self.workspacesRoot = workspacesRoot
+        self.sourceReposRoot = sourceReposRoot
+        self.services = services
+        self.targetBranch = targetBranch
+        self.confirmed = confirmed
+    }
+}
+
+public struct CreateWorkspaceResponse: Codable, Equatable, Sendable {
+    public let path: String
+    public let folder: String
+
+    public init(path: String, folder: String) {
+        self.path = path
+        self.folder = folder
+    }
+}
+
 public struct DashboardSnapshot: Codable, Equatable, Sendable {
     public let generatedAt: String
     public let workspacesRoot: String

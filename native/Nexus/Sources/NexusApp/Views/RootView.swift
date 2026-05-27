@@ -3,10 +3,11 @@ import SwiftUI
 
 struct RootView: View {
     @EnvironmentObject private var appState: AppState
+    @State private var isCreateWorkspacePresented = false
 
     var body: some View {
         HStack(spacing: 0) {
-            SidebarView()
+            SidebarView(isCreateWorkspacePresented: $isCreateWorkspacePresented)
                 .frame(width: 264)
 
             Divider()
@@ -26,6 +27,10 @@ struct RootView: View {
         .background(NexusPalette.background)
         .task {
             await appState.refreshFromBridge()
+        }
+        .sheet(isPresented: $isCreateWorkspacePresented) {
+            CreateWorkspaceSheet()
+                .environmentObject(appState)
         }
     }
 }
@@ -75,6 +80,7 @@ private struct TopCommandBar: View {
 
 private struct SidebarView: View {
     @EnvironmentObject private var appState: AppState
+    @Binding var isCreateWorkspacePresented: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -166,6 +172,14 @@ private struct SidebarView: View {
             Spacer()
 
             Button {
+                isCreateWorkspacePresented = true
+            } label: {
+                Label("New Workspace", systemImage: "plus")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.borderedProminent)
+
+            Button {
             } label: {
                 Label("Settings", systemImage: "gearshape")
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -174,6 +188,123 @@ private struct SidebarView: View {
         }
         .padding(18)
         .background(NexusPalette.sidebar)
+    }
+}
+
+private struct CreateWorkspaceSheet: View {
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var folder = ""
+    @State private var servicesText = ""
+    @State private var targetBranch = ""
+    @State private var confirmed = false
+
+    private var services: [String] {
+        servicesText
+            .split { character in
+                character.isWhitespace || [",", "，", "、", ";", "；"].contains(String(character))
+            }
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    private var canCreate: Bool {
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !folder.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && confirmed
+            && !appState.isCreatingWorkspace
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("新建工作区 / New Workspace")
+                    .font(.title3.weight(.semibold))
+                Text("This writes the standard Nexus workspace documents under the configured Workspaces root.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Form {
+                TextField("需求名称", text: $name)
+                    .onChange(of: name) { value in
+                        if folder.isEmpty || folder.hasSuffix("-workspace") {
+                            folder = defaultFolder(for: value)
+                        }
+                    }
+                TextField("工作区目录名", text: $folder)
+                TextField("涉及服务，逗号或空格分隔", text: $servicesText)
+                TextField("目标分支，留空则待确认", text: $targetBranch)
+                Toggle("确认创建目录和标准 Markdown 文档", isOn: $confirmed)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Workspaces root")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(appState.workspaceRoot)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            HStack {
+                Button("Cancel") {
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Spacer()
+
+                Button(appState.isCreatingWorkspace ? "Creating" : "Create") {
+                    Task {
+                        await appState.createWorkspace(
+                            draft: CreateWorkspaceDraft(
+                                name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                                folder: folder.trimmingCharacters(in: .whitespacesAndNewlines),
+                                services: services,
+                                targetBranch: targetBranch.trimmingCharacters(in: .whitespacesAndNewlines),
+                                confirmed: confirmed
+                            )
+                        )
+                        if appState.lastError == nil {
+                            dismiss()
+                        }
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!canCreate)
+            }
+
+            if let error = appState.lastError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(NexusPalette.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(22)
+        .frame(width: 560)
+    }
+
+    private func defaultFolder(for value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let slug = trimmed
+            .lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+            .joined(separator: "-")
+        let suffix = slug.isEmpty ? "workspace" : slug
+        return "\(Self.todayString())-\(suffix)"
+    }
+
+    private static func todayString() -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: Date())
     }
 }
 

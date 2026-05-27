@@ -79,7 +79,7 @@
 
 ## Phase 3: Bridge And Feature Parity Slice
 
-**Status:** Started. `crates/nexus-ffi` now exposes a small C ABI + JSON bridge for read-only workspace scans, source repository scans, document reads, and widget snapshot computation. The Swift package has a `NexusBridge` target with DTOs and optional dynamic library loading through `NEXUS_CORE_LIBRARY`.
+**Status:** Started. `crates/nexus-ffi` now exposes a small C ABI + JSON bridge for workspace scans, source repository scans, document reads, widget snapshot computation, and confirmed workspace creation. The Swift package has a `NexusBridge` target with DTOs and optional dynamic library loading through `NEXUS_CORE_LIBRARY`.
 
 **Goal:** Make the native app read real workspace data.
 
@@ -95,7 +95,7 @@
 1. Choose bridge implementation: UniFFI if it fits, otherwise a small C ABI plus JSON payloads.
 2. Expose read-only commands first: scan workspaces, scan source repos, read document, compute widget snapshot.
 3. Render the real workspace dashboard in SwiftUI.
-4. Keep destructive or write operations out of the first bridge slice.
+4. Keep write operations behind explicit confirmation contracts.
 
 ## Phase 4: Native-First Roadmap Work
 

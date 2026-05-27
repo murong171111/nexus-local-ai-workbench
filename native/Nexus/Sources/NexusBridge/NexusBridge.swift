@@ -8,6 +8,7 @@ public protocol NexusBridge {
     func scanSourceRepos(request: ScanSourceReposRequest) async throws -> [SourceRepositorySnapshot]
     func readDocument(request: ReadDocumentRequest) async throws -> DocumentSnapshot
     func widgetSnapshot(request: WidgetSnapshotRequest) async throws -> WidgetSnapshot
+    func createWorkspace(request: CreateWorkspaceRequest) async throws -> CreateWorkspaceResponse
 }
 
 public enum NexusBridgeFactory {
@@ -82,6 +83,13 @@ public final class PreviewNexusBridge: NexusBridge {
             generatedAt: request.generatedAt
         )
     }
+
+    public func createWorkspace(request: CreateWorkspaceRequest) async throws -> CreateWorkspaceResponse {
+        guard request.confirmed else {
+            throw NexusBridgeError.coreError("workspace creation requires explicit confirmation")
+        }
+        throw NexusBridgeError.coreError("Create workspace requires Rust Core bridge. Set NEXUS_CORE_LIBRARY to a local libnexus_ffi.dylib.")
+    }
 }
 
 public final class DynamicLibraryNexusBridge: NexusBridge {
@@ -93,6 +101,7 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
     private let scanSourceReposFunction: BridgeCall
     private let readDocumentFunction: BridgeCall
     private let widgetSnapshotFunction: BridgeCall
+    private let createWorkspaceFunction: BridgeCall
     private let freeFunction: BridgeFree
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
@@ -121,6 +130,10 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
                 handle: handle,
                 name: "nexus_widget_snapshot_json"
             )
+            self.createWorkspaceFunction = try Self.loadSymbol(
+                handle: handle,
+                name: "nexus_create_workspace_json"
+            )
             self.freeFunction = try Self.loadSymbol(handle: handle, name: "nexus_string_free")
             self.modeDescription = "Rust Core bridge: \(libraryPath)"
         } catch {
@@ -147,6 +160,10 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
 
     public func widgetSnapshot(request: WidgetSnapshotRequest) async throws -> WidgetSnapshot {
         try call(widgetSnapshotFunction, request: request)
+    }
+
+    public func createWorkspace(request: CreateWorkspaceRequest) async throws -> CreateWorkspaceResponse {
+        try call(createWorkspaceFunction, request: request)
     }
 
     private static func loadSymbol<T>(handle: UnsafeMutableRawPointer, name: String) throws -> T {
