@@ -1,6 +1,6 @@
 use crate::{
     expand_user_path, git_status, normalize_git_branch, read_audit_events, target_branch_confirmed,
-    AuditEvent, GitStatus,
+    AgentEventTaskDraftResponse, AuditEvent, GitStatus,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -113,6 +113,24 @@ pub struct SetupWorktreesRequest {
     pub services: Vec<String>,
     pub target_branch: String,
     pub confirmed: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppendAgentTaskDraftRequest {
+    pub workspace_path: String,
+    pub draft: AgentEventTaskDraftResponse,
+    pub confirmed: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppendAgentTaskDraftResponse {
+    pub path: String,
+    pub title: String,
+    pub source_event_id: String,
+    pub appended: bool,
+    pub already_exists: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -343,6 +361,66 @@ pub fn create_workspace(
     })
 }
 
+pub fn append_agent_task_draft(
+    request: AppendAgentTaskDraftRequest,
+) -> Result<AppendAgentTaskDraftResponse, String> {
+    if !request.confirmed {
+        return Err("agent task draft append requires explicit confirmation".to_string());
+    }
+
+    let workspace = expand_user_path(&request.workspace_path);
+    if !workspace.exists() {
+        return Err(format!("workspace does not exist: {}", workspace.display()));
+    }
+    if !workspace.is_dir() {
+        return Err(format!(
+            "workspace is not a directory: {}",
+            workspace.display()
+        ));
+    }
+
+    let tasks_path = workspace.join("tasks.md");
+    let mut content = if tasks_path.exists() {
+        fs::read_to_string(&tasks_path).map_err(|error| error.to_string())?
+    } else {
+        "# Tasks\n\n| 任务 | 状态 | 说明 |\n| --- | --- | --- |\n".to_string()
+    };
+
+    if content.contains(&request.draft.source_event_id) {
+        return Ok(AppendAgentTaskDraftResponse {
+            path: tasks_path.to_string_lossy().to_string(),
+            title: request.draft.title,
+            source_event_id: request.draft.source_event_id,
+            appended: false,
+            already_exists: true,
+        });
+    }
+
+    if !content.contains("## Agent Task Drafts") {
+        if !content.ends_with('\n') {
+            content.push('\n');
+        }
+        content.push_str("\n## Agent Task Drafts\n\n| 任务 | 状态 | 说明 |\n| --- | --- | --- |\n");
+    } else if !content.ends_with('\n') {
+        content.push('\n');
+    }
+
+    content.push_str(&format!(
+        "| {} | 待办 | {} |\n",
+        markdown_table_cell(&request.draft.title),
+        markdown_table_cell(&task_draft_detail(&request.draft))
+    ));
+    fs::write(&tasks_path, content).map_err(|error| error.to_string())?;
+
+    Ok(AppendAgentTaskDraftResponse {
+        path: tasks_path.to_string_lossy().to_string(),
+        title: request.draft.title,
+        source_event_id: request.draft.source_event_id,
+        appended: true,
+        already_exists: false,
+    })
+}
+
 pub fn setup_worktrees(request: SetupWorktreesRequest) -> Result<SetupWorktreesResponse, String> {
     if !request.confirmed {
         return Err("worktree setup requires explicit confirmation".to_string());
@@ -474,6 +552,38 @@ pub fn setup_worktrees(request: SetupWorktreesRequest) -> Result<SetupWorktreesR
         skipped,
         failed,
     })
+}
+
+fn task_draft_detail(draft: &AgentEventTaskDraftResponse) -> String {
+    let targets = draft
+        .related_targets
+        .iter()
+        .take(3)
+        .map(|target| format!("{} {}={}", target.kind, target.label, target.value))
+        .collect::<Vec<_>>()
+        .join("; ");
+    let mut detail = format!(
+        "{} · category={} · priority={} · event={}",
+        draft.summary.trim(),
+        draft.category,
+        draft.priority,
+        draft.source_event_id
+    );
+    if !targets.is_empty() {
+        detail.push_str(" · targets=");
+        detail.push_str(&targets);
+    }
+    detail
+}
+
+fn markdown_table_cell(value: &str) -> String {
+    value
+        .replace('\n', " ")
+        .replace('\r', " ")
+        .replace('|', "/")
+        .replace('`', "")
+        .trim()
+        .to_string()
 }
 
 fn collect_workspace(
@@ -1058,6 +1168,7 @@ fn audit_action_label(action: &str) -> String {
         "codex_handoff.opened" => "Codex 交接已打开 / Codex handoff".to_string(),
         "codex_instruction.copied" => "Codex 指令已复制 / Instruction copied".to_string(),
         "document.opened" => "文档已打开 / Document opened".to_string(),
+        "agent_task_draft.appended" => "Agent 任务已写入 / Agent task added".to_string(),
         "risk_instruction.copied" => "风险指令已复制 / Risk instruction".to_string(),
         "worktree.command.copied" => "Worktree 命令已复制 / Worktree command".to_string(),
         "worktree.command.generated" => "Worktree 命令已生成 / Worktree command".to_string(),
@@ -1544,6 +1655,74 @@ mod tests {
         assert!(result
             .unwrap_err()
             .contains("requires explicit confirmation"));
+    }
+
+    #[test]
+    fn append_agent_task_draft_requires_confirmation_and_appends_once() {
+        let root = std::env::temp_dir().join(format!(
+            "nexus-core-agent-task-writeback-{}",
+            std::process::id()
+        ));
+        let workspace = root.join("2026-05-27-task-demo");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&workspace).unwrap();
+        fs::write(
+            workspace.join("tasks.md"),
+            "# Tasks\n\n| 任务 | 状态 | 说明 |\n| --- | --- | --- |\n| 现有任务 | 待办 | old |\n",
+        )
+        .unwrap();
+
+        let draft = AgentEventTaskDraftResponse {
+            source_event_id: "agent-1".to_string(),
+            title: "Review permission request: Git push".to_string(),
+            category: "approval".to_string(),
+            priority: "medium".to_string(),
+            status: "draft".to_string(),
+            summary: "Codex requested git push.".to_string(),
+            prompt: "Continue from this Nexus agent event.".to_string(),
+            workspace_folder: Some("2026-05-27-task-demo".to_string()),
+            related_targets: vec![crate::AgentEventTaskTarget {
+                label: "command".to_string(),
+                value: "git push".to_string(),
+                kind: "command".to_string(),
+            }],
+        };
+
+        let rejected = append_agent_task_draft(AppendAgentTaskDraftRequest {
+            workspace_path: workspace.to_string_lossy().to_string(),
+            draft: draft.clone(),
+            confirmed: false,
+        });
+        assert!(rejected
+            .unwrap_err()
+            .contains("requires explicit confirmation"));
+
+        let response = append_agent_task_draft(AppendAgentTaskDraftRequest {
+            workspace_path: workspace.to_string_lossy().to_string(),
+            draft: draft.clone(),
+            confirmed: true,
+        })
+        .unwrap();
+        assert!(response.appended);
+        assert!(!response.already_exists);
+        let tasks = fs::read_to_string(workspace.join("tasks.md")).unwrap();
+        assert!(tasks.contains("## Agent Task Drafts"));
+        assert!(tasks.contains("Review permission request: Git push"));
+        assert!(tasks.contains("event=agent-1"));
+        assert!(tasks.contains("command command=git push"));
+
+        let duplicate = append_agent_task_draft(AppendAgentTaskDraftRequest {
+            workspace_path: workspace.to_string_lossy().to_string(),
+            draft,
+            confirmed: true,
+        })
+        .unwrap();
+        assert!(!duplicate.appended);
+        assert!(duplicate.already_exists);
+        let tasks = fs::read_to_string(workspace.join("tasks.md")).unwrap();
+        assert_eq!(tasks.matches("event=agent-1").count(), 1);
+
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

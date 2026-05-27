@@ -427,6 +427,32 @@ final class AppState: ObservableObject {
         }
     }
 
+    func appendAgentTaskDraft(
+        _ draft: AgentEventTaskDraftResponse,
+        to workspace: WorkspaceSummary,
+        confirmed: Bool
+    ) async -> AppendAgentTaskDraftResponse? {
+        lastError = nil
+        do {
+            let response = try await bridge.appendAgentTaskDraft(
+                request: AppendAgentTaskDraftRequest(
+                    workspacePath: workspace.path,
+                    draft: draft,
+                    confirmed: confirmed,
+                    auditRoot: auditRootPath,
+                    actor: "Nexus Native"
+                )
+            )
+            if response.appended {
+                await refreshFromBridge()
+            }
+            return response
+        } catch {
+            lastError = error.localizedDescription
+            return nil
+        }
+    }
+
     func createWorkspace(draft: CreateWorkspaceDraft) async {
         isCreatingWorkspace = true
         lastError = nil

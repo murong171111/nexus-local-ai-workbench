@@ -68,6 +68,19 @@ The draft contains:
 
 Command targets remain non-executable context. They are useful for review, copying, or future explicit approvals only.
 
+## Task Writeback
+
+The native shell can append a task draft to a workspace `tasks.md` file after explicit confirmation.
+
+Writeback rules:
+
+- The user must check the confirmation control before Nexus writes.
+- Rust Core rejects writeback requests with `confirmed=false`.
+- The task is appended under an `Agent Task Drafts` section as a normal Markdown task table row.
+- The source agent event ID is embedded in the row detail so repeated writes of the same event become no-ops.
+- Command targets remain text in the row detail. Nexus still does not execute them.
+- When the FFI bridge receives an audit root, successful writes append an `agent_task_draft.appended` audit event.
+
 ## Storage Boundary
 
 Agent events are not workspace source-of-truth records. They are local operational telemetry used for:

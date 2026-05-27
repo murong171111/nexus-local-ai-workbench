@@ -1528,6 +1528,9 @@ private struct AgentEventDetailSheet: View {
     let event: AgentEvent
     @State private var taskDraft: AgentEventTaskDraftResponse?
     @State private var isTaskDraftLoading = false
+    @State private var isTaskWriteConfirmed = false
+    @State private var isAppendingTaskDraft = false
+    @State private var taskAppendResult: AppendAgentTaskDraftResponse?
 
     private var metadataRows: [(String, String)] {
         event.metadata
@@ -1641,6 +1644,28 @@ private struct AgentEventDetailSheet: View {
                             Button("Copy prompt") {
                                 copyToPasteboard(displayedTaskDraft.prompt)
                             }
+                        }
+
+                        if let workspace = workspaceMatch {
+                            Divider()
+                            Toggle("确认写入 tasks.md / Confirm write", isOn: $isTaskWriteConfirmed)
+                                .toggleStyle(.checkbox)
+                            HStack {
+                                Button(isAppendingTaskDraft ? "Writing" : "Add to tasks.md") {
+                                    appendTaskDraft(to: workspace)
+                                }
+                                .disabled(!isTaskWriteConfirmed || isAppendingTaskDraft)
+
+                                if let taskAppendResult {
+                                    Text(taskAppendResult.alreadyExists ? "Already exists" : "Added")
+                                        .font(.caption)
+                                        .foregroundStyle(taskAppendResult.appended ? NexusPalette.success : .secondary)
+                                }
+                            }
+                        } else {
+                            Text("Select a matching workspace before writing this draft.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -1778,6 +1803,19 @@ private struct AgentEventDetailSheet: View {
         isTaskDraftLoading = true
         taskDraft = await appState.agentEventTaskDraft(for: event)
         isTaskDraftLoading = false
+    }
+
+    private func appendTaskDraft(to workspace: WorkspaceSummary) {
+        let draft = displayedTaskDraft
+        isAppendingTaskDraft = true
+        Task {
+            taskAppendResult = await appState.appendAgentTaskDraft(
+                draft,
+                to: workspace,
+                confirmed: isTaskWriteConfirmed
+            )
+            isAppendingTaskDraft = false
+        }
     }
 
     private func copyToPasteboard(_ payload: String) {

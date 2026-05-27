@@ -387,6 +387,7 @@ public struct AgentEventTaskTarget: Codable, Equatable, Identifiable, Sendable {
 }
 
 public struct AgentEventTaskDraftResponse: Codable, Equatable, Sendable {
+    public let sourceEventId: String
     public let title: String
     public let category: String
     public let priority: String
@@ -397,6 +398,7 @@ public struct AgentEventTaskDraftResponse: Codable, Equatable, Sendable {
     public let relatedTargets: [AgentEventTaskTarget]
 
     public init(
+        sourceEventId: String,
         title: String,
         category: String,
         priority: String,
@@ -406,6 +408,7 @@ public struct AgentEventTaskDraftResponse: Codable, Equatable, Sendable {
         workspaceFolder: String? = nil,
         relatedTargets: [AgentEventTaskTarget] = []
     ) {
+        self.sourceEventId = sourceEventId
         self.title = title
         self.category = category
         self.priority = priority
@@ -414,6 +417,50 @@ public struct AgentEventTaskDraftResponse: Codable, Equatable, Sendable {
         self.prompt = prompt
         self.workspaceFolder = workspaceFolder
         self.relatedTargets = relatedTargets
+    }
+}
+
+public struct AppendAgentTaskDraftRequest: Codable, Equatable, Sendable {
+    public let workspacePath: String
+    public let draft: AgentEventTaskDraftResponse
+    public let confirmed: Bool
+    public let auditRoot: String?
+    public let actor: String?
+
+    public init(
+        workspacePath: String,
+        draft: AgentEventTaskDraftResponse,
+        confirmed: Bool,
+        auditRoot: String? = nil,
+        actor: String? = nil
+    ) {
+        self.workspacePath = workspacePath
+        self.draft = draft
+        self.confirmed = confirmed
+        self.auditRoot = auditRoot
+        self.actor = actor
+    }
+}
+
+public struct AppendAgentTaskDraftResponse: Codable, Equatable, Sendable {
+    public let path: String
+    public let title: String
+    public let sourceEventId: String
+    public let appended: Bool
+    public let alreadyExists: Bool
+
+    public init(
+        path: String,
+        title: String,
+        sourceEventId: String,
+        appended: Bool,
+        alreadyExists: Bool
+    ) {
+        self.path = path
+        self.title = title
+        self.sourceEventId = sourceEventId
+        self.appended = appended
+        self.alreadyExists = alreadyExists
     }
 }
 
@@ -523,6 +570,7 @@ public extension AgentEvent {
         }
 
         return AgentEventTaskDraftResponse(
+            sourceEventId: id,
             title: "\(verb): \(title)",
             category: category,
             priority: priority,

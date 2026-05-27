@@ -1,9 +1,11 @@
 use nexus_core::{
     agent_event_handoff_prompt, agent_event_task_draft, append_agent_event_from_root,
-    append_audit_event_from_root, create_workspace, read_agent_events_from_root, read_document,
-    rebuild_search_index, scan_source_repos, scan_workspaces, scan_workspaces_with_audit,
-    search_index, setup_worktrees, widget_snapshot_from_dashboard, AgentEvent, AgentEventInput,
-    AuditEventInput, CreateWorkspaceRequest as CoreCreateWorkspaceRequest,
+    append_agent_task_draft, append_audit_event_from_root, create_workspace,
+    read_agent_events_from_root, read_document, rebuild_search_index, scan_source_repos,
+    scan_workspaces, scan_workspaces_with_audit, search_index, setup_worktrees,
+    widget_snapshot_from_dashboard, AgentEvent, AgentEventInput, AgentEventTaskDraftResponse,
+    AppendAgentTaskDraftRequest as CoreAppendAgentTaskDraftRequest, AuditEventInput,
+    CreateWorkspaceRequest as CoreCreateWorkspaceRequest,
     SetupWorktreesRequest as CoreSetupWorktreesRequest,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -99,6 +101,16 @@ struct AgentEventHandoffPromptBridgeRequest {
 #[serde(rename_all = "camelCase")]
 struct AgentEventTaskDraftBridgeRequest {
     event: AgentEvent,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AppendAgentTaskDraftBridgeRequest {
+    workspace_path: String,
+    draft: AgentEventTaskDraftResponse,
+    confirmed: bool,
+    audit_root: Option<String>,
+    actor: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -213,6 +225,47 @@ pub unsafe extern "C" fn nexus_agent_event_task_draft_json(
 ) -> *mut c_char {
     bridge_call(input_json, |request: AgentEventTaskDraftBridgeRequest| {
         Ok(agent_event_task_draft(&request.event))
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn nexus_append_agent_task_draft_json(
+    input_json: *const c_char,
+) -> *mut c_char {
+    bridge_call(input_json, |request: AppendAgentTaskDraftBridgeRequest| {
+        let response = append_agent_task_draft(CoreAppendAgentTaskDraftRequest {
+            workspace_path: request.workspace_path.clone(),
+            draft: request.draft.clone(),
+            confirmed: request.confirmed,
+        })?;
+
+        if response.appended {
+            if let Some(audit_root) = request.audit_root.as_deref() {
+                let _ = append_audit_event_from_root(
+                    audit_root,
+                    AuditEventInput {
+                        actor: request.actor.unwrap_or_else(|| "Nexus Native".to_string()),
+                        action: "agent_task_draft.appended".to_string(),
+                        target: response.path.clone(),
+                        summary: format!("Added task draft {}", response.title),
+                        metadata: [
+                            ("workspace".to_string(), request.workspace_path),
+                            (
+                                "sourceEventId".to_string(),
+                                response.source_event_id.clone(),
+                            ),
+                            ("taskTitle".to_string(), response.title.clone()),
+                            ("category".to_string(), request.draft.category),
+                            ("priority".to_string(), request.draft.priority),
+                        ]
+                        .into_iter()
+                        .collect(),
+                    },
+                );
+            }
+        }
+
+        Ok(response)
     })
 }
 
@@ -650,6 +703,46 @@ mod tests {
             .unwrap()
             .iter()
             .any(|target| target["kind"] == "web_url"));
+    }
+
+    #[test]
+    fn append_agent_task_draft_bridge_writes_tasks_and_audit() {
+        let root = std::env::temp_dir().join(format!(
+            "nexus-ffi-agent-task-writeback-{}",
+            std::process::id()
+        ));
+        let workspace = root.join("2026-05-27-task-demo");
+        let audit_root = root.join("audit");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&workspace).unwrap();
+        fs::write(
+            workspace.join("tasks.md"),
+            "# Tasks\n\n| 任务 | 状态 | 说明 |\n| --- | --- | --- |\n",
+        )
+        .unwrap();
+
+        let request = format!(
+            r#"{{"workspacePath":"{}","confirmed":true,"auditRoot":"{}","actor":"Nexus Test","draft":{{"sourceEventId":"agent-1","title":"Review permission request: Git push","category":"approval","priority":"medium","status":"draft","summary":"Codex requested git push.","prompt":"Continue from this Nexus agent event.","workspaceFolder":"2026-05-27-task-demo","relatedTargets":[{{"label":"command","value":"git push","kind":"command"}}]}}}}"#,
+            workspace.to_string_lossy(),
+            audit_root.to_string_lossy()
+        );
+        let input = CString::new(request).unwrap();
+        let output = unsafe { nexus_append_agent_task_draft_json(input.as_ptr()) };
+        let response = unsafe { CStr::from_ptr(output).to_string_lossy().to_string() };
+        unsafe { nexus_string_free(output) };
+
+        let value = serde_json::from_str::<Value>(&response).unwrap();
+        assert_eq!(value["ok"], true);
+        assert_eq!(value["data"]["appended"], true);
+        assert_eq!(value["data"]["alreadyExists"], false);
+        let tasks = fs::read_to_string(workspace.join("tasks.md")).unwrap();
+        assert!(tasks.contains("Review permission request: Git push"));
+        assert!(tasks.contains("event=agent-1"));
+        let audit = fs::read_to_string(audit_root.join("audit-log.jsonl")).unwrap();
+        assert!(audit.contains("agent_task_draft.appended"));
+        assert!(audit.contains("agent-1"));
+
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
