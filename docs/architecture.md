@@ -8,7 +8,7 @@ The current Tauri app remains the working preview app until the native Mac shell
 
 The native shell scaffold currently lives in `native/Nexus` as a Swift Package. It validates the long-lived SwiftUI/AppKit direction without changing the preview app distribution path.
 
-The first Swift/Rust bridge lives in `crates/nexus-ffi` and `native/Nexus/Sources/NexusBridge`. It uses C ABI functions with JSON payloads for read-only scans, with a preview fallback when no local dynamic library is configured.
+The first Swift/Rust bridge lives in `crates/nexus-ffi` and `native/Nexus/Sources/NexusBridge`. It uses C ABI functions with JSON payloads for read-only scans and document reads, with a preview fallback when no local dynamic library is configured.
 
 ## Target Native Architecture
 

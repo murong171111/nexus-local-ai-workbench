@@ -121,6 +121,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
     let riskLevel: RiskLevel
     let aiState: String
     let worktreeState: String
+    let documentLinks: [String: String]
     let services: [ServiceStatus]
     let activities: [ActivityEvent]
     let risks: [RiskAlert]
@@ -139,6 +140,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
         riskLevel: RiskLevel,
         aiState: String,
         worktreeState: String,
+        documentLinks: [String: String] = [:],
         services: [ServiceStatus],
         activities: [ActivityEvent],
         risks: [RiskAlert]
@@ -152,6 +154,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
         self.riskLevel = riskLevel
         self.aiState = aiState
         self.worktreeState = worktreeState
+        self.documentLinks = documentLinks
         self.services = services
         self.activities = activities
         self.risks = risks
@@ -184,6 +187,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
             riskLevel: RiskLevel(riskCount: snapshot.riskCount),
             aiState: snapshot.riskCount == 0 ? "Ready for Codex continuation" : "\(snapshot.riskCount) risks need review",
             worktreeState: worktreeState,
+            documentLinks: snapshot.links,
             services: services,
             activities: [
                 ActivityEvent(time: snapshot.updated, title: firstActivity, detail: "Loaded from Nexus Core dashboard snapshot")
@@ -203,6 +207,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
             riskLevel: .medium,
             aiState: "Needs delivery update",
             worktreeState: "3 services pending review",
+            documentLinks: ["handoff": "~/ks_project/workspaces/2026-05-25-yibao-pay-log/handoff.md"],
             services: [
                 ServiceStatus(name: "order", branch: "feature/yibao-pay-log", worktree: "ready", gitSummary: "clean"),
                 ServiceStatus(name: "store-cashier", branch: "feature/yibao-pay-log", worktree: "ready", gitSummary: "dirty"),
@@ -227,6 +232,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
             riskLevel: .low,
             aiState: "Ready for Codex continuation",
             worktreeState: "All selected services ready",
+            documentLinks: ["handoff": "~/ks_project/workspaces/2026-05-25-多价格开发/handoff.md"],
             services: [
                 ServiceStatus(name: "store", branch: "feature/pricing-snapshot", worktree: "ready", gitSummary: "clean"),
                 ServiceStatus(name: "order", branch: "feature/pricing-snapshot", worktree: "ready", gitSummary: "clean")

@@ -12,8 +12,10 @@ final class AppState: ObservableObject {
     @Published var sourceReposRoot: String
     @Published var docsRoot: String
     @Published var isLoading = false
+    @Published var isDocumentLoading = false
     @Published var lastError: String?
     @Published var bridgeMode: String
+    @Published var documentPreview: DocumentSnapshot?
 
     @Published var agentStatus: AgentStatus
     private let bridge: NexusBridge
@@ -112,6 +114,25 @@ final class AppState: ObservableObject {
                 detail: error.localizedDescription,
                 connectedTools: ["Nexus Core"]
             )
+        }
+    }
+
+    func loadHandoffForSelectedWorkspace() async {
+        guard let workspace = selectedWorkspace else {
+            return
+        }
+
+        let path = workspace.documentLinks["handoff"] ?? "\(workspace.path)/handoff.md"
+        isDocumentLoading = true
+        lastError = nil
+        defer {
+            isDocumentLoading = false
+        }
+
+        do {
+            documentPreview = try await bridge.readDocument(request: ReadDocumentRequest(path: path))
+        } catch {
+            lastError = error.localizedDescription
         }
     }
 
