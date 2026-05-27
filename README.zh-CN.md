@@ -14,6 +14,7 @@ Nexus 是一个面向 macOS 的本地 AI 开发工作台，用来管理需求工
 - 支持在应用内预览 Markdown 文档，包括状态、服务范围、分支说明、任务、决策和交付记录。
 - 支持配置本地工作区目录、源仓库目录和交付文档目录。
 - 支持导出和导入团队配置 Profile，便于分享路径约定和基础应用设置。
+- 支持本地审计日志，记录已确认的新建工作区和配置导出动作。
 - 首次启动向导会引导配置工作区、源仓库和交付文档路径。
 - 支持环境健康检查，用于确认本地路径和 Git 是否可用。
 - 打包后的应用通过原生命令扫描配置路径，不依赖本地 Python 脚本。
@@ -74,9 +75,13 @@ Nexus 默认识别每个需求工作区下的 Markdown 文档和本地 worktree 
 
 点击左侧 `New Workspace` 新建需求工作区。Nexus 会基于已配置的源仓库目录扫描服务列表，新建时可以直接勾选涉及服务；如果某个服务还不在源仓库目录中，也可以手动输入。手动输入支持逗号、空格、换行、分号，以及 `、`、`，` 等中文分隔符。
 
-创建动作会写入标准 Markdown 文档，并把选中的服务记录到 `services.md` 和 `branches.md`。同时会生成 `bootstrap-report.md` 和 `scripts/worktree-commands.sh`。
+创建前需要确认本地写入。创建动作会写入标准 Markdown 文档，并把选中的服务记录到 `services.md` 和 `branches.md`。同时会生成 `bootstrap-report.md`、`scripts/worktree-commands.sh`，并写入一条本地审计事件。
 
 Nexus 不会自动执行 worktree 命令。你需要先确认分支和服务范围，再人工执行生成的脚本。
+
+## 本地审计日志
+
+Nexus 会把用户可感知的本地写入记录为 JSONL 事件，默认位置是 `~/Library/Application Support/com.ks.nexus/audit/audit-log.jsonl`。当前会记录新建工作区和导出设置 Profile；高频缓存写入，例如小组件快照刷新，不会写入审计日志。
 
 ## 本地开发
 

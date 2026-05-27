@@ -58,6 +58,8 @@ public struct CreateWorkspaceRequest: Codable, Equatable, Sendable {
     public let services: [String]
     public let targetBranch: String
     public let confirmed: Bool
+    public let auditRoot: String?
+    public let actor: String?
 
     public init(
         name: String,
@@ -66,7 +68,9 @@ public struct CreateWorkspaceRequest: Codable, Equatable, Sendable {
         sourceReposRoot: String,
         services: [String],
         targetBranch: String,
-        confirmed: Bool
+        confirmed: Bool,
+        auditRoot: String? = nil,
+        actor: String? = nil
     ) {
         self.name = name
         self.folder = folder
@@ -75,6 +79,8 @@ public struct CreateWorkspaceRequest: Codable, Equatable, Sendable {
         self.services = services
         self.targetBranch = targetBranch
         self.confirmed = confirmed
+        self.auditRoot = auditRoot
+        self.actor = actor
     }
 }
 
@@ -85,6 +91,76 @@ public struct CreateWorkspaceResponse: Codable, Equatable, Sendable {
     public init(path: String, folder: String) {
         self.path = path
         self.folder = folder
+    }
+}
+
+public struct AppendAuditEventRequest: Codable, Equatable, Sendable {
+    public let auditRoot: String
+    public let event: AuditEventInput
+
+    public init(auditRoot: String, event: AuditEventInput) {
+        self.auditRoot = auditRoot
+        self.event = event
+    }
+}
+
+public struct AuditEventInput: Codable, Equatable, Sendable {
+    public let actor: String
+    public let action: String
+    public let target: String
+    public let summary: String
+    public let metadata: [String: String]
+
+    public init(
+        actor: String,
+        action: String,
+        target: String,
+        summary: String,
+        metadata: [String: String] = [:]
+    ) {
+        self.actor = actor
+        self.action = action
+        self.target = target
+        self.summary = summary
+        self.metadata = metadata
+    }
+}
+
+public struct AuditEvent: Codable, Equatable, Sendable {
+    public let id: String
+    public let timestamp: String
+    public let actor: String
+    public let action: String
+    public let target: String
+    public let summary: String
+    public let metadata: [String: String]
+
+    public init(
+        id: String,
+        timestamp: String,
+        actor: String,
+        action: String,
+        target: String,
+        summary: String,
+        metadata: [String: String]
+    ) {
+        self.id = id
+        self.timestamp = timestamp
+        self.actor = actor
+        self.action = action
+        self.target = target
+        self.summary = summary
+        self.metadata = metadata
+    }
+}
+
+public struct AppendAuditEventResponse: Codable, Equatable, Sendable {
+    public let path: String
+    public let event: AuditEvent
+
+    public init(path: String, event: AuditEvent) {
+        self.path = path
+        self.event = event
     }
 }
 

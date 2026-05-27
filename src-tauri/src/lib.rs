@@ -1,13 +1,14 @@
 use nexus_core::{
-    create_workspace as create_workspace_core, expand_user_path,
+    append_audit_event, create_workspace as create_workspace_core, expand_user_path,
     export_settings_profile as export_settings_profile_core,
     scan_source_repos as scan_source_repos_core, scan_workspaces as scan_workspaces_core,
-    CreateWorkspaceRequest, CreateWorkspaceResponse, DashboardData, ExportSettingsProfileResponse,
-    SettingsProfile, SourceRepo, WidgetSnapshot,
+    AuditEventInput, CreateWorkspaceRequest, CreateWorkspaceResponse, DashboardData,
+    ExportSettingsProfileResponse, SettingsProfile, SourceRepo, WidgetSnapshot,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use tauri::Manager;
 
@@ -31,6 +32,21 @@ struct EnvironmentHealthRequest {
     workspaces_root: String,
     source_repos_root: String,
     docs_root: String,
+}
+
+#[derive(Clone, Deserialize)]
+struct CreateWorkspaceCommandRequest {
+    pub name: String,
+    pub folder: String,
+    #[serde(alias = "workspacesRoot")]
+    pub workspaces_root: String,
+    #[serde(alias = "sourceReposRoot")]
+    pub source_repos_root: String,
+    pub services: Vec<String>,
+    #[serde(alias = "targetBranch")]
+    pub target_branch: String,
+    #[serde(default)]
+    pub confirmed: bool,
 }
 
 #[derive(Serialize)]
@@ -199,12 +215,61 @@ fn export_settings_profile(
         .app_data_dir()
         .map_err(|error| error.to_string())?;
     let profile_dir = app_data_dir.join("profiles");
-    export_settings_profile_core(&profile_dir, &profile)
+    let response = export_settings_profile_core(&profile_dir, &profile)?;
+    record_audit_event(
+        &app,
+        AuditEventInput {
+            actor: "Nexus App".to_string(),
+            action: "settings_profile.exported".to_string(),
+            target: response.path.clone(),
+            summary: "Exported a shareable Nexus settings profile".to_string(),
+            metadata: audit_metadata(&[
+                ("path", response.path.clone()),
+                ("workspacesRoot", profile.settings.workspaces_root),
+                ("sourceReposRoot", profile.settings.source_repos_root),
+                ("docsRoot", profile.settings.docs_root),
+            ]),
+        },
+    );
+    Ok(response)
 }
 
 #[tauri::command]
-fn create_workspace(request: CreateWorkspaceRequest) -> Result<CreateWorkspaceResponse, String> {
-    create_workspace_core(request)
+fn create_workspace(
+    app: tauri::AppHandle,
+    request: CreateWorkspaceCommandRequest,
+) -> Result<CreateWorkspaceResponse, String> {
+    if !request.confirmed {
+        return Err("workspace creation requires explicit confirmation".to_string());
+    }
+
+    let core_request = CreateWorkspaceRequest {
+        name: request.name.clone(),
+        folder: request.folder.clone(),
+        workspaces_root: request.workspaces_root.clone(),
+        source_repos_root: request.source_repos_root.clone(),
+        services: request.services.clone(),
+        target_branch: request.target_branch.clone(),
+    };
+    let response = create_workspace_core(core_request)?;
+    record_audit_event(
+        &app,
+        AuditEventInput {
+            actor: "Nexus App".to_string(),
+            action: "workspace.created".to_string(),
+            target: response.path.clone(),
+            summary: format!("Created workspace {}", request.name),
+            metadata: audit_metadata(&[
+                ("name", request.name),
+                ("folder", request.folder),
+                ("services", request.services.join(",")),
+                ("targetBranch", request.target_branch),
+                ("workspacesRoot", request.workspaces_root),
+                ("sourceReposRoot", request.source_repos_root),
+            ]),
+        },
+    );
+    Ok(response)
 }
 
 fn open_with_system(target: &str) -> Result<(), String> {
@@ -294,6 +359,26 @@ fn count_git_like_dirs(root: &Path) -> usize {
         .flat_map(|entries| entries.filter_map(Result::ok))
         .filter(|entry| entry.path().is_dir() && entry.path().join(".git").exists())
         .count()
+}
+
+fn record_audit_event(app: &tauri::AppHandle, input: AuditEventInput) {
+    if let Ok(root) = app_audit_root(app) {
+        let _ = append_audit_event(root, input);
+    }
+}
+
+fn app_audit_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_data_dir()
+        .map(|path| path.join("audit"))
+        .map_err(|error| error.to_string())
+}
+
+fn audit_metadata(pairs: &[(&str, String)]) -> BTreeMap<String, String> {
+    pairs
+        .iter()
+        .map(|(key, value)| ((*key).to_string(), value.clone()))
+        .collect()
 }
 
 fn generated_at() -> String {

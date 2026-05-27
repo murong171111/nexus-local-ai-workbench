@@ -14,6 +14,7 @@ It is designed for teams that work across multiple local service repositories an
 - In-app Markdown document preview for status, service scope, branch notes, tasks, and delivery records.
 - Local path settings for workspaces, source repositories, and delivery document roots.
 - Exportable and importable team settings profile for sharing local path conventions.
+- Local audit log for confirmed workspace creation and settings profile exports.
 - First-run onboarding for configuring local workspace, source repository, and delivery document paths.
 - Environment health checks for configured directories and Git availability.
 - Native workspace scanning from the configured paths; no local Python script is required for the packaged app.
@@ -72,9 +73,13 @@ The `repos/<service>` directories are intended to be git worktrees for isolated 
 
 Use the `New Workspace` action in the left rail. Nexus can scan the configured source repository root and lets you select services from that local list. You can still type service names manually when a repository is not present yet. Manual service input supports commas, spaces, new lines, semicolons, and Chinese separators such as `、` and `，`.
 
-Creating a workspace writes the standard Markdown document set and records selected services in `services.md` and `branches.md`. It also generates `bootstrap-report.md` and `scripts/worktree-commands.sh`.
+Creating a workspace requires confirming the local write, then writes the standard Markdown document set and records selected services in `services.md` and `branches.md`. It also generates `bootstrap-report.md`, `scripts/worktree-commands.sh`, and a local audit event.
 
 Nexus does not automatically execute worktree commands. Review the generated script first, then run it manually when the branch and service scope are confirmed.
+
+## Local Audit Log
+
+Nexus writes JSONL audit events to `~/Library/Application Support/com.ks.nexus/audit/audit-log.jsonl` for user-visible local writes such as workspace creation and settings profile export. High-frequency cache writes, such as widget snapshot refreshes, are not audited.
 
 ## Local Development
 

@@ -32,6 +32,8 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
   - `create_workspace`
   - `read_text_file`
   - `write_widget_snapshot`
+- Added Rust Core JSONL audit logging for confirmed workspace creation and settings profile export.
+- Added an explicit local-write confirmation checkbox to the Tauri create-workspace flow.
 - Added frontend desktop bridge in `src/desktop.ts`.
 - Switched the frontend bridge to the official `@tauri-apps/api/core` dynamic invoke API.
 - Added UI actions to open Codex from the workbench.
@@ -69,8 +71,10 @@ src-tauri/target/release/bundle/dmg/Nexus_0.1.0_aarch64.dmg
 The app should keep three permission levels:
 
 - Read-only: scan workspace documents and git status.
-- Confirmed action: open IDEA, Terminal, Finder, Codex, generate worktree commands.
+- Confirmed action: open IDEA, Terminal, Finder, Codex, create workspace files, export settings profiles, generate worktree commands.
 - Dangerous action: reset, clean, delete branch, overwrite files. These must require explicit confirmation.
+
+Local audit events are stored at `~/Library/Application Support/com.ks.nexus/audit/audit-log.jsonl`. Widget snapshot refreshes are cache writes and are not logged on every refresh.
 
 ## Next Engineering Steps
 

@@ -1604,7 +1604,7 @@ function CreateWorkspacePanel({
   sourceRepos: SourceRepo[];
   sourceScanning: boolean;
   onClose: () => void;
-  onCreate: (input: { name: string; folder: string; services: string[]; targetBranch: string }) => void;
+  onCreate: (input: { name: string; folder: string; services: string[]; targetBranch: string; confirmed: boolean }) => void;
   onScanSourceRepos: () => void;
 }) {
   const [name, setName] = useState("");
@@ -1612,6 +1612,7 @@ function CreateWorkspacePanel({
   const [serviceQuery, setServiceQuery] = useState("");
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
   const [targetBranch, setTargetBranch] = useState("");
+  const [confirmed, setConfirmed] = useState(false);
   const folder = workspaceFolderFromName(name);
   if (!open) return null;
 
@@ -1724,11 +1725,25 @@ function CreateWorkspacePanel({
               <div className="mono mt-2 break-all text-xs text-neutral-500">{settings.workspacesRoot}</div>
               <div className="mt-3 text-neutral-500">创建后不会自动创建 worktree；目标分支确认后再按工作区里的命令创建。</div>
             </Card>
+            <label className="flex items-start gap-3 rounded-md border border-neutral-200 bg-white p-4 text-sm text-neutral-600">
+              <input
+                type="checkbox"
+                checked={confirmed}
+                onChange={(event) => setConfirmed(event.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-neutral-300 text-blue-600"
+              />
+              <span>
+                <span className="block font-medium text-neutral-950">确认创建本地文件 / Confirm local write</span>
+                <span className="mt-1 block leading-6">
+                  Nexus 将在工作区目录下写入标准 Markdown、脚本、SQL 和日志目录，并记录一条本地审计日志。
+                </span>
+              </span>
+            </label>
           </div>
         </div>
         <div className="flex justify-end gap-2 border-t border-neutral-200 px-5 py-4">
           <Button variant="ghost" onClick={onClose}>取消</Button>
-          <Button disabled={!name.trim()} onClick={() => onCreate({ name: name.trim(), folder, services, targetBranch })}>
+          <Button disabled={!name.trim() || !confirmed} onClick={() => onCreate({ name: name.trim(), folder, services, targetBranch, confirmed })}>
             创建工作区
           </Button>
         </div>
@@ -2019,7 +2034,7 @@ export function App() {
     }
   };
 
-  const handleCreateWorkspace = async (input: { name: string; folder: string; services: string[]; targetBranch: string }) => {
+  const handleCreateWorkspace = async (input: { name: string; folder: string; services: string[]; targetBranch: string; confirmed: boolean }) => {
     try {
       const result = await createWorkspace({
         name: input.name,
@@ -2027,7 +2042,8 @@ export function App() {
         workspacesRoot: settings.workspacesRoot,
         sourceReposRoot: settings.sourceReposRoot,
         services: input.services,
-        targetBranch: input.targetBranch
+        targetBranch: input.targetBranch,
+        confirmed: input.confirmed
       });
       const path = result?.path ?? `${settings.workspacesRoot}/${input.folder}`;
       const targetBranch = input.targetBranch.trim() || "待确认";
