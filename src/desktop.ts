@@ -19,6 +19,27 @@ export type CreateWorkspacePayload = {
   confirmed: boolean;
 };
 
+export type AuditEventPayload = {
+  actor?: string;
+  action: string;
+  target: string;
+  summary: string;
+  metadata?: Record<string, string>;
+};
+
+export type AuditEventResponse = {
+  path: string;
+  event: {
+    id: string;
+    timestamp: string;
+    actor: string;
+    action: string;
+    target: string;
+    summary: string;
+    metadata: Record<string, string>;
+  };
+};
+
 export type WidgetSnapshotPayload = {
   generatedAt: string;
   workspacesRoot: string;
@@ -223,4 +244,17 @@ export async function writeWidgetSnapshot(snapshot: WidgetSnapshotPayload) {
 export async function exportSettingsProfile(profile: NexusSettingsProfile) {
   if (!isDesktopApp()) return null;
   return tauriInvoke<{ path: string }>("export_settings_profile", { profile });
+}
+
+export async function appendAuditEvent(payload: AuditEventPayload) {
+  if (!isDesktopApp()) return null;
+  return tauriInvoke<AuditEventResponse>("append_audit_event", {
+    request: {
+      actor: payload.actor,
+      action: payload.action,
+      target: payload.target,
+      summary: payload.summary,
+      metadata: payload.metadata ?? {}
+    }
+  });
 }

@@ -549,7 +549,12 @@ fn audit_action_label(action: &str) -> String {
         "workspace.created" => "工作区已创建 / Workspace created".to_string(),
         "settings_profile.exported" => "设置已导出 / Settings exported".to_string(),
         "settings_profile.imported" => "设置已导入 / Settings imported".to_string(),
+        "codex.opened" => "Codex 已打开 / Codex opened".to_string(),
+        "codex_handoff.opened" => "Codex 交接已打开 / Codex handoff".to_string(),
+        "codex_instruction.copied" => "Codex 指令已复制 / Instruction copied".to_string(),
         "document.opened" => "文档已打开 / Document opened".to_string(),
+        "risk_instruction.copied" => "风险指令已复制 / Risk instruction".to_string(),
+        "worktree.command.copied" => "Worktree 命令已复制 / Worktree command".to_string(),
         "worktree.command.generated" => "Worktree 命令已生成 / Worktree command".to_string(),
         value if !value.trim().is_empty() => value.replace('_', " ").replace('.', " "),
         _ => "本地事件 / Local event".to_string(),
@@ -905,6 +910,7 @@ mod tests {
         fs::write(
             audit_root.join("audit-log.jsonl"),
             r#"{"id":"create","timestamp":"2026-05-27T09:10:00Z","actor":"Nexus Test","action":"workspace.created","target":"/tmp/2026-05-27-audit-demo","summary":"Created Audit Demo","metadata":{"folder":"2026-05-27-audit-demo"}}
+{"id":"instruction","timestamp":"2026-05-27T09:30:00Z","actor":"Nexus Test","action":"codex_instruction.copied","target":"/tmp/2026-05-27-audit-demo","summary":"Copied continue instruction","metadata":{"folder":"2026-05-27-audit-demo"}}
 {"id":"other","timestamp":"2026-05-27T09:20:00Z","actor":"Nexus Test","action":"workspace.created","target":"/tmp/other","summary":"Created other","metadata":{"folder":"other"}}
 "#,
         )
@@ -918,13 +924,19 @@ mod tests {
         )
         .unwrap();
         let item = &dashboard.workspaces[0];
-        assert_eq!(item.activities.len(), 1);
+        assert_eq!(item.activities.len(), 2);
         assert_eq!(
             item.activities[0].title,
+            "Codex 指令已复制 / Instruction copied"
+        );
+        assert_eq!(item.activities[0].time, "2026-05-27 09:30");
+        assert!(item.activities[0].detail.contains("Copied continue instruction"));
+        assert_eq!(
+            item.activities[1].title,
             "工作区已创建 / Workspace created"
         );
-        assert_eq!(item.activities[0].time, "2026-05-27 09:10");
-        assert!(item.activities[0].detail.contains("Created Audit Demo"));
+        assert_eq!(item.activities[1].time, "2026-05-27 09:10");
+        assert!(item.activities[1].detail.contains("Created Audit Demo"));
 
         fs::remove_dir_all(root).unwrap();
     }

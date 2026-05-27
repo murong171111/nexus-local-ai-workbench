@@ -332,7 +332,14 @@ final class AppState: ObservableObject {
         }
 
         do {
-            documentPreview = try await bridge.readDocument(request: ReadDocumentRequest(path: path))
+            let document = try await bridge.readDocument(request: ReadDocumentRequest(path: path))
+            documentPreview = document
+            await recordWorkspaceAction(
+                action: "document.opened",
+                target: path,
+                summary: "Opened \(document.name)",
+                metadata: ["documentPath": path, "documentName": document.name]
+            )
         } catch {
             lastError = error.localizedDescription
         }
@@ -423,6 +430,64 @@ final class AppState: ObservableObject {
             .sorted()
 
         defaults.set(orderedPinnedIDs + orphanedPinnedIDs, forKey: DefaultsKey.pinnedWorkspaceIDs)
+    }
+
+    private func recordWorkspaceAction(
+        action: String,
+        target: String,
+        summary: String,
+        metadata: [String: String] = [:]
+    ) async {
+        guard let workspace = selectedWorkspace else { return }
+        let activity = ActivityEvent(
+            time: Self.activityTimestamp(),
+            title: Self.auditActivityTitle(action),
+            detail: "Nexus Native · \(summary)"
+        )
+        if let index = workspaces.firstIndex(where: { $0.id == workspace.id }) {
+            workspaces[index] = workspaces[index].prepending(activity: activity)
+        }
+
+        var eventMetadata = metadata
+        eventMetadata["folder"] = workspace.folder
+        eventMetadata["workspaceFolder"] = workspace.folder
+        eventMetadata["name"] = workspace.name
+        eventMetadata["path"] = workspace.path
+
+        _ = try? await bridge.appendAuditEvent(
+            request: AppendAuditEventRequest(
+                auditRoot: auditRootPath,
+                event: AuditEventInput(
+                    actor: "Nexus Native",
+                    action: action,
+                    target: target,
+                    summary: summary,
+                    metadata: eventMetadata
+                )
+            )
+        )
+    }
+
+    private static func auditActivityTitle(_ action: String) -> String {
+        switch action {
+        case "document.opened":
+            return "文档已打开 / Document opened"
+        case "codex.opened":
+            return "Codex 已打开 / Codex opened"
+        case "codex_instruction.copied":
+            return "Codex 指令已复制 / Instruction copied"
+        default:
+            return action.replacingOccurrences(of: "_", with: " ")
+                .replacingOccurrences(of: ".", with: " ")
+        }
+    }
+
+    private static func activityTimestamp() -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        return formatter.string(from: Date())
     }
 }
 

@@ -383,6 +383,24 @@ struct WorkspaceSummary: Identifiable, Hashable {
             risks: []
         )
     ]
+
+    func prepending(activity: ActivityEvent) -> WorkspaceSummary {
+        WorkspaceSummary(
+            id: id,
+            name: name,
+            folder: folder,
+            path: path,
+            branch: branch,
+            state: state,
+            riskLevel: riskLevel,
+            aiState: aiState,
+            worktreeState: worktreeState,
+            documentLinks: documentLinks,
+            services: services,
+            activities: Array(([activity] + activities).prefix(6)),
+            risks: risks
+        )
+    }
 }
 
 private extension WorkspaceState {
