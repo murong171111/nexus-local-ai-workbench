@@ -51,6 +51,27 @@ pub struct AgentEventHandoffPromptResponse {
     pub prompt: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentEventTaskTarget {
+    pub label: String,
+    pub value: String,
+    pub kind: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentEventTaskDraftResponse {
+    pub title: String,
+    pub category: String,
+    pub priority: String,
+    pub status: String,
+    pub summary: String,
+    pub prompt: String,
+    pub workspace_folder: Option<String>,
+    pub related_targets: Vec<AgentEventTaskTarget>,
+}
+
 pub fn append_agent_event(
     events_root: impl AsRef<Path>,
     input: AgentEventInput,
@@ -195,8 +216,138 @@ Metadata:
     AgentEventHandoffPromptResponse { prompt }
 }
 
+pub fn agent_event_task_draft(event: &AgentEvent) -> AgentEventTaskDraftResponse {
+    let category = event_task_category(event);
+    let priority = event_task_priority(event);
+    let title = format!("{}: {}", event_task_verb(&category), event.title.trim());
+    let prompt = agent_event_handoff_prompt(event).prompt;
+    AgentEventTaskDraftResponse {
+        title,
+        category,
+        priority,
+        status: "draft".to_string(),
+        summary: event.summary.trim().to_string(),
+        prompt,
+        workspace_folder: event.workspace_folder.clone(),
+        related_targets: event_task_targets(event),
+    }
+}
+
 pub fn agent_events_path(events_root: impl AsRef<Path>) -> PathBuf {
     events_root.as_ref().join(AGENT_EVENTS_FILE)
+}
+
+fn event_task_category(event: &AgentEvent) -> String {
+    let severity = event.severity.trim().to_lowercase();
+    if severity == "error" {
+        return "incident".to_string();
+    }
+
+    match event.kind.trim().to_lowercase().as_str() {
+        "permission" => "approval".to_string(),
+        "question" => "answer".to_string(),
+        "tool_use" | "tool-use" | "tool" => "tool-review".to_string(),
+        "prompt" => "handoff".to_string(),
+        "status" if severity == "warning" => "risk-review".to_string(),
+        _ if severity == "warning" => "risk-review".to_string(),
+        _ => "follow-up".to_string(),
+    }
+}
+
+fn event_task_priority(event: &AgentEvent) -> String {
+    let severity = event.severity.trim().to_lowercase();
+    if severity == "error" {
+        return "high".to_string();
+    }
+    if severity == "warning" || event.kind.trim().eq_ignore_ascii_case("permission") {
+        return "medium".to_string();
+    }
+    "normal".to_string()
+}
+
+fn event_task_verb(category: &str) -> &'static str {
+    match category {
+        "approval" => "Review permission request",
+        "answer" => "Answer agent question",
+        "tool-review" => "Review tool activity",
+        "incident" => "Investigate agent error",
+        "risk-review" => "Review agent risk",
+        "handoff" => "Continue agent handoff",
+        _ => "Follow up agent event",
+    }
+}
+
+fn event_task_targets(event: &AgentEvent) -> Vec<AgentEventTaskTarget> {
+    let mut targets = Vec::new();
+    if let Some(workspace) = event.workspace_folder.as_deref() {
+        let workspace = workspace.trim();
+        if !workspace.is_empty() {
+            targets.push(AgentEventTaskTarget {
+                label: "workspace".to_string(),
+                value: workspace.to_string(),
+                kind: "workspace".to_string(),
+            });
+        }
+    }
+
+    for (key, value) in &event.metadata {
+        let key = key.trim();
+        let value = value.trim();
+        if key.is_empty() || value.is_empty() {
+            continue;
+        }
+
+        let kind = metadata_target_kind(key, value);
+        if let Some(kind) = kind {
+            targets.push(AgentEventTaskTarget {
+                label: key.to_string(),
+                value: value.to_string(),
+                kind,
+            });
+        }
+    }
+
+    let mut seen = BTreeMap::new();
+    targets
+        .into_iter()
+        .filter(|target| {
+            let signature = format!("{}:{}", target.kind, target.value);
+            if seen.contains_key(&signature) {
+                false
+            } else {
+                seen.insert(signature, true);
+                true
+            }
+        })
+        .collect()
+}
+
+fn metadata_target_kind(key: &str, value: &str) -> Option<String> {
+    let normalized_key = key.to_lowercase();
+    let normalized_value = value.to_lowercase();
+    if matches!(
+        normalized_key.as_str(),
+        "workspace" | "workspacefolder" | "folder"
+    ) {
+        return Some("workspace".to_string());
+    }
+    if normalized_key.contains("command") || normalized_key == "cmd" {
+        return Some("command".to_string());
+    }
+    if normalized_value.starts_with("http://") || normalized_value.starts_with("https://") {
+        return Some("web_url".to_string());
+    }
+    if normalized_value.starts_with("file://")
+        || value.starts_with('/')
+        || value.starts_with("~/")
+        || normalized_key.contains("path")
+        || normalized_key.contains("file")
+        || normalized_key.contains("folder")
+        || normalized_key.contains("directory")
+    {
+        return Some("local_path".to_string());
+    }
+    None
 }
 
 fn agent_event_id(source: &str, session_id: &str, kind: &str) -> String {
@@ -370,5 +521,60 @@ not-json
         assert!(response
             .prompt
             .contains("- documentPath: /tmp/workspace/handoff.md"));
+    }
+
+    #[test]
+    fn agent_event_task_draft_classifies_and_extracts_targets() {
+        let mut metadata = BTreeMap::new();
+        metadata.insert("command".to_string(), "git push".to_string());
+        metadata.insert(
+            "documentPath".to_string(),
+            "/tmp/workspace/handoff.md".to_string(),
+        );
+        metadata.insert("docs".to_string(), "https://example.com/nexus".to_string());
+        metadata.insert("workspaceFolder".to_string(), "2026-05-27-demo".to_string());
+        let event = AgentEvent {
+            id: "agent-1".to_string(),
+            timestamp: "2026-05-27T10:00:00Z".to_string(),
+            source: "codex".to_string(),
+            session_id: "thread-1".to_string(),
+            workspace_folder: Some("2026-05-27-demo".to_string()),
+            kind: "permission".to_string(),
+            title: "Git push requested".to_string(),
+            summary: "Codex requested a protected operation.".to_string(),
+            severity: "warning".to_string(),
+            metadata,
+        };
+
+        let draft = agent_event_task_draft(&event);
+        assert_eq!(draft.category, "approval");
+        assert_eq!(draft.priority, "medium");
+        assert_eq!(draft.status, "draft");
+        assert_eq!(draft.workspace_folder.as_deref(), Some("2026-05-27-demo"));
+        assert_eq!(draft.title, "Review permission request: Git push requested");
+        assert!(draft
+            .prompt
+            .contains("do not execute command metadata unless the user explicitly asks"));
+        assert!(draft.related_targets.contains(&AgentEventTaskTarget {
+            label: "command".to_string(),
+            value: "git push".to_string(),
+            kind: "command".to_string(),
+        }));
+        assert!(draft.related_targets.contains(&AgentEventTaskTarget {
+            label: "documentPath".to_string(),
+            value: "/tmp/workspace/handoff.md".to_string(),
+            kind: "local_path".to_string(),
+        }));
+        assert!(draft.related_targets.contains(&AgentEventTaskTarget {
+            label: "docs".to_string(),
+            value: "https://example.com/nexus".to_string(),
+            kind: "web_url".to_string(),
+        }));
+        let workspace_targets = draft
+            .related_targets
+            .iter()
+            .filter(|target| target.kind == "workspace")
+            .count();
+        assert_eq!(workspace_targets, 1);
     }
 }

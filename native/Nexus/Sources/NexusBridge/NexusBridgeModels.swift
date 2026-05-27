@@ -362,6 +362,61 @@ public struct AgentEventHandoffPromptResponse: Codable, Equatable, Sendable {
     }
 }
 
+public struct AgentEventTaskDraftRequest: Codable, Equatable, Sendable {
+    public let event: AgentEvent
+
+    public init(event: AgentEvent) {
+        self.event = event
+    }
+}
+
+public struct AgentEventTaskTarget: Codable, Equatable, Identifiable, Sendable {
+    public let label: String
+    public let value: String
+    public let kind: String
+
+    public var id: String {
+        "\(kind):\(value)"
+    }
+
+    public init(label: String, value: String, kind: String) {
+        self.label = label
+        self.value = value
+        self.kind = kind
+    }
+}
+
+public struct AgentEventTaskDraftResponse: Codable, Equatable, Sendable {
+    public let title: String
+    public let category: String
+    public let priority: String
+    public let status: String
+    public let summary: String
+    public let prompt: String
+    public let workspaceFolder: String?
+    public let relatedTargets: [AgentEventTaskTarget]
+
+    public init(
+        title: String,
+        category: String,
+        priority: String,
+        status: String,
+        summary: String,
+        prompt: String,
+        workspaceFolder: String? = nil,
+        relatedTargets: [AgentEventTaskTarget] = []
+    ) {
+        self.title = title
+        self.category = category
+        self.priority = priority
+        self.status = status
+        self.summary = summary
+        self.prompt = prompt
+        self.workspaceFolder = workspaceFolder
+        self.relatedTargets = relatedTargets
+    }
+}
+
 public extension AgentEvent {
     var fallbackHandoffPrompt: String {
         let metadataLines = metadata
@@ -391,6 +446,92 @@ public extension AgentEvent {
         Metadata:
         \(metadataText)
         """
+    }
+
+    var fallbackTaskDraft: AgentEventTaskDraftResponse {
+        let normalizedKind = kind.lowercased()
+        let normalizedSeverity = severity.lowercased()
+        let category: String
+        if normalizedSeverity == "error" {
+            category = "incident"
+        } else {
+            switch normalizedKind {
+            case "permission":
+                category = "approval"
+            case "question":
+                category = "answer"
+            case "tool_use", "tool-use", "tool":
+                category = "tool-review"
+            case "prompt":
+                category = "handoff"
+            default:
+                category = normalizedSeverity == "warning" ? "risk-review" : "follow-up"
+            }
+        }
+
+        let priority = normalizedSeverity == "error"
+            ? "high"
+            : (normalizedSeverity == "warning" || normalizedKind == "permission" ? "medium" : "normal")
+        let verb: String
+        switch category {
+        case "approval":
+            verb = "Review permission request"
+        case "answer":
+            verb = "Answer agent question"
+        case "tool-review":
+            verb = "Review tool activity"
+        case "incident":
+            verb = "Investigate agent error"
+        case "risk-review":
+            verb = "Review agent risk"
+        case "handoff":
+            verb = "Continue agent handoff"
+        default:
+            verb = "Follow up agent event"
+        }
+
+        var targets: [AgentEventTaskTarget] = []
+        if let workspaceFolder {
+            targets.append(
+                AgentEventTaskTarget(label: "workspace", value: workspaceFolder, kind: "workspace")
+            )
+        }
+        for (key, value) in metadata.sorted(by: { $0.key < $1.key }) {
+            let lowerKey = key.lowercased()
+            let lowerValue = value.lowercased()
+            let kind: String?
+            if ["workspace", "workspacefolder", "folder"].contains(lowerKey) {
+                kind = "workspace"
+            } else if lowerKey.contains("command") || lowerKey == "cmd" {
+                kind = "command"
+            } else if lowerValue.hasPrefix("http://") || lowerValue.hasPrefix("https://") {
+                kind = "web_url"
+            } else if lowerValue.hasPrefix("file://")
+                || value.hasPrefix("/")
+                || value.hasPrefix("~/")
+                || lowerKey.contains("path")
+                || lowerKey.contains("file")
+                || lowerKey.contains("folder")
+                || lowerKey.contains("directory") {
+                kind = "local_path"
+            } else {
+                kind = nil
+            }
+            if let kind, !targets.contains(where: { $0.kind == kind && $0.value == value }) {
+                targets.append(AgentEventTaskTarget(label: key, value: value, kind: kind))
+            }
+        }
+
+        return AgentEventTaskDraftResponse(
+            title: "\(verb): \(title)",
+            category: category,
+            priority: priority,
+            status: "draft",
+            summary: summary,
+            prompt: fallbackHandoffPrompt,
+            workspaceFolder: workspaceFolder,
+            relatedTargets: targets
+        )
     }
 }
 

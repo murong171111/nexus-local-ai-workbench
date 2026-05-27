@@ -12,6 +12,7 @@ public protocol NexusBridge {
     func appendAgentEvent(request: AppendAgentEventRequest) async throws -> AppendAgentEventResponse
     func readAgentEvents(request: ReadAgentEventsRequest) async throws -> [AgentEvent]
     func agentEventHandoffPrompt(request: AgentEventHandoffPromptRequest) async throws -> AgentEventHandoffPromptResponse
+    func agentEventTaskDraft(request: AgentEventTaskDraftRequest) async throws -> AgentEventTaskDraftResponse
     func rebuildSearchIndex(request: RebuildSearchIndexRequest) async throws -> RebuildSearchIndexResponse
     func searchIndex(request: SearchIndexRequest) async throws -> [SearchResult]
     func createWorkspace(request: CreateWorkspaceRequest) async throws -> CreateWorkspaceResponse
@@ -124,6 +125,10 @@ public final class PreviewNexusBridge: NexusBridge {
         AgentEventHandoffPromptResponse(prompt: request.event.fallbackHandoffPrompt)
     }
 
+    public func agentEventTaskDraft(request: AgentEventTaskDraftRequest) async throws -> AgentEventTaskDraftResponse {
+        request.event.fallbackTaskDraft
+    }
+
     public func rebuildSearchIndex(request: RebuildSearchIndexRequest) async throws -> RebuildSearchIndexResponse {
         RebuildSearchIndexResponse(path: request.indexPath, workspaceCount: 0, documentCount: 0)
     }
@@ -160,6 +165,7 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
     private let appendAgentEventFunction: BridgeCall
     private let readAgentEventsFunction: BridgeCall
     private let agentEventHandoffPromptFunction: BridgeCall
+    private let agentEventTaskDraftFunction: BridgeCall
     private let rebuildSearchIndexFunction: BridgeCall
     private let searchIndexFunction: BridgeCall
     private let createWorkspaceFunction: BridgeCall
@@ -207,6 +213,10 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
             self.agentEventHandoffPromptFunction = try Self.loadSymbol(
                 handle: handle,
                 name: "nexus_agent_event_handoff_prompt_json"
+            )
+            self.agentEventTaskDraftFunction = try Self.loadSymbol(
+                handle: handle,
+                name: "nexus_agent_event_task_draft_json"
             )
             self.rebuildSearchIndexFunction = try Self.loadSymbol(
                 handle: handle,
@@ -266,6 +276,10 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
 
     public func agentEventHandoffPrompt(request: AgentEventHandoffPromptRequest) async throws -> AgentEventHandoffPromptResponse {
         try call(agentEventHandoffPromptFunction, request: request)
+    }
+
+    public func agentEventTaskDraft(request: AgentEventTaskDraftRequest) async throws -> AgentEventTaskDraftResponse {
+        try call(agentEventTaskDraftFunction, request: request)
     }
 
     public func rebuildSearchIndex(request: RebuildSearchIndexRequest) async throws -> RebuildSearchIndexResponse {
