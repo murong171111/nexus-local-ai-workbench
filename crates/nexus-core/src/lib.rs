@@ -37,5 +37,5 @@ pub use workspace::{
     setup_worktrees, worktree_commands, AppendAgentTaskDraftRequest, AppendAgentTaskDraftResponse,
     CreateWorkspaceRequest, CreateWorkspaceResponse, DashboardData, GitRow, SetupWorktreesRequest,
     SetupWorktreesResponse, TaskCounts, WorkspaceActivity, WorkspaceData, WorkspaceHealthCheck,
-    WorkspaceSessionAction, WorktreeSetupResult,
+    WorkspaceSessionAction, WorkspaceTask, WorktreeSetupResult,
 };

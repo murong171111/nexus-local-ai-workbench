@@ -688,6 +688,7 @@ public struct WorkspaceSnapshot: Codable, Equatable, Sendable {
     public let updated: String
     public let links: [String: String]
     public let worktreeCommand: String
+    public let tasks: [WorkspaceTaskSnapshot]?
     public let activities: [WorkspaceActivitySnapshot]?
     public let healthChecks: [WorkspaceHealthCheckSnapshot]?
     public let sessionActions: [WorkspaceSessionActionSnapshot]?
@@ -709,6 +710,7 @@ public struct WorkspaceSnapshot: Codable, Equatable, Sendable {
         updated: String,
         links: [String: String],
         worktreeCommand: String,
+        tasks: [WorkspaceTaskSnapshot]? = nil,
         activities: [WorkspaceActivitySnapshot]? = nil,
         healthChecks: [WorkspaceHealthCheckSnapshot]? = nil,
         sessionActions: [WorkspaceSessionActionSnapshot]? = nil
@@ -729,9 +731,38 @@ public struct WorkspaceSnapshot: Codable, Equatable, Sendable {
         self.updated = updated
         self.links = links
         self.worktreeCommand = worktreeCommand
+        self.tasks = tasks
         self.activities = activities
         self.healthChecks = healthChecks
         self.sessionActions = sessionActions
+    }
+}
+
+public struct WorkspaceTaskSnapshot: Codable, Equatable, Identifiable, Sendable {
+    public let id: String
+    public let title: String
+    public let status: String
+    public let detail: String
+    public let priority: String
+    public let source: String
+    public let sourceEventId: String?
+
+    public init(
+        id: String,
+        title: String,
+        status: String,
+        detail: String,
+        priority: String,
+        source: String,
+        sourceEventId: String? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.status = status
+        self.detail = detail
+        self.priority = priority
+        self.source = source
+        self.sourceEventId = sourceEventId
     }
 }
 
@@ -963,6 +994,25 @@ public extension DashboardSnapshot {
                     updated: "preview",
                     links: [:],
                     worktreeCommand: "git worktree add ...",
+                    tasks: [
+                        WorkspaceTaskSnapshot(
+                            id: "preview:pay-log-review",
+                            title: "核对 pay_log 回填链路",
+                            status: "进行中",
+                            detail: "确认 order 与 store-cashier 的写入路径",
+                            priority: "high",
+                            source: "workspace"
+                        ),
+                        WorkspaceTaskSnapshot(
+                            id: "preview:agent-task",
+                            title: "Review permission request: Git push",
+                            status: "待确认",
+                            detail: "来自 Agent 事件的任务草稿",
+                            priority: "medium",
+                            source: "agent",
+                            sourceEventId: "preview-agent-event"
+                        )
+                    ],
                     activities: [
                         WorkspaceActivitySnapshot(
                             time: "preview",
