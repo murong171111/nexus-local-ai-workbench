@@ -24,7 +24,7 @@ This roadmap describes the next product and engineering steps for Nexus. The cur
 - Extract workspace, git, document, risk, settings, and widget snapshot logic into a standalone Rust Core crate.
 - Keep Tauri commands as thin wrappers around Rust Core during the transition.
 - Define stable Swift/Rust DTO contracts for dashboard data, workspace documents, settings profiles, and audit events.
-- Add a SwiftUI/AppKit Mac shell that can render sample workspace data.
+- Add a SwiftUI/AppKit Mac shell that can render sample workspace data. `[started]`
 - Add native settings and path configuration in the SwiftUI shell.
 - Decide and document the Swift/Rust bridge mechanism.
 

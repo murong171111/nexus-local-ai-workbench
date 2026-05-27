@@ -122,6 +122,12 @@ Type-check the WidgetKit Swift source:
 npm run widget:typecheck
 ```
 
+Build the native SwiftUI Mac shell scaffold:
+
+```bash
+npm run native:build
+```
+
 Run the standard local verification set:
 
 ```bash

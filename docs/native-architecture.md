@@ -23,6 +23,8 @@ Nexus
 
 The exact folder names can evolve during implementation. The important boundary is that the domain logic moves out of UI shells and into `nexus-core`.
 
+The first native shell scaffold is available at `native/Nexus`. It is a Swift Package that compiles a sample SwiftUI workspace experience while the Tauri app remains the usable preview package.
+
 ## Layer Responsibilities
 
 ### Native Mac App

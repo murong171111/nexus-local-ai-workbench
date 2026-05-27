@@ -124,6 +124,12 @@ npm run icon
 npm run widget:typecheck
 ```
 
+构建原生 SwiftUI Mac 壳骨架：
+
+```bash
+npm run native:build
+```
+
 运行本地标准验证：
 
 ```bash

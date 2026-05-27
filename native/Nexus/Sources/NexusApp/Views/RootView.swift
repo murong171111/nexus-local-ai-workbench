@@ -1,0 +1,403 @@
+import AppKit
+import SwiftUI
+
+struct RootView: View {
+    @EnvironmentObject private var appState: AppState
+
+    var body: some View {
+        HStack(spacing: 0) {
+            SidebarView()
+                .frame(width: 264)
+
+            Divider()
+
+            VStack(spacing: 0) {
+                TopCommandBar()
+                Divider()
+
+                WorkspaceListView()
+            }
+
+            Divider()
+
+            InspectorView()
+                .frame(width: 328)
+        }
+        .background(NexusPalette.background)
+    }
+}
+
+private struct TopCommandBar: View {
+    @EnvironmentObject private var appState: AppState
+
+    var body: some View {
+        HStack(spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                TextField("搜索工作区、服务、分支、风险...", text: $appState.query)
+                    .textFieldStyle(.plain)
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 36)
+            .background(NexusPalette.panel)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            Button {
+            } label: {
+                Label("Command", systemImage: "command")
+            }
+            .buttonStyle(.bordered)
+
+            Spacer()
+
+            Label("Git clean", systemImage: "checkmark.circle")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Text(appState.selectedWorkspace?.folder ?? "No workspace")
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 18)
+        .frame(height: 58)
+        .background(NexusPalette.background)
+    }
+}
+
+private struct SidebarView: View {
+    @EnvironmentObject private var appState: AppState
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 8) {
+                    Image(systemName: "point.3.connected.trianglepath.dotted")
+                        .foregroundStyle(NexusPalette.accent)
+                    Text("Nexus")
+                        .font(.title3.weight(.semibold))
+                }
+                Text("Local AI Workbench")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Agent 状态 / Status")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 6) {
+                    Label(appState.agentStatus.title, systemImage: "circle.fill")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(NexusPalette.success)
+                    Text(appState.agentStatus.detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(12)
+                .background(NexusPalette.panel)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("筛选 / Filters")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                ForEach(WorkspaceFilter.allCases) { filter in
+                    Button {
+                        appState.selectedFilter = filter
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: filter.systemImage)
+                                .frame(width: 16)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(filter.rawValue)
+                                Text(filter.subtitle)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(filter == appState.selectedFilter ? NexusPalette.selected : Color.clear)
+                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            Spacer()
+
+            Button {
+            } label: {
+                Label("Settings", systemImage: "gearshape")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.borderless)
+        }
+        .padding(18)
+        .background(NexusPalette.sidebar)
+    }
+}
+
+private struct WorkspaceListView: View {
+    @EnvironmentObject private var appState: AppState
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(spacing: 12) {
+                ForEach(appState.filteredWorkspaces) { workspace in
+                    WorkspaceCard(
+                        workspace: workspace,
+                        isSelected: workspace.id == appState.selectedWorkspace?.id
+                    )
+                    .onTapGesture {
+                        appState.select(workspace)
+                    }
+                }
+            }
+            .padding(18)
+        }
+    }
+}
+
+private struct WorkspaceCard: View {
+    let workspace: WorkspaceSummary
+    let isSelected: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(workspace.name)
+                        .font(.headline)
+                    Text(workspace.folder)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                RiskBadge(level: workspace.riskLevel)
+            }
+
+            HStack(spacing: 8) {
+                Pill(label: workspace.branch, systemImage: "arrow.triangle.branch")
+                Pill(label: workspace.state.label, systemImage: "circle.dashed")
+                Pill(label: workspace.aiState, systemImage: "sparkle.magnifyingglass")
+            }
+
+            HStack(spacing: 16) {
+                Metric(label: "服务 / Services", value: "\(workspace.services.count)")
+                Metric(label: "Worktree", value: workspace.worktreeState)
+                Metric(label: "最近活动 / Activity", value: workspace.activities.first?.title ?? "No recent activity")
+            }
+        }
+        .padding(16)
+        .background(NexusPalette.panel)
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(isSelected ? NexusPalette.accent : NexusPalette.border, lineWidth: isSelected ? 1.4 : 1)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct InspectorView: View {
+    @EnvironmentObject private var appState: AppState
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            if let workspace = appState.selectedWorkspace {
+                WorkspaceDetailView(workspace: workspace)
+            } else {
+                Text("选择一个工作区")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(18)
+        .background(NexusPalette.inspector)
+    }
+}
+
+private struct WorkspaceDetailView: View {
+    let workspace: WorkspaceSummary
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("工作区详情 / Detail")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(workspace.name)
+                    .font(.title3.weight(.semibold))
+                Text(workspace.path)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            SectionBlock(title: "服务 Git 状态 / Services") {
+                ForEach(workspace.services) { service in
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack {
+                            Text(service.name)
+                                .font(.subheadline.weight(.medium))
+                            Spacer()
+                            Text(service.gitSummary)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Text("\(service.branch) · \(service.worktree)")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+
+            SectionBlock(title: "风险告警 / Risks") {
+                if workspace.risks.isEmpty {
+                    Label("No active risk", systemImage: "checkmark.circle")
+                        .foregroundStyle(NexusPalette.success)
+                } else {
+                    ForEach(workspace.risks) { risk in
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(risk.title)
+                                Text(risk.detail)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "exclamationmark.triangle")
+                                .foregroundStyle(NexusPalette.warning)
+                        }
+                    }
+                }
+            }
+
+            SectionBlock(title: "最近活动 / Activity") {
+                ForEach(workspace.activities) { event in
+                    HStack(alignment: .top, spacing: 8) {
+                        Text(event.time)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(event.title)
+                            Text(event.detail)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
+            Spacer()
+        }
+    }
+}
+
+struct SettingsView: View {
+    @State private var workspaceRoot = "~/ks_project/workspaces"
+    @State private var sourceReposRoot = "~/ks_project/source-repos"
+    @State private var docsRoot = "~/ks_project/docs"
+
+    var body: some View {
+        Form {
+            Section("Local Paths") {
+                TextField("Workspaces root", text: $workspaceRoot)
+                TextField("Source repositories root", text: $sourceReposRoot)
+                TextField("Delivery documents root", text: $docsRoot)
+            }
+
+            Section("Native Shell") {
+                Text("This shell is intentionally local-first. Signing, notarization, updater, and App Group setup are later distribution concerns.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(20)
+    }
+}
+
+private struct SectionBlock<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 10) {
+                content
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(NexusPalette.panel)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+    }
+}
+
+private struct RiskBadge: View {
+    let level: RiskLevel
+
+    var body: some View {
+        Label(level.label, systemImage: level.symbol)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(level == .high ? NexusPalette.danger : level == .medium ? NexusPalette.warning : NexusPalette.success)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(NexusPalette.badge)
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+}
+
+private struct Pill: View {
+    let label: String
+    let systemImage: String
+
+    var body: some View {
+        Label(label, systemImage: systemImage)
+            .font(.caption)
+            .lineLimit(1)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(NexusPalette.badge)
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+}
+
+private struct Metric: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.caption.weight(.medium))
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private enum NexusPalette {
+    static let background = Color(nsColor: NSColor.windowBackgroundColor)
+    static let sidebar = Color(nsColor: NSColor.controlBackgroundColor)
+    static let inspector = Color(nsColor: NSColor.textBackgroundColor)
+    static let panel = Color(nsColor: NSColor.textBackgroundColor)
+    static let selected = Color.blue.opacity(0.08)
+    static let badge = Color(nsColor: NSColor.controlBackgroundColor)
+    static let border = Color.black.opacity(0.08)
+    static let accent = Color.blue
+    static let success = Color.green
+    static let warning = Color.orange
+    static let danger = Color.red
+}
