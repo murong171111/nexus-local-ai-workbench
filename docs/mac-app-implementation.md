@@ -48,6 +48,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added locally persisted pinned workspaces in the native SwiftUI shell, including card-level pin actions and a sidebar pinned section.
 - Added a native Settings sheet from the sidebar with persisted local roots, save-and-reload, and reset-defaults actions.
 - Added actionable native session rows for document follow-ups and confirmed worktree setup, including a local-write confirmation sheet and created/skipped/failed result summary.
+- Added Rust Core and Swift/Rust bridge support for append-only agent event JSONL, plus a native sidebar feed for recent agent events.
 - Added an explicit local-write confirmation checkbox to the Tauri create-workspace flow.
 - Added frontend desktop bridge in `src/desktop.ts`.
 - Switched the frontend bridge to the official `@tauri-apps/api/core` dynamic invoke API.

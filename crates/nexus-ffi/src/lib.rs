@@ -1,7 +1,8 @@
 use nexus_core::{
-    append_audit_event_from_root, create_workspace, read_document, rebuild_search_index,
-    scan_source_repos, scan_workspaces, scan_workspaces_with_audit, search_index, setup_worktrees,
-    widget_snapshot_from_dashboard, AuditEventInput,
+    append_agent_event_from_root, append_audit_event_from_root, create_workspace,
+    read_agent_events_from_root, read_document, rebuild_search_index, scan_source_repos,
+    scan_workspaces, scan_workspaces_with_audit, search_index, setup_worktrees,
+    widget_snapshot_from_dashboard, AgentEventInput, AuditEventInput,
     CreateWorkspaceRequest as CoreCreateWorkspaceRequest,
     SetupWorktreesRequest as CoreSetupWorktreesRequest,
 };
@@ -71,6 +72,21 @@ struct SetupWorktreesBridgeRequest {
 struct AppendAuditEventBridgeRequest {
     audit_root: String,
     event: AuditEventInput,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AppendAgentEventBridgeRequest {
+    events_root: String,
+    event: AgentEventInput,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReadAgentEventsBridgeRequest {
+    events_root: String,
+    limit: Option<usize>,
+    workspace_folder: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -146,6 +162,24 @@ pub unsafe extern "C" fn nexus_widget_snapshot_json(input_json: *const c_char) -
 pub unsafe extern "C" fn nexus_append_audit_event_json(input_json: *const c_char) -> *mut c_char {
     bridge_call(input_json, |request: AppendAuditEventBridgeRequest| {
         append_audit_event_from_root(&request.audit_root, request.event)
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn nexus_append_agent_event_json(input_json: *const c_char) -> *mut c_char {
+    bridge_call(input_json, |request: AppendAgentEventBridgeRequest| {
+        append_agent_event_from_root(&request.events_root, request.event)
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn nexus_read_agent_events_json(input_json: *const c_char) -> *mut c_char {
+    bridge_call(input_json, |request: ReadAgentEventsBridgeRequest| {
+        read_agent_events_from_root(
+            &request.events_root,
+            request.limit.unwrap_or(20),
+            request.workspace_folder.as_deref(),
+        )
     })
 }
 
@@ -495,6 +529,42 @@ mod tests {
         let lines = fs::read_to_string(path).unwrap();
         assert_eq!(lines.lines().count(), 1);
         assert!(lines.contains("2026-05-27-demo"));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn agent_event_bridge_appends_and_reads_jsonl() {
+        let root = std::env::temp_dir().join(format!("nexus-ffi-agent-{}", std::process::id()));
+        let events_root = root.join("agent-events");
+        let _ = fs::remove_dir_all(&root);
+        let request = format!(
+            r#"{{"eventsRoot":"{}","event":{{"source":"codex","sessionId":"thread-1","workspaceFolder":"2026-05-27-demo","kind":"permission","title":"Permission requested","summary":"Codex requested git push","severity":"warning","metadata":{{"command":"git push"}}}}}}"#,
+            events_root.to_string_lossy()
+        );
+        let input = CString::new(request).unwrap();
+        let output = unsafe { nexus_append_agent_event_json(input.as_ptr()) };
+        let response = unsafe { CStr::from_ptr(output).to_string_lossy().to_string() };
+        unsafe { nexus_string_free(output) };
+
+        let value = serde_json::from_str::<Value>(&response).unwrap();
+        assert_eq!(value["ok"], true);
+        assert_eq!(value["data"]["event"]["kind"], "permission");
+        let path = value["data"]["path"].as_str().unwrap();
+        assert!(path.ends_with("agent-events.jsonl"));
+
+        let read_request = format!(
+            r#"{{"eventsRoot":"{}","limit":5,"workspaceFolder":"2026-05-27-demo"}}"#,
+            events_root.to_string_lossy()
+        );
+        let input = CString::new(read_request).unwrap();
+        let output = unsafe { nexus_read_agent_events_json(input.as_ptr()) };
+        let response = unsafe { CStr::from_ptr(output).to_string_lossy().to_string() };
+        unsafe { nexus_string_free(output) };
+        let value = serde_json::from_str::<Value>(&response).unwrap();
+        assert_eq!(value["ok"], true);
+        assert_eq!(value["data"].as_array().unwrap().len(), 1);
+        assert_eq!(value["data"][0]["metadata"]["command"], "git push");
 
         fs::remove_dir_all(root).unwrap();
     }
