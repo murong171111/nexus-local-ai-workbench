@@ -55,6 +55,12 @@ final class AppState: ObservableObject {
         groupSearchResults(searchResults).flatMap(\.results)
     }
 
+    var selectedSearchResult: SearchResult? {
+        let results = orderedSearchResults
+        guard !results.isEmpty else { return nil }
+        return results[min(selectedSearchResultIndex, results.count - 1)]
+    }
+
     var hasSearchQuery: Bool {
         !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -115,6 +121,10 @@ final class AppState: ObservableObject {
 
     func select(_ workspace: WorkspaceSummary) {
         selectedWorkspaceID = workspace.id
+    }
+
+    func workspace(for result: SearchResult) -> WorkspaceSummary? {
+        workspaces.first { $0.folder == result.workspaceFolder }
     }
 
     func refreshFromBridge() async {
