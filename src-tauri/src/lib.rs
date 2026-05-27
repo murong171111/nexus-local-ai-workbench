@@ -1,3 +1,7 @@
+use nexus_core::{
+    git_status, normalize_git_branch, scan_source_repos as scan_source_repos_core,
+    target_branch_confirmed, GitStatus, SourceRepo,
+};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -89,25 +93,6 @@ struct GitRow {
     source_path: String,
     worktree: GitStatus,
     source: GitStatus,
-}
-
-#[derive(Serialize)]
-struct GitStatus {
-    exists: bool,
-    branch: String,
-    dirty: bool,
-    summary: String,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SourceRepo {
-    name: String,
-    path: String,
-    is_git: bool,
-    branch: String,
-    dirty: bool,
-    summary: String,
 }
 
 #[derive(Serialize)]
@@ -254,7 +239,12 @@ fn scan_workspaces(request: ScanWorkspacesRequest) -> Result<DashboardData, Stri
         }
         workspaces.push(collect_workspace(&path, &request.source_repos_root));
     }
-    workspaces.sort_by(|left, right| right.risk_count.cmp(&left.risk_count).then(left.folder.cmp(&right.folder)));
+    workspaces.sort_by(|left, right| {
+        right
+            .risk_count
+            .cmp(&left.risk_count)
+            .then(left.folder.cmp(&right.folder))
+    });
 
     Ok(DashboardData {
         generated_at: generated_at(),
@@ -267,33 +257,7 @@ fn scan_workspaces(request: ScanWorkspacesRequest) -> Result<DashboardData, Stri
 
 #[tauri::command]
 fn scan_source_repos(request: ScanSourceReposRequest) -> Result<Vec<SourceRepo>, String> {
-    let root = expand_user_path(&request.source_repos_root);
-    if !root.exists() {
-        return Ok(Vec::new());
-    }
-
-    let mut repos = Vec::new();
-    let entries = fs::read_dir(&root).map_err(|error| error.to_string())?;
-    for entry in entries {
-        let entry = entry.map_err(|error| error.to_string())?;
-        let path = entry.path();
-        let name = entry.file_name().to_string_lossy().to_string();
-        if !path.is_dir() || name.starts_with('.') || matches!(name.as_str(), "node_modules" | "target" | "dist") {
-            continue;
-        }
-        let status = git_status(&path);
-        let is_git = path.join(".git").exists();
-        repos.push(SourceRepo {
-            name,
-            path: path.to_string_lossy().to_string(),
-            is_git,
-            branch: status.branch,
-            dirty: status.dirty,
-            summary: status.summary,
-        });
-    }
-    repos.sort_by(|left, right| left.name.cmp(&right.name));
-    Ok(repos)
+    scan_source_repos_core(&request.source_repos_root)
 }
 
 #[tauri::command]
@@ -342,8 +306,14 @@ fn check_environment(request: EnvironmentHealthRequest) -> Result<EnvironmentHea
 }
 
 #[tauri::command]
-fn write_widget_snapshot(app: tauri::AppHandle, snapshot: WidgetSnapshot) -> Result<WidgetSnapshotResponse, String> {
-    let app_data_dir = app.path().app_data_dir().map_err(|error| error.to_string())?;
+fn write_widget_snapshot(
+    app: tauri::AppHandle,
+    snapshot: WidgetSnapshot,
+) -> Result<WidgetSnapshotResponse, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
     fs::create_dir_all(&app_data_dir).map_err(|error| error.to_string())?;
     let snapshot_path = app_data_dir.join("widget-snapshot.json");
     let payload = serde_json::to_string_pretty(&snapshot).map_err(|error| error.to_string())?;
@@ -354,16 +324,25 @@ fn write_widget_snapshot(app: tauri::AppHandle, snapshot: WidgetSnapshot) -> Res
 }
 
 #[tauri::command]
-fn export_settings_profile(app: tauri::AppHandle, profile: SettingsProfile) -> Result<ExportSettingsProfileResponse, String> {
+fn export_settings_profile(
+    app: tauri::AppHandle,
+    profile: SettingsProfile,
+) -> Result<ExportSettingsProfileResponse, String> {
     if profile.app != "Nexus" || profile.schema_version != 1 {
         return Err("unsupported Nexus settings profile".to_string());
     }
 
-    let app_data_dir = app.path().app_data_dir().map_err(|error| error.to_string())?;
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
     let profile_dir = app_data_dir.join("profiles");
     fs::create_dir_all(&profile_dir).map_err(|error| error.to_string())?;
     let export_date = profile.exported_at.chars().take(10).collect::<String>();
-    let filename = format!("nexus-settings-profile-{}.json", sanitize_filename(&export_date));
+    let filename = format!(
+        "nexus-settings-profile-{}.json",
+        sanitize_filename(&export_date)
+    );
     let profile_path = profile_dir.join(filename);
     let payload = serde_json::to_string_pretty(&profile).map_err(|error| error.to_string())?;
     fs::write(&profile_path, payload).map_err(|error| error.to_string())?;
@@ -391,7 +370,12 @@ fn create_workspace(request: CreateWorkspaceRequest) -> Result<CreateWorkspaceRe
     } else {
         request.target_branch.trim()
     };
-    let today = request.folder.split('-').take(3).collect::<Vec<_>>().join("-");
+    let today = request
+        .folder
+        .split('-')
+        .take(3)
+        .collect::<Vec<_>>()
+        .join("-");
 
     write_file(
         &workspace.join("AGENTS.md"),
@@ -427,8 +411,14 @@ fn create_workspace(request: CreateWorkspaceRequest) -> Result<CreateWorkspaceRe
         ),
     )?;
 
-    write_file(&workspace.join("services.md"), &services_markdown(&services, &request.source_repos_root))?;
-    write_file(&workspace.join("branches.md"), &branches_markdown(&services, target_branch, &request.source_repos_root))?;
+    write_file(
+        &workspace.join("services.md"),
+        &services_markdown(&services, &request.source_repos_root),
+    )?;
+    write_file(
+        &workspace.join("branches.md"),
+        &branches_markdown(&services, target_branch, &request.source_repos_root),
+    )?;
     write_file(
         &workspace.join("plan.md"),
         "# Plan\n\n## 分析步骤\n\n- [ ] 确认需求范围\n- [ ] 确认涉及服务\n- [ ] 确认目标分支\n- [ ] 创建 worktree\n- [ ] 编码与验证\n- [ ] 更新交付记录\n",
@@ -461,13 +451,32 @@ fn create_workspace(request: CreateWorkspaceRequest) -> Result<CreateWorkspaceRe
     )?;
     write_file(
         &workspace.join("bootstrap-report.md"),
-        &bootstrap_report(&request.name, &request.folder, &workspace, &services, target_branch, &request.source_repos_root, today.as_str()),
+        &bootstrap_report(
+            &request.name,
+            &request.folder,
+            &workspace,
+            &services,
+            target_branch,
+            &request.source_repos_root,
+            today.as_str(),
+        ),
     )?;
     write_file(
         &workspace.join("scripts").join("worktree-commands.sh"),
-        &worktree_commands(&workspace, &services, target_branch, &request.source_repos_root),
+        &worktree_commands(
+            &workspace,
+            &services,
+            target_branch,
+            &request.source_repos_root,
+        ),
     )?;
-    update_index(&root, &request.name, &request.folder, target_branch, &services)?;
+    update_index(
+        &root,
+        &request.name,
+        &request.folder,
+        target_branch,
+        &services,
+    )?;
 
     Ok(CreateWorkspaceResponse {
         path: workspace.to_string_lossy().to_string(),
@@ -485,7 +494,9 @@ fn open_with_system(target: &str) -> Result<(), String> {
 
 fn expand_user_path(value: &str) -> PathBuf {
     if value == "~" {
-        return std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(value));
+        return std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(value));
     }
     if let Some(rest) = value.strip_prefix("~/") {
         if let Some(home) = std::env::var_os("HOME") {
@@ -503,20 +514,29 @@ fn collect_workspace(path: &Path, default_source_root: &str) -> WorkspaceData {
     let decisions_md = read_text_lossy(&path.join("decisions.md"));
 
     let name = extract_bullet_value(&workspace_md, "需求名称").unwrap_or_else(|| {
-        path.file_name().unwrap_or_default().to_string_lossy().to_string()
+        path.file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string()
     });
-    let state = extract_bullet_value(&workspace_md, "当前状态").unwrap_or_else(|| "unknown".to_string());
+    let state =
+        extract_bullet_value(&workspace_md, "当前状态").unwrap_or_else(|| "unknown".to_string());
     let target_branch = extract_bullet_value(&workspace_md, "目标分支")
         .or_else(|| extract_bullet_value(&workspace_md, "建议目标分支"))
         .unwrap_or_else(|| {
             extract_bullet_value(&branches_md, "目标分支").unwrap_or_else(|| "待确认".to_string())
         });
-    let source_root = extract_bullet_value(&workspace_md, "源仓库集合").unwrap_or_else(|| default_source_root.to_string());
+    let source_root = extract_bullet_value(&workspace_md, "源仓库集合")
+        .unwrap_or_else(|| default_source_root.to_string());
 
     let confirmed_rows = table_rows(&section(&services_md, "已确认相关"));
     let fallback_rows = table_rows(&section(&services_md, "初步服务范围"));
     let candidate_rows = table_rows(&section(&services_md, "待验证范围"));
-    let confirmed_services = service_names_from(if confirmed_rows.is_empty() { &fallback_rows } else { &confirmed_rows });
+    let confirmed_services = service_names_from(if confirmed_rows.is_empty() {
+        &fallback_rows
+    } else {
+        &confirmed_rows
+    });
     let candidate_services = service_names_from(&candidate_rows)
         .into_iter()
         .filter(|service| !confirmed_services.contains(service))
@@ -560,16 +580,26 @@ fn collect_workspace(path: &Path, default_source_root: &str) -> WorkspaceData {
         .map(|row| row.service.clone())
         .collect::<Vec<_>>();
     if !dirty_worktrees.is_empty() {
-        risks.push(format!("worktree 有未提交改动: {}", dirty_worktrees.join(", ")));
+        risks.push(format!(
+            "worktree 有未提交改动: {}",
+            dirty_worktrees.join(", ")
+        ));
     }
     let branch_mismatches = git_rows
         .iter()
         .filter(|row| {
             target_branch_confirmed(&target_branch)
                 && row.worktree.exists
-                && normalize_git_branch(&row.worktree.branch) != normalize_git_branch(&target_branch)
+                && normalize_git_branch(&row.worktree.branch)
+                    != normalize_git_branch(&target_branch)
         })
-        .map(|row| format!("{}({})", row.service, normalize_git_branch(&row.worktree.branch)))
+        .map(|row| {
+            format!(
+                "{}({})",
+                row.service,
+                normalize_git_branch(&row.worktree.branch)
+            )
+        })
         .collect::<Vec<_>>();
     if !branch_mismatches.is_empty() {
         risks.push(format!("分支不一致: {}", branch_mismatches.join(", ")));
@@ -585,20 +615,60 @@ fn collect_workspace(path: &Path, default_source_root: &str) -> WorkspaceData {
 
     let mut links = std::collections::BTreeMap::new();
     links.insert("folder".to_string(), path.to_string_lossy().to_string());
-    links.insert("workspace".to_string(), path.join("workspace.md").to_string_lossy().to_string());
-    links.insert("status".to_string(), path.join("STATUS.md").to_string_lossy().to_string());
-    links.insert("services".to_string(), path.join("services.md").to_string_lossy().to_string());
-    links.insert("branches".to_string(), path.join("branches.md").to_string_lossy().to_string());
-    links.insert("tasks".to_string(), path.join("tasks.md").to_string_lossy().to_string());
-    links.insert("delivery".to_string(), path.join("交付记录.md").to_string_lossy().to_string());
-    links.insert("handoff".to_string(), path.join("handoff.md").to_string_lossy().to_string());
-    links.insert("bootstrap".to_string(), path.join("bootstrap-report.md").to_string_lossy().to_string());
-    links.insert("worktreeScript".to_string(), path.join("scripts").join("worktree-commands.sh").to_string_lossy().to_string());
-    links.insert("sql".to_string(), path.join("sql").to_string_lossy().to_string());
+    links.insert(
+        "workspace".to_string(),
+        path.join("workspace.md").to_string_lossy().to_string(),
+    );
+    links.insert(
+        "status".to_string(),
+        path.join("STATUS.md").to_string_lossy().to_string(),
+    );
+    links.insert(
+        "services".to_string(),
+        path.join("services.md").to_string_lossy().to_string(),
+    );
+    links.insert(
+        "branches".to_string(),
+        path.join("branches.md").to_string_lossy().to_string(),
+    );
+    links.insert(
+        "tasks".to_string(),
+        path.join("tasks.md").to_string_lossy().to_string(),
+    );
+    links.insert(
+        "delivery".to_string(),
+        path.join("交付记录.md").to_string_lossy().to_string(),
+    );
+    links.insert(
+        "handoff".to_string(),
+        path.join("handoff.md").to_string_lossy().to_string(),
+    );
+    links.insert(
+        "bootstrap".to_string(),
+        path.join("bootstrap-report.md")
+            .to_string_lossy()
+            .to_string(),
+    );
+    links.insert(
+        "worktreeScript".to_string(),
+        path.join("scripts")
+            .join("worktree-commands.sh")
+            .to_string_lossy()
+            .to_string(),
+    );
+    links.insert(
+        "sql".to_string(),
+        path.join("sql").to_string_lossy().to_string(),
+    );
 
     let risk_count = risks.len();
-    let folder = path.file_name().unwrap_or_default().to_string_lossy().to_string();
-    let worktree_command = worktree_commands(path, &missing_worktrees, &target_branch, &source_root);
+    let folder = path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+    let worktree_command =
+        worktree_commands(path, &missing_worktrees, &target_branch, &source_root);
     WorkspaceData {
         name,
         folder,
@@ -681,9 +751,15 @@ fn count_tasks(rows: &[Vec<String>]) -> TaskCounts {
         let joined = row.join(" ").to_lowercase();
         if joined.contains("阻塞") || joined.contains("blocked") {
             counts.blocked += 1;
-        } else if ["已完成", "已确认", "已创建", "完成"].iter().any(|word| joined.contains(word)) {
+        } else if ["已完成", "已确认", "已创建", "完成"]
+            .iter()
+            .any(|word| joined.contains(word))
+        {
             counts.done += 1;
-        } else if ["持续进行", "进行中", "doing"].iter().any(|word| joined.contains(word)) {
+        } else if ["持续进行", "进行中", "doing"]
+            .iter()
+            .any(|word| joined.contains(word))
+        {
             counts.doing += 1;
         } else {
             counts.todo += 1;
@@ -781,72 +857,6 @@ fn count_git_like_dirs(root: &Path) -> usize {
         .count()
 }
 
-fn git_status(path: &Path) -> GitStatus {
-    if !path.exists() {
-        return GitStatus {
-            exists: false,
-            branch: "未创建".to_string(),
-            dirty: false,
-            summary: "未创建".to_string(),
-        };
-    }
-    if !path.join(".git").exists() {
-        return GitStatus {
-            exists: true,
-            branch: "非 git worktree".to_string(),
-            dirty: true,
-            summary: "目录存在但不是 git worktree".to_string(),
-        };
-    }
-    let output = Command::new("git")
-        .args(["-C", &path.to_string_lossy(), "status", "--short", "--branch"])
-        .output();
-    match output {
-        Ok(output) if output.status.success() => {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let lines = stdout.lines().map(str::trim).filter(|line| !line.is_empty()).collect::<Vec<_>>();
-            let branch = lines.first().map(|line| line.replace("## ", "")).unwrap_or_else(|| "未知".to_string());
-            let dirty = lines.len() > 1;
-            GitStatus {
-                exists: true,
-                branch,
-                dirty,
-                summary: if dirty { "有未提交改动" } else { "干净" }.to_string(),
-            }
-        }
-        Ok(output) => GitStatus {
-            exists: true,
-            branch: "检查失败".to_string(),
-            dirty: true,
-            summary: String::from_utf8_lossy(&output.stderr).trim().to_string(),
-        },
-        Err(error) => GitStatus {
-            exists: true,
-            branch: "检查失败".to_string(),
-            dirty: true,
-            summary: error.to_string(),
-        },
-    }
-}
-
-fn normalize_git_branch(value: &str) -> String {
-    value
-        .trim_start_matches("## ")
-        .split("...")
-        .next()
-        .unwrap_or(value)
-        .split(' ')
-        .next()
-        .unwrap_or(value)
-        .trim()
-        .to_string()
-}
-
-fn target_branch_confirmed(value: &str) -> bool {
-    let branch = normalize_git_branch(value);
-    !branch.is_empty() && !branch.contains("待确认") && branch != "<target-branch>"
-}
-
 fn generated_at() -> String {
     chrono_like_now(true)
 }
@@ -887,7 +897,12 @@ fn services_markdown(services: &[String], source_root: &str) -> String {
     } else {
         services
             .iter()
-            .map(|service| format!("| {} | `{}/{}` | 初始确认 |\n", service, source_root, service))
+            .map(|service| {
+                format!(
+                    "| {} | `{}/{}` | 初始确认 |\n",
+                    service, source_root, service
+                )
+            })
             .collect::<String>()
     };
     format!(
@@ -916,13 +931,26 @@ fn branches_markdown(services: &[String], target_branch: &str, source_root: &str
     )
 }
 
-fn bootstrap_report(name: &str, folder: &str, workspace: &Path, services: &[String], target_branch: &str, source_root: &str, today: &str) -> String {
+fn bootstrap_report(
+    name: &str,
+    folder: &str,
+    workspace: &Path,
+    services: &[String],
+    target_branch: &str,
+    source_root: &str,
+    today: &str,
+) -> String {
     let service_lines = if services.is_empty() {
         "- 服务范围待确认".to_string()
     } else {
         services
             .iter()
-            .map(|service| format!("- {}: `{}/{}` -> `repos/{}`", service, source_root, service, service))
+            .map(|service| {
+                format!(
+                    "- {}: `{}/{}` -> `repos/{}`",
+                    service, source_root, service, service
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n")
     };
@@ -943,7 +971,12 @@ fn bootstrap_report(name: &str, folder: &str, workspace: &Path, services: &[Stri
     )
 }
 
-fn worktree_commands(workspace: &Path, services: &[String], target_branch: &str, source_root: &str) -> String {
+fn worktree_commands(
+    workspace: &Path,
+    services: &[String],
+    target_branch: &str,
+    source_root: &str,
+) -> String {
     let branch = if target_branch.trim().is_empty() || target_branch.contains("待确认") {
         "<target-branch>"
     } else {
@@ -992,7 +1025,13 @@ fn sanitize_filename(value: &str) -> String {
     }
 }
 
-fn update_index(root: &Path, name: &str, folder: &str, target_branch: &str, services: &[String]) -> Result<(), String> {
+fn update_index(
+    root: &Path,
+    name: &str,
+    folder: &str,
+    target_branch: &str,
+    services: &[String],
+) -> Result<(), String> {
     let index = root.join("INDEX.md");
     let mut content = fs::read_to_string(&index).unwrap_or_else(|_| {
         "# Workspace Index\n\n| 工作区 | 状态 | 目标分支 | 服务 | 路径 |\n| --- | --- | --- | --- | --- |\n".to_string()
@@ -1001,7 +1040,11 @@ fn update_index(root: &Path, name: &str, folder: &str, target_branch: &str, serv
         "| {} | analyzing | {} | {} | `{}` |\n",
         name,
         target_branch,
-        if services.is_empty() { "待确认".to_string() } else { services.join(", ") },
+        if services.is_empty() {
+            "待确认".to_string()
+        } else {
+            services.join(", ")
+        },
         folder
     ));
     fs::write(index, content).map_err(|error| error.to_string())
