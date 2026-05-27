@@ -8,12 +8,12 @@ The current Tauri app remains the working preview app until the native Mac shell
 
 The native shell scaffold currently lives in `native/Nexus` as a Swift Package. It validates the long-lived SwiftUI/AppKit direction without changing the preview app distribution path.
 
-The first Swift/Rust bridge lives in `crates/nexus-ffi` and `native/Nexus/Sources/NexusBridge`. It uses C ABI functions with JSON payloads for scans, document reads, widget snapshot computation, audit events, and confirmed workspace creation, with a preview fallback when no local dynamic library is configured.
+The first Swift/Rust bridge lives in `crates/nexus-ffi` and `native/Nexus/Sources/NexusBridge`. It uses C ABI functions with JSON payloads for scans, document reads, widget snapshot computation, audit events, SQLite/FTS index rebuild/search, and confirmed workspace creation, with a preview fallback when no local dynamic library is configured.
 
 ## Target Native Architecture
 
 - Native shell: SwiftUI with AppKit adapters for Mac-specific integration.
-- Core engine: Rust crates for workspace scanning, git/worktree state, document/risk analysis, settings validation, widget snapshots, and future indexing.
+- Core engine: Rust crates for workspace scanning, git/worktree state, document/risk analysis, settings validation, widget snapshots, and SQLite/FTS indexing.
 - Local store: SQLite + FTS under Application Support, rebuildable from workspace Markdown files.
 - Extension surfaces: WidgetKit, menu bar, and future iPad/iPhone companion views.
 - Bridge: a small Swift/Rust contract layer with typed DTOs and explicit error codes.
@@ -57,12 +57,14 @@ Source repositories are read from a separate configured root. Nexus treats sourc
 4. The UI renders cards, risk alerts, branch alignment signals, service pickers, and document entry points.
 5. Settings can export a team profile JSON into Application Support or import a profile selected by the user. Export validation and file naming are owned by `nexus-core`.
 6. Confirmed workspace creation and settings profile export append local JSONL audit events in Application Support.
-7. The app writes a compact WidgetKit snapshot to Application Support.
-8. The WidgetKit extension reads that snapshot and opens Nexus through `nexus://` links.
+7. Nexus can rebuild `nexus-index.sqlite3` from workspace Markdown and `sql/` notes, then query it through the Tauri command layer or Swift/Rust bridge.
+8. The app writes a compact WidgetKit snapshot to Application Support.
+9. The WidgetKit extension reads that snapshot and opens Nexus through `nexus://` links.
 
 ## Safety Boundaries
 
 - Read-only operations: scan Markdown files, inspect git status, compare worktree branches with workspace target branches, preview documents.
+- Rebuildable cache operations: create or refresh the SQLite/FTS index from human-readable workspace files.
 - Confirmed local writes: create workspace folders, standard documents, settings profile exports, widget snapshots, and audit events.
 - Semi-automated worktree setup: Nexus generates reviewable shell commands, but does not execute them automatically.
 - High-frequency cache writes such as widget snapshot refreshes are intentionally not audit-logged to keep the audit trail focused on user-visible state changes.

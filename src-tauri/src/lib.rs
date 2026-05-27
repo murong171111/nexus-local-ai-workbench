@@ -1,9 +1,11 @@
 use nexus_core::{
     append_audit_event, create_workspace as create_workspace_core, expand_user_path,
     export_settings_profile as export_settings_profile_core,
-    scan_source_repos as scan_source_repos_core, scan_workspaces as scan_workspaces_core,
-    AuditEventInput, CreateWorkspaceRequest, CreateWorkspaceResponse, DashboardData,
-    ExportSettingsProfileResponse, SettingsProfile, SourceRepo, WidgetSnapshot,
+    rebuild_search_index as rebuild_search_index_core, scan_source_repos as scan_source_repos_core,
+    scan_workspaces as scan_workspaces_core, search_index as search_index_core, AuditEventInput,
+    CreateWorkspaceRequest, CreateWorkspaceResponse, DashboardData, ExportSettingsProfileResponse,
+    RebuildSearchIndexResponse, SearchResult, SettingsProfile, SourceRepo, WidgetSnapshot,
+    DEFAULT_INDEX_FILE,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -32,6 +34,21 @@ struct EnvironmentHealthRequest {
     workspaces_root: String,
     source_repos_root: String,
     docs_root: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RebuildSearchIndexRequest {
+    workspaces_root: String,
+    source_repos_root: String,
+    docs_root: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SearchIndexRequest {
+    query: String,
+    limit: Option<usize>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -185,6 +202,33 @@ fn check_environment(request: EnvironmentHealthRequest) -> Result<EnvironmentHea
         blockers,
         warnings,
     })
+}
+
+#[tauri::command]
+fn rebuild_search_index(
+    app: tauri::AppHandle,
+    request: RebuildSearchIndexRequest,
+) -> Result<RebuildSearchIndexResponse, String> {
+    let index_path = app_index_path(&app)?;
+    rebuild_search_index_core(
+        &index_path.to_string_lossy(),
+        &request.workspaces_root,
+        &request.source_repos_root,
+        &request.docs_root,
+    )
+}
+
+#[tauri::command]
+fn search_index(
+    app: tauri::AppHandle,
+    request: SearchIndexRequest,
+) -> Result<Vec<SearchResult>, String> {
+    let index_path = app_index_path(&app)?;
+    search_index_core(
+        &index_path.to_string_lossy(),
+        &request.query,
+        request.limit.unwrap_or(20),
+    )
 }
 
 #[tauri::command]
@@ -374,6 +418,13 @@ fn app_audit_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         .map_err(|error| error.to_string())
 }
 
+fn app_index_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_data_dir()
+        .map(|path| path.join(DEFAULT_INDEX_FILE))
+        .map_err(|error| error.to_string())
+}
+
 fn audit_metadata(pairs: &[(&str, String)]) -> BTreeMap<String, String> {
     pairs
         .iter()
@@ -420,6 +471,8 @@ pub fn run() {
             scan_workspaces,
             scan_source_repos,
             check_environment,
+            rebuild_search_index,
+            search_index,
             write_widget_snapshot,
             export_settings_profile,
             create_workspace

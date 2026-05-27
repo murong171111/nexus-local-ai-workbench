@@ -1,7 +1,7 @@
 use nexus_core::{
-    append_audit_event_from_root, create_workspace, read_document, scan_source_repos,
-    scan_workspaces, widget_snapshot_from_dashboard, AuditEventInput,
-    CreateWorkspaceRequest as CoreCreateWorkspaceRequest,
+    append_audit_event_from_root, create_workspace, read_document, rebuild_search_index,
+    scan_source_repos, scan_workspaces, search_index, widget_snapshot_from_dashboard,
+    AuditEventInput, CreateWorkspaceRequest as CoreCreateWorkspaceRequest,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::ffi::{CStr, CString};
@@ -56,6 +56,23 @@ struct CreateWorkspaceBridgeRequest {
 struct AppendAuditEventBridgeRequest {
     audit_root: String,
     event: AuditEventInput,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RebuildSearchIndexBridgeRequest {
+    index_path: String,
+    workspaces_root: String,
+    source_repos_root: String,
+    docs_root: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SearchIndexBridgeRequest {
+    index_path: String,
+    query: String,
+    limit: Option<usize>,
 }
 
 #[derive(Debug, Serialize)]
@@ -113,6 +130,29 @@ pub unsafe extern "C" fn nexus_widget_snapshot_json(input_json: *const c_char) -
 pub unsafe extern "C" fn nexus_append_audit_event_json(input_json: *const c_char) -> *mut c_char {
     bridge_call(input_json, |request: AppendAuditEventBridgeRequest| {
         append_audit_event_from_root(&request.audit_root, request.event)
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn nexus_rebuild_search_index_json(input_json: *const c_char) -> *mut c_char {
+    bridge_call(input_json, |request: RebuildSearchIndexBridgeRequest| {
+        rebuild_search_index(
+            &request.index_path,
+            &request.workspaces_root,
+            &request.source_repos_root,
+            &request.docs_root,
+        )
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn nexus_search_index_json(input_json: *const c_char) -> *mut c_char {
+    bridge_call(input_json, |request: SearchIndexBridgeRequest| {
+        search_index(
+            &request.index_path,
+            &request.query,
+            request.limit.unwrap_or(20),
+        )
     })
 }
 
@@ -372,6 +412,65 @@ mod tests {
         let lines = fs::read_to_string(path).unwrap();
         assert_eq!(lines.lines().count(), 1);
         assert!(lines.contains("2026-05-27-demo"));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn search_index_bridge_rebuilds_and_queries_workspace_documents() {
+        let root = std::env::temp_dir().join(format!("nexus-ffi-index-{}", std::process::id()));
+        let workspace = root.join("2026-05-27-index-demo");
+        let index_path = root.join("nexus-index.sqlite3");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(workspace.join("sql")).unwrap();
+        fs::write(
+            workspace.join("workspace.md"),
+            "# Index Demo\n\n- 需求名称: Index Demo\n- 当前状态: developing\n- 目标分支: chen/index-demo\n- 源仓库集合: ~/source-repos\n",
+        )
+        .unwrap();
+        fs::write(
+            workspace.join("services.md"),
+            "# Services\n\n## 已确认相关\n\n| 服务 | 源仓库 | 说明 |\n| --- | --- | --- |\n| order | ~/source-repos/order | pay_log owner |\n",
+        )
+        .unwrap();
+        fs::write(
+            workspace.join("tasks.md"),
+            "# Tasks\n\n补充 pay_log 对账索引。\n",
+        )
+        .unwrap();
+        fs::write(workspace.join("decisions.md"), "# Decisions\n").unwrap();
+        fs::write(
+            workspace.join("交付记录.md"),
+            "# 交付记录\n\npay_log 已补充。\n",
+        )
+        .unwrap();
+
+        let rebuild_request = format!(
+            r#"{{"indexPath":"{}","workspacesRoot":"{}","sourceReposRoot":"~/source-repos","docsRoot":"~/docs"}}"#,
+            index_path.to_string_lossy(),
+            root.to_string_lossy()
+        );
+        let rebuild_input = CString::new(rebuild_request).unwrap();
+        let rebuild_output = unsafe { nexus_rebuild_search_index_json(rebuild_input.as_ptr()) };
+        let rebuild_response =
+            unsafe { CStr::from_ptr(rebuild_output).to_string_lossy().to_string() };
+        unsafe { nexus_string_free(rebuild_output) };
+        let rebuild_value = serde_json::from_str::<Value>(&rebuild_response).unwrap();
+        assert_eq!(rebuild_value["ok"], true);
+        assert_eq!(rebuild_value["data"]["workspaceCount"], 1);
+
+        let search_request = format!(
+            r#"{{"indexPath":"{}","query":"pay_log","limit":10}}"#,
+            index_path.to_string_lossy()
+        );
+        let search_input = CString::new(search_request).unwrap();
+        let search_output = unsafe { nexus_search_index_json(search_input.as_ptr()) };
+        let search_response =
+            unsafe { CStr::from_ptr(search_output).to_string_lossy().to_string() };
+        unsafe { nexus_string_free(search_output) };
+        let search_value = serde_json::from_str::<Value>(&search_response).unwrap();
+        assert_eq!(search_value["ok"], true);
+        assert_eq!(search_value["data"][0]["workspaceName"], "Index Demo");
 
         fs::remove_dir_all(root).unwrap();
     }

@@ -79,7 +79,7 @@
 
 ## Phase 3: Bridge And Feature Parity Slice
 
-**Status:** Started. `crates/nexus-ffi` now exposes a small C ABI + JSON bridge for workspace scans, source repository scans, document reads, widget snapshot computation, JSONL audit events, and confirmed workspace creation. The Swift package has a `NexusBridge` target with DTOs and optional dynamic library loading through `NEXUS_CORE_LIBRARY`.
+**Status:** Started. `crates/nexus-ffi` now exposes a small C ABI + JSON bridge for workspace scans, source repository scans, document reads, widget snapshot computation, JSONL audit events, SQLite/FTS index rebuild/search, and confirmed workspace creation. The Swift package has a `NexusBridge` target with DTOs and optional dynamic library loading through `NEXUS_CORE_LIBRARY`.
 
 **Goal:** Make the native app read real workspace data.
 
@@ -103,7 +103,7 @@
 
 **Order:**
 
-1. Local SQLite + FTS index in Rust Core.
+1. Local SQLite + FTS index in Rust Core. `[started]`
 2. Native search UI in SwiftUI.
 3. Timeline and pinned workspace views.
 4. Safer worktree creation with confirmation and audit log. `[audit event foundation started]`
