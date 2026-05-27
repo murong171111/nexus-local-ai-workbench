@@ -106,6 +106,36 @@ pub struct CreateWorkspaceResponse {
     pub folder: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct SetupWorktreesRequest {
+    pub workspace_path: String,
+    pub source_repos_root: String,
+    pub services: Vec<String>,
+    pub target_branch: String,
+    pub confirmed: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetupWorktreesResponse {
+    pub workspace_path: String,
+    pub target_branch: String,
+    pub command: String,
+    pub created: Vec<WorktreeSetupResult>,
+    pub skipped: Vec<WorktreeSetupResult>,
+    pub failed: Vec<WorktreeSetupResult>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeSetupResult {
+    pub service: String,
+    pub source_path: String,
+    pub worktree_path: String,
+    pub status: String,
+    pub detail: String,
+}
+
 pub fn scan_workspaces(
     workspaces_root: &str,
     source_repos_root: &str,
@@ -310,6 +340,139 @@ pub fn create_workspace(
     Ok(CreateWorkspaceResponse {
         path: workspace.to_string_lossy().to_string(),
         folder: request.folder,
+    })
+}
+
+pub fn setup_worktrees(request: SetupWorktreesRequest) -> Result<SetupWorktreesResponse, String> {
+    if !request.confirmed {
+        return Err("worktree setup requires explicit confirmation".to_string());
+    }
+    if !target_branch_confirmed(&request.target_branch) {
+        return Err("target branch must be confirmed before creating worktrees".to_string());
+    }
+
+    let workspace = expand_user_path(&request.workspace_path);
+    if !workspace.exists() {
+        return Err(format!("workspace does not exist: {}", workspace.display()));
+    }
+    if !workspace.is_dir() {
+        return Err(format!(
+            "workspace is not a directory: {}",
+            workspace.display()
+        ));
+    }
+
+    let repos_dir = workspace.join("repos");
+    fs::create_dir_all(&repos_dir).map_err(|error| error.to_string())?;
+
+    let services = normalized_services(&request.services);
+    if services.is_empty() {
+        return Err("no services selected for worktree setup".to_string());
+    }
+
+    let target_branch = normalize_git_branch(&request.target_branch);
+    let command = worktree_commands(
+        &workspace,
+        &services,
+        &target_branch,
+        &request.source_repos_root,
+    );
+    let source_root = expand_user_path(&request.source_repos_root);
+    let mut created = Vec::new();
+    let mut skipped = Vec::new();
+    let mut failed = Vec::new();
+
+    for service in services {
+        let source_path = source_root.join(&service);
+        let worktree_path = repos_dir.join(&service);
+        if !safe_service_name(&service) {
+            failed.push(worktree_setup_result(
+                &service,
+                &source_path,
+                &worktree_path,
+                "failed",
+                "service name must be a single safe path segment",
+            ));
+            continue;
+        }
+        if worktree_path.exists() {
+            skipped.push(worktree_setup_result(
+                &service,
+                &source_path,
+                &worktree_path,
+                "skipped",
+                "worktree path already exists",
+            ));
+            continue;
+        }
+        if !source_path.exists() {
+            failed.push(worktree_setup_result(
+                &service,
+                &source_path,
+                &worktree_path,
+                "failed",
+                "source repository does not exist",
+            ));
+            continue;
+        }
+        if !is_git_worktree(&source_path) {
+            failed.push(worktree_setup_result(
+                &service,
+                &source_path,
+                &worktree_path,
+                "failed",
+                "source path is not a git worktree",
+            ));
+            continue;
+        }
+
+        match run_git(&source_path, &["fetch", "origin"]) {
+            Ok(_) => {}
+            Err(error) => {
+                failed.push(worktree_setup_result(
+                    &service,
+                    &source_path,
+                    &worktree_path,
+                    "failed",
+                    &format!("git fetch failed: {error}"),
+                ));
+                continue;
+            }
+        }
+
+        let worktree_target = worktree_path.to_string_lossy().to_string();
+        match run_git(
+            &source_path,
+            &["worktree", "add", &worktree_target, &target_branch],
+        ) {
+            Ok(output) => created.push(worktree_setup_result(
+                &service,
+                &source_path,
+                &worktree_path,
+                "created",
+                if output.is_empty() {
+                    "worktree created"
+                } else {
+                    output.as_str()
+                },
+            )),
+            Err(error) => failed.push(worktree_setup_result(
+                &service,
+                &source_path,
+                &worktree_path,
+                "failed",
+                &format!("git worktree add failed: {error}"),
+            )),
+        }
+    }
+
+    Ok(SetupWorktreesResponse {
+        workspace_path: workspace.to_string_lossy().to_string(),
+        target_branch,
+        command,
+        created,
+        skipped,
+        failed,
     })
 }
 
@@ -898,6 +1061,7 @@ fn audit_action_label(action: &str) -> String {
         "risk_instruction.copied" => "风险指令已复制 / Risk instruction".to_string(),
         "worktree.command.copied" => "Worktree 命令已复制 / Worktree command".to_string(),
         "worktree.command.generated" => "Worktree 命令已生成 / Worktree command".to_string(),
+        "worktree.setup.executed" => "Worktree 已创建 / Worktree setup".to_string(),
         value if !value.trim().is_empty() => value.replace('_', " ").replace('.', " "),
         _ => "本地事件 / Local event".to_string(),
     }
@@ -1054,6 +1218,59 @@ pub fn worktree_commands(
 
 fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+fn safe_service_name(value: &str) -> bool {
+    !value.is_empty()
+        && !value.contains('/')
+        && !value.contains('\\')
+        && !value.starts_with('.')
+        && value != "."
+        && value != ".."
+        && !value.split('.').all(str::is_empty)
+}
+
+fn is_git_worktree(path: &Path) -> bool {
+    run_git(path, &["rev-parse", "--is-inside-work-tree"])
+        .map(|output| output.trim() == "true")
+        .unwrap_or(false)
+}
+
+fn run_git(path: &Path, args: &[&str]) -> Result<String, String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(path)
+        .args(args)
+        .output()
+        .map_err(|error| error.to_string())?;
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        Ok(if stdout.is_empty() { stderr } else { stdout })
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if stderr.is_empty() {
+            Err(format!("git exited with status {}", output.status))
+        } else {
+            Err(stderr)
+        }
+    }
+}
+
+fn worktree_setup_result(
+    service: &str,
+    source_path: &Path,
+    worktree_path: &Path,
+    status: &str,
+    detail: &str,
+) -> WorktreeSetupResult {
+    WorktreeSetupResult {
+        service: service.to_string(),
+        source_path: source_path.to_string_lossy().to_string(),
+        worktree_path: worktree_path.to_string_lossy().to_string(),
+        status: status.to_string(),
+        detail: detail.to_string(),
+    }
 }
 
 fn normalized_services(services: &[String]) -> Vec<String> {
@@ -1315,6 +1532,87 @@ mod tests {
     }
 
     #[test]
+    fn setup_worktrees_rejects_unconfirmed_requests() {
+        let result = setup_worktrees(SetupWorktreesRequest {
+            workspace_path: "/tmp/missing".to_string(),
+            source_repos_root: "/tmp/source".to_string(),
+            services: vec!["order".to_string()],
+            target_branch: "chen/demo".to_string(),
+            confirmed: false,
+        });
+
+        assert!(result
+            .unwrap_err()
+            .contains("requires explicit confirmation"));
+    }
+
+    #[test]
+    fn setup_worktrees_creates_missing_worktrees_from_source_repos() {
+        let root =
+            std::env::temp_dir().join(format!("nexus-core-setup-worktrees-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let remote = root.join("remote-order.git");
+        let source_root = root.join("source-repos");
+        let source = source_root.join("order");
+        let workspace = root.join("workspace");
+        fs::create_dir_all(&source_root).unwrap();
+        fs::create_dir_all(&workspace).unwrap();
+
+        run_command(&root, "git", &["init", "--bare", &remote.to_string_lossy()]);
+        run_command(
+            &root,
+            "git",
+            &[
+                "clone",
+                &remote.to_string_lossy(),
+                &source.to_string_lossy(),
+            ],
+        );
+        run_command(
+            &source,
+            "git",
+            &["config", "user.email", "nexus@example.com"],
+        );
+        run_command(&source, "git", &["config", "user.name", "Nexus Test"]);
+        fs::write(source.join("README.md"), "demo").unwrap();
+        run_command(&source, "git", &["add", "README.md"]);
+        run_command(&source, "git", &["commit", "-m", "init"]);
+        run_command(&source, "git", &["branch", "chen/demo"]);
+        run_command(&source, "git", &["push", "origin", "HEAD:main"]);
+        run_command(&source, "git", &["push", "origin", "chen/demo"]);
+
+        let response = setup_worktrees(SetupWorktreesRequest {
+            workspace_path: workspace.to_string_lossy().to_string(),
+            source_repos_root: source_root.to_string_lossy().to_string(),
+            services: vec!["order".to_string()],
+            target_branch: "chen/demo".to_string(),
+            confirmed: true,
+        })
+        .unwrap();
+
+        assert_eq!(response.created.len(), 1);
+        assert!(response.skipped.is_empty());
+        assert!(response.failed.is_empty());
+        assert!(workspace.join("repos/order/.git").exists());
+        assert_eq!(
+            git_status(workspace.join("repos/order")).branch,
+            "chen/demo"
+        );
+
+        let second = setup_worktrees(SetupWorktreesRequest {
+            workspace_path: workspace.to_string_lossy().to_string(),
+            source_repos_root: source_root.to_string_lossy().to_string(),
+            services: vec!["order".to_string()],
+            target_branch: "chen/demo".to_string(),
+            confirmed: true,
+        })
+        .unwrap();
+        assert_eq!(second.skipped.len(), 1);
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn create_workspace_writes_standard_documents_and_index() {
         let root = std::env::temp_dir().join(format!(
             "nexus-core-create-workspace-{}",
@@ -1357,5 +1655,21 @@ mod tests {
         assert!(index.contains("| Demo Feature | analyzing | chen/demo-feature | order, store-cashier | `2026-05-27-demo-feature` |"));
 
         fs::remove_dir_all(root).unwrap();
+    }
+
+    fn run_command(cwd: &Path, command: &str, args: &[&str]) {
+        let output = Command::new(command)
+            .current_dir(cwd)
+            .args(args)
+            .output()
+            .unwrap_or_else(|error| panic!("{command} failed to start: {error}"));
+        assert!(
+            output.status.success(),
+            "{} {:?}\nstdout:\n{}\nstderr:\n{}",
+            command,
+            args,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 }

@@ -19,6 +19,31 @@ export type CreateWorkspacePayload = {
   confirmed: boolean;
 };
 
+export type SetupWorktreesPayload = {
+  workspacePath: string;
+  sourceReposRoot: string;
+  services: string[];
+  targetBranch: string;
+  confirmed: boolean;
+};
+
+export type WorktreeSetupResult = {
+  service: string;
+  sourcePath: string;
+  worktreePath: string;
+  status: string;
+  detail: string;
+};
+
+export type SetupWorktreesResponse = {
+  workspacePath: string;
+  targetBranch: string;
+  command: string;
+  created: WorktreeSetupResult[];
+  skipped: WorktreeSetupResult[];
+  failed: WorktreeSetupResult[];
+};
+
 export type AuditEventPayload = {
   actor?: string;
   action: string;
@@ -231,6 +256,21 @@ export async function createWorkspace(payload: CreateWorkspacePayload) {
       source_repos_root: payload.sourceReposRoot,
       services: payload.services,
       target_branch: payload.targetBranch,
+      confirmed: payload.confirmed
+    }
+  });
+}
+
+export async function setupWorktrees(payload: SetupWorktreesPayload) {
+  if (!isDesktopApp()) {
+    throw new Error("创建 worktree 需要在 Nexus Mac App 中使用");
+  }
+  return tauriInvoke<SetupWorktreesResponse>("setup_worktrees", {
+    request: {
+      workspacePath: payload.workspacePath,
+      sourceReposRoot: payload.sourceReposRoot,
+      services: payload.services,
+      targetBranch: payload.targetBranch,
       confirmed: payload.confirmed
     }
   });

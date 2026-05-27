@@ -37,9 +37,9 @@ import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { Card } from "./components/ui/card";
 import { Input } from "./components/ui/input";
-import { appendAuditEvent, checkEnvironment, createWorkspace, exportSettingsProfile, openExternalUrl, openPath as openPathInDesktop, readTextFile, rebuildSearchIndex, scanSourceRepos, scanWorkspaces, searchIndex, writeWidgetSnapshot, type EnvironmentHealth, type RebuildSearchIndexResponse, type SearchResult, type SourceRepo } from "./desktop";
+import { appendAuditEvent, checkEnvironment, createWorkspace, exportSettingsProfile, isDesktopApp, openExternalUrl, openPath as openPathInDesktop, readTextFile, rebuildSearchIndex, scanSourceRepos, scanWorkspaces, searchIndex, setupWorktrees, writeWidgetSnapshot, type EnvironmentHealth, type RebuildSearchIndexResponse, type SearchResult, type SourceRepo } from "./desktop";
 import { cn, riskTone } from "./lib";
-import { branchAlignmentRows, buildWorktreeCommand, createSettingsProfile, fallbackSearchResults, groupSearchResults, normalizeServiceList, orderedSearchResults, parseServiceInput, parseSettingsProfile, settingsProfileFilename, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceScore, workspaceSessionActions, type NexusSettingsProfile } from "./workspace-model";
+import { branchAlignmentRows, buildWorktreeCommand, createSettingsProfile, fallbackSearchResults, groupSearchResults, hasConfirmedTargetBranch, normalizeServiceList, orderedSearchResults, parseServiceInput, parseSettingsProfile, settingsProfileFilename, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceScore, workspaceSessionActions, type NexusSettingsProfile } from "./workspace-model";
 import type { DashboardData, Workspace, WorkspaceSessionAction } from "./types";
 
 const initialData = rawData as DashboardData;
@@ -76,7 +76,8 @@ const auditActionLabels: Record<string, string> = {
   "document.opened": "文档已打开 / Document opened",
   "risk_instruction.copied": "风险指令已复制 / Risk instruction",
   "workspace.created": "工作区已创建 / Workspace created",
-  "worktree.command.copied": "Worktree 命令已复制 / Worktree command"
+  "worktree.command.copied": "Worktree 命令已复制 / Worktree command",
+  "worktree.setup.executed": "Worktree 已创建 / Worktree setup"
 };
 
 function auditActivityTitle(action: string) {
@@ -2109,6 +2110,95 @@ function CreateWorkspacePanel({
   );
 }
 
+function WorktreeSetupPanel({
+  workspace,
+  running,
+  onClose,
+  onConfirm
+}: {
+  workspace?: Workspace;
+  running: boolean;
+  onClose: () => void;
+  onConfirm: (workspace: Workspace) => void;
+}) {
+  if (!workspace) return null;
+
+  const missingRows = workspace.gitRows.filter((row) => !row.worktree.exists);
+  const canRun = missingRows.length > 0 && hasConfirmedTargetBranch(workspace.targetBranch);
+
+  return (
+    <div className="fixed inset-0 bg-neutral-950/20 p-4" style={{ zIndex: 1060 }} onMouseDown={onClose}>
+      <aside
+        className="mx-auto mt-[8vh] max-w-2xl overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-[0_18px_48px_rgba(15,23,42,0.16)]"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="border-b border-neutral-200 px-5 py-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-xs text-neutral-500">本地写入确认 / Local write confirmation</div>
+              <h2 className="mt-1 text-lg font-semibold text-neutral-950">创建缺失 worktree</h2>
+              <div className="mono mt-1 text-xs text-neutral-400">{workspace.folder}</div>
+            </div>
+            <button className="rounded-md border border-neutral-200 p-1.5 text-neutral-500 hover:bg-neutral-50" onClick={onClose}>
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        <div className="grid gap-4 px-5 py-4 text-sm text-neutral-600">
+          <div className="rounded-md border border-neutral-200 bg-neutral-50 p-3">
+            <div className="font-medium text-neutral-950">执行范围 / Scope</div>
+            <div className="mt-2 grid gap-2 md:grid-cols-2">
+              <div>
+                <div className="text-xs text-neutral-400">目标分支</div>
+                <div className="mono mt-1 break-all text-xs text-neutral-700">{workspace.targetBranch}</div>
+              </div>
+              <div>
+                <div className="text-xs text-neutral-400">源仓库目录</div>
+                <div className="mono mt-1 break-all text-xs text-neutral-700">{workspace.sourceRoot}</div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-2 font-medium text-neutral-950">将创建 / Missing worktrees</div>
+            {missingRows.length ? (
+              <div className="grid gap-2">
+                {missingRows.map((row) => (
+                  <div key={row.service} className="rounded-md border border-neutral-200 px-3 py-2">
+                    <div className="font-medium text-neutral-900">{row.service}</div>
+                    <div className="mono mt-1 break-all text-xs text-neutral-500">{row.sourcePath} {"->"} {row.worktreePath}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-700">所有已确认服务都已有 worktree。</div>
+            )}
+          </div>
+
+          {!hasConfirmedTargetBranch(workspace.targetBranch) && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
+              目标分支仍未确认。请先更新 branches.md 或 workspace.md 后再创建 worktree。
+            </div>
+          )}
+
+          <div className="rounded-md border border-neutral-200 bg-neutral-950 p-3">
+            <div className="mb-2 text-xs font-medium text-neutral-300">命令预览 / Command preview</div>
+            <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-xs leading-5 text-neutral-100">{workspace.worktreeCommand}</pre>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 border-t border-neutral-200 px-5 py-4">
+          <Button variant="ghost" onClick={onClose}>取消</Button>
+          <Button disabled={!canRun || running} onClick={() => onConfirm(workspace)}>
+            {running ? "创建中" : isDesktopApp() ? "确认创建 worktree" : "复制命令"}
+          </Button>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
 export function App() {
   const [dashboard, setDashboard] = useState<DashboardData>(initialData);
   const [settings, setSettings] = useState<NexusSettings>(() => loadSettings(initialData));
@@ -2120,6 +2210,8 @@ export function App() {
   const [onboardingRequested, setOnboardingRequested] = useState(() => shouldShowOnboarding());
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [worktreeSetupWorkspace, setWorktreeSetupWorkspace] = useState<Workspace>();
+  const [worktreeSetupRunning, setWorktreeSetupRunning] = useState(false);
   const [refreshEnabled, setRefreshEnabled] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [drawerFolder, setDrawerFolder] = useState("");
@@ -2464,6 +2556,46 @@ export function App() {
     showToast(`已复制 ${workspace.name} 的指令并打开 Codex`);
   };
 
+  const executeWorktreeSetup = async (workspace: Workspace) => {
+    const services = workspace.gitRows.filter((row) => !row.worktree.exists).map((row) => row.service);
+    if (!services.length) {
+      showToast("所有 worktree 已存在");
+      setWorktreeSetupWorkspace(undefined);
+      return;
+    }
+    if (!hasConfirmedTargetBranch(workspace.targetBranch)) {
+      showToast("目标分支未确认，暂不能创建 worktree");
+      return;
+    }
+    if (!isDesktopApp()) {
+      await copyCommand(workspace);
+      showToast("浏览器预览无法执行本地 Git，已复制命令");
+      setWorktreeSetupWorkspace(undefined);
+      return;
+    }
+
+    setWorktreeSetupRunning(true);
+    try {
+      const response = await setupWorktrees({
+        workspacePath: workspace.path,
+        sourceReposRoot: workspace.sourceRoot || settings.sourceReposRoot,
+        services,
+        targetBranch: workspace.targetBranch,
+        confirmed: true
+      });
+      const created = response?.created.length ?? 0;
+      const skipped = response?.skipped.length ?? 0;
+      const failed = response?.failed.length ?? 0;
+      showToast(`worktree 创建完成：${created} 创建 / ${skipped} 跳过 / ${failed} 失败`);
+      setWorktreeSetupWorkspace(undefined);
+      await refreshData();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "worktree 创建失败");
+    } finally {
+      setWorktreeSetupRunning(false);
+    }
+  };
+
   const runSessionAction = async (workspace: Workspace, action: WorkspaceSessionAction) => {
     const type = instructionType(action);
     if (action.id === "start-codex-session") {
@@ -2471,7 +2603,7 @@ export function App() {
       return;
     }
     if (type === "worktree") {
-      await copyCommand(workspace);
+      setWorktreeSetupWorkspace(workspace);
       return;
     }
     await copyInstruction(workspace, type);
@@ -2806,6 +2938,12 @@ export function App() {
         onClose={() => setCreateOpen(false)}
         onCreate={handleCreateWorkspace}
         onScanSourceRepos={handleScanSourceRepos}
+      />
+      <WorktreeSetupPanel
+        workspace={worktreeSetupWorkspace}
+        running={worktreeSetupRunning}
+        onClose={() => setWorktreeSetupWorkspace(undefined)}
+        onConfirm={executeWorktreeSetup}
       />
       <SettingsPanel
         open={settingsOpen}

@@ -37,6 +37,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added user-action audit events for document opens, Codex handoffs, copied prompts, copied risk instructions, and copied worktree commands.
 - Added Rust Core readiness checks and surfaced them in the Tauri preview cards, workspace drawer, and native SwiftUI detail panel.
 - Added Rust Core session actions and surfaced them in the Tauri preview cards, workspace drawer, and native SwiftUI detail panel.
+- Added confirmed worktree setup through Rust Core, FFI, and the Tauri preview UI, with audit logging and command-copy fallback in browser preview mode.
 - Added Rust Core SQLite + FTS index rebuild/search support for workspace Markdown and SQL notes.
 - Added Tauri commands for rebuilding and querying the local search index.
 - Added a top-bar global search popover that uses the local index in the packaged app and workspace metadata fallback in browser preview mode.

@@ -43,6 +43,7 @@ The first native shell scaffold is available at `native/Nexus`. It is a Swift Pa
 - Workspace readiness checks for service scope, target branch, worktree readiness, branch alignment, dirty worktrees, delivery records, SQL directory presence, and blocked tasks.
 - Session-action generation that turns readiness and risk signals into prioritized Codex handoffs, worktree command copies, and document follow-ups.
 - Reviewable worktree command generation.
+- Confirmed worktree setup that validates service names, source repositories, target branches, and existing worktree paths before running Git.
 - Standard workspace skeleton creation, including Markdown documents, SQL/log/repos folders, and bootstrap scripts.
 - Settings profile validation.
 - Settings profile export file naming and JSON serialization.
@@ -52,13 +53,13 @@ The first native shell scaffold is available at `native/Nexus`. It is a Swift Pa
 ### Swift/Rust Bridge
 
 - The initial bridge uses a small C ABI with JSON request/response payloads. It is intentionally simple while the native app shape is still moving.
-- `crates/nexus-ffi` currently exposes workspace scans with readiness checks, session actions, and audit-log activity enrichment, source-repository scans, document reads, widget snapshot computation, JSONL audit event append, SQLite/FTS index rebuild/search, and confirmed workspace creation over `nexus-core`.
+- `crates/nexus-ffi` currently exposes workspace scans with readiness checks, session actions, and audit-log activity enrichment, source-repository scans, document reads, widget snapshot computation, JSONL audit event append, SQLite/FTS index rebuild/search, confirmed workspace creation, and confirmed worktree setup over `nexus-core`.
 - `native/Nexus/Sources/NexusBridge` owns Swift `Codable` DTOs, preview fallback data, and optional dynamic library loading through `NEXUS_CORE_LIBRARY`.
 - The native SwiftUI shell uses the same search bridge to rebuild/query the local index, then falls back to in-memory workspace metadata when the dynamic library is not configured.
 - Native search results surface selected-result context from the current workspace model, including branch, service count, risk, and recent activity.
 - The native shell stores lightweight personal UI preferences, such as the selected search scope and pinned workspace IDs, in `UserDefaults`. These preferences are local conveniences; Markdown workspace records and Rust Core scan output remain the product source of truth.
 - Native document reads append `document.opened` audit events when the Rust Core bridge is available and update the visible timeline immediately.
-- The command surface should grow in this order: scan, read document, compute widget snapshot, create workspace skeleton, audit local actions, rebuild/search the local index, and produce worktree plans.
+- The command surface should grow in this order: scan, read document, compute widget snapshot, create workspace skeleton, audit local actions, rebuild/search the local index, produce worktree plans, and execute confirmed worktree setup.
 - Local write operations must include explicit confirmation in the bridge request, not only in UI copy.
 - Bridge responses use explicit success/error envelopes so the native shell can show user-facing failures without guessing.
 

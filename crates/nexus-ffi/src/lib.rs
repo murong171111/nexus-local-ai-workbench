@@ -1,8 +1,9 @@
 use nexus_core::{
     append_audit_event_from_root, create_workspace, read_document, rebuild_search_index,
-    scan_source_repos, scan_workspaces, scan_workspaces_with_audit, search_index,
+    scan_source_repos, scan_workspaces, scan_workspaces_with_audit, search_index, setup_worktrees,
     widget_snapshot_from_dashboard, AuditEventInput,
     CreateWorkspaceRequest as CoreCreateWorkspaceRequest,
+    SetupWorktreesRequest as CoreSetupWorktreesRequest,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::ffi::{CStr, CString};
@@ -45,6 +46,18 @@ struct CreateWorkspaceBridgeRequest {
     name: String,
     folder: String,
     workspaces_root: String,
+    source_repos_root: String,
+    services: Vec<String>,
+    target_branch: String,
+    confirmed: bool,
+    audit_root: Option<String>,
+    actor: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetupWorktreesBridgeRequest {
+    workspace_path: String,
     source_repos_root: String,
     services: Vec<String>,
     target_branch: String,
@@ -190,6 +203,52 @@ pub unsafe extern "C" fn nexus_create_workspace_json(input_json: *const c_char) 
                         ("targetBranch".to_string(), request.target_branch),
                         ("workspacesRoot".to_string(), request.workspaces_root),
                         ("sourceReposRoot".to_string(), request.source_repos_root),
+                    ]
+                    .into_iter()
+                    .collect(),
+                },
+            );
+        }
+
+        Ok(response)
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn nexus_setup_worktrees_json(input_json: *const c_char) -> *mut c_char {
+    bridge_call(input_json, |request: SetupWorktreesBridgeRequest| {
+        if !request.confirmed {
+            return Err("worktree setup requires explicit confirmation".to_string());
+        }
+
+        let response = setup_worktrees(CoreSetupWorktreesRequest {
+            workspace_path: request.workspace_path.clone(),
+            source_repos_root: request.source_repos_root.clone(),
+            services: request.services.clone(),
+            target_branch: request.target_branch.clone(),
+            confirmed: request.confirmed,
+        })?;
+
+        if let Some(audit_root) = request.audit_root.as_deref() {
+            let _ = append_audit_event_from_root(
+                audit_root,
+                AuditEventInput {
+                    actor: request.actor.unwrap_or_else(|| "Nexus Native".to_string()),
+                    action: "worktree.setup.executed".to_string(),
+                    target: response.workspace_path.clone(),
+                    summary: format!(
+                        "Created {} worktrees, skipped {}, failed {}",
+                        response.created.len(),
+                        response.skipped.len(),
+                        response.failed.len()
+                    ),
+                    metadata: [
+                        ("workspace".to_string(), response.workspace_path.clone()),
+                        ("services".to_string(), request.services.join(",")),
+                        ("targetBranch".to_string(), response.target_branch.clone()),
+                        ("created".to_string(), response.created.len().to_string()),
+                        ("skipped".to_string(), response.skipped.len().to_string()),
+                        ("failed".to_string(), response.failed.len().to_string()),
                     ]
                     .into_iter()
                     .collect(),
@@ -522,6 +581,22 @@ mod tests {
             "workspace creation requires explicit confirmation"
         );
         assert!(!root.join("2026-05-27-no-confirm").exists());
+    }
+
+    #[test]
+    fn setup_worktrees_bridge_requires_confirmation() {
+        let request = r#"{"workspacePath":"/tmp/nexus/workspace","sourceReposRoot":"/tmp/source","services":["order"],"targetBranch":"chen/demo","confirmed":false}"#;
+        let input = CString::new(request).unwrap();
+        let output = unsafe { nexus_setup_worktrees_json(input.as_ptr()) };
+        let response = unsafe { CStr::from_ptr(output).to_string_lossy().to_string() };
+        unsafe { nexus_string_free(output) };
+
+        let value = serde_json::from_str::<Value>(&response).unwrap();
+        assert_eq!(value["ok"], false);
+        assert_eq!(
+            value["error"],
+            "worktree setup requires explicit confirmation"
+        );
     }
 
     #[test]
