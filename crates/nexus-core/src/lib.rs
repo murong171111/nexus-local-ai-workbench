@@ -8,9 +8,9 @@ mod widget;
 mod workspace;
 
 pub use agent::{
-    agent_events_path, append_agent_event, append_agent_event_from_root, read_agent_events,
-    read_agent_events_from_root, AgentEvent, AgentEventInput, AppendAgentEventResponse,
-    AGENT_EVENTS_FILE,
+    agent_event_handoff_prompt, agent_events_path, append_agent_event,
+    append_agent_event_from_root, read_agent_events, read_agent_events_from_root, AgentEvent,
+    AgentEventHandoffPromptResponse, AgentEventInput, AppendAgentEventResponse, AGENT_EVENTS_FILE,
 };
 pub use audit::{
     append_audit_event, append_audit_event_from_root, audit_log_path, read_audit_events,

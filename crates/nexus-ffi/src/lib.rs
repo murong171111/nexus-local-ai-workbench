@@ -1,8 +1,8 @@
 use nexus_core::{
-    append_agent_event_from_root, append_audit_event_from_root, create_workspace,
-    read_agent_events_from_root, read_document, rebuild_search_index, scan_source_repos,
-    scan_workspaces, scan_workspaces_with_audit, search_index, setup_worktrees,
-    widget_snapshot_from_dashboard, AgentEventInput, AuditEventInput,
+    agent_event_handoff_prompt, append_agent_event_from_root, append_audit_event_from_root,
+    create_workspace, read_agent_events_from_root, read_document, rebuild_search_index,
+    scan_source_repos, scan_workspaces, scan_workspaces_with_audit, search_index, setup_worktrees,
+    widget_snapshot_from_dashboard, AgentEvent, AgentEventInput, AuditEventInput,
     CreateWorkspaceRequest as CoreCreateWorkspaceRequest,
     SetupWorktreesRequest as CoreSetupWorktreesRequest,
 };
@@ -87,6 +87,12 @@ struct ReadAgentEventsBridgeRequest {
     events_root: String,
     limit: Option<usize>,
     workspace_folder: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentEventHandoffPromptBridgeRequest {
+    event: AgentEvent,
 }
 
 #[derive(Debug, Deserialize)]
@@ -181,6 +187,18 @@ pub unsafe extern "C" fn nexus_read_agent_events_json(input_json: *const c_char)
             request.workspace_folder.as_deref(),
         )
     })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn nexus_agent_event_handoff_prompt_json(
+    input_json: *const c_char,
+) -> *mut c_char {
+    bridge_call(
+        input_json,
+        |request: AgentEventHandoffPromptBridgeRequest| {
+            Ok(agent_event_handoff_prompt(&request.event))
+        },
+    )
 }
 
 #[no_mangle]
@@ -567,6 +585,23 @@ mod tests {
         assert_eq!(value["data"][0]["metadata"]["command"], "git push");
 
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn agent_event_handoff_prompt_bridge_returns_prompt() {
+        let request = r#"{"event":{"id":"agent-1","timestamp":"2026-05-27T10:00:00Z","source":"codex","sessionId":"thread-1","workspaceFolder":"2026-05-27-demo","kind":"permission","title":"Permission requested","summary":"Codex requested git push","severity":"warning","metadata":{"command":"git push","documentPath":"/tmp/demo/handoff.md"}}}"#;
+        let input = CString::new(request).unwrap();
+        let output = unsafe { nexus_agent_event_handoff_prompt_json(input.as_ptr()) };
+        let response = unsafe { CStr::from_ptr(output).to_string_lossy().to_string() };
+        unsafe { nexus_string_free(output) };
+
+        let value = serde_json::from_str::<Value>(&response).unwrap();
+        assert_eq!(value["ok"], true);
+        let prompt = value["data"]["prompt"].as_str().unwrap();
+        assert!(prompt.contains("Continue from this Nexus agent event."));
+        assert!(prompt.contains("- Workspace: 2026-05-27-demo"));
+        assert!(prompt.contains("- command: git push"));
+        assert!(prompt.contains("do not execute command metadata"));
     }
 
     #[test]
