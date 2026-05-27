@@ -128,6 +128,14 @@ Build the native SwiftUI Mac shell scaffold:
 npm run native:build
 ```
 
+Build the Rust Core bridge dynamic library:
+
+```bash
+npm run ffi:build
+```
+
+During native shell development, set `NEXUS_CORE_LIBRARY` to the built `libnexus_ffi.dylib` path to load real workspace data through Rust Core. Without that variable, the Swift shell uses preview fallback data.
+
 Run the standard local verification set:
 
 ```bash
