@@ -2,10 +2,10 @@ use nexus_core::{
     append_audit_event, create_workspace as create_workspace_core, expand_user_path,
     export_settings_profile as export_settings_profile_core,
     rebuild_search_index as rebuild_search_index_core, scan_source_repos as scan_source_repos_core,
-    scan_workspaces as scan_workspaces_core, search_index as search_index_core, AuditEventInput,
-    CreateWorkspaceRequest, CreateWorkspaceResponse, DashboardData, ExportSettingsProfileResponse,
-    RebuildSearchIndexResponse, SearchResult, SettingsProfile, SourceRepo, WidgetSnapshot,
-    DEFAULT_INDEX_FILE,
+    scan_workspaces_with_audit as scan_workspaces_core, search_index as search_index_core,
+    AuditEventInput, CreateWorkspaceRequest, CreateWorkspaceResponse, DashboardData,
+    ExportSettingsProfileResponse, RebuildSearchIndexResponse, SearchResult, SettingsProfile,
+    SourceRepo, WidgetSnapshot, DEFAULT_INDEX_FILE,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -20,6 +20,7 @@ struct ScanWorkspacesRequest {
     workspaces_root: String,
     source_repos_root: String,
     docs_root: String,
+    audit_root: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -146,11 +147,19 @@ fn read_text_file(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn scan_workspaces(request: ScanWorkspacesRequest) -> Result<DashboardData, String> {
+fn scan_workspaces(
+    app: tauri::AppHandle,
+    request: ScanWorkspacesRequest,
+) -> Result<DashboardData, String> {
+    let app_audit_root = app_audit_root(&app)
+        .ok()
+        .map(|path| path.to_string_lossy().to_string());
+    let audit_root = request.audit_root.as_deref().or(app_audit_root.as_deref());
     scan_workspaces_core(
         &request.workspaces_root,
         &request.source_repos_root,
         &request.docs_root,
+        audit_root,
     )
 }
 

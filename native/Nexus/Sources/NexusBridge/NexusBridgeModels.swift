@@ -4,11 +4,18 @@ public struct ScanWorkspacesRequest: Codable, Equatable, Sendable {
     public let workspacesRoot: String
     public let sourceReposRoot: String
     public let docsRoot: String
+    public let auditRoot: String?
 
-    public init(workspacesRoot: String, sourceReposRoot: String, docsRoot: String) {
+    public init(
+        workspacesRoot: String,
+        sourceReposRoot: String,
+        docsRoot: String,
+        auditRoot: String? = nil
+    ) {
         self.workspacesRoot = workspacesRoot
         self.sourceReposRoot = sourceReposRoot
         self.docsRoot = docsRoot
+        self.auditRoot = auditRoot
     }
 }
 
@@ -269,6 +276,7 @@ public struct WorkspaceSnapshot: Codable, Equatable, Sendable {
     public let updated: String
     public let links: [String: String]
     public let worktreeCommand: String
+    public let activities: [WorkspaceActivitySnapshot]?
 
     public init(
         name: String,
@@ -286,7 +294,8 @@ public struct WorkspaceSnapshot: Codable, Equatable, Sendable {
         riskCount: Int,
         updated: String,
         links: [String: String],
-        worktreeCommand: String
+        worktreeCommand: String,
+        activities: [WorkspaceActivitySnapshot]? = nil
     ) {
         self.name = name
         self.folder = folder
@@ -304,6 +313,19 @@ public struct WorkspaceSnapshot: Codable, Equatable, Sendable {
         self.updated = updated
         self.links = links
         self.worktreeCommand = worktreeCommand
+        self.activities = activities
+    }
+}
+
+public struct WorkspaceActivitySnapshot: Codable, Equatable, Sendable {
+    public let time: String
+    public let title: String
+    public let detail: String
+
+    public init(time: String, title: String, detail: String) {
+        self.time = time
+        self.title = title
+        self.detail = detail
     }
 }
 
@@ -478,7 +500,14 @@ public extension DashboardSnapshot {
                     riskCount: 2,
                     updated: "preview",
                     links: [:],
-                    worktreeCommand: "git worktree add ..."
+                    worktreeCommand: "git worktree add ...",
+                    activities: [
+                        WorkspaceActivitySnapshot(
+                            time: "preview",
+                            title: "工作区已创建 / Workspace created",
+                            detail: "Nexus Preview · Created preview workspace"
+                        )
+                    ]
                 )
             ]
         )

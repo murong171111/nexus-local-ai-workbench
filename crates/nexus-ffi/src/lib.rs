@@ -1,7 +1,8 @@
 use nexus_core::{
     append_audit_event_from_root, create_workspace, read_document, rebuild_search_index,
-    scan_source_repos, scan_workspaces, search_index, widget_snapshot_from_dashboard,
-    AuditEventInput, CreateWorkspaceRequest as CoreCreateWorkspaceRequest,
+    scan_source_repos, scan_workspaces, scan_workspaces_with_audit, search_index,
+    widget_snapshot_from_dashboard, AuditEventInput,
+    CreateWorkspaceRequest as CoreCreateWorkspaceRequest,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::ffi::{CStr, CString};
@@ -13,6 +14,7 @@ struct ScanWorkspacesRequest {
     workspaces_root: String,
     source_repos_root: String,
     docs_root: String,
+    audit_root: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -86,10 +88,11 @@ struct BridgeResponse<T: Serialize> {
 #[no_mangle]
 pub unsafe extern "C" fn nexus_scan_workspaces_json(input_json: *const c_char) -> *mut c_char {
     bridge_call(input_json, |request: ScanWorkspacesRequest| {
-        scan_workspaces(
+        scan_workspaces_with_audit(
             &request.workspaces_root,
             &request.source_repos_root,
             &request.docs_root,
+            request.audit_root.as_deref(),
         )
     })
 }
@@ -273,9 +276,11 @@ mod tests {
     fn scan_workspaces_bridge_returns_dashboard_json() {
         let root =
             std::env::temp_dir().join(format!("nexus-ffi-workspaces-{}", std::process::id()));
+        let audit_root = root.join("audit");
         let workspace = root.join("2026-05-27-bridge-demo");
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(workspace.join("sql")).unwrap();
+        fs::create_dir_all(&audit_root).unwrap();
         fs::write(
             workspace.join("workspace.md"),
             "# Bridge Demo\n\n- 需求名称: Bridge Demo\n- 当前状态: developing\n- 目标分支: chen/bridge\n- 源仓库集合: ~/source-repos\n",
@@ -289,10 +294,17 @@ mod tests {
         fs::write(workspace.join("tasks.md"), "# Tasks\n").unwrap();
         fs::write(workspace.join("decisions.md"), "# Decisions\n").unwrap();
         fs::write(workspace.join("交付记录.md"), "# 交付记录\n\n暂无。\n").unwrap();
+        fs::write(
+            audit_root.join("audit-log.jsonl"),
+            r#"{"id":"bridge-create","timestamp":"2026-05-27T09:30:00Z","actor":"Nexus Test","action":"workspace.created","target":"/tmp/2026-05-27-bridge-demo","summary":"Created Bridge Demo","metadata":{"folder":"2026-05-27-bridge-demo"}}
+"#,
+        )
+        .unwrap();
 
         let request = format!(
-            r#"{{"workspacesRoot":"{}","sourceReposRoot":"~/source-repos","docsRoot":"~/docs"}}"#,
-            root.to_string_lossy()
+            r#"{{"workspacesRoot":"{}","sourceReposRoot":"~/source-repos","docsRoot":"~/docs","auditRoot":"{}"}}"#,
+            root.to_string_lossy(),
+            audit_root.to_string_lossy()
         );
         let input = CString::new(request).unwrap();
         let output = unsafe { nexus_scan_workspaces_json(input.as_ptr()) };
@@ -305,6 +317,10 @@ mod tests {
         assert_eq!(
             value["data"]["workspaces"][0]["targetBranch"],
             "chen/bridge"
+        );
+        assert_eq!(
+            value["data"]["workspaces"][0]["activities"][0]["title"],
+            "工作区已创建 / Workspace created"
         );
 
         fs::remove_dir_all(root).unwrap();

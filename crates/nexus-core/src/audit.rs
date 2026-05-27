@@ -2,7 +2,7 @@ use crate::expand_user_path;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -75,6 +75,43 @@ pub fn append_audit_event_from_root(
     input: AuditEventInput,
 ) -> Result<AppendAuditEventResponse, String> {
     append_audit_event(expand_user_path(audit_root), input)
+}
+
+pub fn read_audit_events(
+    audit_root: impl AsRef<Path>,
+    limit: usize,
+) -> Result<Vec<AuditEvent>, String> {
+    let path = audit_log_path(audit_root);
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let file = fs::File::open(&path).map_err(|error| error.to_string())?;
+    let reader = BufReader::new(file);
+    let mut events = Vec::new();
+    for line in reader.lines() {
+        let line = line.map_err(|error| error.to_string())?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if let Ok(event) = serde_json::from_str::<AuditEvent>(trimmed) {
+            events.push(event);
+        }
+    }
+
+    events.sort_by(|left, right| right.timestamp.cmp(&left.timestamp));
+    if limit > 0 && events.len() > limit {
+        events.truncate(limit);
+    }
+    Ok(events)
+}
+
+pub fn read_audit_events_from_root(
+    audit_root: &str,
+    limit: usize,
+) -> Result<Vec<AuditEvent>, String> {
+    read_audit_events(expand_user_path(audit_root), limit)
 }
 
 pub fn audit_log_path(audit_root: impl AsRef<Path>) -> PathBuf {
@@ -186,6 +223,30 @@ mod tests {
         assert_eq!(events[1]["actor"], "Nexus");
         assert!(events[0]["id"].as_str().unwrap().starts_with("audit-"));
         assert!(!events[0]["timestamp"].as_str().unwrap().is_empty());
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn read_audit_events_returns_newest_valid_events() {
+        let root =
+            std::env::temp_dir().join(format!("nexus-core-read-audit-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let path = audit_log_path(&root);
+        fs::write(
+            &path,
+            r#"{"id":"one","timestamp":"2026-05-27T08:00:00Z","actor":"Nexus","action":"workspace.created","target":"/tmp/one","summary":"Created one","metadata":{"folder":"one"}}
+not-json
+{"id":"two","timestamp":"2026-05-27T09:00:00Z","actor":"Nexus","action":"document.opened","target":"/tmp/two","summary":"Opened two","metadata":{"folder":"two"}}
+"#,
+        )
+        .unwrap();
+
+        let events = read_audit_events(&root, 1).unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].id, "two");
+        assert_eq!(events[0].metadata["folder"], "two");
 
         fs::remove_dir_all(root).unwrap();
     }

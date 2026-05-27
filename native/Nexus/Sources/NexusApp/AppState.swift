@@ -198,7 +198,8 @@ final class AppState: ObservableObject {
                 request: ScanWorkspacesRequest(
                     workspacesRoot: workspaceRoot,
                     sourceReposRoot: sourceReposRoot,
-                    docsRoot: docsRoot
+                    docsRoot: docsRoot,
+                    auditRoot: auditRootPath
                 )
             )
             let mappedWorkspaces = dashboard.workspaces.map(WorkspaceSummary.init(snapshot:))

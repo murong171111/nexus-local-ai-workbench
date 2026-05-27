@@ -8,7 +8,7 @@ mod workspace;
 
 pub use audit::{
     append_audit_event, append_audit_event_from_root, audit_log_path, AppendAuditEventResponse,
-    AuditEvent, AuditEventInput, AUDIT_LOG_FILE,
+    read_audit_events, read_audit_events_from_root, AuditEvent, AuditEventInput, AUDIT_LOG_FILE,
 };
 pub use documents::{read_document, DocumentSnapshot};
 pub use git::{
@@ -25,6 +25,7 @@ pub use settings::{
 };
 pub use widget::{widget_snapshot_from_dashboard, WidgetSnapshot};
 pub use workspace::{
-    create_workspace, scan_workspaces, worktree_commands, CreateWorkspaceRequest,
-    CreateWorkspaceResponse, DashboardData, GitRow, TaskCounts, WorkspaceData,
+    create_workspace, scan_workspaces, scan_workspaces_with_audit, worktree_commands,
+    CreateWorkspaceRequest, CreateWorkspaceResponse, DashboardData, GitRow, TaskCounts,
+    WorkspaceActivity, WorkspaceData,
 };

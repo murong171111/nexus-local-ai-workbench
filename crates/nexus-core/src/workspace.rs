@@ -1,5 +1,6 @@
 use crate::{
-    expand_user_path, git_status, normalize_git_branch, target_branch_confirmed, GitStatus,
+    expand_user_path, git_status, normalize_git_branch, read_audit_events,
+    target_branch_confirmed, AuditEvent, GitStatus,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -36,6 +37,7 @@ pub struct WorkspaceData {
     pub updated: String,
     pub links: BTreeMap<String, String>,
     pub worktree_command: String,
+    pub activities: Vec<WorkspaceActivity>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
@@ -44,6 +46,14 @@ pub struct TaskCounts {
     pub doing: usize,
     pub todo: usize,
     pub blocked: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceActivity {
+    pub time: String,
+    pub title: String,
+    pub detail: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -77,6 +87,15 @@ pub fn scan_workspaces(
     source_repos_root: &str,
     docs_root: &str,
 ) -> Result<DashboardData, String> {
+    scan_workspaces_with_audit(workspaces_root, source_repos_root, docs_root, None)
+}
+
+pub fn scan_workspaces_with_audit(
+    workspaces_root: &str,
+    source_repos_root: &str,
+    docs_root: &str,
+    audit_root: Option<&str>,
+) -> Result<DashboardData, String> {
     let root = expand_user_path(workspaces_root);
     if !root.exists() {
         return Ok(DashboardData {
@@ -88,16 +107,31 @@ pub fn scan_workspaces(
         });
     }
 
+    let audit_path = audit_root.map(expand_user_path);
+    let audit_events = audit_path
+        .as_ref()
+        .map(|root| read_audit_events(root, 400))
+        .transpose()?
+        .unwrap_or_default();
+
     let mut workspaces = Vec::new();
     let entries = fs::read_dir(&root).map_err(|error| error.to_string())?;
     for entry in entries {
         let entry = entry.map_err(|error| error.to_string())?;
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
-        if !path.is_dir() || name == "dashboard" || name.starts_with('.') {
+        if !path.is_dir()
+            || name == "dashboard"
+            || name.starts_with('.')
+            || audit_path.as_ref().is_some_and(|audit_path| audit_path == &path)
+        {
             continue;
         }
-        workspaces.push(collect_workspace(&path, source_repos_root));
+        workspaces.push(collect_workspace(
+            &path,
+            source_repos_root,
+            &audit_events,
+        ));
     }
     workspaces.sort_by(|left, right| {
         right
@@ -257,7 +291,11 @@ pub fn create_workspace(
     })
 }
 
-fn collect_workspace(path: &Path, default_source_root: &str) -> WorkspaceData {
+fn collect_workspace(
+    path: &Path,
+    default_source_root: &str,
+    audit_events: &[AuditEvent],
+) -> WorkspaceData {
     let workspace_md = read_text_lossy(&path.join("workspace.md"));
     let services_md = read_text_lossy(&path.join("services.md"));
     let branches_md = read_text_lossy(&path.join("branches.md"));
@@ -420,6 +458,14 @@ fn collect_workspace(path: &Path, default_source_root: &str) -> WorkspaceData {
         .to_string();
     let worktree_command =
         worktree_commands(path, &missing_worktrees, &target_branch, &source_root);
+    let activities = workspace_activities(
+        path,
+        &folder,
+        &name,
+        &risks,
+        generated_date().as_str(),
+        audit_events,
+    );
     WorkspaceData {
         name,
         folder,
@@ -437,6 +483,84 @@ fn collect_workspace(path: &Path, default_source_root: &str) -> WorkspaceData {
         updated: generated_date(),
         links,
         worktree_command,
+        activities,
+    }
+}
+
+fn workspace_activities(
+    path: &Path,
+    folder: &str,
+    name: &str,
+    risks: &[String],
+    updated: &str,
+    audit_events: &[AuditEvent],
+) -> Vec<WorkspaceActivity> {
+    let path_text = path.to_string_lossy().to_string();
+    let mut activities = audit_events
+        .iter()
+        .filter(|event| audit_event_matches_workspace(event, folder, &path_text))
+        .take(6)
+        .map(audit_event_to_activity)
+        .collect::<Vec<_>>();
+
+    if activities.is_empty() {
+        let title = risks
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "Workspace scanned".to_string());
+        activities.push(WorkspaceActivity {
+            time: updated.to_string(),
+            title,
+            detail: format!("Loaded {} from Nexus Core dashboard scan", name),
+        });
+    }
+
+    activities
+}
+
+fn audit_event_matches_workspace(event: &AuditEvent, folder: &str, path: &str) -> bool {
+    event.metadata.get("folder").is_some_and(|value| value == folder)
+        || event
+            .metadata
+            .get("workspace")
+            .is_some_and(|value| value == folder)
+        || event
+            .metadata
+            .get("workspaceFolder")
+            .is_some_and(|value| value == folder)
+        || event.target.contains(path)
+        || event.target.contains(folder)
+}
+
+fn audit_event_to_activity(event: &AuditEvent) -> WorkspaceActivity {
+    WorkspaceActivity {
+        time: compact_timestamp(&event.timestamp),
+        title: audit_action_label(&event.action),
+        detail: if event.actor.trim().is_empty() {
+            event.summary.clone()
+        } else {
+            format!("{} · {}", event.actor, event.summary)
+        },
+    }
+}
+
+fn audit_action_label(action: &str) -> String {
+    match action {
+        "workspace.created" => "工作区已创建 / Workspace created".to_string(),
+        "settings_profile.exported" => "设置已导出 / Settings exported".to_string(),
+        "settings_profile.imported" => "设置已导入 / Settings imported".to_string(),
+        "document.opened" => "文档已打开 / Document opened".to_string(),
+        "worktree.command.generated" => "Worktree 命令已生成 / Worktree command".to_string(),
+        value if !value.trim().is_empty() => value.replace('_', " ").replace('.', " "),
+        _ => "本地事件 / Local event".to_string(),
+    }
+}
+
+fn compact_timestamp(value: &str) -> String {
+    if value.len() >= 16 && value.as_bytes().get(10) == Some(&b'T') {
+        value[..16].replace('T', " ")
+    } else {
+        value.to_string()
     }
 }
 
@@ -749,6 +873,58 @@ mod tests {
             .any(|risk| risk.contains("worktree 未创建")));
         assert!(item.risks.iter().any(|risk| risk == "交付记录待补充"));
         assert!(item.links.contains_key("workspace"));
+        assert_eq!(item.activities[0].title, "worktree 未创建: order");
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn scan_workspaces_enriches_activity_from_audit_log() {
+        let root = std::env::temp_dir().join(format!(
+            "nexus-core-workspaces-audit-{}",
+            std::process::id()
+        ));
+        let audit_root = root.join("audit");
+        let workspace = root.join("2026-05-27-audit-demo");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(workspace.join("sql")).unwrap();
+        fs::create_dir_all(&audit_root).unwrap();
+        fs::write(
+            workspace.join("workspace.md"),
+            "# Audit Demo\n\n- 需求名称: Audit Demo\n- 当前状态: developing\n- 目标分支: chen/audit\n- 源仓库集合: ~/source-repos\n",
+        )
+        .unwrap();
+        fs::write(
+            workspace.join("services.md"),
+            "# Services\n\n## 已确认相关\n\n| 服务 | 源仓库 | 说明 |\n| --- | --- | --- |\n| order | ~/source-repos/order | core |\n",
+        )
+        .unwrap();
+        fs::write(workspace.join("tasks.md"), "# Tasks\n").unwrap();
+        fs::write(workspace.join("decisions.md"), "# Decisions\n").unwrap();
+        fs::write(workspace.join("交付记录.md"), "# 交付记录\n\n已补充。\n").unwrap();
+        fs::write(
+            audit_root.join("audit-log.jsonl"),
+            r#"{"id":"create","timestamp":"2026-05-27T09:10:00Z","actor":"Nexus Test","action":"workspace.created","target":"/tmp/2026-05-27-audit-demo","summary":"Created Audit Demo","metadata":{"folder":"2026-05-27-audit-demo"}}
+{"id":"other","timestamp":"2026-05-27T09:20:00Z","actor":"Nexus Test","action":"workspace.created","target":"/tmp/other","summary":"Created other","metadata":{"folder":"other"}}
+"#,
+        )
+        .unwrap();
+
+        let dashboard = scan_workspaces_with_audit(
+            &root.to_string_lossy(),
+            "~/source-repos",
+            "~/docs",
+            Some(&audit_root.to_string_lossy()),
+        )
+        .unwrap();
+        let item = &dashboard.workspaces[0];
+        assert_eq!(item.activities.len(), 1);
+        assert_eq!(
+            item.activities[0].title,
+            "工作区已创建 / Workspace created"
+        );
+        assert_eq!(item.activities[0].time, "2026-05-27 09:10");
+        assert!(item.activities[0].detail.contains("Created Audit Demo"));
 
         fs::remove_dir_all(root).unwrap();
     }

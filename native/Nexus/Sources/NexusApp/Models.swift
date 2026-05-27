@@ -307,7 +307,16 @@ struct WorkspaceSummary: Identifiable, Hashable {
         let worktreeState = services.isEmpty
             ? "No confirmed services"
             : "\(services.count) services · \(snapshot.gitRows.filter { !$0.worktree.exists }.count) missing"
-        let firstActivity = snapshot.risks.first ?? "Workspace scanned"
+        let snapshotActivities = (snapshot.activities ?? []).map { activity in
+            ActivityEvent(time: activity.time, title: activity.title, detail: activity.detail)
+        }
+        let activities = snapshotActivities.isEmpty ? [
+            ActivityEvent(
+                time: snapshot.updated,
+                title: snapshot.risks.first ?? "Workspace scanned",
+                detail: "Loaded from Nexus Core dashboard snapshot"
+            )
+        ] : snapshotActivities
 
         self.init(
             id: snapshot.folder,
@@ -321,9 +330,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
             worktreeState: worktreeState,
             documentLinks: snapshot.links,
             services: services,
-            activities: [
-                ActivityEvent(time: snapshot.updated, title: firstActivity, detail: "Loaded from Nexus Core dashboard snapshot")
-            ],
+            activities: activities,
             risks: risks
         )
     }

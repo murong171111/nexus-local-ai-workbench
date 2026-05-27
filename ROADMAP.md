@@ -36,7 +36,7 @@ This roadmap describes the next product and engineering steps for Nexus. The cur
 - Add branch alignment checks across services. `[done in 0.1.x preview]`
 - Add workspace health checks before a development session starts.
 - Add explicit confirmation flows for local write operations. `[started for native workspace creation]`
-- Add local audit logs for workspace creation and file writes. `[started for workspace creation and settings profile export]`
+- Add local audit logs for workspace creation and file writes. `[started for workspace creation, settings profile export, and dashboard activity timelines]`
 
 ## 0.4.x: Search And Local Index
 
@@ -51,7 +51,7 @@ This roadmap describes the next product and engineering steps for Nexus. The cur
 - Package the WidgetKit extension in a full Xcode target attached to the native Mac app. `[core snapshot computation started]`
 - Add App Group storage for widget snapshots.
 - Add menu bar quick status.
-- Add optional local automation hooks for refresh, risk scans, and delivery checks.
+- Add optional local automation hooks for refresh, risk scans, and delivery checks. `[activity timeline ingestion started from audit logs]`
 
 ## 0.6.x: Distribution Readiness
 

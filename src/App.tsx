@@ -592,6 +592,7 @@ function WorkspaceCard({
   const dirty = workspace.gitRows.filter((row) => row.worktree.dirty).length;
   const branchMismatches = branchAlignmentRows(workspace);
   const serviceStatus = workspace.confirmedServices.length ? `${workspace.confirmedServices.length} 个已确认` : "待确认";
+  const latestActivity = workspace.activities?.[0];
 
   return (
     <Card className={cn("overflow-hidden transition-colors hover:border-neutral-300", active && "border-blue-300")}>
@@ -655,8 +656,18 @@ function WorkspaceCard({
         <div className="grid gap-3 xl:grid-cols-[1fr_auto] xl:items-end">
           <div>
             <div className="mb-2 text-xs text-neutral-400">最近活动 / Recent activity</div>
-            <div className="mono truncate rounded-md bg-neutral-50 px-2 py-2 text-xs text-neutral-600">
-              更新 {workspace.updated} / 决策 {workspace.decisionCount} / 待办 {workspace.taskCounts.todo}
+            <div className="rounded-md bg-neutral-50 px-2 py-2 text-xs text-neutral-600">
+              {latestActivity ? (
+                <div className="grid gap-1">
+                  <div className="mono truncate text-neutral-500">{latestActivity.time}</div>
+                  <div className="truncate font-medium text-neutral-700">{latestActivity.title}</div>
+                  <div className="truncate text-neutral-500">{latestActivity.detail}</div>
+                </div>
+              ) : (
+                <div className="mono truncate">
+                  更新 {workspace.updated} / 决策 {workspace.decisionCount} / 待办 {workspace.taskCounts.todo}
+                </div>
+              )}
             </div>
           </div>
           <div className="flex gap-2 xl:justify-end">

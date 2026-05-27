@@ -189,6 +189,7 @@ mod tests {
             updated: "2026-05-27".to_string(),
             links: BTreeMap::new(),
             worktree_command: String::new(),
+            activities: Vec::new(),
         }
     }
 
