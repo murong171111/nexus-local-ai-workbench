@@ -322,6 +322,10 @@ mod tests {
             value["data"]["workspaces"][0]["activities"][0]["title"],
             "工作区已创建 / Workspace created"
         );
+        assert_eq!(
+            value["data"]["workspaces"][0]["healthChecks"][0]["id"],
+            "service-scope"
+        );
 
         fs::remove_dir_all(root).unwrap();
     }

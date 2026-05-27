@@ -160,6 +160,14 @@ struct RiskAlert: Identifiable, Hashable {
     let detail: String
 }
 
+struct WorkspaceHealthCheck: Identifiable, Hashable {
+    let id: String
+    let label: String
+    let detail: String
+    let status: String
+    let action: String
+}
+
 struct SearchResultGroup: Identifiable {
     let id: String
     let label: String
@@ -257,6 +265,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
     let services: [ServiceStatus]
     let activities: [ActivityEvent]
     let risks: [RiskAlert]
+    let healthChecks: [WorkspaceHealthCheck]
 
     var serviceSummary: String {
         services.map(\.name).joined(separator: ", ")
@@ -275,7 +284,8 @@ struct WorkspaceSummary: Identifiable, Hashable {
         documentLinks: [String: String] = [:],
         services: [ServiceStatus],
         activities: [ActivityEvent],
-        risks: [RiskAlert]
+        risks: [RiskAlert],
+        healthChecks: [WorkspaceHealthCheck] = []
     ) {
         self.id = id
         self.name = name
@@ -290,6 +300,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
         self.services = services
         self.activities = activities
         self.risks = risks
+        self.healthChecks = healthChecks
     }
 
     init(snapshot: WorkspaceSnapshot) {
@@ -317,6 +328,15 @@ struct WorkspaceSummary: Identifiable, Hashable {
                 detail: "Loaded from Nexus Core dashboard snapshot"
             )
         ] : snapshotActivities
+        let healthChecks = (snapshot.healthChecks ?? []).map { check in
+            WorkspaceHealthCheck(
+                id: check.id,
+                label: check.label,
+                detail: check.detail,
+                status: check.status,
+                action: check.action
+            )
+        }
 
         self.init(
             id: snapshot.folder,
@@ -331,7 +351,8 @@ struct WorkspaceSummary: Identifiable, Hashable {
             documentLinks: snapshot.links,
             services: services,
             activities: activities,
-            risks: risks
+            risks: risks,
+            healthChecks: healthChecks
         )
     }
 
@@ -359,6 +380,10 @@ struct WorkspaceSummary: Identifiable, Hashable {
             risks: [
                 RiskAlert(title: "worktree 未创建", detail: "commodity 尚未建立需求 worktree"),
                 RiskAlert(title: "交付记录待补充", detail: "交付记录仍包含占位内容")
+            ],
+            healthChecks: [
+                WorkspaceHealthCheck(id: "worktree-ready", label: "Worktree 就绪 / Worktree ready", detail: "缺少: commodity", status: "fail", action: "worktreeScript"),
+                WorkspaceHealthCheck(id: "delivery-record", label: "交付记录 / Delivery record", detail: "交付记录仍包含待补充内容", status: "warning", action: "delivery")
             ]
         ),
         WorkspaceSummary(
@@ -380,7 +405,10 @@ struct WorkspaceSummary: Identifiable, Hashable {
                 ActivityEvent(time: "08:40", title: "Workspace created", detail: "Standard Markdown skeleton generated"),
                 ActivityEvent(time: "08:44", title: "AI context archived", detail: "AGENTS and handoff docs are available")
             ],
-            risks: []
+            risks: [],
+            healthChecks: [
+                WorkspaceHealthCheck(id: "service-scope", label: "服务范围 / Service scope", detail: "已确认 2 个服务", status: "pass", action: "services")
+            ]
         )
     ]
 
@@ -398,7 +426,8 @@ struct WorkspaceSummary: Identifiable, Hashable {
             documentLinks: documentLinks,
             services: services,
             activities: Array(([activity] + activities).prefix(6)),
-            risks: risks
+            risks: risks,
+            healthChecks: healthChecks
         )
     }
 }

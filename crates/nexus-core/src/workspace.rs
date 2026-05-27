@@ -38,6 +38,7 @@ pub struct WorkspaceData {
     pub links: BTreeMap<String, String>,
     pub worktree_command: String,
     pub activities: Vec<WorkspaceActivity>,
+    pub health_checks: Vec<WorkspaceHealthCheck>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
@@ -54,6 +55,16 @@ pub struct WorkspaceActivity {
     pub time: String,
     pub title: String,
     pub detail: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceHealthCheck {
+    pub id: String,
+    pub label: String,
+    pub detail: String,
+    pub status: String,
+    pub action: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -393,12 +404,17 @@ fn collect_workspace(
     if !branch_mismatches.is_empty() {
         risks.push(format!("分支不一致: {}", branch_mismatches.join(", ")));
     }
-    if !path.join("交付记录.md").exists() {
+    let delivery_path = path.join("交付记录.md");
+    let delivery_exists = delivery_path.exists();
+    let delivery_stale = delivery_exists && delivery_needs_update(&read_text_lossy(&delivery_path));
+    let sql_dir_exists = path.join("sql").exists();
+
+    if !delivery_exists {
         risks.push("缺少交付记录".to_string());
-    } else if delivery_needs_update(&read_text_lossy(&path.join("交付记录.md"))) {
+    } else if delivery_stale {
         risks.push("交付记录待补充".to_string());
     }
-    if !path.join("sql").exists() {
+    if !sql_dir_exists {
         risks.push("缺少 SQL 目录".to_string());
     }
 
@@ -466,6 +482,17 @@ fn collect_workspace(
         generated_date().as_str(),
         audit_events,
     );
+    let health_checks = workspace_health_checks(
+        &target_branch,
+        &confirmed_services,
+        &missing_worktrees,
+        &dirty_worktrees,
+        &branch_mismatches,
+        delivery_exists,
+        delivery_stale,
+        sql_dir_exists,
+        &task_counts,
+    );
     WorkspaceData {
         name,
         folder,
@@ -484,6 +511,134 @@ fn collect_workspace(
         links,
         worktree_command,
         activities,
+        health_checks,
+    }
+}
+
+fn workspace_health_checks(
+    target_branch: &str,
+    confirmed_services: &[String],
+    missing_worktrees: &[String],
+    dirty_worktrees: &[String],
+    branch_mismatches: &[String],
+    delivery_exists: bool,
+    delivery_stale: bool,
+    sql_dir_exists: bool,
+    task_counts: &TaskCounts,
+) -> Vec<WorkspaceHealthCheck> {
+    vec![
+        health_check(
+            "service-scope",
+            "服务范围 / Service scope",
+            if confirmed_services.is_empty() {
+                "尚未确认涉及服务".to_string()
+            } else {
+                format!("已确认 {} 个服务", confirmed_services.len())
+            },
+            if confirmed_services.is_empty() { "fail" } else { "pass" },
+            "services",
+        ),
+        health_check(
+            "target-branch",
+            "目标分支 / Target branch",
+            if target_branch_confirmed(target_branch) {
+                target_branch.to_string()
+            } else {
+                "目标分支待确认".to_string()
+            },
+            if target_branch_confirmed(target_branch) { "pass" } else { "fail" },
+            "branches",
+        ),
+        health_check(
+            "worktree-ready",
+            "Worktree 就绪 / Worktree ready",
+            if missing_worktrees.is_empty() {
+                "所有已确认服务都有 worktree".to_string()
+            } else {
+                format!("缺少: {}", missing_worktrees.join(", "))
+            },
+            if missing_worktrees.is_empty() { "pass" } else { "fail" },
+            "worktreeScript",
+        ),
+        health_check(
+            "branch-alignment",
+            "分支一致 / Branch alignment",
+            if branch_mismatches.is_empty() {
+                "worktree 分支与目标分支一致".to_string()
+            } else {
+                format!("不一致: {}", branch_mismatches.join(", "))
+            },
+            if branch_mismatches.is_empty() { "pass" } else { "fail" },
+            "branches",
+        ),
+        health_check(
+            "dirty-worktree",
+            "未提交改动 / Dirty worktrees",
+            if dirty_worktrees.is_empty() {
+                "无未提交 worktree 改动".to_string()
+            } else {
+                format!("存在未提交改动: {}", dirty_worktrees.join(", "))
+            },
+            if dirty_worktrees.is_empty() { "pass" } else { "warning" },
+            "status",
+        ),
+        health_check(
+            "delivery-record",
+            "交付记录 / Delivery record",
+            if !delivery_exists {
+                "缺少工作区交付记录".to_string()
+            } else if delivery_stale {
+                "交付记录仍包含待补充内容".to_string()
+            } else {
+                "交付记录已存在且无明显占位内容".to_string()
+            },
+            if !delivery_exists {
+                "fail"
+            } else if delivery_stale {
+                "warning"
+            } else {
+                "pass"
+            },
+            "delivery",
+        ),
+        health_check(
+            "sql-directory",
+            "SQL 目录 / SQL directory",
+            if sql_dir_exists {
+                "SQL 目录已存在".to_string()
+            } else {
+                "缺少 SQL 目录".to_string()
+            },
+            if sql_dir_exists { "pass" } else { "fail" },
+            "sql",
+        ),
+        health_check(
+            "blocked-tasks",
+            "阻塞任务 / Blocked tasks",
+            if task_counts.blocked == 0 {
+                "无阻塞任务".to_string()
+            } else {
+                format!("存在 {} 个阻塞任务", task_counts.blocked)
+            },
+            if task_counts.blocked == 0 { "pass" } else { "warning" },
+            "tasks",
+        ),
+    ]
+}
+
+fn health_check(
+    id: &str,
+    label: &str,
+    detail: String,
+    status: &str,
+    action: &str,
+) -> WorkspaceHealthCheck {
+    WorkspaceHealthCheck {
+        id: id.to_string(),
+        label: label.to_string(),
+        detail,
+        status: status.to_string(),
+        action: action.to_string(),
     }
 }
 
@@ -879,6 +1034,18 @@ mod tests {
         assert!(item.risks.iter().any(|risk| risk == "交付记录待补充"));
         assert!(item.links.contains_key("workspace"));
         assert_eq!(item.activities[0].title, "worktree 未创建: order");
+        assert_eq!(item.health_checks.len(), 8);
+        assert!(item.health_checks.iter().any(|check| {
+            check.id == "worktree-ready"
+                && check.status == "fail"
+                && check.detail.contains("order")
+        }));
+        assert!(item.health_checks.iter().any(|check| {
+            check.id == "delivery-record" && check.status == "warning"
+        }));
+        assert!(item.health_checks.iter().any(|check| {
+            check.id == "service-scope" && check.status == "pass"
+        }));
 
         fs::remove_dir_all(root).unwrap();
     }

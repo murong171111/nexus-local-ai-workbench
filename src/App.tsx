@@ -87,6 +87,18 @@ function activityTimestamp() {
   return new Date().toISOString().slice(0, 16).replace("T", " ");
 }
 
+function healthStatusTone(status: string) {
+  if (status === "pass") return "text-emerald-700 bg-emerald-50 border-emerald-200";
+  if (status === "warning") return "text-amber-800 bg-amber-50 border-amber-200";
+  return "text-red-700 bg-red-50 border-red-200";
+}
+
+function healthStatusLabel(status: string) {
+  if (status === "pass") return "pass";
+  if (status === "warning") return "warn";
+  return "block";
+}
+
 type NexusSettings = {
   workspacesRoot: string;
   sourceReposRoot: string;
@@ -611,6 +623,7 @@ function WorkspaceCard({
   const branchMismatches = branchAlignmentRows(workspace);
   const serviceStatus = workspace.confirmedServices.length ? `${workspace.confirmedServices.length} 个已确认` : "待确认";
   const latestActivity = workspace.activities?.[0];
+  const readinessIssues = (workspace.healthChecks ?? []).filter((check) => check.status !== "pass");
 
   return (
     <Card className={cn("overflow-hidden transition-colors hover:border-neutral-300", active && "border-blue-300")}>
@@ -640,6 +653,26 @@ function WorkspaceCard({
           <StatusCell label="Worktree" subLabel="本地分支目录" value={missing ? `${missing} 个缺失` : "已就绪"} icon={Terminal} tone={missing ? "warning" : "ok"} />
           <StatusCell label="改动" subLabel="Changes" value={dirty ? `${dirty} 个未提交` : "干净"} icon={CheckCircle2} tone={dirty ? "warning" : "ok"} />
         </div>
+
+        {workspace.healthChecks?.length ? (
+          <div className="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-xs font-medium text-neutral-800">
+                <ListChecks className="h-3.5 w-3.5 text-blue-600" />
+                就绪检查 / Readiness
+              </div>
+              <span className="mono text-[11px] text-neutral-400">{workspace.healthChecks.length - readinessIssues.length}/{workspace.healthChecks.length} pass</span>
+            </div>
+            <div className="grid gap-1.5">
+              {(readinessIssues.length ? readinessIssues : workspace.healthChecks.slice(0, 2)).slice(0, 3).map((check) => (
+                <div key={check.id} className="grid grid-cols-[auto_1fr] items-start gap-2 text-xs">
+                  <span className={cn("mono rounded border px-1.5 py-0.5 text-[10px]", healthStatusTone(check.status))}>{healthStatusLabel(check.status)}</span>
+                  <span className="min-w-0 truncate text-neutral-600">{check.label}: {check.detail}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         {branchMismatches.length > 0 && (
           <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
@@ -1141,6 +1174,36 @@ function WorkspaceDrawer({
               </div>
             </section>
           )}
+
+          {workspace.healthChecks?.length ? (
+            <section className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+              <div className="mb-3 flex items-center gap-2 text-sm font-medium text-neutral-900">
+                <ListChecks className="h-4 w-4 text-blue-600" />
+                就绪检查 / Readiness checks
+              </div>
+              <div className="grid gap-2">
+                {workspace.healthChecks.map((check) => {
+                  const target = workspace.links[check.action];
+                  return (
+                    <div key={check.id} className="rounded-md bg-white px-3 py-2 text-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="font-medium text-neutral-950">{check.label}</div>
+                          <div className="mt-1 text-xs text-neutral-500">{check.detail}</div>
+                        </div>
+                        <span className={cn("mono shrink-0 rounded border px-2 py-1 text-[11px]", healthStatusTone(check.status))}>{healthStatusLabel(check.status)}</span>
+                      </div>
+                      {target && check.status !== "pass" && (
+                        <button className="mt-2 rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50" onClick={() => onOpenDocument(check.label, target)}>
+                          打开相关资料
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
 
           <section className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
             <div className="mb-3 flex items-center gap-2 text-sm font-medium text-neutral-900">
@@ -2494,6 +2557,36 @@ export function App() {
             time: activityTimestamp(),
             title: auditActivityTitle("workspace.created"),
             detail: `Nexus App · Created workspace ${input.name}`
+          }
+        ],
+        healthChecks: [
+          {
+            id: "service-scope",
+            label: "服务范围 / Service scope",
+            detail: input.services.length ? `已确认 ${input.services.length} 个服务` : "尚未确认涉及服务",
+            status: input.services.length ? "pass" : "fail",
+            action: "services"
+          },
+          {
+            id: "target-branch",
+            label: "目标分支 / Target branch",
+            detail: targetBranch === "待确认" ? "目标分支待确认" : targetBranch,
+            status: targetBranch === "待确认" ? "fail" : "pass",
+            action: "branches"
+          },
+          {
+            id: "worktree-ready",
+            label: "Worktree 就绪 / Worktree ready",
+            detail: input.services.length ? `缺少: ${input.services.join(", ")}` : "服务确认后再创建 worktree",
+            status: "fail",
+            action: "worktreeScript"
+          },
+          {
+            id: "delivery-record",
+            label: "交付记录 / Delivery record",
+            detail: "交付记录仍包含待补充内容",
+            status: "warning",
+            action: "delivery"
           }
         ]
       };

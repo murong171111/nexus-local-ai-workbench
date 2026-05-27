@@ -190,6 +190,7 @@ mod tests {
             links: BTreeMap::new(),
             worktree_command: String::new(),
             activities: Vec::new(),
+            health_checks: Vec::new(),
         }
     }
 

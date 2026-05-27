@@ -27,5 +27,5 @@ pub use widget::{widget_snapshot_from_dashboard, WidgetSnapshot};
 pub use workspace::{
     create_workspace, scan_workspaces, scan_workspaces_with_audit, worktree_commands,
     CreateWorkspaceRequest, CreateWorkspaceResponse, DashboardData, GitRow, TaskCounts,
-    WorkspaceActivity, WorkspaceData,
+    WorkspaceActivity, WorkspaceData, WorkspaceHealthCheck,
 };
