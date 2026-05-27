@@ -42,6 +42,7 @@ Each line is a standalone JSON object:
 - `codex_handoff.opened`: written when Nexus copies a workspace prompt and opens Codex in one action.
 - `risk_instruction.copied`: written when a risk-specific handling prompt is copied.
 - `worktree.command.copied`: written when a reviewable worktree command is copied.
+- `worktree.setup.executed`: written after a confirmed worktree setup run finishes.
 - `append_audit_event`: available through the Tauri command layer for preview-app UI actions.
 - `nexus_append_audit_event_json`: available through the Swift/Rust bridge for future native shell actions.
 - Workspace scans enrich each workspace card/detail timeline with the latest matching audit events, while falling back to the scan summary when no event exists.

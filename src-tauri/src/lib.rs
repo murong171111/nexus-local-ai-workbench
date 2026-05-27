@@ -1,12 +1,12 @@
 use nexus_core::{
     append_audit_event as append_audit_event_core, create_workspace as create_workspace_core,
-    expand_user_path,
-    export_settings_profile as export_settings_profile_core,
+    expand_user_path, export_settings_profile as export_settings_profile_core,
     rebuild_search_index as rebuild_search_index_core, scan_source_repos as scan_source_repos_core,
     scan_workspaces_with_audit as scan_workspaces_core, search_index as search_index_core,
-    AuditEventInput, CreateWorkspaceRequest, CreateWorkspaceResponse, DashboardData,
-    ExportSettingsProfileResponse, RebuildSearchIndexResponse, SearchResult, SettingsProfile,
-    SourceRepo, WidgetSnapshot, DEFAULT_INDEX_FILE,
+    setup_worktrees as setup_worktrees_core, AuditEventInput, CreateWorkspaceRequest,
+    CreateWorkspaceResponse, DashboardData, ExportSettingsProfileResponse,
+    RebuildSearchIndexResponse, SearchResult, SettingsProfile, SetupWorktreesRequest,
+    SetupWorktreesResponse, SourceRepo, WidgetSnapshot, DEFAULT_INDEX_FILE,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -63,6 +63,17 @@ struct CreateWorkspaceCommandRequest {
     pub source_repos_root: String,
     pub services: Vec<String>,
     #[serde(alias = "targetBranch")]
+    pub target_branch: String,
+    #[serde(default)]
+    pub confirmed: bool,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetupWorktreesCommandRequest {
+    pub workspace_path: String,
+    pub source_repos_root: String,
+    pub services: Vec<String>,
     pub target_branch: String,
     #[serde(default)]
     pub confirmed: bool,
@@ -355,6 +366,47 @@ fn create_workspace(
     Ok(response)
 }
 
+#[tauri::command]
+fn setup_worktrees(
+    app: tauri::AppHandle,
+    request: SetupWorktreesCommandRequest,
+) -> Result<SetupWorktreesResponse, String> {
+    if !request.confirmed {
+        return Err("worktree setup requires explicit confirmation".to_string());
+    }
+
+    let response = setup_worktrees_core(SetupWorktreesRequest {
+        workspace_path: request.workspace_path.clone(),
+        source_repos_root: request.source_repos_root.clone(),
+        services: request.services.clone(),
+        target_branch: request.target_branch.clone(),
+        confirmed: request.confirmed,
+    })?;
+    record_audit_event(
+        &app,
+        AuditEventInput {
+            actor: "Nexus App".to_string(),
+            action: "worktree.setup.executed".to_string(),
+            target: response.workspace_path.clone(),
+            summary: format!(
+                "Created {} worktrees, skipped {}, failed {}",
+                response.created.len(),
+                response.skipped.len(),
+                response.failed.len()
+            ),
+            metadata: audit_metadata(&[
+                ("workspace", response.workspace_path.clone()),
+                ("services", request.services.join(",")),
+                ("targetBranch", response.target_branch.clone()),
+                ("created", response.created.len().to_string()),
+                ("skipped", response.skipped.len().to_string()),
+                ("failed", response.failed.len().to_string()),
+            ]),
+        },
+    );
+    Ok(response)
+}
+
 fn open_with_system(target: &str) -> Result<(), String> {
     Command::new("open")
         .arg(target)
@@ -515,7 +567,8 @@ pub fn run() {
             write_widget_snapshot,
             export_settings_profile,
             append_audit_event,
-            create_workspace
+            create_workspace,
+            setup_worktrees
         ])
         .run(tauri::generate_context!())
         .expect("error while running Nexus");
