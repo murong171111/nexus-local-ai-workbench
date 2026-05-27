@@ -50,7 +50,8 @@ Tauri:
 - `rebuild_search_index`
 - `search_index`
 - The preview app rebuilds the index on startup, settings changes, manual refresh, and workspace creation.
-- The top search popover queries the index and opens matched documents in the in-app viewer.
+- The top search popover queries the index, groups matched results by workspace/state/workflow/SQL, and opens matched documents in the in-app viewer.
+- Keyboard navigation supports arrow-key selection, Enter to open the selected result, and Escape to clear the query.
 - Browser preview mode falls back to workspace metadata results when Tauri is not available.
 
 Swift/Rust FFI:
@@ -60,4 +61,4 @@ Swift/Rust FFI:
 
 ## Next UI Work
 
-The Tauri preview app now has the first global-search popover. The next product slice should add native SwiftUI search UI, richer grouping by workspace/document type, and search-result keyboard navigation.
+The Tauri preview app now has grouped global search with keyboard navigation. The next product slice should add the same native SwiftUI search UI and then extend result previews with richer workspace activity context.

@@ -33,6 +33,12 @@ export type WorkspaceSearchResult = {
   snippet: string;
 };
 
+export type WorkspaceSearchResultGroup = {
+  id: string;
+  label: string;
+  results: WorkspaceSearchResult[];
+};
+
 export function slugify(value: string) {
   return value
     .trim()
@@ -233,6 +239,40 @@ export function fallbackSearchResults(dashboard: DashboardData, query: string, l
     })
     .filter((result): result is WorkspaceSearchResult => Boolean(result))
     .slice(0, Math.max(1, limit));
+}
+
+export function groupSearchResults(results: WorkspaceSearchResult[]): WorkspaceSearchResultGroup[] {
+  const groups: WorkspaceSearchResultGroup[] = [];
+  const groupsById = new Map<string, WorkspaceSearchResultGroup>();
+
+  for (const result of results) {
+    const group = searchResultGroupForKind(result.kind);
+    let existing = groupsById.get(group.id);
+    if (!existing) {
+      existing = { ...group, results: [] };
+      groupsById.set(group.id, existing);
+      groups.push(existing);
+    }
+    existing.results.push(result);
+  }
+
+  return groups;
+}
+
+export function orderedSearchResults(results: WorkspaceSearchResult[]) {
+  return groupSearchResults(results).flatMap((group) => group.results);
+}
+
+function searchResultGroupForKind(kind: string) {
+  if (kind === "workspace") return { id: "workspace", label: "工作区 / Workspace" };
+  if (kind === "sql") return { id: "sql", label: "SQL 与数据变更 / SQL" };
+  if (kind === "services" || kind === "branches" || kind === "status") {
+    return { id: "state", label: "服务与状态 / State" };
+  }
+  if (kind === "tasks" || kind === "decisions" || kind === "delivery") {
+    return { id: "workflow", label: "任务与交付 / Workflow" };
+  }
+  return { id: "documents", label: "文档 / Documents" };
 }
 
 export function compactSearchSnippet(content: string, query: string, radius = 72) {

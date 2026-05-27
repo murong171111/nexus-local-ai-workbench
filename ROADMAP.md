@@ -42,7 +42,7 @@ This roadmap describes the next product and engineering steps for Nexus. The cur
 
 - Add SQLite local index for workspace metadata and Markdown documents. `[started in Rust Core]`
 - Add full-text search across tasks, decisions, delivery records, SQL notes, and service scopes. `[started in Rust Core, bridge, and Tauri preview UI]`
-- Add search result grouping and keyboard navigation in the Mac UI.
+- Add search result grouping and keyboard navigation in the Mac UI. `[started in Tauri preview UI]`
 - Add timeline view for workspace activity.
 - Add saved filters and pinned workspaces.
 

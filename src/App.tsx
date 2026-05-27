@@ -29,7 +29,7 @@ import {
   X,
   type LucideIcon
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rawData from "./data/workspaces.json";
@@ -39,7 +39,7 @@ import { Card } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { checkEnvironment, createWorkspace, exportSettingsProfile, openExternalUrl, openPath as openPathInDesktop, readTextFile, rebuildSearchIndex, scanSourceRepos, scanWorkspaces, searchIndex, writeWidgetSnapshot, type EnvironmentHealth, type RebuildSearchIndexResponse, type SearchResult, type SourceRepo } from "./desktop";
 import { cn, riskTone } from "./lib";
-import { branchAlignmentRows, buildWorktreeCommand, createSettingsProfile, fallbackSearchResults, normalizeServiceList, parseServiceInput, parseSettingsProfile, settingsProfileFilename, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceScore, type NexusSettingsProfile } from "./workspace-model";
+import { branchAlignmentRows, buildWorktreeCommand, createSettingsProfile, fallbackSearchResults, groupSearchResults, normalizeServiceList, orderedSearchResults, parseServiceInput, parseSettingsProfile, settingsProfileFilename, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceScore, type NexusSettingsProfile } from "./workspace-model";
 import type { DashboardData, Workspace } from "./types";
 
 const initialData = rawData as DashboardData;
@@ -327,11 +327,14 @@ function TopBar({
   searchResults,
   searchSearching,
   searchIndexState,
+  selectedSearchIndex,
   onToggleRefresh,
   onRefresh,
   onCommand,
   onOpenCodex,
   onOpenSearchResult,
+  onOpenSelectedSearchResult,
+  onMoveSearchSelection,
   onRebuildSearchIndex
 }: {
   query: string;
@@ -342,27 +345,67 @@ function TopBar({
   searchResults: SearchResult[];
   searchSearching: boolean;
   searchIndexState: SearchIndexState;
+  selectedSearchIndex: number;
   onToggleRefresh: () => void;
   onRefresh: () => void;
   onCommand: () => void;
   onOpenCodex: () => void;
   onOpenSearchResult: (result: SearchResult) => void;
+  onOpenSelectedSearchResult: () => void;
+  onMoveSearchSelection: (direction: 1 | -1) => void;
   onRebuildSearchIndex: () => void;
 }) {
   const dirty = dashboard.workspaces.flatMap((workspace) => workspace.gitRows).filter((row) => row.worktree.dirty).length;
   const branchMismatches = dashboard.workspaces.reduce((sum, workspace) => sum + branchAlignmentRows(workspace).length, 0);
+  const trimmedQuery = query.trim();
+  const activeSearchId = trimmedQuery && searchResults.length ? `search-result-${selectedSearchIndex}` : undefined;
+
+  const handleSearchKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (!trimmedQuery) return;
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      onMoveSearchSelection(1);
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      onMoveSearchSelection(-1);
+      return;
+    }
+    if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+      event.preventDefault();
+      onOpenSelectedSearchResult();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setQuery("");
+    }
+  };
 
   return (
     <header className="sticky top-0 z-20 border-b border-neutral-200 bg-white px-4 py-3 xl:px-5">
       <div className="flex flex-wrap items-center gap-2 xl:gap-3">
         <div className="relative min-w-[260px] flex-1 xl:max-w-xl">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
-          <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索工作区、文档、SQL、任务..." className="pl-9" />
+          <Input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={handleSearchKeyDown}
+            placeholder="搜索工作区、文档、SQL、任务..."
+            className="pl-9"
+            role="combobox"
+            aria-expanded={Boolean(trimmedQuery)}
+            aria-controls="global-search-results"
+            aria-activedescendant={activeSearchId}
+          />
           <SearchResultsPopover
             query={query}
             results={searchResults}
             searching={searchSearching}
             indexState={searchIndexState}
+            selectedIndex={selectedSearchIndex}
             onOpenResult={onOpenSearchResult}
             onRebuild={onRebuildSearchIndex}
           />
@@ -411,6 +454,7 @@ function SearchResultsPopover({
   results,
   searching,
   indexState,
+  selectedIndex,
   onOpenResult,
   onRebuild
 }: {
@@ -418,6 +462,7 @@ function SearchResultsPopover({
   results: SearchResult[];
   searching: boolean;
   indexState: SearchIndexState;
+  selectedIndex: number;
   onOpenResult: (result: SearchResult) => void;
   onRebuild: () => void;
 }) {
@@ -425,9 +470,11 @@ function SearchResultsPopover({
   if (!trimmedQuery) return null;
 
   const stateTone = indexState.state === "ready" ? "green" : indexState.state === "error" ? "amber" : "muted";
+  const groupedResults = groupSearchResults(results);
+  let resultIndex = 0;
 
   return (
-    <div className="absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-[0_18px_48px_rgba(15,23,42,0.14)]">
+    <div id="global-search-results" className="absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-[0_18px_48px_rgba(15,23,42,0.14)]">
       <div className="flex items-center justify-between gap-3 border-b border-neutral-100 px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
           <Database className="h-3.5 w-3.5 text-blue-600" />
@@ -445,31 +492,49 @@ function SearchResultsPopover({
             正在搜索本地索引...
           </div>
         ) : results.length ? (
-          results.map((result) => (
-            <button
-              key={`${result.workspaceFolder}-${result.documentKey}-${result.documentPath}`}
-              onClick={() => onOpenResult(result)}
-              className="grid w-full gap-1 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-neutral-100"
-            >
-              <div className="flex min-w-0 items-center gap-2">
-                <Badge tone={result.kind === "sql" ? "amber" : result.kind === "workspace" ? "blue" : "muted"}>{searchKindLabel(result.kind)}</Badge>
-                <span className="min-w-0 truncate text-sm font-medium text-neutral-950">{result.workspaceName}</span>
-                <span className="mono shrink-0 text-[11px] text-neutral-400">{result.documentName}</span>
+          <div className="grid gap-2">
+            {groupedResults.map((group) => (
+              <div key={group.id}>
+                <div className="mono px-2 pb-1 pt-2 text-[10px] uppercase tracking-wide text-neutral-400">{group.label}</div>
+                <div className="grid gap-1">
+                  {group.results.map((result) => {
+                    const currentIndex = resultIndex;
+                    resultIndex += 1;
+                    const active = currentIndex === selectedIndex;
+                    return (
+                      <button
+                        id={`search-result-${currentIndex}`}
+                        key={`${result.workspaceFolder}-${result.documentKey}-${result.documentPath}`}
+                        onClick={() => onOpenResult(result)}
+                        className={cn(
+                          "grid w-full gap-1 rounded-md px-3 py-2.5 text-left transition-colors",
+                          active ? "bg-blue-50 text-blue-950 ring-1 ring-blue-200" : "hover:bg-neutral-100"
+                        )}
+                        aria-selected={active}
+                      >
+                        <div className="flex min-w-0 items-center gap-2">
+                          <Badge tone={result.kind === "sql" ? "amber" : result.kind === "workspace" ? "blue" : "muted"}>{searchKindLabel(result.kind)}</Badge>
+                          <span className="min-w-0 truncate text-sm font-medium text-neutral-950">{result.workspaceName}</span>
+                          <span className="mono shrink-0 text-[11px] text-neutral-400">{result.documentName}</span>
+                        </div>
+                        <div className="max-h-10 overflow-hidden text-xs leading-5 text-neutral-500">{result.snippet || result.documentPath}</div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="max-h-10 overflow-hidden text-xs leading-5 text-neutral-500">{result.snippet || result.documentPath}</div>
-            </button>
-          ))
+            ))}
+          </div>
         ) : (
           <div className="rounded-md px-3 py-4 text-sm text-neutral-500">
             没有命中文档索引。卡片列表仍会按工作区元数据过滤。
           </div>
         )}
       </div>
-      {indexState.documentCount !== undefined && (
-        <div className="mono border-t border-neutral-100 px-3 py-2 text-[11px] text-neutral-400">
-          {indexState.workspaceCount ?? 0} workspaces / {indexState.documentCount} docs
-        </div>
-      )}
+      <div className="mono flex items-center justify-between gap-3 border-t border-neutral-100 px-3 py-2 text-[11px] text-neutral-400">
+        <span>{indexState.documentCount !== undefined ? `${indexState.workspaceCount ?? 0} workspaces / ${indexState.documentCount} docs` : "preview fallback"}</span>
+        <span>↑↓ 选择 · Enter 打开 · Esc 清空</span>
+      </div>
     </div>
   );
 }
@@ -1906,6 +1971,7 @@ export function App() {
   const [environmentChecked, setEnvironmentChecked] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchSearching, setSearchSearching] = useState(false);
+  const [selectedSearchIndex, setSelectedSearchIndex] = useState(0);
   const [searchIndexState, setSearchIndexState] = useState<SearchIndexState>({
     state: "idle",
     message: "not built"
@@ -2096,6 +2162,10 @@ export function App() {
   }, [dashboard, query]);
 
   useEffect(() => {
+    setSelectedSearchIndex(0);
+  }, [query, searchResults]);
+
+  useEffect(() => {
     if (!refreshEnabled) return;
     const timer = window.setInterval(refreshData, settings.refreshIntervalSeconds * 1000);
     return () => window.clearInterval(timer);
@@ -2137,6 +2207,7 @@ export function App() {
   const risks = dashboard.workspaces.reduce((sum, workspace) => sum + workspace.riskCount, 0);
   const branchMismatches = dashboard.workspaces.reduce((sum, workspace) => sum + branchAlignmentRows(workspace).length, 0);
   const missing = dashboard.workspaces.filter((workspace) => workspace.gitRows.some((row) => !row.worktree.exists)).length;
+  const keyboardSearchResults = useMemo(() => orderedSearchResults(searchResults), [searchResults]);
 
   const toggleDetails = (folder: string) => {
     setExpanded((currentSet) => {
@@ -2253,6 +2324,17 @@ export function App() {
     void openDocument(`${result.workspaceName} / ${result.documentName}`, result.documentPath);
   };
 
+  const moveSearchSelection = (direction: 1 | -1) => {
+    const count = keyboardSearchResults.length;
+    if (!count) return;
+    setSelectedSearchIndex((currentIndex) => (currentIndex + direction + count) % count);
+  };
+
+  const handleOpenSelectedSearchResult = () => {
+    const result = keyboardSearchResults[Math.min(selectedSearchIndex, keyboardSearchResults.length - 1)];
+    if (result) handleOpenSearchResult(result);
+  };
+
   const handleCreateWorkspace = async (input: { name: string; folder: string; services: string[]; targetBranch: string; confirmed: boolean }) => {
     try {
       const result = await createWorkspace({
@@ -2344,11 +2426,14 @@ export function App() {
           searchResults={searchResults}
           searchSearching={searchSearching}
           searchIndexState={searchIndexState}
+          selectedSearchIndex={Math.min(selectedSearchIndex, Math.max(keyboardSearchResults.length - 1, 0))}
           onToggleRefresh={() => setRefreshEnabled((value) => !value)}
           onRefresh={handleRefreshAll}
           onCommand={() => setCommandOpen(true)}
           onOpenCodex={handleOpenCodex}
           onOpenSearchResult={handleOpenSearchResult}
+          onOpenSelectedSearchResult={handleOpenSelectedSearchResult}
+          onMoveSearchSelection={moveSearchSelection}
           onRebuildSearchIndex={() => void refreshSearchIndex({ showToast: true })}
         />
         <div className="px-4 py-4 xl:px-5 xl:py-5">
