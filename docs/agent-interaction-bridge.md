@@ -10,6 +10,7 @@ This first slice is intentionally small: it defines a durable local event format
 - The default event file name is `agent-events.jsonl`.
 - The Swift/Rust bridge can append agent events and read the newest events.
 - The native SwiftUI shell reads recent events from Application Support and shows them in the sidebar.
+- `scripts/nexus-agent-event.mjs` lets local agent hooks append events before the local socket bridge exists.
 - Preview mode shows a sample event when `NEXUS_CORE_LIBRARY` is not configured.
 
 ## Event Shape
@@ -41,3 +42,29 @@ Workspace Markdown files remain the source of truth for requirements, tasks, dec
 This slice does not execute commands, approve permissions, or start a local server.
 
 Future hook helpers and local bridge servers must stay fail-open: if Nexus is closed or unreachable, the agent should continue normally unless the user explicitly configures stricter behavior.
+
+## Hook Helper
+
+The hook helper writes the same JSONL shape as Rust Core and is designed for early local integrations.
+
+```bash
+npm run agent:event -- \
+  --source codex \
+  --session-id "$CODEX_SESSION_ID" \
+  --workspace-folder "2026-05-27-demo" \
+  --kind permission \
+  --title "Permission requested" \
+  --summary "Codex requested git push" \
+  --severity warning \
+  --metadata command="git push"
+```
+
+By default the helper writes to:
+
+```text
+~/Library/Application Support/com.ks.nexus/agent-events/agent-events.jsonl
+```
+
+Set `NEXUS_AGENT_EVENTS_ROOT` or pass `--events-root` to override the storage root.
+
+The helper is fail-open by default. It logs a warning and exits `0` if it cannot write an event. Pass `--strict` only for tests or workflows that should fail when event capture fails.
