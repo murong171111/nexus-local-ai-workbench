@@ -46,6 +46,19 @@ final class AppState: ObservableObject {
         workspaces.first { $0.id == selectedWorkspaceID } ?? filteredWorkspaces.first
     }
 
+    private var auditRootPath: String {
+        guard let applicationSupport = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first else {
+            return "~/Library/Application Support/com.ks.nexus/audit"
+        }
+        return applicationSupport
+            .appendingPathComponent("com.ks.nexus")
+            .appendingPathComponent("audit")
+            .path
+    }
+
     var filteredWorkspaces: [WorkspaceSummary] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
@@ -164,7 +177,9 @@ final class AppState: ObservableObject {
                     sourceReposRoot: sourceReposRoot,
                     services: draft.services,
                     targetBranch: draft.targetBranch,
-                    confirmed: draft.confirmed
+                    confirmed: draft.confirmed,
+                    auditRoot: auditRootPath,
+                    actor: "Nexus Native"
                 )
             )
             lastCreatedWorkspace = response

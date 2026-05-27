@@ -1,9 +1,14 @@
+mod audit;
 mod documents;
 mod git;
 mod settings;
 mod widget;
 mod workspace;
 
+pub use audit::{
+    append_audit_event, append_audit_event_from_root, audit_log_path, AppendAuditEventResponse,
+    AuditEvent, AuditEventInput, AUDIT_LOG_FILE,
+};
 pub use documents::{read_document, DocumentSnapshot};
 pub use git::{
     expand_user_path, git_status, normalize_git_branch, scan_source_repos, target_branch_confirmed,

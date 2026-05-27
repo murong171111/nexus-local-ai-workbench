@@ -28,6 +28,8 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Workspace bootstrap reports and reviewable worktree command scripts.
 - Delivery-record completeness warnings when records still contain placeholder content.
 - Exportable and importable Nexus team settings profiles for sharing path conventions.
+- Local audit log support in Rust Core, Tauri commands, and the Swift/Rust bridge for confirmed workspace creation and settings profile exports.
+- Explicit local-write confirmation in the Tauri create-workspace flow.
 - Branch alignment checks, filters, prompts, and UI warnings for worktrees that do not match the workspace target branch.
 - Manual service input parsing for commas, spaces, new lines, semicolons, and Chinese separators when creating workspaces.
 - Markdown document rendering with a preview/source toggle inside the workspace document viewer.

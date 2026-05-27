@@ -16,6 +16,7 @@ export type CreateWorkspacePayload = {
   sourceReposRoot: string;
   services: string[];
   targetBranch: string;
+  confirmed: boolean;
 };
 
 export type WidgetSnapshotPayload = {
@@ -168,7 +169,8 @@ export async function createWorkspace(payload: CreateWorkspacePayload) {
       workspaces_root: payload.workspacesRoot,
       source_repos_root: payload.sourceReposRoot,
       services: payload.services,
-      target_branch: payload.targetBranch
+      target_branch: payload.targetBranch,
+      confirmed: payload.confirmed
     }
   });
 }

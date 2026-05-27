@@ -1,6 +1,7 @@
 use nexus_core::{
-    create_workspace, read_document, scan_source_repos, scan_workspaces,
-    widget_snapshot_from_dashboard, CreateWorkspaceRequest as CoreCreateWorkspaceRequest,
+    append_audit_event_from_root, create_workspace, read_document, scan_source_repos,
+    scan_workspaces, widget_snapshot_from_dashboard, AuditEventInput,
+    CreateWorkspaceRequest as CoreCreateWorkspaceRequest,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::ffi::{CStr, CString};
@@ -46,6 +47,15 @@ struct CreateWorkspaceBridgeRequest {
     services: Vec<String>,
     target_branch: String,
     confirmed: bool,
+    audit_root: Option<String>,
+    actor: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AppendAuditEventBridgeRequest {
+    audit_root: String,
+    event: AuditEventInput,
 }
 
 #[derive(Debug, Serialize)]
@@ -100,20 +110,51 @@ pub unsafe extern "C" fn nexus_widget_snapshot_json(input_json: *const c_char) -
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn nexus_append_audit_event_json(input_json: *const c_char) -> *mut c_char {
+    bridge_call(input_json, |request: AppendAuditEventBridgeRequest| {
+        append_audit_event_from_root(&request.audit_root, request.event)
+    })
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn nexus_create_workspace_json(input_json: *const c_char) -> *mut c_char {
     bridge_call(input_json, |request: CreateWorkspaceBridgeRequest| {
         if !request.confirmed {
             return Err("workspace creation requires explicit confirmation".to_string());
         }
 
-        create_workspace(CoreCreateWorkspaceRequest {
-            name: request.name,
-            folder: request.folder,
-            workspaces_root: request.workspaces_root,
-            source_repos_root: request.source_repos_root,
-            services: request.services,
-            target_branch: request.target_branch,
-        })
+        let response = create_workspace(CoreCreateWorkspaceRequest {
+            name: request.name.clone(),
+            folder: request.folder.clone(),
+            workspaces_root: request.workspaces_root.clone(),
+            source_repos_root: request.source_repos_root.clone(),
+            services: request.services.clone(),
+            target_branch: request.target_branch.clone(),
+        })?;
+
+        if let Some(audit_root) = request.audit_root.as_deref() {
+            let _ = append_audit_event_from_root(
+                audit_root,
+                AuditEventInput {
+                    actor: request.actor.unwrap_or_else(|| "Nexus Native".to_string()),
+                    action: "workspace.created".to_string(),
+                    target: response.path.clone(),
+                    summary: format!("Created workspace {}", request.name),
+                    metadata: [
+                        ("name".to_string(), request.name),
+                        ("folder".to_string(), request.folder),
+                        ("services".to_string(), request.services.join(",")),
+                        ("targetBranch".to_string(), request.target_branch),
+                        ("workspacesRoot".to_string(), request.workspaces_root),
+                        ("sourceReposRoot".to_string(), request.source_repos_root),
+                    ]
+                    .into_iter()
+                    .collect(),
+                },
+            );
+        }
+
+        Ok(response)
     })
 }
 
@@ -310,6 +351,32 @@ mod tests {
     }
 
     #[test]
+    fn append_audit_event_bridge_writes_jsonl() {
+        let root = std::env::temp_dir().join(format!("nexus-ffi-audit-{}", std::process::id()));
+        let audit_root = root.join("audit");
+        let _ = fs::remove_dir_all(&root);
+        let request = format!(
+            r#"{{"auditRoot":"{}","event":{{"actor":"Nexus Test","action":"workspace.created","target":"/tmp/demo","summary":"Created demo workspace","metadata":{{"folder":"2026-05-27-demo"}}}}}}"#,
+            audit_root.to_string_lossy()
+        );
+        let input = CString::new(request).unwrap();
+        let output = unsafe { nexus_append_audit_event_json(input.as_ptr()) };
+        let response = unsafe { CStr::from_ptr(output).to_string_lossy().to_string() };
+        unsafe { nexus_string_free(output) };
+
+        let value = serde_json::from_str::<Value>(&response).unwrap();
+        assert_eq!(value["ok"], true);
+        assert_eq!(value["data"]["event"]["action"], "workspace.created");
+        let path = value["data"]["path"].as_str().unwrap();
+        assert!(path.ends_with("audit-log.jsonl"));
+        let lines = fs::read_to_string(path).unwrap();
+        assert_eq!(lines.lines().count(), 1);
+        assert!(lines.contains("2026-05-27-demo"));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn create_workspace_bridge_requires_confirmation() {
         let root = std::env::temp_dir().join(format!(
             "nexus-ffi-create-unconfirmed-{}",
@@ -337,10 +404,12 @@ mod tests {
     #[test]
     fn create_workspace_bridge_writes_standard_workspace() {
         let root = std::env::temp_dir().join(format!("nexus-ffi-create-{}", std::process::id()));
+        let audit_root = root.join("audit");
         let _ = fs::remove_dir_all(&root);
         let request = format!(
-            r#"{{"name":"Bridge Create","folder":"2026-05-27-bridge-create","workspacesRoot":"{}","sourceReposRoot":"~/source-repos","services":["order","store-cashier"],"targetBranch":"chen/bridge-create","confirmed":true}}"#,
-            root.to_string_lossy()
+            r#"{{"name":"Bridge Create","folder":"2026-05-27-bridge-create","workspacesRoot":"{}","sourceReposRoot":"~/source-repos","services":["order","store-cashier"],"targetBranch":"chen/bridge-create","confirmed":true,"auditRoot":"{}","actor":"Nexus Test"}}"#,
+            root.to_string_lossy(),
+            audit_root.to_string_lossy()
         );
         let input = CString::new(request).unwrap();
         let output = unsafe { nexus_create_workspace_json(input.as_ptr()) };
@@ -354,6 +423,9 @@ mod tests {
         assert!(workspace.join("AGENTS.md").exists());
         assert!(workspace.join("交付记录.md").exists());
         assert!(workspace.join("scripts/worktree-commands.sh").exists());
+        let audit_lines = fs::read_to_string(audit_root.join("audit-log.jsonl")).unwrap();
+        assert!(audit_lines.contains("workspace.created"));
+        assert!(audit_lines.contains("Bridge Create"));
 
         fs::remove_dir_all(root).unwrap();
     }
