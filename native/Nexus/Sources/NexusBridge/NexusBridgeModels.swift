@@ -299,7 +299,7 @@ public struct AgentEventInput: Codable, Equatable, Sendable {
     }
 }
 
-public struct AgentEvent: Codable, Equatable, Sendable {
+public struct AgentEvent: Codable, Equatable, Identifiable, Sendable {
     public let id: String
     public let timestamp: String
     public let source: String

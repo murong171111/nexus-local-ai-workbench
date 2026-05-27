@@ -22,6 +22,7 @@ final class AppState: ObservableObject {
     @Published var documentPreview: DocumentSnapshot?
     @Published var widgetSnapshot: WidgetSnapshot?
     @Published var agentEvents: [AgentEvent] = []
+    @Published var selectedAgentEvent: AgentEvent?
     @Published var lastCreatedWorkspace: CreateWorkspaceResponse?
     @Published var pendingWorktreeSetupWorkspace: WorkspaceSummary?
     @Published var lastWorktreeSetupResponse: SetupWorktreesResponse?
