@@ -11,6 +11,7 @@ This first slice is intentionally small: it defines a durable local event format
 - The Swift/Rust bridge can append agent events and read the newest events.
 - The native SwiftUI shell reads recent events from Application Support and shows them in the sidebar.
 - Sidebar events can be opened to inspect full event context, metadata, and copy the raw JSON payload.
+- Event details expose safe local actions for matching workspaces, local file paths, web links, and Codex context copy.
 - `scripts/nexus-agent-event.mjs` lets local agent hooks append events before the local socket bridge exists.
 - Preview mode shows a sample event when `NEXUS_CORE_LIBRARY` is not configured.
 
@@ -26,6 +27,16 @@ Each event has:
 - `summary`: human-readable detail.
 - `severity`: `info`, `warning`, or `error`.
 - `metadata`: string map for command, file, tool, URL, or agent-specific context.
+
+## Action Metadata
+
+The native shell treats metadata as data, not as executable instructions. It may surface safe next-step actions when these keys or value shapes are present:
+
+- `workspaceFolder`, `folder`, `workspace`, `workspacePath`, or `path`: match and select a workspace when the value matches a known workspace folder or path.
+- Keys containing `path`, `file`, `folder`, or `directory`: open the value as a local `file://`, `/absolute/path`, or `~/path` target when it exists.
+- Any metadata value beginning with `http://` or `https://`: open as a normal web link.
+
+Commands are copied or shown as text only. Nexus does not execute command metadata from agent events.
 
 ## Storage Boundary
 
