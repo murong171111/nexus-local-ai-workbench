@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Added
 
+- Native architecture roadmap for the SwiftUI/AppKit + Rust Core migration path.
 - Public maintenance docs and GitHub collaboration templates.
 - CI and release workflow definitions for future automated validation and DMG publishing.
 - Core workspace model tests using the Node.js test runner.

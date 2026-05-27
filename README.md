@@ -141,6 +141,8 @@ Building and shipping the actual `.appex` requires a full Xcode project with a W
 ## Documentation
 
 - [Architecture](docs/architecture.md)
+- [Native architecture target](docs/native-architecture.md)
+- [Native migration plan](docs/plans/2026-05-27-native-mac-migration.md)
 - [Distribution](docs/distribution.md)
 - [Release process](docs/release-process.md)
 - [Widget implementation](widget/README.md)

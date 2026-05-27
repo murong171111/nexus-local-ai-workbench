@@ -143,6 +143,8 @@ widget/NexusWidget/NexusWidget.swift
 ## 文档
 
 - [架构说明](docs/architecture.md)
+- [原生架构目标](docs/native-architecture.md)
+- [原生迁移计划](docs/plans/2026-05-27-native-mac-migration.md)
 - [分发说明](docs/distribution.md)
 - [发布流程](docs/release-process.md)
 - [小组件实现说明](widget/README.md)
