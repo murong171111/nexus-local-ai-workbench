@@ -6,9 +6,11 @@ import {
   compactSearchSnippet,
   createSettingsProfile,
   fallbackSearchResults,
+  groupSearchResults,
   hasConfirmedTargetBranch,
   normalizeServiceList,
   normalizeGitBranch,
+  orderedSearchResults,
   parseServiceInput,
   parseSettingsProfile,
   serializeSettingsProfile,
@@ -205,6 +207,62 @@ test("fallbackSearchResults mirrors indexed search result shape for browser prev
 test("compactSearchSnippet keeps nearby context around a query", () => {
   const snippet = compactSearchSnippet("alpha beta gamma pay_log delta epsilon", "pay_log", 6);
   assert.equal(snippet, "...gamma pay_log delta...");
+});
+
+test("groupSearchResults gives the global search popover stable sections", () => {
+  const results = [
+    {
+      workspaceFolder: "a",
+      workspaceName: "A",
+      documentKey: "workspace",
+      documentName: "Workspace metadata",
+      documentPath: "/a",
+      kind: "workspace",
+      snippet: "branch"
+    },
+    {
+      workspaceFolder: "a",
+      workspaceName: "A",
+      documentKey: "sql",
+      documentName: "SQL",
+      documentPath: "/a/sql",
+      kind: "sql",
+      snippet: "alter table"
+    },
+    {
+      workspaceFolder: "a",
+      workspaceName: "A",
+      documentKey: "tasks",
+      documentName: "Tasks",
+      documentPath: "/a/tasks.md",
+      kind: "tasks",
+      snippet: "todo"
+    },
+    {
+      workspaceFolder: "a",
+      workspaceName: "A",
+      documentKey: "delivery",
+      documentName: "Delivery",
+      documentPath: "/a/delivery.md",
+      kind: "delivery",
+      snippet: "ship"
+    }
+  ];
+
+  const groups = groupSearchResults(results);
+
+  assert.deepEqual(
+    groups.map((group) => [group.id, group.label, group.results.length]),
+    [
+      ["workspace", "工作区 / Workspace", 1],
+      ["sql", "SQL 与数据变更 / SQL", 1],
+      ["workflow", "任务与交付 / Workflow", 2]
+    ]
+  );
+  assert.deepEqual(
+    orderedSearchResults(results).map((result) => result.documentKey),
+    ["workspace", "sql", "tasks", "delivery"]
+  );
 });
 
 test("createSettingsProfile serializes shareable Nexus path settings", () => {
