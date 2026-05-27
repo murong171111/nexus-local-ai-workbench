@@ -21,7 +21,7 @@ Nexus is currently split into four layers.
 ## Desktop Shell
 
 - Tauri v2 packages the macOS app.
-- Rust commands provide native file, path, git status, environment health, workspace creation, source repository scanning, settings profile export, and widget snapshot capabilities.
+- Rust commands provide native file, path, environment health, and widget snapshot capabilities. Reusable workspace scanning, source repository scanning, git status, workspace creation, and settings profile export rules live in `crates/nexus-core` and are called by the Tauri command layer.
 - The app registers the `nexus://` URL scheme for deep links.
 
 ## Frontend
@@ -47,10 +47,10 @@ Source repositories are read from a separate configured root. Nexus treats sourc
 ## Data Flow
 
 1. User configures paths in Settings.
-2. Nexus scans the workspace root using the native `scan_workspaces` command.
-3. Nexus scans the source repository root using the native `scan_source_repos` command.
+2. Nexus scans the workspace root through the `scan_workspaces` command, which delegates reusable parsing and risk analysis to `nexus-core`.
+3. Nexus scans the source repository root through the `scan_source_repos` command, which delegates git/source-repo inspection to `nexus-core`.
 4. The UI renders cards, risk alerts, branch alignment signals, service pickers, and document entry points.
-5. Settings can export a team profile JSON into Application Support or import a profile selected by the user.
+5. Settings can export a team profile JSON into Application Support or import a profile selected by the user. Export validation and file naming are owned by `nexus-core`.
 6. The app writes a compact WidgetKit snapshot to Application Support.
 7. The WidgetKit extension reads that snapshot and opens Nexus through `nexus://` links.
 
