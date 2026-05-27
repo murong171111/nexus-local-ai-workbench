@@ -10,6 +10,7 @@ This first slice is intentionally small: it defines a durable local event format
 - The default event file name is `agent-events.jsonl`.
 - The Swift/Rust bridge can append agent events and read the newest events.
 - The native SwiftUI shell reads recent events from Application Support and shows them in the sidebar.
+- Sidebar events can be opened to inspect full event context, metadata, and copy the raw JSON payload.
 - `scripts/nexus-agent-event.mjs` lets local agent hooks append events before the local socket bridge exists.
 - Preview mode shows a sample event when `NEXUS_CORE_LIBRARY` is not configured.
 

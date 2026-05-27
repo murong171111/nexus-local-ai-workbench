@@ -45,6 +45,9 @@ struct RootView: View {
             WorktreeSetupSheet(workspace: workspace)
                 .environmentObject(appState)
         }
+        .sheet(item: $appState.selectedAgentEvent) { event in
+            AgentEventDetailSheet(event: event)
+        }
     }
 }
 
@@ -510,8 +513,13 @@ private struct SidebarView: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
 
-                    ForEach(appState.agentEvents.prefix(3), id: \.id) { event in
-                        AgentEventRow(event: event)
+                    ForEach(appState.agentEvents.prefix(3)) { event in
+                        Button {
+                            appState.selectedAgentEvent = event
+                        } label: {
+                            AgentEventRow(event: event)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -1510,6 +1518,141 @@ private struct AgentEventRow: View {
         default:
             NexusPalette.accent
         }
+    }
+}
+
+private struct AgentEventDetailSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let event: AgentEvent
+
+    private var metadataRows: [(String, String)] {
+        event.metadata
+            .map { ($0.key, $0.value) }
+            .sorted { $0.0 < $1.0 }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: symbol)
+                        .font(.title3)
+                        .foregroundStyle(color)
+                        .frame(width: 28, height: 28)
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(event.title)
+                            .font(.title3.weight(.semibold))
+                        HStack(spacing: 8) {
+                            Pill(label: event.source, systemImage: "point.3.connected.trianglepath.dotted")
+                            Pill(label: event.kind, systemImage: "tag")
+                            Pill(label: event.severity, systemImage: "circle.dashed")
+                        }
+                    }
+
+                    Spacer()
+
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.borderless)
+                    .keyboardShortcut(.cancelAction)
+                }
+
+                SectionBlock(title: "摘要 / Summary") {
+                    Text(event.summary)
+                        .font(.body)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                SectionBlock(title: "上下文 / Context") {
+                    AgentEventField(label: "Time", value: event.timestamp)
+                    AgentEventField(label: "Session", value: event.sessionId)
+                    AgentEventField(label: "Workspace", value: event.workspaceFolder ?? "No workspace")
+                    AgentEventField(label: "Event ID", value: event.id)
+                }
+
+                SectionBlock(title: "Metadata") {
+                    if metadataRows.isEmpty {
+                        Text("No metadata")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(metadataRows, id: \.0) { key, value in
+                            AgentEventField(label: key, value: value)
+                        }
+                    }
+                }
+
+                HStack {
+                    Button("Copy JSON") {
+                        copyEventJSON()
+                    }
+                    Spacer()
+                    Button("Done") {
+                        dismiss()
+                    }
+                    .keyboardShortcut(.defaultAction)
+                }
+            }
+        }
+        .padding(22)
+        .frame(width: 620, height: 560)
+    }
+
+    private var symbol: String {
+        switch event.kind {
+        case "permission":
+            "hand.raised"
+        case "question":
+            "questionmark.circle"
+        case "tool_use":
+            "terminal"
+        default:
+            "point.3.connected.trianglepath.dotted"
+        }
+    }
+
+    private var color: Color {
+        switch event.severity {
+        case "warning":
+            NexusPalette.warning
+        case "error":
+            NexusPalette.danger
+        default:
+            NexusPalette.accent
+        }
+    }
+
+    private func copyEventJSON() {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        guard let data = try? encoder.encode(event),
+              let payload = String(data: data, encoding: .utf8) else {
+            return
+        }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(payload, forType: .string)
+    }
+}
+
+private struct AgentEventField: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(.caption, design: .monospaced))
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
