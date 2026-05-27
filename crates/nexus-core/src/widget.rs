@@ -191,6 +191,7 @@ mod tests {
             worktree_command: String::new(),
             activities: Vec::new(),
             health_checks: Vec::new(),
+            session_actions: Vec::new(),
         }
     }
 

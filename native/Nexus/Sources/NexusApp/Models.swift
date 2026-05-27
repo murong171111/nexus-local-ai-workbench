@@ -168,6 +168,16 @@ struct WorkspaceHealthCheck: Identifiable, Hashable {
     let action: String
 }
 
+struct WorkspaceSessionAction: Identifiable, Hashable {
+    let id: String
+    let label: String
+    let detail: String
+    let priority: String
+    let status: String
+    let instructionType: String
+    let documentKey: String
+}
+
 struct SearchResultGroup: Identifiable {
     let id: String
     let label: String
@@ -266,6 +276,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
     let activities: [ActivityEvent]
     let risks: [RiskAlert]
     let healthChecks: [WorkspaceHealthCheck]
+    let sessionActions: [WorkspaceSessionAction]
 
     var serviceSummary: String {
         services.map(\.name).joined(separator: ", ")
@@ -285,7 +296,8 @@ struct WorkspaceSummary: Identifiable, Hashable {
         services: [ServiceStatus],
         activities: [ActivityEvent],
         risks: [RiskAlert],
-        healthChecks: [WorkspaceHealthCheck] = []
+        healthChecks: [WorkspaceHealthCheck] = [],
+        sessionActions: [WorkspaceSessionAction] = []
     ) {
         self.id = id
         self.name = name
@@ -301,6 +313,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
         self.activities = activities
         self.risks = risks
         self.healthChecks = healthChecks
+        self.sessionActions = sessionActions
     }
 
     init(snapshot: WorkspaceSnapshot) {
@@ -337,6 +350,17 @@ struct WorkspaceSummary: Identifiable, Hashable {
                 action: check.action
             )
         }
+        let sessionActions = (snapshot.sessionActions ?? []).map { action in
+            WorkspaceSessionAction(
+                id: action.id,
+                label: action.label,
+                detail: action.detail,
+                priority: action.priority,
+                status: action.status,
+                instructionType: action.instructionType,
+                documentKey: action.documentKey
+            )
+        }
 
         self.init(
             id: snapshot.folder,
@@ -352,7 +376,8 @@ struct WorkspaceSummary: Identifiable, Hashable {
             services: services,
             activities: activities,
             risks: risks,
-            healthChecks: healthChecks
+            healthChecks: healthChecks,
+            sessionActions: sessionActions
         )
     }
 
@@ -384,6 +409,10 @@ struct WorkspaceSummary: Identifiable, Hashable {
             healthChecks: [
                 WorkspaceHealthCheck(id: "worktree-ready", label: "Worktree 就绪 / Worktree ready", detail: "缺少: commodity", status: "fail", action: "worktreeScript"),
                 WorkspaceHealthCheck(id: "delivery-record", label: "交付记录 / Delivery record", detail: "交付记录仍包含待补充内容", status: "warning", action: "delivery")
+            ],
+            sessionActions: [
+                WorkspaceSessionAction(id: "create-worktrees", label: "创建缺失 worktree / Create worktrees", detail: "缺少 worktree: commodity", priority: "high", status: "recommended", instructionType: "worktree", documentKey: "worktreeScript"),
+                WorkspaceSessionAction(id: "start-codex-session", label: "启动 Codex 会话 / Start Codex session", detail: "复制当前工作区上下文，带着上方动作进入 Codex 继续处理。", priority: "low", status: "recommended", instructionType: "continue", documentKey: "handoff")
             ]
         ),
         WorkspaceSummary(
@@ -408,6 +437,9 @@ struct WorkspaceSummary: Identifiable, Hashable {
             risks: [],
             healthChecks: [
                 WorkspaceHealthCheck(id: "service-scope", label: "服务范围 / Service scope", detail: "已确认 2 个服务", status: "pass", action: "services")
+            ],
+            sessionActions: [
+                WorkspaceSessionAction(id: "start-codex-session", label: "启动 Codex 会话 / Start Codex session", detail: "就绪检查已通过，可以复制完整上下文并进入开发会话。", priority: "high", status: "recommended", instructionType: "continue", documentKey: "handoff")
             ]
         )
     ]
@@ -427,7 +459,8 @@ struct WorkspaceSummary: Identifiable, Hashable {
             services: services,
             activities: Array(([activity] + activities).prefix(6)),
             risks: risks,
-            healthChecks: healthChecks
+            healthChecks: healthChecks,
+            sessionActions: sessionActions
         )
     }
 }

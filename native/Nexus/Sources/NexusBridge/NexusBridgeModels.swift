@@ -278,6 +278,7 @@ public struct WorkspaceSnapshot: Codable, Equatable, Sendable {
     public let worktreeCommand: String
     public let activities: [WorkspaceActivitySnapshot]?
     public let healthChecks: [WorkspaceHealthCheckSnapshot]?
+    public let sessionActions: [WorkspaceSessionActionSnapshot]?
 
     public init(
         name: String,
@@ -297,7 +298,8 @@ public struct WorkspaceSnapshot: Codable, Equatable, Sendable {
         links: [String: String],
         worktreeCommand: String,
         activities: [WorkspaceActivitySnapshot]? = nil,
-        healthChecks: [WorkspaceHealthCheckSnapshot]? = nil
+        healthChecks: [WorkspaceHealthCheckSnapshot]? = nil,
+        sessionActions: [WorkspaceSessionActionSnapshot]? = nil
     ) {
         self.name = name
         self.folder = folder
@@ -317,6 +319,7 @@ public struct WorkspaceSnapshot: Codable, Equatable, Sendable {
         self.worktreeCommand = worktreeCommand
         self.activities = activities
         self.healthChecks = healthChecks
+        self.sessionActions = sessionActions
     }
 }
 
@@ -333,6 +336,34 @@ public struct WorkspaceHealthCheckSnapshot: Codable, Equatable, Sendable {
         self.detail = detail
         self.status = status
         self.action = action
+    }
+}
+
+public struct WorkspaceSessionActionSnapshot: Codable, Equatable, Sendable {
+    public let id: String
+    public let label: String
+    public let detail: String
+    public let priority: String
+    public let status: String
+    public let instructionType: String
+    public let documentKey: String
+
+    public init(
+        id: String,
+        label: String,
+        detail: String,
+        priority: String,
+        status: String,
+        instructionType: String,
+        documentKey: String
+    ) {
+        self.id = id
+        self.label = label
+        self.detail = detail
+        self.priority = priority
+        self.status = status
+        self.instructionType = instructionType
+        self.documentKey = documentKey
     }
 }
 
@@ -541,6 +572,26 @@ public extension DashboardSnapshot {
                             detail: "交付记录仍包含待补充内容",
                             status: "warning",
                             action: "delivery"
+                        )
+                    ],
+                    sessionActions: [
+                        WorkspaceSessionActionSnapshot(
+                            id: "create-worktrees",
+                            label: "创建缺失 worktree / Create worktrees",
+                            detail: "缺少 worktree: commodity",
+                            priority: "high",
+                            status: "recommended",
+                            instructionType: "worktree",
+                            documentKey: "worktreeScript"
+                        ),
+                        WorkspaceSessionActionSnapshot(
+                            id: "start-codex-session",
+                            label: "启动 Codex 会话 / Start Codex session",
+                            detail: "复制当前工作区上下文，带着上方动作进入 Codex 继续处理。",
+                            priority: "low",
+                            status: "recommended",
+                            instructionType: "continue",
+                            documentKey: "handoff"
                         )
                     ]
                 )

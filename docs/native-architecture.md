@@ -41,6 +41,7 @@ The first native shell scaffold is available at `native/Nexus`. It is a Swift Pa
 - Branch alignment analysis.
 - Risk detection.
 - Workspace readiness checks for service scope, target branch, worktree readiness, branch alignment, dirty worktrees, delivery records, SQL directory presence, and blocked tasks.
+- Session-action generation that turns readiness and risk signals into prioritized Codex handoffs, worktree command copies, and document follow-ups.
 - Reviewable worktree command generation.
 - Standard workspace skeleton creation, including Markdown documents, SQL/log/repos folders, and bootstrap scripts.
 - Settings profile validation.
@@ -51,7 +52,7 @@ The first native shell scaffold is available at `native/Nexus`. It is a Swift Pa
 ### Swift/Rust Bridge
 
 - The initial bridge uses a small C ABI with JSON request/response payloads. It is intentionally simple while the native app shape is still moving.
-- `crates/nexus-ffi` currently exposes workspace scans with readiness checks and audit-log activity enrichment, source-repository scans, document reads, widget snapshot computation, JSONL audit event append, SQLite/FTS index rebuild/search, and confirmed workspace creation over `nexus-core`.
+- `crates/nexus-ffi` currently exposes workspace scans with readiness checks, session actions, and audit-log activity enrichment, source-repository scans, document reads, widget snapshot computation, JSONL audit event append, SQLite/FTS index rebuild/search, and confirmed workspace creation over `nexus-core`.
 - `native/Nexus/Sources/NexusBridge` owns Swift `Codable` DTOs, preview fallback data, and optional dynamic library loading through `NEXUS_CORE_LIBRARY`.
 - The native SwiftUI shell uses the same search bridge to rebuild/query the local index, then falls back to in-memory workspace metadata when the dynamic library is not configured.
 - Native search results surface selected-result context from the current workspace model, including branch, service count, risk, and recent activity.

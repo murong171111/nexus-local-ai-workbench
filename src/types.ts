@@ -27,6 +27,16 @@ export type WorkspaceHealthCheck = {
   action: string;
 };
 
+export type WorkspaceSessionAction = {
+  id: string;
+  label: string;
+  detail: string;
+  priority: "high" | "medium" | "low" | string;
+  status: "blocked" | "recommended" | "optional" | string;
+  instructionType: "continue" | "git" | "delivery" | "risk" | "worktree" | string;
+  documentKey: string;
+};
+
 export type Workspace = {
   name: string;
   folder: string;
@@ -51,6 +61,7 @@ export type Workspace = {
   worktreeCommand: string;
   activities?: WorkspaceActivity[];
   healthChecks?: WorkspaceHealthCheck[];
+  sessionActions?: WorkspaceSessionAction[];
 };
 
 export type DashboardData = {

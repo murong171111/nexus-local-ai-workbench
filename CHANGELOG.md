@@ -39,6 +39,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Rust Core dashboard scans now enrich workspace activity timelines from the local JSONL audit log, with Tauri and native SwiftUI shells consuming the same activity field.
 - User-visible workspace actions now append audit events for document opens, Codex handoffs, copied prompts, copied risk instructions, and copied worktree commands.
 - Rust Core now emits workspace readiness checks for service scope, target branch, worktrees, branch alignment, dirty worktrees, delivery records, SQL directory presence, and blocked tasks.
+- Rust Core now emits recommended workspace session actions so the UI can turn readiness checks into Codex handoffs, worktree command copies, and document follow-ups.
 - Explicit local-write confirmation in the Tauri create-workspace flow.
 - Branch alignment checks, filters, prompts, and UI warnings for worktrees that do not match the workspace target branch.
 - Manual service input parsing for commas, spaces, new lines, semicolons, and Chinese separators when creating workspaces.

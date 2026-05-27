@@ -19,7 +19,8 @@ import {
   todayString,
   widgetSnapshotFromDashboard,
   workspaceFolderFromName,
-  workspaceScore
+  workspaceScore,
+  workspaceSessionActions
 } from "../.tmp-tests/workspace-model.js";
 
 function gitRow(service, overrides = {}) {
@@ -62,6 +63,7 @@ function workspace(overrides = {}) {
     updated: "2026-01-01",
     links: {},
     worktreeCommand: "git worktree add ...",
+    sessionActions: [],
     ...overrides
   };
 }
@@ -110,6 +112,49 @@ test("workspaceScore prioritizes risks and dirty worktrees", () => {
     gitRows: [gitRow("order", { worktree: { dirty: true } }), gitRow("store", { worktree: { branch: "chen/other" } })]
   });
   assert.equal(workspaceScore(scored), 28);
+});
+
+test("workspaceSessionActions builds a startup flow from workspace state", () => {
+  const actions = workspaceSessionActions(
+    workspace({
+      targetBranch: "待确认",
+      risks: ["目标分支未确认", "worktree 未创建: order", "交付记录待补充"],
+      riskCount: 3,
+      gitRows: [
+        gitRow("order", { worktree: { exists: false, branch: "未创建" } }),
+        gitRow("store", { worktree: { dirty: true } })
+      ],
+      taskCounts: { done: 1, doing: 1, todo: 2, blocked: 1 }
+    })
+  );
+
+  assert.deepEqual(
+    actions.map((action) => action.id),
+    [
+      "confirm-target-branch",
+      "create-worktrees",
+      "review-dirty-worktrees",
+      "update-delivery-record",
+      "resolve-blocked-tasks",
+      "start-codex-session"
+    ]
+  );
+  assert.equal(actions[0].status, "blocked");
+  assert.equal(actions.at(-1).instructionType, "continue");
+});
+
+test("workspaceSessionActions returns core-provided session actions when present", () => {
+  const coreAction = {
+    id: "core-action",
+    label: "Core action",
+    detail: "Use Rust Core result",
+    priority: "high",
+    status: "recommended",
+    instructionType: "continue",
+    documentKey: "handoff"
+  };
+
+  assert.deepEqual(workspaceSessionActions(workspace({ sessionActions: [coreAction] })), [coreAction]);
 });
 
 test("normalizeGitBranch strips git status tracking suffixes", () => {

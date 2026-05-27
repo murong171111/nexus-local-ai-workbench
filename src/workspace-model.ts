@@ -1,4 +1,4 @@
-import type { DashboardData, Workspace } from "./types";
+import type { DashboardData, Workspace, WorkspaceSessionAction } from "./types";
 
 export type ShareableNexusSettings = {
   workspacesRoot: string;
@@ -182,6 +182,69 @@ export function branchAlignmentRows(workspace: Workspace): BranchAlignmentRow[] 
 
 export function workspaceScore(workspace: Workspace) {
   return workspace.riskCount * 10 + branchAlignmentRows(workspace).length * 5 + workspace.gitRows.filter((row) => row.worktree.dirty).length * 3;
+}
+
+export function workspaceSessionActions(workspace: Workspace): WorkspaceSessionAction[] {
+  if (workspace.sessionActions?.length) return workspace.sessionActions;
+
+  const actions: WorkspaceSessionAction[] = [];
+  const missingWorktrees = workspace.gitRows.filter((row) => !row.worktree.exists).map((row) => row.service);
+  const dirtyWorktrees = workspace.gitRows.filter((row) => row.worktree.dirty).map((row) => row.service);
+  const mismatches = branchAlignmentRows(workspace).map((row) => `${row.service}(${row.actualBranch})`);
+  const deliveryRisk = workspace.risks.find((risk) => risk.includes("交付") || risk.toLowerCase().includes("delivery"));
+
+  if (!workspace.confirmedServices.length) {
+    actions.push(sessionAction("confirm-services", "确认服务范围 / Confirm services", "先补齐已确认服务，后续 worktree 和风险检查才有可靠目标。", "high", "blocked", "risk", "services"));
+  }
+
+  if (!hasConfirmedTargetBranch(workspace.targetBranch)) {
+    actions.push(sessionAction("confirm-target-branch", "确认目标分支 / Confirm branch", "目标分支仍是待确认状态，创建 worktree 前需要先定分支。", "high", "blocked", "git", "branches"));
+  }
+
+  if (missingWorktrees.length) {
+    actions.push(sessionAction("create-worktrees", "创建缺失 worktree / Create worktrees", `缺少 worktree: ${missingWorktrees.join(", ")}`, "high", "recommended", "worktree", "worktreeScript"));
+  }
+
+  if (mismatches.length) {
+    actions.push(sessionAction("align-branches", "修正分支不一致 / Align branches", `分支不一致: ${mismatches.join(", ")}`, "high", "blocked", "git", "branches"));
+  }
+
+  if (dirtyWorktrees.length) {
+    actions.push(sessionAction("review-dirty-worktrees", "复核未提交改动 / Review changes", `存在未提交改动: ${dirtyWorktrees.join(", ")}`, "medium", "recommended", "git", "status"));
+  }
+
+  if (deliveryRisk) {
+    actions.push(sessionAction("update-delivery-record", "更新交付记录 / Update delivery", deliveryRisk, "medium", "recommended", "delivery", "delivery"));
+  }
+
+  if (workspace.taskCounts.blocked > 0) {
+    actions.push(sessionAction("resolve-blocked-tasks", "处理阻塞任务 / Resolve blockers", `tasks.md 中存在 ${workspace.taskCounts.blocked} 个阻塞任务。`, "medium", "recommended", "risk", "tasks"));
+  }
+
+  const readyToStart = actions.length === 0;
+  actions.push(sessionAction(
+    "start-codex-session",
+    "启动 Codex 会话 / Start Codex session",
+    readyToStart ? "就绪检查已通过，可以复制完整上下文并进入开发会话。" : "复制当前工作区上下文，带着上方动作进入 Codex 继续处理。",
+    readyToStart ? "high" : "low",
+    "recommended",
+    "continue",
+    "handoff"
+  ));
+
+  return actions;
+}
+
+function sessionAction(
+  id: string,
+  label: string,
+  detail: string,
+  priority: string,
+  status: string,
+  instructionType: string,
+  documentKey: string
+): WorkspaceSessionAction {
+  return { id, label, detail, priority, status, instructionType, documentKey };
 }
 
 export function widgetSnapshotFromDashboard(dashboard: DashboardData, activeFolder: string) {

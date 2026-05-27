@@ -52,9 +52,9 @@ Source repositories are read from a separate configured root. Nexus treats sourc
 ## Data Flow
 
 1. User configures paths in Settings.
-2. Nexus scans the workspace root through the `scan_workspaces` command, which delegates reusable parsing, risk analysis, readiness checks, and audit-log activity enrichment to `nexus-core`.
+2. Nexus scans the workspace root through the `scan_workspaces` command, which delegates reusable parsing, risk analysis, readiness checks, session-action generation, and audit-log activity enrichment to `nexus-core`.
 3. Nexus scans the source repository root through the `scan_source_repos` command, which delegates git/source-repo inspection to `nexus-core`.
-4. The UI renders cards, readiness checks, risk alerts, branch alignment signals, service pickers, and document entry points.
+4. The UI renders cards, readiness checks, session actions, risk alerts, branch alignment signals, service pickers, and document entry points.
 5. Settings can export a team profile JSON into Application Support or import a profile selected by the user. Export validation and file naming are owned by `nexus-core`.
 6. Confirmed workspace creation and settings profile export append local JSONL audit events in Application Support.
 7. The dashboard scan reads matching audit events back into each workspace activity timeline, so the cards and native detail view can show real local actions instead of only static scan summaries.
