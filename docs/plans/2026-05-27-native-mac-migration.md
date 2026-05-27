@@ -29,7 +29,7 @@
 
 ## Phase 1: Rust Core Extraction
 
-**Status:** Started. The first slice extracts git status, branch normalization, target-branch confirmation, and source repository scanning into `crates/nexus-core`.
+**Status:** In progress. The first slices extract git status, branch normalization, target-branch confirmation, source repository scanning, workspace scanning, Markdown table parsing, task counts, delivery-placeholder detection, risk detection, and worktree command generation into `crates/nexus-core`.
 
 **Goal:** Make workspace and git logic independent from the Tauri command layer.
 
