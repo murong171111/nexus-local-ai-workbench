@@ -32,6 +32,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - SQLite + FTS local index foundation in Rust Core, Tauri commands, and the Swift/Rust bridge for workspace Markdown, service scope, tasks, decisions, delivery records, and SQL notes.
 - Global search popover in the Tauri preview app, backed by the local SQLite/FTS index with browser-preview metadata fallback.
 - Grouped global search results with arrow-key selection, Enter-to-open, and Escape-to-clear navigation.
+- Native SwiftUI search popover backed by the Swift/Rust search bridge, with grouped results, keyboard navigation, and workspace metadata fallback.
 - Explicit local-write confirmation in the Tauri create-workspace flow.
 - Branch alignment checks, filters, prompts, and UI warnings for worktrees that do not match the workspace target branch.
 - Manual service input parsing for commas, spaces, new lines, semicolons, and Chinese separators when creating workspaces.

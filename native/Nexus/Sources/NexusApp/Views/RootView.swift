@@ -1,4 +1,5 @@
 import AppKit
+import NexusBridge
 import SwiftUI
 
 struct RootView: View {
@@ -37,19 +38,63 @@ struct RootView: View {
 
 private struct TopCommandBar: View {
     @EnvironmentObject private var appState: AppState
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         HStack(spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                TextField("搜索工作区、服务、分支、风险...", text: $appState.query)
-                    .textFieldStyle(.plain)
+            ZStack(alignment: .topLeading) {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                    TextField("搜索工作区、文档、SQL、任务...", text: $appState.query)
+                        .textFieldStyle(.plain)
+                        .focused($searchFocused)
+                        .onSubmit {
+                            appState.openSelectedSearchResult()
+                        }
+                        .task(id: appState.query) {
+                            try? await Task.sleep(nanoseconds: 160_000_000)
+                            guard !Task.isCancelled else { return }
+                            await appState.searchForCurrentQuery()
+                        }
+                }
+                .padding(.horizontal, 12)
+                .frame(height: 36)
+                .background(NexusPalette.panel)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                if appState.hasSearchQuery {
+                    NativeSearchPopover()
+                        .offset(y: 42)
+                        .zIndex(20)
+                }
             }
-            .padding(.horizontal, 12)
-            .frame(height: 36)
-            .background(NexusPalette.panel)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .frame(maxWidth: 560)
+            .zIndex(10)
+            .onMoveCommand { direction in
+                guard searchFocused else { return }
+                switch direction {
+                case .up:
+                    appState.moveSearchSelection(-1)
+                case .down:
+                    appState.moveSearchSelection(1)
+                default:
+                    break
+                }
+            }
+            .onExitCommand {
+                guard searchFocused else { return }
+                appState.clearSearch()
+            }
+
+            Button {
+                Task {
+                    await appState.rebuildSearchIndex()
+                }
+            } label: {
+                Label("Index", systemImage: "externaldrive.badge.magnifyingglass")
+            }
+            .buttonStyle(.bordered)
 
             Button {
                 Task {
@@ -75,6 +120,200 @@ private struct TopCommandBar: View {
         .padding(.horizontal, 18)
         .frame(height: 58)
         .background(NexusPalette.background)
+    }
+}
+
+private struct NativeSearchPopover: View {
+    @EnvironmentObject private var appState: AppState
+
+    private var groupedResults: [SearchResultGroup] {
+        groupSearchResults(appState.searchResults)
+    }
+
+    private var orderedResults: [SearchResult] {
+        groupedResults.flatMap(\.results)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "externaldrive.badge.magnifyingglass")
+                    .foregroundStyle(NexusPalette.accent)
+                Text("本地索引搜索 / Local index")
+                    .font(.caption.weight(.semibold))
+                SearchStateBadge()
+                Spacer()
+                if let summary = appState.searchIndexSummary {
+                    Text("\(summary.workspaceCount) ws / \(summary.documentCount) docs")
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("preview fallback")
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(NexusPalette.panel)
+
+            Divider()
+
+            if appState.isSearching {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("正在搜索本地索引...")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(14)
+            } else if orderedResults.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("没有命中文档索引")
+                        .font(.subheadline.weight(.medium))
+                    Text("工作区列表仍会按名称、服务、分支和风险元数据过滤。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        ForEach(groupedResults) { group in
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(group.label)
+                                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                    .textCase(.uppercase)
+
+                                ForEach(group.results, id: \.stableID) { result in
+                                    let index = orderedResults.firstIndex(of: result) ?? 0
+                                    NativeSearchResultRow(
+                                        result: result,
+                                        isSelected: index == appState.selectedSearchResultIndex
+                                    ) {
+                                        appState.openSearchResult(result)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding(10)
+                }
+                .frame(maxHeight: 360)
+            }
+
+            Divider()
+
+            HStack {
+                if let searchError = appState.searchError {
+                    Text(searchError)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                } else {
+                    Text("↑↓ 选择")
+                    Text("Enter 打开")
+                    Text("Esc 清空")
+                }
+                Spacer()
+            }
+            .font(.system(size: 10, design: .monospaced))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+        }
+        .frame(width: 520)
+        .background(NexusPalette.panel)
+        .overlay {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .stroke(NexusPalette.border, lineWidth: 1)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .shadow(color: Color.black.opacity(0.14), radius: 28, x: 0, y: 18)
+    }
+}
+
+private struct SearchStateBadge: View {
+    @EnvironmentObject private var appState: AppState
+
+    var body: some View {
+        Text(label)
+            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            .foregroundStyle(color)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(color.opacity(0.1))
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+
+    private var label: String {
+        if appState.isSearching {
+            return "searching"
+        }
+        if appState.searchError != nil {
+            return "fallback"
+        }
+        if appState.searchIndexSummary != nil {
+            return "ready"
+        }
+        return "preview"
+    }
+
+    private var color: Color {
+        if appState.searchError != nil {
+            return NexusPalette.warning
+        }
+        if appState.searchIndexSummary != nil {
+            return NexusPalette.success
+        }
+        return NexusPalette.accent
+    }
+}
+
+private struct NativeSearchResultRow: View {
+    let result: SearchResult
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 7) {
+                    Text(result.displayKind)
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(result.kind == "sql" ? NexusPalette.warning : NexusPalette.accent)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(NexusPalette.badge)
+                        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                    Text(result.workspaceName)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    Text(result.documentName)
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Spacer()
+                }
+
+                Text(result.snippet.isEmpty ? result.documentPath : result.snippet)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .background(isSelected ? NexusPalette.selected : Color.clear)
+            .overlay {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .stroke(isSelected ? NexusPalette.accent.opacity(0.35) : Color.clear, lineWidth: 1)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 }
 
