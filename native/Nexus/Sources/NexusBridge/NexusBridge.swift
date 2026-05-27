@@ -9,6 +9,8 @@ public protocol NexusBridge {
     func readDocument(request: ReadDocumentRequest) async throws -> DocumentSnapshot
     func widgetSnapshot(request: WidgetSnapshotRequest) async throws -> WidgetSnapshot
     func appendAuditEvent(request: AppendAuditEventRequest) async throws -> AppendAuditEventResponse
+    func rebuildSearchIndex(request: RebuildSearchIndexRequest) async throws -> RebuildSearchIndexResponse
+    func searchIndex(request: SearchIndexRequest) async throws -> [SearchResult]
     func createWorkspace(request: CreateWorkspaceRequest) async throws -> CreateWorkspaceResponse
 }
 
@@ -89,6 +91,14 @@ public final class PreviewNexusBridge: NexusBridge {
         throw NexusBridgeError.coreError("Audit logging requires Rust Core bridge. Set NEXUS_CORE_LIBRARY to a local libnexus_ffi.dylib.")
     }
 
+    public func rebuildSearchIndex(request: RebuildSearchIndexRequest) async throws -> RebuildSearchIndexResponse {
+        RebuildSearchIndexResponse(path: request.indexPath, workspaceCount: 0, documentCount: 0)
+    }
+
+    public func searchIndex(request: SearchIndexRequest) async throws -> [SearchResult] {
+        []
+    }
+
     public func createWorkspace(request: CreateWorkspaceRequest) async throws -> CreateWorkspaceResponse {
         guard request.confirmed else {
             throw NexusBridgeError.coreError("workspace creation requires explicit confirmation")
@@ -107,6 +117,8 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
     private let readDocumentFunction: BridgeCall
     private let widgetSnapshotFunction: BridgeCall
     private let appendAuditEventFunction: BridgeCall
+    private let rebuildSearchIndexFunction: BridgeCall
+    private let searchIndexFunction: BridgeCall
     private let createWorkspaceFunction: BridgeCall
     private let freeFunction: BridgeFree
     private let encoder = JSONEncoder()
@@ -139,6 +151,14 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
             self.appendAuditEventFunction = try Self.loadSymbol(
                 handle: handle,
                 name: "nexus_append_audit_event_json"
+            )
+            self.rebuildSearchIndexFunction = try Self.loadSymbol(
+                handle: handle,
+                name: "nexus_rebuild_search_index_json"
+            )
+            self.searchIndexFunction = try Self.loadSymbol(
+                handle: handle,
+                name: "nexus_search_index_json"
             )
             self.createWorkspaceFunction = try Self.loadSymbol(
                 handle: handle,
@@ -174,6 +194,14 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
 
     public func appendAuditEvent(request: AppendAuditEventRequest) async throws -> AppendAuditEventResponse {
         try call(appendAuditEventFunction, request: request)
+    }
+
+    public func rebuildSearchIndex(request: RebuildSearchIndexRequest) async throws -> RebuildSearchIndexResponse {
+        try call(rebuildSearchIndexFunction, request: request)
+    }
+
+    public func searchIndex(request: SearchIndexRequest) async throws -> [SearchResult] {
+        try call(searchIndexFunction, request: request)
     }
 
     public func createWorkspace(request: CreateWorkspaceRequest) async throws -> CreateWorkspaceResponse {

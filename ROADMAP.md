@@ -40,8 +40,8 @@ This roadmap describes the next product and engineering steps for Nexus. The cur
 
 ## 0.4.x: Search And Local Index
 
-- Add SQLite local index for workspace metadata and Markdown documents.
-- Add full-text search across tasks, decisions, delivery records, SQL notes, and service scopes.
+- Add SQLite local index for workspace metadata and Markdown documents. `[started in Rust Core]`
+- Add full-text search across tasks, decisions, delivery records, SQL notes, and service scopes. `[started in Rust Core and bridge]`
 - Add timeline view for workspace activity.
 - Add saved filters and pinned workspaces.
 

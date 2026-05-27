@@ -164,6 +164,72 @@ public struct AppendAuditEventResponse: Codable, Equatable, Sendable {
     }
 }
 
+public struct RebuildSearchIndexRequest: Codable, Equatable, Sendable {
+    public let indexPath: String
+    public let workspacesRoot: String
+    public let sourceReposRoot: String
+    public let docsRoot: String
+
+    public init(indexPath: String, workspacesRoot: String, sourceReposRoot: String, docsRoot: String) {
+        self.indexPath = indexPath
+        self.workspacesRoot = workspacesRoot
+        self.sourceReposRoot = sourceReposRoot
+        self.docsRoot = docsRoot
+    }
+}
+
+public struct RebuildSearchIndexResponse: Codable, Equatable, Sendable {
+    public let path: String
+    public let workspaceCount: Int
+    public let documentCount: Int
+
+    public init(path: String, workspaceCount: Int, documentCount: Int) {
+        self.path = path
+        self.workspaceCount = workspaceCount
+        self.documentCount = documentCount
+    }
+}
+
+public struct SearchIndexRequest: Codable, Equatable, Sendable {
+    public let indexPath: String
+    public let query: String
+    public let limit: Int?
+
+    public init(indexPath: String, query: String, limit: Int? = nil) {
+        self.indexPath = indexPath
+        self.query = query
+        self.limit = limit
+    }
+}
+
+public struct SearchResult: Codable, Equatable, Sendable {
+    public let workspaceFolder: String
+    public let workspaceName: String
+    public let documentKey: String
+    public let documentName: String
+    public let documentPath: String
+    public let kind: String
+    public let snippet: String
+
+    public init(
+        workspaceFolder: String,
+        workspaceName: String,
+        documentKey: String,
+        documentName: String,
+        documentPath: String,
+        kind: String,
+        snippet: String
+    ) {
+        self.workspaceFolder = workspaceFolder
+        self.workspaceName = workspaceName
+        self.documentKey = documentKey
+        self.documentName = documentName
+        self.documentPath = documentPath
+        self.kind = kind
+        self.snippet = snippet
+    }
+}
+
 public struct DashboardSnapshot: Codable, Equatable, Sendable {
     public let generatedAt: String
     public let workspacesRoot: String

@@ -15,6 +15,7 @@ It is designed for teams that work across multiple local service repositories an
 - Local path settings for workspaces, source repositories, and delivery document roots.
 - Exportable and importable team settings profile for sharing local path conventions.
 - Local audit log for confirmed workspace creation and settings profile exports.
+- Local SQLite + FTS index foundation for workspace Markdown, service scope, tasks, decisions, delivery records, and SQL notes.
 - First-run onboarding for configuring local workspace, source repository, and delivery document paths.
 - Environment health checks for configured directories and Git availability.
 - Native workspace scanning from the configured paths; no local Python script is required for the packaged app.
@@ -80,6 +81,10 @@ Nexus does not automatically execute worktree commands. Review the generated scr
 ## Local Audit Log
 
 Nexus writes JSONL audit events to `~/Library/Application Support/com.ks.nexus/audit/audit-log.jsonl` for user-visible local writes such as workspace creation and settings profile export. High-frequency cache writes, such as widget snapshot refreshes, are not audited.
+
+## Local Search Index
+
+Nexus can rebuild a local SQLite + FTS index at `~/Library/Application Support/com.ks.nexus/nexus-index.sqlite3`. The index is a cache that can be rebuilt from human-readable workspace folders. The first indexed sources are standard workspace Markdown files and `sql/` notes.
 
 ## Local Development
 

@@ -50,15 +50,15 @@ The first native shell scaffold is available at `native/Nexus`. It is a Swift Pa
 ### Swift/Rust Bridge
 
 - The initial bridge uses a small C ABI with JSON request/response payloads. It is intentionally simple while the native app shape is still moving.
-- `crates/nexus-ffi` currently exposes workspace scans, source-repository scans, document reads, widget snapshot computation, JSONL audit event append, and confirmed workspace creation over `nexus-core`.
+- `crates/nexus-ffi` currently exposes workspace scans, source-repository scans, document reads, widget snapshot computation, JSONL audit event append, SQLite/FTS index rebuild/search, and confirmed workspace creation over `nexus-core`.
 - `native/Nexus/Sources/NexusBridge` owns Swift `Codable` DTOs, preview fallback data, and optional dynamic library loading through `NEXUS_CORE_LIBRARY`.
-- The command surface should grow in this order: scan, read document, compute widget snapshot, create workspace skeleton, audit local actions, and produce worktree plans.
+- The command surface should grow in this order: scan, read document, compute widget snapshot, create workspace skeleton, audit local actions, rebuild/search the local index, and produce worktree plans.
 - Local write operations must include explicit confirmation in the bridge request, not only in UI copy.
 - Bridge responses use explicit success/error envelopes so the native shell can show user-facing failures without guessing.
 
 ### Local Store
 
-- SQLite database under Application Support.
+- SQLite database under Application Support. The first database file is `nexus-index.sqlite3`.
 - FTS tables for workspace Markdown, delivery records, tasks, decisions, SQL notes, and service scopes.
 - Audit log table for local writes and generated commands. The current bridge uses append-only JSONL under Application Support as the durable source that SQLite can index later.
 - Rebuildable from the human-readable workspace folders.

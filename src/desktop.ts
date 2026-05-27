@@ -85,6 +85,33 @@ export type EnvironmentHealthPayload = {
   docsRoot: string;
 };
 
+export type RebuildSearchIndexPayload = {
+  workspacesRoot: string;
+  sourceReposRoot: string;
+  docsRoot: string;
+};
+
+export type RebuildSearchIndexResponse = {
+  path: string;
+  workspaceCount: number;
+  documentCount: number;
+};
+
+export type SearchIndexPayload = {
+  query: string;
+  limit?: number;
+};
+
+export type SearchResult = {
+  workspaceFolder: string;
+  workspaceName: string;
+  documentKey: string;
+  documentName: string;
+  documentPath: string;
+  kind: string;
+  snippet: string;
+};
+
 export function isDesktopApp() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
@@ -154,6 +181,27 @@ export async function checkEnvironment(payload: EnvironmentHealthPayload) {
       workspacesRoot: payload.workspacesRoot,
       sourceReposRoot: payload.sourceReposRoot,
       docsRoot: payload.docsRoot
+    }
+  });
+}
+
+export async function rebuildSearchIndex(payload: RebuildSearchIndexPayload) {
+  if (!isDesktopApp()) return null;
+  return tauriInvoke<RebuildSearchIndexResponse>("rebuild_search_index", {
+    request: {
+      workspacesRoot: payload.workspacesRoot,
+      sourceReposRoot: payload.sourceReposRoot,
+      docsRoot: payload.docsRoot
+    }
+  });
+}
+
+export async function searchIndex(payload: SearchIndexPayload) {
+  if (!isDesktopApp()) return null;
+  return tauriInvoke<SearchResult[]>("search_index", {
+    request: {
+      query: payload.query,
+      limit: payload.limit
     }
   });
 }
