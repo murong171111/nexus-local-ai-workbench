@@ -57,7 +57,7 @@ The first native shell scaffold is available at `native/Nexus`. It is a Swift Pa
 - `native/Nexus/Sources/NexusBridge` owns Swift `Codable` DTOs, preview fallback data, and optional dynamic library loading through `NEXUS_CORE_LIBRARY`.
 - The native SwiftUI shell uses the same search bridge to rebuild/query the local index, then falls back to in-memory workspace metadata when the dynamic library is not configured.
 - Native search results surface selected-result context from the current workspace model, including branch, service count, risk, and recent activity.
-- The native shell stores lightweight personal UI preferences, such as the selected search scope and pinned workspace IDs, in `UserDefaults`. These preferences are local conveniences; Markdown workspace records and Rust Core scan output remain the product source of truth.
+- The native shell stores lightweight personal UI preferences, such as local root paths, the selected search scope, and pinned workspace IDs, in `UserDefaults`. These preferences are local conveniences; Markdown workspace records and Rust Core scan output remain the product source of truth.
 - Native document reads append `document.opened` audit events when the Rust Core bridge is available and update the visible timeline immediately.
 - Native session actions can open follow-up documents and execute confirmed worktree setup through the Swift/Rust bridge. Worktree setup remains a confirmed local write and reports created, skipped, and failed services back to the user.
 - The command surface should grow in this order: scan, read document, compute widget snapshot, create workspace skeleton, audit local actions, rebuild/search the local index, produce worktree plans, and execute confirmed worktree setup.

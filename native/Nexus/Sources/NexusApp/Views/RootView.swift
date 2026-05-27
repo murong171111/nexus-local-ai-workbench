@@ -5,10 +5,14 @@ import SwiftUI
 struct RootView: View {
     @EnvironmentObject private var appState: AppState
     @State private var isCreateWorkspacePresented = false
+    @State private var isSettingsPresented = false
 
     var body: some View {
         HStack(spacing: 0) {
-            SidebarView(isCreateWorkspacePresented: $isCreateWorkspacePresented)
+            SidebarView(
+                isCreateWorkspacePresented: $isCreateWorkspacePresented,
+                isSettingsPresented: $isSettingsPresented
+            )
                 .frame(width: 264)
 
             Divider()
@@ -31,6 +35,10 @@ struct RootView: View {
         }
         .sheet(isPresented: $isCreateWorkspacePresented) {
             CreateWorkspaceSheet()
+                .environmentObject(appState)
+        }
+        .sheet(isPresented: $isSettingsPresented) {
+            SettingsView()
                 .environmentObject(appState)
         }
         .sheet(item: $appState.pendingWorktreeSetupWorkspace) { workspace in
@@ -456,6 +464,7 @@ private struct NativeSearchResultRow: View {
 private struct SidebarView: View {
     @EnvironmentObject private var appState: AppState
     @Binding var isCreateWorkspacePresented: Bool
+    @Binding var isSettingsPresented: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -590,6 +599,7 @@ private struct SidebarView: View {
             .buttonStyle(.borderedProminent)
 
             Button {
+                isSettingsPresented = true
             } label: {
                 Label("Settings", systemImage: "gearshape")
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1309,24 +1319,64 @@ private struct ActivityTimelineView: View {
 
 struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        Form {
-            Section("Local Paths") {
-                TextField("Workspaces root", text: $appState.workspaceRoot)
-                TextField("Source repositories root", text: $appState.sourceReposRoot)
-                TextField("Delivery documents root", text: $appState.docsRoot)
-            }
-
-            Section("Native Shell") {
-                Text("Bridge mode: \(appState.bridgeMode)")
-                Text("Search scope: \(appState.selectedSearchScope.label) / \(appState.selectedSearchScope.subtitle)")
-                Text("Pinned workspaces: \(appState.pinnedWorkspaceIDs.count)")
-                Text("Set NEXUS_CORE_LIBRARY to a local libnexus_ffi.dylib to load real workspace data through Rust Core during development.")
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("设置 / Settings")
+                    .font(.title3.weight(.semibold))
+                Text("Configure the local roots Nexus uses to scan workspaces, source repositories, and delivery documents.")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            Form {
+                Section("Local Paths") {
+                    TextField("Workspaces root", text: $appState.workspaceRoot)
+                    TextField("Source repositories root", text: $appState.sourceReposRoot)
+                    TextField("Delivery documents root", text: $appState.docsRoot)
+                }
+
+                Section("Native Shell") {
+                    Text("Bridge mode: \(appState.bridgeMode)")
+                    Text("Search scope: \(appState.selectedSearchScope.label) / \(appState.selectedSearchScope.subtitle)")
+                    Text("Pinned workspaces: \(appState.pinnedWorkspaceIDs.count)")
+                    Text("Set NEXUS_CORE_LIBRARY to a local libnexus_ffi.dylib to load real workspace data through Rust Core during development.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            HStack {
+                Button("Reset defaults") {
+                    appState.resetLocalPaths()
+                }
+
+                Spacer()
+
+                Button("Close") {
+                    appState.persistLocalPaths()
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Button(appState.isLoading ? "Reloading" : "Save and reload") {
+                    Task {
+                        await appState.reloadConfiguredPaths()
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(appState.isLoading)
+            }
+        }
+        .onChange(of: appState.workspaceRoot) { _ in appState.persistLocalPaths() }
+        .onChange(of: appState.sourceReposRoot) { _ in appState.persistLocalPaths() }
+        .onChange(of: appState.docsRoot) { _ in appState.persistLocalPaths() }
+        .onDisappear {
+            appState.persistLocalPaths()
         }
         .padding(20)
+        .frame(width: 620, height: 420)
     }
 }
 

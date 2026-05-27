@@ -37,7 +37,14 @@ final class AppState: ObservableObject {
     private enum DefaultsKey {
         static let pinnedWorkspaceIDs = "nexus.native.pinnedWorkspaceIDs"
         static let selectedSearchScope = "nexus.native.selectedSearchScope"
+        static let workspaceRoot = "nexus.native.workspaceRoot"
+        static let sourceReposRoot = "nexus.native.sourceReposRoot"
+        static let docsRoot = "nexus.native.docsRoot"
     }
+
+    static let defaultWorkspaceRoot = "~/ks_project/workspaces"
+    static let defaultSourceReposRoot = "~/ks_project/source-repos"
+    static let defaultDocsRoot = "~/ks_project/docs"
 
     init(
         workspaces: [WorkspaceSummary],
@@ -53,9 +60,21 @@ final class AppState: ObservableObject {
         self.workspaces = workspaces
         self.agentStatus = agentStatus
         self.bridge = bridge
-        self.workspaceRoot = workspaceRoot
-        self.sourceReposRoot = sourceReposRoot
-        self.docsRoot = docsRoot
+        self.workspaceRoot = Self.storedPath(
+            defaults: defaults,
+            key: DefaultsKey.workspaceRoot,
+            fallback: workspaceRoot
+        )
+        self.sourceReposRoot = Self.storedPath(
+            defaults: defaults,
+            key: DefaultsKey.sourceReposRoot,
+            fallback: sourceReposRoot
+        )
+        self.docsRoot = Self.storedPath(
+            defaults: defaults,
+            key: DefaultsKey.docsRoot,
+            fallback: docsRoot
+        )
         self.bridgeMode = bridge.modeDescription.isEmpty ? bridgeMode : bridge.modeDescription
         self.pinnedWorkspaceIDs = Set(defaults.stringArray(forKey: DefaultsKey.pinnedWorkspaceIDs) ?? [])
         self.selectedSearchScope = SearchScope(
@@ -183,6 +202,36 @@ final class AppState: ObservableObject {
         selectedSearchScope = scope
         selectedSearchResultIndex = 0
         defaults.set(scope.rawValue, forKey: DefaultsKey.selectedSearchScope)
+    }
+
+    func persistLocalPaths() {
+        defaults.set(
+            workspaceRoot.trimmingCharacters(in: .whitespacesAndNewlines),
+            forKey: DefaultsKey.workspaceRoot
+        )
+        defaults.set(
+            sourceReposRoot.trimmingCharacters(in: .whitespacesAndNewlines),
+            forKey: DefaultsKey.sourceReposRoot
+        )
+        defaults.set(
+            docsRoot.trimmingCharacters(in: .whitespacesAndNewlines),
+            forKey: DefaultsKey.docsRoot
+        )
+    }
+
+    func resetLocalPaths() {
+        workspaceRoot = Self.defaultWorkspaceRoot
+        sourceReposRoot = Self.defaultSourceReposRoot
+        docsRoot = Self.defaultDocsRoot
+        persistLocalPaths()
+    }
+
+    func reloadConfiguredPaths() async {
+        persistLocalPaths()
+        clearSearch()
+        selectedWorkspaceID = nil
+        documentPreview = nil
+        await refreshFromBridge()
     }
 
     func workspace(for result: SearchResult) -> WorkspaceSummary? {
@@ -553,6 +602,12 @@ final class AppState: ObservableObject {
         guard !normalizedBranch.isEmpty else { return false }
         let pendingMarkers = ["待确认", "未确认", "pending", "tbd", "todo"]
         return !pendingMarkers.contains { normalizedBranch.contains($0) }
+    }
+
+    private static func storedPath(defaults: UserDefaults, key: String, fallback: String) -> String {
+        let value = defaults.string(forKey: key)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let value, !value.isEmpty else { return fallback }
+        return value
     }
 }
 
