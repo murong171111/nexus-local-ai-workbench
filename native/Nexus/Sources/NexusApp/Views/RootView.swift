@@ -1526,11 +1526,17 @@ private struct AgentEventDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var appState: AppState
     let event: AgentEvent
+    @State private var taskDraft: AgentEventTaskDraftResponse?
+    @State private var isTaskDraftLoading = false
 
     private var metadataRows: [(String, String)] {
         event.metadata
             .map { ($0.key, $0.value) }
             .sorted { $0.0 < $1.0 }
+    }
+
+    private var displayedTaskDraft: AgentEventTaskDraftResponse {
+        taskDraft ?? event.fallbackTaskDraft
     }
 
     private var workspaceMatch: WorkspaceSummary? {
@@ -1599,6 +1605,44 @@ private struct AgentEventDetailSheet: View {
                     AgentEventField(label: "Session", value: event.sessionId)
                     AgentEventField(label: "Workspace", value: event.workspaceFolder ?? "No workspace")
                     AgentEventField(label: "Event ID", value: event.id)
+                }
+
+                SectionBlock(title: "任务草稿 / Task draft") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 8) {
+                            Pill(label: displayedTaskDraft.category, systemImage: "tray.full")
+                            Pill(label: displayedTaskDraft.priority, systemImage: "flag")
+                            Pill(label: displayedTaskDraft.status, systemImage: "doc.badge.clock")
+                            if isTaskDraftLoading {
+                                ProgressView()
+                                    .controlSize(.small)
+                            }
+                        }
+
+                        Text(displayedTaskDraft.title)
+                            .font(.subheadline.weight(.semibold))
+                            .textSelection(.enabled)
+
+                        Text(displayedTaskDraft.summary)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        if !displayedTaskDraft.relatedTargets.isEmpty {
+                            ForEach(displayedTaskDraft.relatedTargets.prefix(5)) { target in
+                                AgentEventField(label: "\(target.kind) · \(target.label)", value: target.value)
+                            }
+                        }
+
+                        HStack {
+                            Button("Copy title") {
+                                copyToPasteboard(displayedTaskDraft.title)
+                            }
+                            Button("Copy prompt") {
+                                copyToPasteboard(displayedTaskDraft.prompt)
+                            }
+                        }
+                    }
                 }
 
                 SectionBlock(title: "下一步 / Actions") {
@@ -1684,6 +1728,9 @@ private struct AgentEventDetailSheet: View {
         }
         .padding(22)
         .frame(width: 680, height: 640)
+        .task(id: event.id) {
+            await loadTaskDraft()
+        }
     }
 
     private var symbol: String {
@@ -1717,16 +1764,25 @@ private struct AgentEventDetailSheet: View {
               let payload = String(data: data, encoding: .utf8) else {
             return
         }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(payload, forType: .string)
+        copyToPasteboard(payload)
     }
 
     private func copyCodexContext() {
         Task {
             let payload = await appState.agentEventHandoffPrompt(for: event)
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(payload, forType: .string)
+            copyToPasteboard(payload)
         }
+    }
+
+    private func loadTaskDraft() async {
+        isTaskDraftLoading = true
+        taskDraft = await appState.agentEventTaskDraft(for: event)
+        isTaskDraftLoading = false
+    }
+
+    private func copyToPasteboard(_ payload: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(payload, forType: .string)
     }
 
     private func openLocalPath(_ rawPath: String) {

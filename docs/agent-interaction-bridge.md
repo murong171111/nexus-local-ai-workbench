@@ -10,6 +10,7 @@ This first slice is intentionally small: it defines a durable local event format
 - The default event file name is `agent-events.jsonl`.
 - The Swift/Rust bridge can append agent events and read the newest events.
 - Rust Core exposes a shared Codex handoff prompt for agent events through the FFI and Swift bridge.
+- Rust Core also derives structured task drafts from agent events so shells can show a consistent next-work item.
 - The native SwiftUI shell reads recent events from Application Support and shows them in the sidebar.
 - Sidebar events can be opened to inspect full event context, metadata, and copy the raw JSON payload.
 - Event details expose safe local actions for matching workspaces, local file paths, web links, and Codex context copy.
@@ -49,6 +50,23 @@ Nexus generates a shared handoff prompt from the event payload so every shell ca
 - A safety instruction that metadata is context only and command metadata must not be executed without an explicit user request.
 
 SwiftUI uses this bridge-backed prompt when Rust Core is loaded, and falls back to the same local format in preview mode.
+
+## Task Draft
+
+Nexus can derive a structured task draft from the same event. This is not persisted as a workspace task yet; it is a copyable local draft for the next step in the agent workflow.
+
+The draft contains:
+
+- `title`: action-oriented text such as `Review permission request: ...`.
+- `category`: `approval`, `answer`, `tool-review`, `incident`, `risk-review`, `handoff`, or `follow-up`.
+- `priority`: `high`, `medium`, or `normal`, derived from severity and event kind.
+- `status`: currently always `draft`.
+- `summary`: the event summary.
+- `prompt`: the shared Codex handoff prompt.
+- `workspaceFolder`: the related workspace folder when known.
+- `relatedTargets`: workspace, local path, web URL, or command references extracted from metadata.
+
+Command targets remain non-executable context. They are useful for review, copying, or future explicit approvals only.
 
 ## Storage Boundary
 

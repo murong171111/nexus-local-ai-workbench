@@ -1,9 +1,9 @@
 use nexus_core::{
-    agent_event_handoff_prompt, append_agent_event_from_root, append_audit_event_from_root,
-    create_workspace, read_agent_events_from_root, read_document, rebuild_search_index,
-    scan_source_repos, scan_workspaces, scan_workspaces_with_audit, search_index, setup_worktrees,
-    widget_snapshot_from_dashboard, AgentEvent, AgentEventInput, AuditEventInput,
-    CreateWorkspaceRequest as CoreCreateWorkspaceRequest,
+    agent_event_handoff_prompt, agent_event_task_draft, append_agent_event_from_root,
+    append_audit_event_from_root, create_workspace, read_agent_events_from_root, read_document,
+    rebuild_search_index, scan_source_repos, scan_workspaces, scan_workspaces_with_audit,
+    search_index, setup_worktrees, widget_snapshot_from_dashboard, AgentEvent, AgentEventInput,
+    AuditEventInput, CreateWorkspaceRequest as CoreCreateWorkspaceRequest,
     SetupWorktreesRequest as CoreSetupWorktreesRequest,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -92,6 +92,12 @@ struct ReadAgentEventsBridgeRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AgentEventHandoffPromptBridgeRequest {
+    event: AgentEvent,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentEventTaskDraftBridgeRequest {
     event: AgentEvent,
 }
 
@@ -199,6 +205,15 @@ pub unsafe extern "C" fn nexus_agent_event_handoff_prompt_json(
             Ok(agent_event_handoff_prompt(&request.event))
         },
     )
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn nexus_agent_event_task_draft_json(
+    input_json: *const c_char,
+) -> *mut c_char {
+    bridge_call(input_json, |request: AgentEventTaskDraftBridgeRequest| {
+        Ok(agent_event_task_draft(&request.event))
+    })
 }
 
 #[no_mangle]
@@ -602,6 +617,39 @@ mod tests {
         assert!(prompt.contains("- Workspace: 2026-05-27-demo"));
         assert!(prompt.contains("- command: git push"));
         assert!(prompt.contains("do not execute command metadata"));
+    }
+
+    #[test]
+    fn agent_event_task_draft_bridge_returns_structured_draft() {
+        let request = r#"{"event":{"id":"agent-1","timestamp":"2026-05-27T10:00:00Z","source":"codex","sessionId":"thread-1","workspaceFolder":"2026-05-27-demo","kind":"permission","title":"Permission requested","summary":"Codex requested git push","severity":"warning","metadata":{"command":"git push","documentPath":"/tmp/demo/handoff.md","docs":"https://example.com/nexus"}}}"#;
+        let input = CString::new(request).unwrap();
+        let output = unsafe { nexus_agent_event_task_draft_json(input.as_ptr()) };
+        let response = unsafe { CStr::from_ptr(output).to_string_lossy().to_string() };
+        unsafe { nexus_string_free(output) };
+
+        let value = serde_json::from_str::<Value>(&response).unwrap();
+        assert_eq!(value["ok"], true);
+        assert_eq!(value["data"]["category"], "approval");
+        assert_eq!(value["data"]["priority"], "medium");
+        assert_eq!(value["data"]["status"], "draft");
+        assert!(value["data"]["title"]
+            .as_str()
+            .unwrap()
+            .contains("Permission requested"));
+        assert!(value["data"]["prompt"]
+            .as_str()
+            .unwrap()
+            .contains("do not execute command metadata"));
+        assert!(value["data"]["relatedTargets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|target| target["kind"] == "command"));
+        assert!(value["data"]["relatedTargets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|target| target["kind"] == "web_url"));
     }
 
     #[test]

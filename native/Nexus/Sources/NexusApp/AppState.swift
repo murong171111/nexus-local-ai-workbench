@@ -417,6 +417,16 @@ final class AppState: ObservableObject {
         }
     }
 
+    func agentEventTaskDraft(for event: AgentEvent) async -> AgentEventTaskDraftResponse {
+        do {
+            return try await bridge.agentEventTaskDraft(
+                request: AgentEventTaskDraftRequest(event: event)
+            )
+        } catch {
+            return event.fallbackTaskDraft
+        }
+    }
+
     func createWorkspace(draft: CreateWorkspaceDraft) async {
         isCreatingWorkspace = true
         lastError = nil
