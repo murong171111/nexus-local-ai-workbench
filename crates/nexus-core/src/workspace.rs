@@ -1,6 +1,6 @@
 use crate::{
-    expand_user_path, git_status, normalize_git_branch, read_audit_events,
-    target_branch_confirmed, AuditEvent, GitStatus,
+    expand_user_path, git_status, normalize_git_branch, read_audit_events, target_branch_confirmed,
+    AuditEvent, GitStatus,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -39,6 +39,7 @@ pub struct WorkspaceData {
     pub worktree_command: String,
     pub activities: Vec<WorkspaceActivity>,
     pub health_checks: Vec<WorkspaceHealthCheck>,
+    pub session_actions: Vec<WorkspaceSessionAction>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
@@ -65,6 +66,18 @@ pub struct WorkspaceHealthCheck {
     pub detail: String,
     pub status: String,
     pub action: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceSessionAction {
+    pub id: String,
+    pub label: String,
+    pub detail: String,
+    pub priority: String,
+    pub status: String,
+    pub instruction_type: String,
+    pub document_key: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -134,15 +147,13 @@ pub fn scan_workspaces_with_audit(
         if !path.is_dir()
             || name == "dashboard"
             || name.starts_with('.')
-            || audit_path.as_ref().is_some_and(|audit_path| audit_path == &path)
+            || audit_path
+                .as_ref()
+                .is_some_and(|audit_path| audit_path == &path)
         {
             continue;
         }
-        workspaces.push(collect_workspace(
-            &path,
-            source_repos_root,
-            &audit_events,
-        ));
+        workspaces.push(collect_workspace(&path, source_repos_root, &audit_events));
     }
     workspaces.sort_by(|left, right| {
         right
@@ -493,6 +504,16 @@ fn collect_workspace(
         sql_dir_exists,
         &task_counts,
     );
+    let session_actions = workspace_session_actions(
+        &target_branch,
+        &confirmed_services,
+        &missing_worktrees,
+        &dirty_worktrees,
+        &branch_mismatches,
+        delivery_exists,
+        delivery_stale,
+        &task_counts,
+    );
     WorkspaceData {
         name,
         folder,
@@ -512,6 +533,7 @@ fn collect_workspace(
         worktree_command,
         activities,
         health_checks,
+        session_actions,
     }
 }
 
@@ -535,7 +557,11 @@ fn workspace_health_checks(
             } else {
                 format!("已确认 {} 个服务", confirmed_services.len())
             },
-            if confirmed_services.is_empty() { "fail" } else { "pass" },
+            if confirmed_services.is_empty() {
+                "fail"
+            } else {
+                "pass"
+            },
             "services",
         ),
         health_check(
@@ -546,7 +572,11 @@ fn workspace_health_checks(
             } else {
                 "目标分支待确认".to_string()
             },
-            if target_branch_confirmed(target_branch) { "pass" } else { "fail" },
+            if target_branch_confirmed(target_branch) {
+                "pass"
+            } else {
+                "fail"
+            },
             "branches",
         ),
         health_check(
@@ -557,7 +587,11 @@ fn workspace_health_checks(
             } else {
                 format!("缺少: {}", missing_worktrees.join(", "))
             },
-            if missing_worktrees.is_empty() { "pass" } else { "fail" },
+            if missing_worktrees.is_empty() {
+                "pass"
+            } else {
+                "fail"
+            },
             "worktreeScript",
         ),
         health_check(
@@ -568,7 +602,11 @@ fn workspace_health_checks(
             } else {
                 format!("不一致: {}", branch_mismatches.join(", "))
             },
-            if branch_mismatches.is_empty() { "pass" } else { "fail" },
+            if branch_mismatches.is_empty() {
+                "pass"
+            } else {
+                "fail"
+            },
             "branches",
         ),
         health_check(
@@ -579,7 +617,11 @@ fn workspace_health_checks(
             } else {
                 format!("存在未提交改动: {}", dirty_worktrees.join(", "))
             },
-            if dirty_worktrees.is_empty() { "pass" } else { "warning" },
+            if dirty_worktrees.is_empty() {
+                "pass"
+            } else {
+                "warning"
+            },
             "status",
         ),
         health_check(
@@ -620,7 +662,11 @@ fn workspace_health_checks(
             } else {
                 format!("存在 {} 个阻塞任务", task_counts.blocked)
             },
-            if task_counts.blocked == 0 { "pass" } else { "warning" },
+            if task_counts.blocked == 0 {
+                "pass"
+            } else {
+                "warning"
+            },
             "tasks",
         ),
     ]
@@ -639,6 +685,144 @@ fn health_check(
         detail,
         status: status.to_string(),
         action: action.to_string(),
+    }
+}
+
+fn workspace_session_actions(
+    target_branch: &str,
+    confirmed_services: &[String],
+    missing_worktrees: &[String],
+    dirty_worktrees: &[String],
+    branch_mismatches: &[String],
+    delivery_exists: bool,
+    delivery_stale: bool,
+    task_counts: &TaskCounts,
+) -> Vec<WorkspaceSessionAction> {
+    let mut actions = Vec::new();
+
+    if confirmed_services.is_empty() {
+        actions.push(session_action(
+            "confirm-services",
+            "确认服务范围 / Confirm services",
+            "先补齐已确认服务，后续 worktree 和风险检查才有可靠目标。".to_string(),
+            "high",
+            "blocked",
+            "risk",
+            "services",
+        ));
+    }
+
+    if !target_branch_confirmed(target_branch) {
+        actions.push(session_action(
+            "confirm-target-branch",
+            "确认目标分支 / Confirm branch",
+            "目标分支仍是待确认状态，创建 worktree 前需要先定分支。".to_string(),
+            "high",
+            "blocked",
+            "git",
+            "branches",
+        ));
+    }
+
+    if !missing_worktrees.is_empty() {
+        actions.push(session_action(
+            "create-worktrees",
+            "创建缺失 worktree / Create worktrees",
+            format!("缺少 worktree: {}", missing_worktrees.join(", ")),
+            "high",
+            "recommended",
+            "worktree",
+            "worktreeScript",
+        ));
+    }
+
+    if !branch_mismatches.is_empty() {
+        actions.push(session_action(
+            "align-branches",
+            "修正分支不一致 / Align branches",
+            format!("分支不一致: {}", branch_mismatches.join(", ")),
+            "high",
+            "blocked",
+            "git",
+            "branches",
+        ));
+    }
+
+    if !dirty_worktrees.is_empty() {
+        actions.push(session_action(
+            "review-dirty-worktrees",
+            "复核未提交改动 / Review changes",
+            format!("存在未提交改动: {}", dirty_worktrees.join(", ")),
+            "medium",
+            "recommended",
+            "git",
+            "status",
+        ));
+    }
+
+    if !delivery_exists || delivery_stale {
+        actions.push(session_action(
+            "update-delivery-record",
+            "更新交付记录 / Update delivery",
+            if delivery_exists {
+                "交付记录包含待补充内容，代码或 SQL 变更后需要同步。".to_string()
+            } else {
+                "工作区缺少交付记录，需要先补齐交付文档入口。".to_string()
+            },
+            "medium",
+            "recommended",
+            "delivery",
+            "delivery",
+        ));
+    }
+
+    if task_counts.blocked > 0 {
+        actions.push(session_action(
+            "resolve-blocked-tasks",
+            "处理阻塞任务 / Resolve blockers",
+            format!("tasks.md 中存在 {} 个阻塞任务。", task_counts.blocked),
+            "medium",
+            "recommended",
+            "risk",
+            "tasks",
+        ));
+    }
+
+    let ready_to_start = actions.is_empty();
+    actions.push(session_action(
+        "start-codex-session",
+        "启动 Codex 会话 / Start Codex session",
+        if ready_to_start {
+            "就绪检查已通过，可以复制完整上下文并进入开发会话。".to_string()
+        } else {
+            "复制当前工作区上下文，带着上方动作进入 Codex 继续处理。".to_string()
+        },
+        if ready_to_start { "high" } else { "low" },
+        "recommended",
+        "continue",
+        "handoff",
+    ));
+
+    actions
+}
+
+fn session_action(
+    id: &str,
+    label: &str,
+    detail: String,
+    priority: &str,
+    status: &str,
+    instruction_type: &str,
+    document_key: &str,
+) -> WorkspaceSessionAction {
+    WorkspaceSessionAction {
+        id: id.to_string(),
+        label: label.to_string(),
+        detail,
+        priority: priority.to_string(),
+        status: status.to_string(),
+        instruction_type: instruction_type.to_string(),
+        document_key: document_key.to_string(),
     }
 }
 
@@ -674,7 +858,10 @@ fn workspace_activities(
 }
 
 fn audit_event_matches_workspace(event: &AuditEvent, folder: &str, path: &str) -> bool {
-    event.metadata.get("folder").is_some_and(|value| value == folder)
+    event
+        .metadata
+        .get("folder")
+        .is_some_and(|value| value == folder)
         || event
             .metadata
             .get("workspace")
@@ -1036,15 +1223,23 @@ mod tests {
         assert_eq!(item.activities[0].title, "worktree 未创建: order");
         assert_eq!(item.health_checks.len(), 8);
         assert!(item.health_checks.iter().any(|check| {
-            check.id == "worktree-ready"
-                && check.status == "fail"
-                && check.detail.contains("order")
+            check.id == "worktree-ready" && check.status == "fail" && check.detail.contains("order")
         }));
-        assert!(item.health_checks.iter().any(|check| {
-            check.id == "delivery-record" && check.status == "warning"
+        assert!(item
+            .health_checks
+            .iter()
+            .any(|check| { check.id == "delivery-record" && check.status == "warning" }));
+        assert!(item
+            .health_checks
+            .iter()
+            .any(|check| { check.id == "service-scope" && check.status == "pass" }));
+        assert!(item.session_actions.iter().any(|action| {
+            action.id == "create-worktrees"
+                && action.instruction_type == "worktree"
+                && action.detail.contains("order")
         }));
-        assert!(item.health_checks.iter().any(|check| {
-            check.id == "service-scope" && check.status == "pass"
+        assert!(item.session_actions.iter().any(|action| {
+            action.id == "start-codex-session" && action.instruction_type == "continue"
         }));
 
         fs::remove_dir_all(root).unwrap();
@@ -1097,11 +1292,10 @@ mod tests {
             "Codex 指令已复制 / Instruction copied"
         );
         assert_eq!(item.activities[0].time, "2026-05-27 09:30");
-        assert!(item.activities[0].detail.contains("Copied continue instruction"));
-        assert_eq!(
-            item.activities[1].title,
-            "工作区已创建 / Workspace created"
-        );
+        assert!(item.activities[0]
+            .detail
+            .contains("Copied continue instruction"));
+        assert_eq!(item.activities[1].title, "工作区已创建 / Workspace created");
         assert_eq!(item.activities[1].time, "2026-05-27 09:10");
         assert!(item.activities[1].detail.contains("Created Audit Demo"));
 

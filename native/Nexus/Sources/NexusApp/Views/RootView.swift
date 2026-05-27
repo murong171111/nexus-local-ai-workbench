@@ -852,6 +852,14 @@ private struct WorkspaceDetailView: View {
                 }
             }
 
+            if !workspace.sessionActions.isEmpty {
+                SectionBlock(title: "会话动作 / Session actions") {
+                    ForEach(workspace.sessionActions) { action in
+                        SessionActionRow(action: action)
+                    }
+                }
+            }
+
             SectionBlock(title: "风险告警 / Risks") {
                 if workspace.risks.isEmpty {
                     Label("No active risk", systemImage: "checkmark.circle")
@@ -901,6 +909,86 @@ private struct WorkspaceDetailView: View {
             }
 
             Spacer()
+        }
+    }
+}
+
+private struct SessionActionRow: View {
+    let action: WorkspaceSessionAction
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: symbol)
+                .foregroundStyle(color)
+                .frame(width: 15)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(action.label)
+                        .font(.subheadline.weight(.medium))
+                        .lineLimit(1)
+                    Text(priorityLabel)
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+                Text(action.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            Spacer()
+            Text(statusLabel)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(color)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(color.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+    }
+
+    private var statusLabel: String {
+        switch action.status {
+        case "blocked":
+            "block"
+        case "recommended":
+            "next"
+        default:
+            "later"
+        }
+    }
+
+    private var priorityLabel: String {
+        switch action.priority {
+        case "high":
+            "P0"
+        case "medium":
+            "P1"
+        default:
+            "P2"
+        }
+    }
+
+    private var symbol: String {
+        switch action.instructionType {
+        case "worktree":
+            "terminal"
+        case "git":
+            "arrow.triangle.branch"
+        case "delivery":
+            "doc.text"
+        default:
+            "sparkles"
+        }
+    }
+
+    private var color: Color {
+        switch action.status {
+        case "blocked":
+            NexusPalette.danger
+        case "recommended":
+            NexusPalette.accent
+        default:
+            Color.gray
         }
     }
 }

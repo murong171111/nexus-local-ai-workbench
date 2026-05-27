@@ -35,6 +35,7 @@ This roadmap describes the next product and engineering steps for Nexus. The cur
 - Add safer worktree creation from selected source repositories.
 - Add branch alignment checks across services. `[done in 0.1.x preview]`
 - Add workspace health checks before a development session starts. `[started in Rust Core, Tauri preview UI, and native SwiftUI shell]`
+- Add a session startup flow that converts readiness results into prioritized Codex/worktree/document actions. `[started in Rust Core, Tauri preview UI, and native SwiftUI shell]`
 - Add explicit confirmation flows for local write operations. `[started for native workspace creation]`
 - Add local audit logs for workspace creation and file writes. `[started for workspace creation, settings profile export, document opens, Codex handoffs, copied prompts, and dashboard activity timelines]`
 

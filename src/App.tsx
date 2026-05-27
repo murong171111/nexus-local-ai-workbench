@@ -39,8 +39,8 @@ import { Card } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { appendAuditEvent, checkEnvironment, createWorkspace, exportSettingsProfile, openExternalUrl, openPath as openPathInDesktop, readTextFile, rebuildSearchIndex, scanSourceRepos, scanWorkspaces, searchIndex, writeWidgetSnapshot, type EnvironmentHealth, type RebuildSearchIndexResponse, type SearchResult, type SourceRepo } from "./desktop";
 import { cn, riskTone } from "./lib";
-import { branchAlignmentRows, buildWorktreeCommand, createSettingsProfile, fallbackSearchResults, groupSearchResults, normalizeServiceList, orderedSearchResults, parseServiceInput, parseSettingsProfile, settingsProfileFilename, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceScore, type NexusSettingsProfile } from "./workspace-model";
-import type { DashboardData, Workspace } from "./types";
+import { branchAlignmentRows, buildWorktreeCommand, createSettingsProfile, fallbackSearchResults, groupSearchResults, normalizeServiceList, orderedSearchResults, parseServiceInput, parseSettingsProfile, settingsProfileFilename, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceScore, workspaceSessionActions, type NexusSettingsProfile } from "./workspace-model";
+import type { DashboardData, Workspace, WorkspaceSessionAction } from "./types";
 
 const initialData = rawData as DashboardData;
 
@@ -97,6 +97,32 @@ function healthStatusLabel(status: string) {
   if (status === "pass") return "pass";
   if (status === "warning") return "warn";
   return "block";
+}
+
+function sessionActionTone(status: string) {
+  if (status === "blocked") return "text-red-700 bg-red-50 border-red-200";
+  if (status === "recommended") return "text-blue-700 bg-blue-50 border-blue-200";
+  return "text-neutral-600 bg-neutral-50 border-neutral-200";
+}
+
+function sessionPriorityLabel(priority: string) {
+  if (priority === "high") return "P0";
+  if (priority === "medium") return "P1";
+  return "P2";
+}
+
+function sessionStatusLabel(status: string) {
+  if (status === "blocked") return "block";
+  if (status === "recommended") return "next";
+  return "later";
+}
+
+function instructionType(action: WorkspaceSessionAction): "continue" | "git" | "delivery" | "risk" | "worktree" {
+  if (action.instructionType === "git") return "git";
+  if (action.instructionType === "delivery") return "delivery";
+  if (action.instructionType === "risk") return "risk";
+  if (action.instructionType === "worktree") return "worktree";
+  return "continue";
 }
 
 type NexusSettings = {
@@ -198,7 +224,13 @@ function toneForRisk(count: number) {
 
 function codexInstruction(workspace: Workspace, action: "continue" | "git" | "delivery" | "risk" | "worktree") {
   if (action === "continue") {
-    return `继续工作区：${workspace.folder}\n需求：${workspace.name}\n请先读取该工作区的 AGENTS.md、STATUS.md、services.md、branches.md、tasks.md 和交付记录.md，然后总结当前状态、风险和下一步建议。`;
+    const checks = workspace.healthChecks?.length
+      ? workspace.healthChecks.map((check) => `- [${healthStatusLabel(check.status)}] ${check.label}: ${check.detail}`).join("\n")
+      : "- 暂无就绪检查数据，请先扫描工作区。";
+    const actions = workspaceSessionActions(workspace)
+      .map((sessionAction) => `- ${sessionPriorityLabel(sessionAction.priority)} ${sessionAction.label}: ${sessionAction.detail}`)
+      .join("\n");
+    return `继续工作区：${workspace.folder}\n需求：${workspace.name}\n目标分支：${workspace.targetBranch}\n涉及服务：${workspace.confirmedServices.join(", ") || "待确认"}\n\n请先读取该工作区的 AGENTS.md、STATUS.md、services.md、branches.md、tasks.md 和交付记录.md，然后总结当前状态、风险和下一步建议。\n\n当前就绪检查：\n${checks}\n\n建议会话动作：\n${actions}`;
   }
   if (action === "git") {
     return `检查工作区 ${workspace.folder} 的所有相关服务 git 状态。\n请重点检查 workspaces/${workspace.folder}/repos 下的 worktree 是否存在、分支是否匹配、是否有未提交改动，并给出处理建议。`;
@@ -603,6 +635,7 @@ function WorkspaceCard({
   onCopyInstruction,
   onCopyRiskInstruction,
   onCopyAndOpenCodex,
+  onRunSessionAction,
   onOpenDocument,
   onOpenDrawer
 }: {
@@ -615,6 +648,7 @@ function WorkspaceCard({
   onCopyInstruction: (action: "continue" | "git" | "delivery" | "risk" | "worktree") => void;
   onCopyRiskInstruction: (risk: string) => void;
   onCopyAndOpenCodex: (action: "continue" | "git" | "delivery" | "risk") => void;
+  onRunSessionAction: (action: WorkspaceSessionAction) => void;
   onOpenDocument: (title: string, path: string) => void;
   onOpenDrawer: () => void;
 }) {
@@ -624,6 +658,9 @@ function WorkspaceCard({
   const serviceStatus = workspace.confirmedServices.length ? `${workspace.confirmedServices.length} 个已确认` : "待确认";
   const latestActivity = workspace.activities?.[0];
   const readinessIssues = (workspace.healthChecks ?? []).filter((check) => check.status !== "pass");
+  const sessionActions = workspaceSessionActions(workspace);
+  const sessionBlockers = sessionActions.filter((action) => action.status === "blocked").length;
+  const primarySessionAction = sessionActions[0];
 
   return (
     <Card className={cn("overflow-hidden transition-colors hover:border-neutral-300", active && "border-blue-300")}>
@@ -670,6 +707,27 @@ function WorkspaceCard({
                   <span className="min-w-0 truncate text-neutral-600">{check.label}: {check.detail}</span>
                 </div>
               ))}
+            </div>
+          </div>
+        ) : null}
+
+        {primarySessionAction ? (
+          <div className="rounded-md border border-blue-100 bg-blue-50/60 px-3 py-2">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-xs font-medium text-neutral-900">
+                <Sparkles className="h-3.5 w-3.5 text-blue-600" />
+                会话准备 / Session start
+              </div>
+              <span className="mono text-[11px] text-neutral-500">{sessionBlockers ? `${sessionBlockers} blockers` : "ready"}</span>
+            </div>
+            <div className="grid gap-2 md:grid-cols-[1fr_auto] md:items-center">
+              <div className="min-w-0">
+                <div className="truncate text-xs font-medium text-neutral-800">{primarySessionAction.label}</div>
+                <div className="mt-1 truncate text-xs text-neutral-500">{primarySessionAction.detail}</div>
+              </div>
+              <button className="rounded-md border border-blue-200 bg-white px-2.5 py-1.5 text-xs text-blue-700 hover:bg-blue-50" onClick={() => onRunSessionAction(primarySessionAction)}>
+                {primarySessionAction.id === "start-codex-session" ? "启动" : "复制动作"}
+              </button>
             </div>
           </div>
         ) : null}
@@ -1111,16 +1169,14 @@ function RightRail({ current, visible }: { current?: Workspace; visible: Workspa
 function WorkspaceDrawer({
   workspace,
   onClose,
-  onCopyInstruction,
   onCopyRiskInstruction,
-  onCopyAndOpenCodex,
+  onRunSessionAction,
   onOpenDocument
 }: {
   workspace?: Workspace;
   onClose: () => void;
-  onCopyInstruction: (workspace: Workspace, action: "continue" | "git" | "delivery" | "risk" | "worktree") => void;
   onCopyRiskInstruction: (workspace: Workspace, risk: string) => void;
-  onCopyAndOpenCodex: (workspace: Workspace, action: "continue" | "git" | "delivery" | "risk") => void;
+  onRunSessionAction: (workspace: Workspace, action: WorkspaceSessionAction) => void;
   onOpenDocument: (title: string, path: string) => void;
 }) {
   if (!workspace) return null;
@@ -1128,6 +1184,7 @@ function WorkspaceDrawer({
   const missing = workspace.gitRows.filter((row) => !row.worktree.exists).length;
   const dirty = workspace.gitRows.filter((row) => row.worktree.dirty).length;
   const branchMismatches = branchAlignmentRows(workspace);
+  const sessionActions = workspaceSessionActions(workspace);
 
   return (
     <div className="fixed inset-0 bg-neutral-950/10" style={{ zIndex: 1000 }} onMouseDown={onClose}>
@@ -1207,25 +1264,37 @@ function WorkspaceDrawer({
 
           <section className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
             <div className="mb-3 flex items-center gap-2 text-sm font-medium text-neutral-900">
-              <ListChecks className="h-4 w-4 text-blue-600" />
-              下一步操作 / Next actions
+              <Sparkles className="h-4 w-4 text-blue-600" />
+              会话启动 / Session actions
             </div>
             <div className="grid gap-2">
-              <button className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-50" onClick={() => onCopyInstruction(workspace, "continue")}>
-                复制“继续这个工作区”指令
-              </button>
-              <button className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-left text-sm text-blue-700 hover:bg-blue-100" onClick={() => onCopyAndOpenCodex(workspace, "continue")}>
-                复制“继续工作区”并打开 Codex
-              </button>
-              <button className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-50" onClick={() => onCopyInstruction(workspace, "git")}>
-                复制“检查服务 Git 状态”指令
-              </button>
-              <button className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-50" onClick={() => onCopyInstruction(workspace, "delivery")}>
-                复制“更新交付记录”指令
-              </button>
-              <button className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-50" onClick={() => onCopyInstruction(workspace, "worktree")}>
-                复制 worktree 创建命令
-              </button>
+              {sessionActions.map((action) => {
+                const target = workspace.links[action.documentKey];
+                return (
+                  <div key={action.id} className="rounded-md border border-neutral-200 bg-white px-3 py-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-medium text-neutral-950">{action.label}</span>
+                          <span className={cn("mono rounded border px-1.5 py-0.5 text-[10px]", sessionActionTone(action.status))}>{sessionStatusLabel(action.status)}</span>
+                          <span className="mono rounded border border-neutral-200 bg-neutral-50 px-1.5 py-0.5 text-[10px] text-neutral-500">{sessionPriorityLabel(action.priority)}</span>
+                        </div>
+                        <div className="mt-1 text-xs text-neutral-500">{action.detail}</div>
+                      </div>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs text-blue-700 hover:bg-blue-100" onClick={() => onRunSessionAction(workspace, action)}>
+                        {action.id === "start-codex-session" ? "复制并打开 Codex" : action.instructionType === "worktree" ? "复制命令" : "复制处理指令"}
+                      </button>
+                      {target && (
+                        <button className="rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50" onClick={() => onOpenDocument(action.label, target)}>
+                          打开资料
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </section>
 
@@ -2395,6 +2464,19 @@ export function App() {
     showToast(`已复制 ${workspace.name} 的指令并打开 Codex`);
   };
 
+  const runSessionAction = async (workspace: Workspace, action: WorkspaceSessionAction) => {
+    const type = instructionType(action);
+    if (action.id === "start-codex-session") {
+      await copyAndOpenCodex(workspace, "continue");
+      return;
+    }
+    if (type === "worktree") {
+      await copyCommand(workspace);
+      return;
+    }
+    await copyInstruction(workspace, type);
+  };
+
   const saveSettings = () => {
     window.localStorage.setItem(settingsStorageKey, JSON.stringify(settings, null, 2));
     window.localStorage.setItem(onboardingStorageKey, "true");
@@ -2559,6 +2641,7 @@ export function App() {
             detail: `Nexus App · Created workspace ${input.name}`
           }
         ],
+        sessionActions: [],
         healthChecks: [
           {
             id: "service-scope",
@@ -2694,6 +2777,7 @@ export function App() {
                 onCopyInstruction={(action) => copyInstruction(workspace, action)}
                 onCopyRiskInstruction={(risk) => copyRiskInstruction(workspace, risk)}
                 onCopyAndOpenCodex={(action) => copyAndOpenCodex(workspace, action)}
+                onRunSessionAction={(action) => runSessionAction(workspace, action)}
                 onOpenDocument={openDocument}
                 onOpenDrawer={() => {
                   setActive(workspace.folder);
@@ -2755,9 +2839,8 @@ export function App() {
       <WorkspaceDrawer
         workspace={drawerWorkspace}
         onClose={() => setDrawerFolder("")}
-        onCopyInstruction={copyInstruction}
         onCopyRiskInstruction={copyRiskInstruction}
-        onCopyAndOpenCodex={copyAndOpenCodex}
+        onRunSessionAction={runSessionAction}
         onOpenDocument={openDocument}
       />
       <DocumentViewer document={document} onClose={() => setDocument(undefined)} onOpenExternal={openConfiguredPath} />

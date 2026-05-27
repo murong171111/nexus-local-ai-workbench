@@ -326,6 +326,10 @@ mod tests {
             value["data"]["workspaces"][0]["healthChecks"][0]["id"],
             "service-scope"
         );
+        assert_eq!(
+            value["data"]["workspaces"][0]["sessionActions"][0]["id"],
+            "create-worktrees"
+        );
 
         fs::remove_dir_all(root).unwrap();
     }
