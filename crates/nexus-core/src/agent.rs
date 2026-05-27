@@ -51,7 +51,7 @@ pub struct AgentEventHandoffPromptResponse {
     pub prompt: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentEventTaskTarget {
     pub label: String,
@@ -59,9 +59,10 @@ pub struct AgentEventTaskTarget {
     pub kind: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentEventTaskDraftResponse {
+    pub source_event_id: String,
     pub title: String,
     pub category: String,
     pub priority: String,
@@ -222,6 +223,7 @@ pub fn agent_event_task_draft(event: &AgentEvent) -> AgentEventTaskDraftResponse
     let title = format!("{}: {}", event_task_verb(&category), event.title.trim());
     let prompt = agent_event_handoff_prompt(event).prompt;
     AgentEventTaskDraftResponse {
+        source_event_id: event.id.clone(),
         title,
         category,
         priority,
@@ -547,6 +549,7 @@ not-json
         };
 
         let draft = agent_event_task_draft(&event);
+        assert_eq!(draft.source_event_id, "agent-1");
         assert_eq!(draft.category, "approval");
         assert_eq!(draft.priority, "medium");
         assert_eq!(draft.status, "draft");

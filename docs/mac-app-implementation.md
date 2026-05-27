@@ -53,6 +53,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added safe native agent event actions for selecting matching workspaces, opening local paths and links, and copying Codex continuation context.
 - Added shared Rust Core, FFI, and Swift bridge generation for Codex handoff prompts from agent events.
 - Added shared Rust Core, FFI, and native SwiftUI task drafts derived from agent events, including category, priority, prompt, and related targets.
+- Added confirmed Rust Core, FFI, and native SwiftUI writeback from agent task drafts into workspace `tasks.md`, with audit logging.
 - Added a fail-open hook helper script that local agents can call to append events into Nexus before a local socket server is available.
 - Added an explicit local-write confirmation checkbox to the Tauri create-workspace flow.
 - Added frontend desktop bridge in `src/desktop.ts`.
