@@ -46,6 +46,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added native selected-result context previews and a reusable compact activity timeline for workspace details.
 - Added native search scope controls for workspace, state, workflow, SQL, and document search modes.
 - Added locally persisted pinned workspaces in the native SwiftUI shell, including card-level pin actions and a sidebar pinned section.
+- Added actionable native session rows for document follow-ups and confirmed worktree setup, including a local-write confirmation sheet and created/skipped/failed result summary.
 - Added an explicit local-write confirmation checkbox to the Tauri create-workspace flow.
 - Added frontend desktop bridge in `src/desktop.ts`.
 - Switched the frontend bridge to the official `@tauri-apps/api/core` dynamic invoke API.

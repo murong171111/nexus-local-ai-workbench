@@ -145,6 +145,8 @@ struct ServiceStatus: Identifiable, Hashable {
     let branch: String
     let worktree: String
     let gitSummary: String
+    let worktreeExists: Bool
+    let sourceExists: Bool
 }
 
 struct ActivityEvent: Identifiable, Hashable {
@@ -322,7 +324,9 @@ struct WorkspaceSummary: Identifiable, Hashable {
                 name: row.service,
                 branch: row.worktree.branch,
                 worktree: row.worktree.summary,
-                gitSummary: row.source.summary
+                gitSummary: row.source.summary,
+                worktreeExists: row.worktree.exists,
+                sourceExists: row.source.exists
             )
         }
         let risks = snapshot.risks.map { risk in
@@ -394,9 +398,9 @@ struct WorkspaceSummary: Identifiable, Hashable {
             worktreeState: "3 services pending review",
             documentLinks: ["handoff": "~/ks_project/workspaces/2026-05-25-yibao-pay-log/handoff.md"],
             services: [
-                ServiceStatus(name: "order", branch: "feature/yibao-pay-log", worktree: "ready", gitSummary: "clean"),
-                ServiceStatus(name: "store-cashier", branch: "feature/yibao-pay-log", worktree: "ready", gitSummary: "dirty"),
-                ServiceStatus(name: "commodity", branch: "master", worktree: "missing", gitSummary: "source clean")
+                ServiceStatus(name: "order", branch: "feature/yibao-pay-log", worktree: "ready", gitSummary: "clean", worktreeExists: true, sourceExists: true),
+                ServiceStatus(name: "store-cashier", branch: "feature/yibao-pay-log", worktree: "ready", gitSummary: "dirty", worktreeExists: true, sourceExists: true),
+                ServiceStatus(name: "commodity", branch: "master", worktree: "missing", gitSummary: "source clean", worktreeExists: false, sourceExists: true)
             ],
             activities: [
                 ActivityEvent(time: "09:42", title: "交付记录待补充", detail: "新增 pay_log 回填逻辑后需要补齐 SQL 与验证说明"),
@@ -427,8 +431,8 @@ struct WorkspaceSummary: Identifiable, Hashable {
             worktreeState: "All selected services ready",
             documentLinks: ["handoff": "~/ks_project/workspaces/2026-05-25-多价格开发/handoff.md"],
             services: [
-                ServiceStatus(name: "store", branch: "feature/pricing-snapshot", worktree: "ready", gitSummary: "clean"),
-                ServiceStatus(name: "order", branch: "feature/pricing-snapshot", worktree: "ready", gitSummary: "clean")
+                ServiceStatus(name: "store", branch: "feature/pricing-snapshot", worktree: "ready", gitSummary: "clean", worktreeExists: true, sourceExists: true),
+                ServiceStatus(name: "order", branch: "feature/pricing-snapshot", worktree: "ready", gitSummary: "clean", worktreeExists: true, sourceExists: true)
             ],
             activities: [
                 ActivityEvent(time: "08:40", title: "Workspace created", detail: "Standard Markdown skeleton generated"),

@@ -16,11 +16,14 @@ final class AppState: ObservableObject {
     @Published var isLoading = false
     @Published var isDocumentLoading = false
     @Published var isCreatingWorkspace = false
+    @Published var isSettingUpWorktrees = false
     @Published var lastError: String?
     @Published var bridgeMode: String
     @Published var documentPreview: DocumentSnapshot?
     @Published var widgetSnapshot: WidgetSnapshot?
     @Published var lastCreatedWorkspace: CreateWorkspaceResponse?
+    @Published var pendingWorktreeSetupWorkspace: WorkspaceSummary?
+    @Published var lastWorktreeSetupResponse: SetupWorktreesResponse?
     @Published var searchResults: [SearchResult] = []
     @Published var selectedSearchResultIndex = 0
     @Published var isSearching = false
@@ -374,6 +377,61 @@ final class AppState: ObservableObject {
         }
     }
 
+    func presentWorktreeSetup(for workspace: WorkspaceSummary) {
+        lastError = nil
+        lastWorktreeSetupResponse = nil
+        pendingWorktreeSetupWorkspace = workspace
+    }
+
+    func missingWorktreeServices(in workspace: WorkspaceSummary) -> [String] {
+        workspace.services
+            .filter { !$0.worktreeExists }
+            .map(\.name)
+    }
+
+    func canSetupWorktrees(in workspace: WorkspaceSummary) -> Bool {
+        !missingWorktreeServices(in: workspace).isEmpty && Self.hasConfirmedTargetBranch(workspace.branch)
+    }
+
+    func setupMissingWorktrees(for workspace: WorkspaceSummary, confirmed: Bool) async {
+        lastError = nil
+        lastWorktreeSetupResponse = nil
+
+        let missingServices = missingWorktreeServices(in: workspace)
+        guard !missingServices.isEmpty else {
+            lastError = "当前工作区没有缺失的 worktree。"
+            return
+        }
+
+        guard Self.hasConfirmedTargetBranch(workspace.branch) else {
+            lastError = "目标分支仍未确认，不能创建 worktree。"
+            return
+        }
+
+        isSettingUpWorktrees = true
+        defer {
+            isSettingUpWorktrees = false
+        }
+
+        do {
+            let response = try await bridge.setupWorktrees(
+                request: SetupWorktreesRequest(
+                    workspacePath: workspace.path,
+                    sourceReposRoot: sourceReposRoot,
+                    services: missingServices,
+                    targetBranch: workspace.branch,
+                    confirmed: confirmed,
+                    auditRoot: auditRootPath,
+                    actor: "Nexus Native"
+                )
+            )
+            lastWorktreeSetupResponse = response
+            await refreshFromBridge()
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
     static func preview() -> AppState {
         AppState(
             workspaces: WorkspaceSummary.previewData,
@@ -488,6 +546,13 @@ final class AppState: ObservableObject {
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd HH:mm"
         return formatter.string(from: Date())
+    }
+
+    private static func hasConfirmedTargetBranch(_ branch: String) -> Bool {
+        let normalizedBranch = branch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalizedBranch.isEmpty else { return false }
+        let pendingMarkers = ["待确认", "未确认", "pending", "tbd", "todo"]
+        return !pendingMarkers.contains { normalizedBranch.contains($0) }
     }
 }
 
