@@ -6,6 +6,8 @@ The accepted medium-term direction is documented in `docs/adr/0001-native-swiftu
 
 The current Tauri app remains the working preview app until the native Mac shell reaches core workflow parity.
 
+The native shell scaffold currently lives in `native/Nexus` as a Swift Package. It validates the long-lived SwiftUI/AppKit direction without changing the preview app distribution path.
+
 ## Target Native Architecture
 
 - Native shell: SwiftUI with AppKit adapters for Mac-specific integration.

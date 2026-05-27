@@ -55,6 +55,8 @@
 
 ## Phase 2: Native Mac Shell Scaffold
 
+**Status:** Started. A Swift Package based SwiftUI/AppKit shell now lives under `native/Nexus` and builds independently from the Tauri preview app.
+
 **Goal:** Add the native app entry point without replacing the current Tauri app.
 
 **Files:**

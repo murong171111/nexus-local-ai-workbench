@@ -39,5 +39,8 @@ jobs:
       - name: Type-check widget source
         run: npm run widget:typecheck
 
+      - name: Build native Mac shell
+        run: npm run native:build
+
       - name: Check Tauri crate
         run: cargo check --manifest-path src-tauri/Cargo.toml
