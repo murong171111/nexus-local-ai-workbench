@@ -470,7 +470,11 @@ mod tests {
             "# Services\n\n## 已确认相关\n\n| 服务 | 源仓库 | 说明 |\n| --- | --- | --- |\n| order | ~/source-repos/order | core |\n",
         )
         .unwrap();
-        fs::write(workspace.join("tasks.md"), "# Tasks\n").unwrap();
+        fs::write(
+            workspace.join("tasks.md"),
+            "# Tasks\n\n| 任务 | 状态 | 说明 |\n| --- | --- | --- |\n| 核对任务中心 | 进行中 | priority=high event=bridge-task |\n",
+        )
+        .unwrap();
         fs::write(workspace.join("decisions.md"), "# Decisions\n").unwrap();
         fs::write(workspace.join("交付记录.md"), "# 交付记录\n\n暂无。\n").unwrap();
         fs::write(
@@ -508,6 +512,18 @@ mod tests {
         assert_eq!(
             value["data"]["workspaces"][0]["sessionActions"][0]["id"],
             "create-worktrees"
+        );
+        assert_eq!(
+            value["data"]["workspaces"][0]["tasks"][0]["title"],
+            "核对任务中心"
+        );
+        assert_eq!(
+            value["data"]["workspaces"][0]["tasks"][0]["priority"],
+            "high"
+        );
+        assert_eq!(
+            value["data"]["workspaces"][0]["tasks"][0]["sourceEventId"],
+            "bridge-task"
         );
 
         fs::remove_dir_all(root).unwrap();

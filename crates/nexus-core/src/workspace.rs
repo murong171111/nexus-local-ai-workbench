@@ -37,6 +37,7 @@ pub struct WorkspaceData {
     pub updated: String,
     pub links: BTreeMap<String, String>,
     pub worktree_command: String,
+    pub tasks: Vec<WorkspaceTask>,
     pub activities: Vec<WorkspaceActivity>,
     pub health_checks: Vec<WorkspaceHealthCheck>,
     pub session_actions: Vec<WorkspaceSessionAction>,
@@ -48,6 +49,18 @@ pub struct TaskCounts {
     pub doing: usize,
     pub todo: usize,
     pub blocked: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceTask {
+    pub id: String,
+    pub title: String,
+    pub status: String,
+    pub detail: String,
+    pub priority: String,
+    pub source: String,
+    pub source_event_id: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -629,6 +642,7 @@ fn collect_workspace(
     let task_rows = table_rows(&tasks_md);
     let decision_rows = table_rows(&decisions_md);
     let task_counts = count_tasks(&task_rows);
+    let tasks = workspace_tasks_from_rows(&folder_from_path(path), &task_rows);
 
     let mut git_rows = Vec::new();
     for service in &confirmed_services {
@@ -751,11 +765,7 @@ fn collect_workspace(
     );
 
     let risk_count = risks.len();
-    let folder = path
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .to_string();
+    let folder = folder_from_path(path);
     let worktree_command =
         worktree_commands(path, &missing_worktrees, &target_branch, &source_root);
     let activities = workspace_activities(
@@ -804,6 +814,7 @@ fn collect_workspace(
         updated: generated_date(),
         links,
         worktree_command,
+        tasks,
         activities,
         health_checks,
         session_actions,
@@ -1190,6 +1201,13 @@ fn read_text_lossy(path: &Path) -> String {
     fs::read_to_string(path).unwrap_or_default()
 }
 
+fn folder_from_path(path: &Path) -> String {
+    path.file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string()
+}
+
 fn extract_bullet_value(text: &str, label: &str) -> Option<String> {
     for line in text.lines() {
         let trimmed = line.trim();
@@ -1263,6 +1281,71 @@ fn count_tasks(rows: &[Vec<String>]) -> TaskCounts {
         }
     }
     counts
+}
+
+fn workspace_tasks_from_rows(folder: &str, rows: &[Vec<String>]) -> Vec<WorkspaceTask> {
+    rows.iter()
+        .enumerate()
+        .filter_map(|(index, row)| {
+            let title = row.first()?.trim();
+            if title.is_empty() {
+                return None;
+            }
+            let status = row.get(1).map(|value| value.trim()).unwrap_or("待办");
+            let detail = row.get(2).map(|value| value.trim()).unwrap_or("");
+            let source_event_id = marker_value(detail, "event=");
+            Some(WorkspaceTask {
+                id: source_event_id
+                    .as_ref()
+                    .map(|event_id| format!("{folder}:{event_id}"))
+                    .unwrap_or_else(|| format!("{folder}:task-{index}")),
+                title: title.to_string(),
+                status: status.to_string(),
+                detail: detail.to_string(),
+                priority: task_priority(status, detail),
+                source: if source_event_id.is_some() {
+                    "agent".to_string()
+                } else {
+                    "workspace".to_string()
+                },
+                source_event_id,
+            })
+        })
+        .collect()
+}
+
+fn task_priority(status: &str, detail: &str) -> String {
+    if let Some(priority) = marker_value(detail, "priority=") {
+        let normalized = priority.to_lowercase();
+        if matches!(normalized.as_str(), "high" | "medium" | "normal" | "low") {
+            return normalized;
+        }
+    }
+
+    let joined = format!("{status} {detail}").to_lowercase();
+    if joined.contains("阻塞") || joined.contains("blocked") {
+        "high".to_string()
+    } else if joined.contains("进行中") || joined.contains("doing") {
+        "medium".to_string()
+    } else {
+        "normal".to_string()
+    }
+}
+
+fn marker_value(text: &str, marker: &str) -> Option<String> {
+    let start = text.find(marker)? + marker.len();
+    let rest = &text[start..];
+    let end = rest
+        .find(|character: char| {
+            character.is_whitespace() || matches!(character, '·' | ';' | ',' | '|')
+        })
+        .unwrap_or(rest.len());
+    let value = rest[..end].trim();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value.to_string())
+    }
 }
 
 fn delivery_needs_update(text: &str) -> bool {
@@ -1542,6 +1625,10 @@ mod tests {
         assert_eq!(item.task_counts.done, 1);
         assert_eq!(item.task_counts.doing, 1);
         assert_eq!(item.task_counts.todo, 1);
+        assert_eq!(item.tasks.len(), 3);
+        assert_eq!(item.tasks[0].title, "确认需求范围");
+        assert_eq!(item.tasks[1].priority, "medium");
+        assert_eq!(item.tasks[2].id, "2026-01-01-demo:task-2");
         assert!(item
             .risks
             .iter()
@@ -1721,6 +1808,15 @@ mod tests {
         assert!(duplicate.already_exists);
         let tasks = fs::read_to_string(workspace.join("tasks.md")).unwrap();
         assert_eq!(tasks.matches("event=agent-1").count(), 1);
+
+        let dashboard =
+            scan_workspaces(&root.to_string_lossy(), "~/source-repos", "~/docs").unwrap();
+        let workspace_tasks = &dashboard.workspaces[0].tasks;
+        assert!(workspace_tasks.iter().any(|task| task.title
+            == "Review permission request: Git push"
+            && task.priority == "medium"
+            && task.source == "agent"
+            && task.source_event_id.as_deref() == Some("agent-1")));
 
         fs::remove_dir_all(root).unwrap();
     }

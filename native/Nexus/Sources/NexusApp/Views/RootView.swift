@@ -525,6 +525,29 @@ private struct SidebarView: View {
                 }
             }
 
+            if !appState.taskCenterItems.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("任务中心 / Tasks")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text("\(appState.taskCenterItems.count)")
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(NexusPalette.accent)
+                    }
+
+                    ForEach(Array(appState.taskCenterItems.prefix(4))) { item in
+                        Button {
+                            appState.selectTaskCenterItem(item)
+                        } label: {
+                            TaskCenterSidebarRow(item: item)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
             if let snapshot = appState.widgetSnapshot {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("小组件摘要 / Widget")
@@ -982,6 +1005,7 @@ private struct WorkspaceCard: View {
 
             HStack(spacing: 16) {
                 Metric(label: "服务 / Services", value: "\(workspace.services.count)")
+                Metric(label: "任务 / Tasks", value: "\(workspace.tasks.filter { !$0.isDone }.count) open")
                 Metric(label: "Worktree", value: workspace.worktreeState)
                 Metric(label: "最近活动 / Activity", value: workspace.activities.first?.title ?? "No recent activity")
             }
@@ -1002,7 +1026,10 @@ private struct InspectorView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             if let workspace = appState.selectedWorkspace {
-                WorkspaceDetailView(workspace: workspace)
+                ScrollView {
+                    WorkspaceDetailView(workspace: workspace)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             } else {
                 Text("选择一个工作区")
                     .foregroundStyle(.secondary)
@@ -1047,6 +1074,14 @@ private struct WorkspaceDetailView: View {
                             .foregroundStyle(.secondary)
                     }
                     .padding(.vertical, 4)
+                }
+            }
+
+            if !workspace.tasks.isEmpty {
+                SectionBlock(title: "本地任务 / Tasks") {
+                    ForEach(Array(workspace.tasks.prefix(6))) { task in
+                        WorkspaceTaskRow(task: task)
+                    }
                 }
             }
 
@@ -1288,6 +1323,133 @@ private struct HealthCheckRow: View {
             NexusPalette.warning
         default:
             NexusPalette.danger
+        }
+    }
+}
+
+private struct TaskCenterSidebarRow: View {
+    let item: TaskCenterItem
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 6) {
+                Image(systemName: item.task.source == "agent" ? "sparkles" : "checklist")
+                    .font(.caption)
+                    .foregroundStyle(color)
+                Text(item.task.priorityLabel)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(color)
+                Text(item.task.status)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            Text(item.task.title)
+                .font(.caption.weight(.semibold))
+                .lineLimit(2)
+            Text(item.workspaceName)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(NexusPalette.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var color: Color {
+        if item.task.isBlocked {
+            return NexusPalette.danger
+        }
+        switch item.task.priority.lowercased() {
+        case "high":
+            return NexusPalette.warning
+        case "medium":
+            return NexusPalette.accent
+        default:
+            return Color.gray
+        }
+    }
+}
+
+private struct WorkspaceTaskRow: View {
+    let task: WorkspaceTask
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: task.source == "agent" ? "sparkles" : statusSymbol)
+                .foregroundStyle(color)
+                .frame(width: 15)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(task.title)
+                        .font(.subheadline.weight(.medium))
+                        .lineLimit(1)
+                    Text(task.source == "agent" ? "Agent" : "Workspace")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+                if !task.detail.isEmpty {
+                    Text(task.detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                if let sourceEventID = task.sourceEventID {
+                    Text(sourceEventID)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 4) {
+                Text(task.priorityLabel)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(color)
+                Text(statusLabel)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var statusLabel: String {
+        if task.isDone {
+            return "done"
+        }
+        if task.isBlocked {
+            return "block"
+        }
+        let normalized = task.status.lowercased()
+        if normalized.contains("进行中") || normalized.contains("doing") {
+            return "doing"
+        }
+        return "todo"
+    }
+
+    private var statusSymbol: String {
+        if task.isDone {
+            return "checkmark.circle"
+        }
+        if task.isBlocked {
+            return "pause.circle"
+        }
+        return "circle.dashed"
+    }
+
+    private var color: Color {
+        if task.isBlocked {
+            return NexusPalette.danger
+        }
+        switch task.priority.lowercased() {
+        case "high":
+            return NexusPalette.warning
+        case "medium":
+            return NexusPalette.accent
+        default:
+            return Color.gray
         }
     }
 }

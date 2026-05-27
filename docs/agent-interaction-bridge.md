@@ -11,6 +11,7 @@ This first slice is intentionally small: it defines a durable local event format
 - The Swift/Rust bridge can append agent events and read the newest events.
 - Rust Core exposes a shared Codex handoff prompt for agent events through the FFI and Swift bridge.
 - Rust Core also derives structured task drafts from agent events so shells can show a consistent next-work item.
+- Rust Core scans workspace `tasks.md` rows into structured local tasks so task writebacks appear in the native Task Center.
 - The native SwiftUI shell reads recent events from Application Support and shows them in the sidebar.
 - Sidebar events can be opened to inspect full event context, metadata, and copy the raw JSON payload.
 - Event details expose safe local actions for matching workspaces, local file paths, web links, and Codex context copy.
@@ -53,7 +54,7 @@ SwiftUI uses this bridge-backed prompt when Rust Core is loaded, and falls back 
 
 ## Task Draft
 
-Nexus can derive a structured task draft from the same event. This is not persisted as a workspace task yet; it is a copyable local draft for the next step in the agent workflow.
+Nexus can derive a structured task draft from the same event. The native shell can show it as a reviewable draft and, after confirmation, persist it into the related workspace `tasks.md`.
 
 The draft contains:
 
@@ -80,6 +81,18 @@ Writeback rules:
 - The source agent event ID is embedded in the row detail so repeated writes of the same event become no-ops.
 - Command targets remain text in the row detail. Nexus still does not execute them.
 - When the FFI bridge receives an audit root, successful writes append an `agent_task_draft.appended` audit event.
+
+## Local Task Center
+
+Workspace task rows are now scanned as structured task snapshots:
+
+- The first table column becomes the task title.
+- The second table column becomes the task status.
+- The third table column remains the task detail.
+- `priority=high|medium|normal|low` in the detail column controls priority when present.
+- `event=<agent-event-id>` marks the task as agent-sourced and lets Nexus deduplicate writebacks.
+
+The native SwiftUI sidebar shows open tasks across all workspaces in a local Task Center. Selecting a task moves focus to the owning workspace, and the workspace detail panel shows its task rows alongside readiness, session actions, risk, activity, and documents.
 
 ## Storage Boundary
 

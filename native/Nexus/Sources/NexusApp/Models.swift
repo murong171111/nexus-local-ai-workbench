@@ -180,6 +180,67 @@ struct WorkspaceSessionAction: Identifiable, Hashable {
     let documentKey: String
 }
 
+struct WorkspaceTask: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let status: String
+    let detail: String
+    let priority: String
+    let source: String
+    let sourceEventID: String?
+
+    var isDone: Bool {
+        let normalized = status.lowercased()
+        return normalized.contains("完成")
+            || normalized.contains("done")
+            || normalized.contains("closed")
+            || normalized.contains("resolved")
+    }
+
+    var isBlocked: Bool {
+        let normalized = "\(status) \(detail)".lowercased()
+        return normalized.contains("阻塞") || normalized.contains("blocked")
+    }
+
+    var priorityRank: Int {
+        if isBlocked { return 0 }
+        switch priority.lowercased() {
+        case "high":
+            return 0
+        case "medium":
+            return 1
+        case "low":
+            return 3
+        default:
+            return 2
+        }
+    }
+
+    var priorityLabel: String {
+        switch priority.lowercased() {
+        case "high":
+            "P0"
+        case "medium":
+            "P1"
+        case "low":
+            "P3"
+        default:
+            "P2"
+        }
+    }
+}
+
+struct TaskCenterItem: Identifiable, Hashable {
+    let workspaceID: WorkspaceSummary.ID
+    let workspaceName: String
+    let workspaceFolder: String
+    let task: WorkspaceTask
+
+    var id: String {
+        "\(workspaceID):\(task.id)"
+    }
+}
+
 struct SearchResultGroup: Identifiable {
     let id: String
     let label: String
@@ -279,6 +340,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
     let risks: [RiskAlert]
     let healthChecks: [WorkspaceHealthCheck]
     let sessionActions: [WorkspaceSessionAction]
+    let tasks: [WorkspaceTask]
 
     var serviceSummary: String {
         services.map(\.name).joined(separator: ", ")
@@ -299,7 +361,8 @@ struct WorkspaceSummary: Identifiable, Hashable {
         activities: [ActivityEvent],
         risks: [RiskAlert],
         healthChecks: [WorkspaceHealthCheck] = [],
-        sessionActions: [WorkspaceSessionAction] = []
+        sessionActions: [WorkspaceSessionAction] = [],
+        tasks: [WorkspaceTask] = []
     ) {
         self.id = id
         self.name = name
@@ -316,6 +379,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
         self.risks = risks
         self.healthChecks = healthChecks
         self.sessionActions = sessionActions
+        self.tasks = tasks
     }
 
     init(snapshot: WorkspaceSnapshot) {
@@ -365,6 +429,17 @@ struct WorkspaceSummary: Identifiable, Hashable {
                 documentKey: action.documentKey
             )
         }
+        let tasks = (snapshot.tasks ?? []).map { task in
+            WorkspaceTask(
+                id: task.id,
+                title: task.title,
+                status: task.status,
+                detail: task.detail,
+                priority: task.priority,
+                source: task.source,
+                sourceEventID: task.sourceEventId
+            )
+        }
 
         self.init(
             id: snapshot.folder,
@@ -381,7 +456,8 @@ struct WorkspaceSummary: Identifiable, Hashable {
             activities: activities,
             risks: risks,
             healthChecks: healthChecks,
-            sessionActions: sessionActions
+            sessionActions: sessionActions,
+            tasks: tasks
         )
     }
 
@@ -417,6 +493,11 @@ struct WorkspaceSummary: Identifiable, Hashable {
             sessionActions: [
                 WorkspaceSessionAction(id: "create-worktrees", label: "创建缺失 worktree / Create worktrees", detail: "缺少 worktree: commodity", priority: "high", status: "recommended", instructionType: "worktree", documentKey: "worktreeScript"),
                 WorkspaceSessionAction(id: "start-codex-session", label: "启动 Codex 会话 / Start Codex session", detail: "复制当前工作区上下文，带着上方动作进入 Codex 继续处理。", priority: "low", status: "recommended", instructionType: "continue", documentKey: "handoff")
+            ],
+            tasks: [
+                WorkspaceTask(id: "task-pay-log-chain", title: "核对 pay_log 回填链路", status: "进行中", detail: "确认 order 与 store-cashier 的写入路径", priority: "high", source: "workspace", sourceEventID: nil),
+                WorkspaceTask(id: "task-delivery-doc", title: "补齐交付记录", status: "待办", detail: "新增 SQL 或逻辑后补齐验证说明", priority: "medium", source: "workspace", sourceEventID: nil),
+                WorkspaceTask(id: "task-agent-review", title: "Review permission request: Git push", status: "待确认", detail: "来自 Agent 事件 preview-agent-event", priority: "medium", source: "agent", sourceEventID: "preview-agent-event")
             ]
         ),
         WorkspaceSummary(
@@ -444,6 +525,9 @@ struct WorkspaceSummary: Identifiable, Hashable {
             ],
             sessionActions: [
                 WorkspaceSessionAction(id: "start-codex-session", label: "启动 Codex 会话 / Start Codex session", detail: "就绪检查已通过，可以复制完整上下文并进入开发会话。", priority: "high", status: "recommended", instructionType: "continue", documentKey: "handoff")
+            ],
+            tasks: [
+                WorkspaceTask(id: "task-snapshot-plan", title: "确认价格快照方案", status: "已完成", detail: "方案已归档到工作区文档", priority: "normal", source: "workspace", sourceEventID: nil)
             ]
         )
     ]
@@ -464,7 +548,8 @@ struct WorkspaceSummary: Identifiable, Hashable {
             activities: Array(([activity] + activities).prefix(6)),
             risks: risks,
             healthChecks: healthChecks,
-            sessionActions: sessionActions
+            sessionActions: sessionActions,
+            tasks: tasks
         )
     }
 }

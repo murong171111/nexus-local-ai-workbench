@@ -111,6 +111,30 @@ final class AppState: ObservableObject {
         return results[min(selectedSearchResultIndex, results.count - 1)]
     }
 
+    var taskCenterItems: [TaskCenterItem] {
+        workspaces
+            .flatMap { workspace in
+                workspace.tasks.map { task in
+                    TaskCenterItem(
+                        workspaceID: workspace.id,
+                        workspaceName: workspace.name,
+                        workspaceFolder: workspace.folder,
+                        task: task
+                    )
+                }
+            }
+            .filter { !$0.task.isDone }
+            .sorted { lhs, rhs in
+                if lhs.task.priorityRank != rhs.task.priorityRank {
+                    return lhs.task.priorityRank < rhs.task.priorityRank
+                }
+                if lhs.workspaceName != rhs.workspaceName {
+                    return lhs.workspaceName < rhs.workspaceName
+                }
+                return lhs.task.title < rhs.task.title
+            }
+    }
+
     var hasSearchQuery: Bool {
         !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -165,7 +189,9 @@ final class AppState: ObservableObject {
                 workspace.branch,
                 workspace.aiState,
                 workspace.serviceSummary,
-                workspace.worktreeState
+                workspace.worktreeState,
+                workspace.tasks.map(\.title).joined(separator: " "),
+                workspace.tasks.map(\.detail).joined(separator: " ")
             ]
             .joined(separator: " ")
             .lowercased()
@@ -187,6 +213,10 @@ final class AppState: ObservableObject {
 
     func select(_ workspace: WorkspaceSummary) {
         selectedWorkspaceID = workspace.id
+    }
+
+    func selectTaskCenterItem(_ item: TaskCenterItem) {
+        selectedWorkspaceID = item.workspaceID
     }
 
     func isPinned(_ workspace: WorkspaceSummary) -> Bool {
@@ -561,6 +591,8 @@ final class AppState: ObservableObject {
                 workspace.aiState,
                 workspace.serviceSummary,
                 workspace.worktreeState,
+                workspace.tasks.map(\.title).joined(separator: " "),
+                workspace.tasks.map(\.detail).joined(separator: " "),
                 workspace.risks.map(\.detail).joined(separator: " ")
             ]
             .joined(separator: " ")
