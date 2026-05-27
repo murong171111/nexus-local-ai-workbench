@@ -19,6 +19,14 @@ export type WorkspaceActivity = {
   detail: string;
 };
 
+export type WorkspaceHealthCheck = {
+  id: string;
+  label: string;
+  detail: string;
+  status: "pass" | "warning" | "fail" | string;
+  action: string;
+};
+
 export type Workspace = {
   name: string;
   folder: string;
@@ -42,6 +50,7 @@ export type Workspace = {
   links: Record<string, string>;
   worktreeCommand: string;
   activities?: WorkspaceActivity[];
+  healthChecks?: WorkspaceHealthCheck[];
 };
 
 export type DashboardData = {

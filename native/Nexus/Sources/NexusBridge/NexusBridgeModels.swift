@@ -277,6 +277,7 @@ public struct WorkspaceSnapshot: Codable, Equatable, Sendable {
     public let links: [String: String]
     public let worktreeCommand: String
     public let activities: [WorkspaceActivitySnapshot]?
+    public let healthChecks: [WorkspaceHealthCheckSnapshot]?
 
     public init(
         name: String,
@@ -295,7 +296,8 @@ public struct WorkspaceSnapshot: Codable, Equatable, Sendable {
         updated: String,
         links: [String: String],
         worktreeCommand: String,
-        activities: [WorkspaceActivitySnapshot]? = nil
+        activities: [WorkspaceActivitySnapshot]? = nil,
+        healthChecks: [WorkspaceHealthCheckSnapshot]? = nil
     ) {
         self.name = name
         self.folder = folder
@@ -314,6 +316,23 @@ public struct WorkspaceSnapshot: Codable, Equatable, Sendable {
         self.links = links
         self.worktreeCommand = worktreeCommand
         self.activities = activities
+        self.healthChecks = healthChecks
+    }
+}
+
+public struct WorkspaceHealthCheckSnapshot: Codable, Equatable, Sendable {
+    public let id: String
+    public let label: String
+    public let detail: String
+    public let status: String
+    public let action: String
+
+    public init(id: String, label: String, detail: String, status: String, action: String) {
+        self.id = id
+        self.label = label
+        self.detail = detail
+        self.status = status
+        self.action = action
     }
 }
 
@@ -506,6 +525,22 @@ public extension DashboardSnapshot {
                             time: "preview",
                             title: "工作区已创建 / Workspace created",
                             detail: "Nexus Preview · Created preview workspace"
+                        )
+                    ],
+                    healthChecks: [
+                        WorkspaceHealthCheckSnapshot(
+                            id: "worktree-ready",
+                            label: "Worktree 就绪 / Worktree ready",
+                            detail: "缺少: commodity",
+                            status: "fail",
+                            action: "worktreeScript"
+                        ),
+                        WorkspaceHealthCheckSnapshot(
+                            id: "delivery-record",
+                            label: "交付记录 / Delivery record",
+                            detail: "交付记录仍包含待补充内容",
+                            status: "warning",
+                            action: "delivery"
                         )
                     ]
                 )

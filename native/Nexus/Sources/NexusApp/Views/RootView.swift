@@ -844,6 +844,14 @@ private struct WorkspaceDetailView: View {
                 }
             }
 
+            if !workspace.healthChecks.isEmpty {
+                SectionBlock(title: "就绪检查 / Readiness") {
+                    ForEach(workspace.healthChecks) { check in
+                        HealthCheckRow(check: check)
+                    }
+                }
+            }
+
             SectionBlock(title: "风险告警 / Risks") {
                 if workspace.risks.isEmpty {
                     Label("No active risk", systemImage: "checkmark.circle")
@@ -893,6 +901,68 @@ private struct WorkspaceDetailView: View {
             }
 
             Spacer()
+        }
+    }
+}
+
+private struct HealthCheckRow: View {
+    let check: WorkspaceHealthCheck
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: symbol)
+                .foregroundStyle(color)
+                .frame(width: 15)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(check.label)
+                    .font(.subheadline.weight(.medium))
+                    .lineLimit(1)
+                Text(check.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            Spacer()
+            Text(statusLabel)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(color)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(color.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+    }
+
+    private var statusLabel: String {
+        switch check.status {
+        case "pass":
+            "pass"
+        case "warning":
+            "warn"
+        default:
+            "block"
+        }
+    }
+
+    private var symbol: String {
+        switch check.status {
+        case "pass":
+            "checkmark.circle"
+        case "warning":
+            "exclamationmark.circle"
+        default:
+            "xmark.octagon"
+        }
+    }
+
+    private var color: Color {
+        switch check.status {
+        case "pass":
+            NexusPalette.success
+        case "warning":
+            NexusPalette.warning
+        default:
+            NexusPalette.danger
         }
     }
 }

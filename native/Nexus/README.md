@@ -15,6 +15,7 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - Pinned workspaces in the sidebar and workspace card flow, stored as local Mac preferences.
 - Workspace timelines populated from the Rust Core dashboard activity field, including local audit-log events when the bridge is available.
 - Native document opens append audit events and update the visible workspace timeline.
+- Native workspace detail shows Rust Core readiness checks for local development and delivery gates.
 - Build-only validation through Swift Package Manager.
 
 ## Build
