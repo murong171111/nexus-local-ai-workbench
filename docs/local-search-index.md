@@ -59,7 +59,8 @@ Swift/Rust FFI:
 - `nexus_rebuild_search_index_json`
 - `nexus_search_index_json`
 - The native SwiftUI shell can rebuild the same Application Support index, search it through `NexusBridge`, group results, preview workspace risk/activity context, and open matching workspaces or documents.
+- The native SwiftUI shell can narrow indexed results by workspace, service/state, workflow, SQL, or document scope. The selected scope is persisted locally as a UI preference.
 
 ## Next UI Work
 
-The Tauri preview app and native SwiftUI shell now both have grouped global search with keyboard navigation. Native search results also show compact workspace context. The next product slice should add saved/pinned search scopes and richer activity ingestion from audit logs.
+The Tauri preview app and native SwiftUI shell now both have grouped global search with keyboard navigation. Native search results also show compact workspace context, and the native shell has persisted search scopes plus pinned workspace preferences. The next product slice should promote these preferences into reusable saved filters and enrich activity ingestion from audit logs.

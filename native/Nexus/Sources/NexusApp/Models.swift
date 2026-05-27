@@ -36,6 +36,55 @@ enum WorkspaceFilter: String, CaseIterable, Identifiable {
     }
 }
 
+enum SearchScope: String, CaseIterable, Identifiable {
+    case all = "all"
+    case workspace = "workspace"
+    case state = "state"
+    case workflow = "workflow"
+    case sql = "sql"
+    case documents = "documents"
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .all:
+            "全部"
+        case .workspace:
+            "工作区"
+        case .state:
+            "状态"
+        case .workflow:
+            "任务"
+        case .sql:
+            "SQL"
+        case .documents:
+            "文档"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .all:
+            "All"
+        case .workspace:
+            "Workspace"
+        case .state:
+            "State"
+        case .workflow:
+            "Workflow"
+        case .sql:
+            "SQL"
+        case .documents:
+            "Docs"
+        }
+    }
+
+    func matches(_ result: SearchResult) -> Bool {
+        self == .all || result.groupID == rawValue
+    }
+}
+
 enum WorkspaceState: String, Hashable {
     case analyzing = "analyzing"
     case developing = "developing"

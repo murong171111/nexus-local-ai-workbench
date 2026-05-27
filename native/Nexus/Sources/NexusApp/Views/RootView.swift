@@ -127,11 +127,11 @@ private struct NativeSearchPopover: View {
     @EnvironmentObject private var appState: AppState
 
     private var groupedResults: [SearchResultGroup] {
-        groupSearchResults(appState.searchResults)
+        appState.groupedSearchResults
     }
 
     private var orderedResults: [SearchResult] {
-        groupedResults.flatMap(\.results)
+        appState.orderedSearchResults
     }
 
     var body: some View {
@@ -156,6 +156,11 @@ private struct NativeSearchPopover: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
             .background(NexusPalette.panel)
+
+            SearchScopeBar()
+                .padding(.horizontal, 10)
+                .padding(.bottom, 9)
+                .background(NexusPalette.panel)
 
             Divider()
 
@@ -243,6 +248,40 @@ private struct NativeSearchPopover: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .shadow(color: Color.black.opacity(0.14), radius: 28, x: 0, y: 18)
+    }
+}
+
+private struct SearchScopeBar: View {
+    @EnvironmentObject private var appState: AppState
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(SearchScope.allCases) { scope in
+                Button {
+                    appState.setSearchScope(scope)
+                } label: {
+                    VStack(spacing: 1) {
+                        Text(scope.label)
+                            .font(.caption.weight(.semibold))
+                        Text(scope.subtitle)
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                    .background(scope == appState.selectedSearchScope ? NexusPalette.selected : Color.clear)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .stroke(
+                                scope == appState.selectedSearchScope ? NexusPalette.accent.opacity(0.28) : NexusPalette.border,
+                                lineWidth: 1
+                            )
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+        }
     }
 }
 
@@ -472,6 +511,41 @@ private struct SidebarView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
 
+            if !appState.pinnedWorkspaces.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("置顶工作区 / Pinned")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+
+                    ForEach(appState.pinnedWorkspaces) { workspace in
+                        Button {
+                            appState.select(workspace)
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "pin.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(NexusPalette.accent)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(workspace.name)
+                                        .font(.caption.weight(.semibold))
+                                        .lineLimit(1)
+                                    Text(workspace.folder)
+                                        .font(.system(size: 10, design: .monospaced))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                                Spacer()
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .background(workspace.id == appState.selectedWorkspace?.id ? NexusPalette.selected : NexusPalette.panel)
+                            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
             VStack(alignment: .leading, spacing: 8) {
                 Text("筛选 / Filters")
                     .font(.caption.weight(.semibold))
@@ -649,8 +723,11 @@ private struct WorkspaceListView: View {
                 ForEach(appState.filteredWorkspaces) { workspace in
                     WorkspaceCard(
                         workspace: workspace,
-                        isSelected: workspace.id == appState.selectedWorkspace?.id
-                    )
+                        isSelected: workspace.id == appState.selectedWorkspace?.id,
+                        isPinned: appState.isPinned(workspace)
+                    ) {
+                        appState.togglePinned(workspace)
+                    }
                     .onTapGesture {
                         appState.select(workspace)
                     }
@@ -664,6 +741,8 @@ private struct WorkspaceListView: View {
 private struct WorkspaceCard: View {
     let workspace: WorkspaceSummary
     let isSelected: Bool
+    let isPinned: Bool
+    let togglePinned: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -676,6 +755,16 @@ private struct WorkspaceCard: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                Button(action: togglePinned) {
+                    Image(systemName: isPinned ? "pin.fill" : "pin")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(isPinned ? NexusPalette.accent : .secondary)
+                        .frame(width: 28, height: 28)
+                        .background(isPinned ? NexusPalette.selected : NexusPalette.badge)
+                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .help(isPinned ? "取消置顶 / Unpin workspace" : "置顶工作区 / Pin workspace")
                 RiskBadge(level: workspace.riskLevel)
             }
 
@@ -867,6 +956,8 @@ struct SettingsView: View {
 
             Section("Native Shell") {
                 Text("Bridge mode: \(appState.bridgeMode)")
+                Text("Search scope: \(appState.selectedSearchScope.label) / \(appState.selectedSearchScope.subtitle)")
+                Text("Pinned workspaces: \(appState.pinnedWorkspaceIDs.count)")
                 Text("Set NEXUS_CORE_LIBRARY to a local libnexus_ffi.dylib to load real workspace data through Rust Core during development.")
                     .foregroundStyle(.secondary)
             }

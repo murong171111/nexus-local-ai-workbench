@@ -39,6 +39,8 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added grouped search result sections and keyboard navigation to the Tauri preview search popover.
 - Added native SwiftUI search state and a top-bar search popover that uses the Swift/Rust local-index bridge with workspace metadata fallback.
 - Added native selected-result context previews and a reusable compact activity timeline for workspace details.
+- Added native search scope controls for workspace, state, workflow, SQL, and document search modes.
+- Added locally persisted pinned workspaces in the native SwiftUI shell, including card-level pin actions and a sidebar pinned section.
 - Added an explicit local-write confirmation checkbox to the Tauri create-workspace flow.
 - Added frontend desktop bridge in `src/desktop.ts`.
 - Switched the frontend bridge to the official `@tauri-apps/api/core` dynamic invoke API.
@@ -90,7 +92,7 @@ The local search index is stored at `~/Library/Application Support/com.ks.nexus/
 2. Keep Tauri commands as thin wrappers around Rust Core during migration.
 3. Scaffold the SwiftUI/AppKit native Mac shell.
 4. Add the Swift/Rust bridge and render real workspace data in the native shell.
-5. Add saved search scopes, pinned workspaces, and richer activity ingestion from audit logs.
+5. Expand native search scopes into reusable saved filters and add richer activity ingestion from audit logs.
 6. Package the WidgetKit extension with a full Xcode target and App Group storage.
 7. Add signing, notarization, update channels, and menu bar status after the native shell is ready.
 
