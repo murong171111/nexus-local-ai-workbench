@@ -1,7 +1,7 @@
 use crate::{
     expand_user_path, git_status, normalize_git_branch, target_branch_confirmed, GitStatus,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
@@ -56,6 +56,22 @@ pub struct GitRow {
     pub source: GitStatus,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct CreateWorkspaceRequest {
+    pub name: String,
+    pub folder: String,
+    pub workspaces_root: String,
+    pub source_repos_root: String,
+    pub services: Vec<String>,
+    pub target_branch: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct CreateWorkspaceResponse {
+    pub path: String,
+    pub folder: String,
+}
+
 pub fn scan_workspaces(
     workspaces_root: &str,
     source_repos_root: &str,
@@ -96,6 +112,148 @@ pub fn scan_workspaces(
         source_repos_root: source_repos_root.to_string(),
         docs_root: docs_root.to_string(),
         workspaces,
+    })
+}
+
+pub fn create_workspace(
+    request: CreateWorkspaceRequest,
+) -> Result<CreateWorkspaceResponse, String> {
+    let root = expand_user_path(&request.workspaces_root);
+    let workspace = root.join(&request.folder);
+    if workspace.exists() {
+        return Err(format!("workspace already exists: {}", workspace.display()));
+    }
+
+    fs::create_dir_all(workspace.join("logs")).map_err(|error| error.to_string())?;
+    fs::create_dir_all(workspace.join("sql")).map_err(|error| error.to_string())?;
+    fs::create_dir_all(workspace.join("repos")).map_err(|error| error.to_string())?;
+    fs::create_dir_all(workspace.join("scripts")).map_err(|error| error.to_string())?;
+
+    let services = normalized_services(&request.services);
+    let target_branch = if request.target_branch.trim().is_empty() {
+        "待确认"
+    } else {
+        request.target_branch.trim()
+    };
+    let today = request
+        .folder
+        .split('-')
+        .take(3)
+        .collect::<Vec<_>>()
+        .join("-");
+
+    write_file(
+        &workspace.join("AGENTS.md"),
+        &format!(
+            "# Workspace Agent Guide\n\n- 需求名称: {}\n- 工作区: {}\n- 开发目录: `repos/<service>`\n- 源仓库目录: `{}`\n\n## Rules\n\n- 代码改动优先发生在 `repos/<service>` worktree 中。\n- 每次代码、SQL、业务逻辑、接口、DTO、配置或验证变化后，检查并更新 `交付记录.md`。\n- 不直接切换源仓库分支，源仓库只作为 worktree 来源。\n",
+            request.name,
+            workspace.display(),
+            request.source_repos_root
+        ),
+    )?;
+
+    write_file(
+        &workspace.join("workspace.md"),
+        &format!(
+            "# {}\n\n- 需求名称: {}\n- 创建日期: {}\n- 当前状态: analyzing\n- 目标分支: {}\n- 源仓库集合: {}\n\n## 需求描述\n\n待补充。\n\n## 当前结论\n\n- 工作区已由 Nexus 创建。\n- 服务范围和目标分支可继续确认。\n",
+            request.name, request.name, today, target_branch, request.source_repos_root
+        ),
+    )?;
+
+    write_file(
+        &workspace.join("STATUS.md"),
+        &format!(
+            "# STATUS\n\n- 状态: analyzing\n- 当前焦点: 需求范围确认\n- 下一步: 确认服务范围、目标分支、是否创建 worktree\n- 更新时间: {}\n\n## Bootstrap Summary\n\n- 服务数量: {}\n- 目标分支: {}\n- 源仓库目录: `{}`\n- Worktree 命令: `scripts/worktree-commands.sh`\n- 创建报告: `bootstrap-report.md`\n\n## Blockers\n\n{}\n",
+            today,
+            services.len(),
+            target_branch,
+            request.source_repos_root,
+            if target_branch == "待确认" {
+                "- 目标分支待确认时，不自动创建 worktree。\n"
+            } else {
+                "- worktree 尚未创建，需要人工确认后执行命令。\n"
+            }
+        ),
+    )?;
+
+    write_file(
+        &workspace.join("services.md"),
+        &services_markdown(&services, &request.source_repos_root),
+    )?;
+    write_file(
+        &workspace.join("branches.md"),
+        &branches_markdown(&services, target_branch, &request.source_repos_root),
+    )?;
+    write_file(
+        &workspace.join("plan.md"),
+        "# Plan\n\n## 分析步骤\n\n- [ ] 确认需求范围\n- [ ] 确认涉及服务\n- [ ] 确认目标分支\n- [ ] 创建 worktree\n- [ ] 编码与验证\n- [ ] 更新交付记录\n",
+    )?;
+    write_file(
+        &workspace.join("tasks.md"),
+        "# Tasks\n\n| 任务 | 状态 | 说明 |\n| --- | --- | --- |\n| 确认需求范围 | 待办 | 补充业务目标、入口、影响范围 |\n| 确认服务范围 | 待办 | 标记涉及服务和待验证服务 |\n| 确认目标分支 | 待办 | 多服务优先统一分支 |\n| 创建 worktree | 待办 | 分支确认后再执行 |\n| 更新交付记录 | 待办 | 代码/SQL/逻辑变更后必须更新 |\n",
+    )?;
+    write_file(
+        &workspace.join("decisions.md"),
+        "# Decisions\n\n| 时间 | 决策 | 原因 | 影响 |\n| --- | --- | --- | --- |\n",
+    )?;
+    write_file(
+        &workspace.join("handoff.md"),
+        "# Handoff\n\n## 当前状态\n\n待补充。\n\n## 后续继续方式\n\n请先读取 `AGENTS.md`、`STATUS.md`、`services.md`、`branches.md`、`tasks.md` 和 `交付记录.md`。\n",
+    )?;
+    write_file(
+        &workspace.join("delivery.md"),
+        "# Delivery Notes\n\n## 变更记录\n\n| 时间 | 类型 | 服务 | 内容 | 验证 |\n| --- | --- | --- | --- | --- |\n",
+    )?;
+    write_file(
+        &workspace.join("交付记录.md"),
+        &format!(
+            "# 交付记录\n\n## 需求信息\n\n- 需求名称: {}\n- 工作区: {}\n- 分支: {}\n\n## 涉及服务\n\n{}\n\n## 代码变更\n\n暂无。\n\n## SQL 变更\n\n暂无。\n\n## 新增逻辑\n\n暂无。\n\n## 验证结果\n\n暂无。\n\n## 遗留风险\n\n- 创建后需要确认服务范围、分支和 worktree 状态。\n",
+            request.name,
+            request.folder,
+            target_branch,
+            if services.is_empty() {
+                "待确认。".to_string()
+            } else {
+                services
+                    .iter()
+                    .map(|service| format!("- {}", service))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            }
+        ),
+    )?;
+    write_file(
+        &workspace.join("bootstrap-report.md"),
+        &bootstrap_report(
+            &request.name,
+            &request.folder,
+            &workspace,
+            &services,
+            target_branch,
+            &request.source_repos_root,
+            today.as_str(),
+        ),
+    )?;
+    write_file(
+        &workspace.join("scripts").join("worktree-commands.sh"),
+        &worktree_commands(
+            &workspace,
+            &services,
+            target_branch,
+            &request.source_repos_root,
+        ),
+    )?;
+    update_index(
+        &root,
+        &request.name,
+        &request.folder,
+        target_branch,
+        &services,
+    )?;
+
+    Ok(CreateWorkspaceResponse {
+        path: workspace.to_string_lossy().to_string(),
+        folder: request.folder,
     })
 }
 
@@ -427,6 +585,123 @@ fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
+fn normalized_services(services: &[String]) -> Vec<String> {
+    services
+        .iter()
+        .map(|service| service.trim().to_string())
+        .filter(|service| !service.is_empty())
+        .collect()
+}
+
+fn write_file(path: &Path, content: &str) -> Result<(), String> {
+    fs::write(path, content).map_err(|error| error.to_string())
+}
+
+fn services_markdown(services: &[String], source_root: &str) -> String {
+    let rows = if services.is_empty() {
+        "| 待确认 | 待确认 | 待补充 |\n".to_string()
+    } else {
+        services
+            .iter()
+            .map(|service| {
+                format!(
+                    "| {} | `{}/{}` | 初始确认 |\n",
+                    service, source_root, service
+                )
+            })
+            .collect::<String>()
+    };
+    format!(
+        "# Services\n\n## 已确认相关\n\n| 服务 | 源仓库 | 说明 |\n| --- | --- | --- |\n{}\n## 待验证范围\n\n| 服务 | 线索 | 说明 |\n| --- | --- | --- |\n",
+        rows
+    )
+}
+
+fn branches_markdown(services: &[String], target_branch: &str, source_root: &str) -> String {
+    let rows = if services.is_empty() {
+        "| 待确认 | 待确认 | 待确认 | 待创建 |\n".to_string()
+    } else {
+        services
+            .iter()
+            .map(|service| {
+                format!(
+                    "| {} | `{}/{}` | {} | 待创建 |\n",
+                    service, source_root, service, target_branch
+                )
+            })
+            .collect::<String>()
+    };
+    format!(
+        "# Branches\n\n- 目标分支: {}\n\n| 服务 | 源仓库 | 目标分支 | Worktree |\n| --- | --- | --- | --- |\n{}",
+        target_branch, rows
+    )
+}
+
+fn bootstrap_report(
+    name: &str,
+    folder: &str,
+    workspace: &Path,
+    services: &[String],
+    target_branch: &str,
+    source_root: &str,
+    today: &str,
+) -> String {
+    let service_lines = if services.is_empty() {
+        "- 服务范围待确认".to_string()
+    } else {
+        services
+            .iter()
+            .map(|service| {
+                format!(
+                    "- {}: `{}/{}` -> `repos/{}`",
+                    service, source_root, service, service
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    format!(
+        "# Bootstrap Report\n\n- 需求名称: {}\n- 工作区: {}\n- 创建日期: {}\n- 目标分支: {}\n- 工作区路径: `{}`\n- 源仓库目录: `{}`\n\n## 服务范围\n\n{}\n\n## 初始风险\n\n{}\n\n## 下一步\n\n- [ ] 补充需求描述和影响范围。\n- [ ] 确认目标分支。\n- [ ] 复核 `scripts/worktree-commands.sh` 后创建 worktree。\n- [ ] 编码或 SQL 变更后更新 `交付记录.md`。\n",
+        name,
+        folder,
+        today,
+        target_branch,
+        workspace.to_string_lossy(),
+        source_root,
+        service_lines,
+        if target_branch == "待确认" {
+            "- 目标分支未确认\n- worktree 尚未创建"
+        } else {
+            "- worktree 尚未创建"
+        }
+    )
+}
+
+fn update_index(
+    root: &Path,
+    name: &str,
+    folder: &str,
+    target_branch: &str,
+    services: &[String],
+) -> Result<(), String> {
+    let index = root.join("INDEX.md");
+    let mut content = fs::read_to_string(&index).unwrap_or_else(|_| {
+        "# Workspace Index\n\n| 工作区 | 状态 | 目标分支 | 服务 | 路径 |\n| --- | --- | --- | --- | --- |\n".to_string()
+    });
+    content.push_str(&format!(
+        "| {} | analyzing | {} | {} | `{}` |\n",
+        name,
+        target_branch,
+        if services.is_empty() {
+            "待确认".to_string()
+        } else {
+            services.join(", ")
+        },
+        folder
+    ));
+    fs::write(index, content).map_err(|error| error.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -488,5 +763,50 @@ mod tests {
         );
         assert!(commands.contains("git -C '/source/order' fetch origin"));
         assert!(commands.contains("worktree add '/workspace/demo/repos/order' 'chen/demo'"));
+    }
+
+    #[test]
+    fn create_workspace_writes_standard_documents_and_index() {
+        let root = std::env::temp_dir().join(format!(
+            "nexus-core-create-workspace-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let request = CreateWorkspaceRequest {
+            name: "Demo Feature".to_string(),
+            folder: "2026-05-27-demo-feature".to_string(),
+            workspaces_root: root.to_string_lossy().to_string(),
+            source_repos_root: "~/source-repos".to_string(),
+            services: vec![
+                " order ".to_string(),
+                "".to_string(),
+                "store-cashier".to_string(),
+            ],
+            target_branch: "chen/demo-feature".to_string(),
+        };
+
+        let created = create_workspace(request).unwrap();
+        let workspace = Path::new(&created.path);
+        assert_eq!(created.folder, "2026-05-27-demo-feature");
+        assert!(workspace.join("AGENTS.md").exists());
+        assert!(workspace.join("repos").is_dir());
+        assert!(workspace.join("sql").is_dir());
+        assert!(workspace.join("scripts/worktree-commands.sh").exists());
+
+        let services_md = fs::read_to_string(workspace.join("services.md")).unwrap();
+        assert!(services_md.contains("| order | `~/source-repos/order` | 初始确认 |"));
+        assert!(
+            services_md.contains("| store-cashier | `~/source-repos/store-cashier` | 初始确认 |")
+        );
+        let delivery = fs::read_to_string(workspace.join("交付记录.md")).unwrap();
+        assert!(delivery.contains("- 分支: chen/demo-feature"));
+        assert!(delivery.contains("- order"));
+        let script = fs::read_to_string(workspace.join("scripts/worktree-commands.sh")).unwrap();
+        assert!(script.contains("worktree add"));
+        assert!(script.contains("'chen/demo-feature'"));
+        let index = fs::read_to_string(root.join("INDEX.md")).unwrap();
+        assert!(index.contains("| Demo Feature | analyzing | chen/demo-feature | order, store-cashier | `2026-05-27-demo-feature` |"));
+
+        fs::remove_dir_all(root).unwrap();
     }
 }

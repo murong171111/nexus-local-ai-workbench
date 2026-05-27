@@ -29,7 +29,7 @@
 
 ## Phase 1: Rust Core Extraction
 
-**Status:** In progress. The first slices extract git status, branch normalization, target-branch confirmation, source repository scanning, workspace scanning, Markdown table parsing, task counts, delivery-placeholder detection, risk detection, and worktree command generation into `crates/nexus-core`.
+**Status:** In progress. The first slices extract git status, branch normalization, target-branch confirmation, source repository scanning, workspace scanning, Markdown table parsing, task counts, delivery-placeholder detection, risk detection, worktree command generation, settings profile export, and standard workspace skeleton creation into `crates/nexus-core`.
 
 **Goal:** Make workspace and git logic independent from the Tauri command layer.
 
@@ -50,7 +50,7 @@
 1. Move DTOs that represent dashboard/workspace/git/settings data into `nexus-core`.
 2. Move read-only scanning and git status functions into `nexus-core`.
 3. Keep Tauri commands as thin wrappers around `nexus-core`.
-4. Add Rust unit tests for workspace scanning, git branch normalization, delivery placeholder detection, and settings validation.
+4. Add Rust unit tests for workspace scanning, git branch normalization, delivery placeholder detection, settings validation, settings export, and workspace skeleton creation.
 5. Run `cargo test --workspace` and `npm run verify`.
 
 ## Phase 2: Native Mac Shell Scaffold

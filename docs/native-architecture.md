@@ -39,7 +39,9 @@ The exact folder names can evolve during implementation. The important boundary 
 - Branch alignment analysis.
 - Risk detection.
 - Reviewable worktree command generation.
+- Standard workspace skeleton creation, including Markdown documents, SQL/log/repos folders, and bootstrap scripts.
 - Settings profile validation.
+- Settings profile export file naming and JSON serialization.
 - Widget snapshot generation.
 - Future SQLite indexing and full-text search.
 
