@@ -1722,29 +1722,11 @@ private struct AgentEventDetailSheet: View {
     }
 
     private func copyCodexContext() {
-        let metadata = metadataRows
-            .map { "- \($0.0): \($0.1)" }
-            .joined(separator: "\n")
-        let payload = """
-        Continue from this Nexus agent event.
-
-        Title: \(event.title)
-        Kind: \(event.kind)
-        Severity: \(event.severity)
-        Source: \(event.source)
-        Session: \(event.sessionId)
-        Workspace: \(event.workspaceFolder ?? "No workspace")
-        Event ID: \(event.id)
-        Time: \(event.timestamp)
-
-        Summary:
-        \(event.summary)
-
-        Metadata:
-        \(metadata.isEmpty ? "- No metadata" : metadata)
-        """
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(payload, forType: .string)
+        Task {
+            let payload = await appState.agentEventHandoffPrompt(for: event)
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(payload, forType: .string)
+        }
     }
 
     private func openLocalPath(_ rawPath: String) {

@@ -406,6 +406,17 @@ final class AppState: ObservableObject {
         }
     }
 
+    func agentEventHandoffPrompt(for event: AgentEvent) async -> String {
+        do {
+            let response = try await bridge.agentEventHandoffPrompt(
+                request: AgentEventHandoffPromptRequest(event: event)
+            )
+            return response.prompt
+        } catch {
+            return event.fallbackHandoffPrompt
+        }
+    }
+
     func createWorkspace(draft: CreateWorkspaceDraft) async {
         isCreatingWorkspace = true
         lastError = nil

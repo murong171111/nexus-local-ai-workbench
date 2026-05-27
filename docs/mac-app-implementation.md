@@ -51,6 +51,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added Rust Core and Swift/Rust bridge support for append-only agent event JSONL, plus a native sidebar feed for recent agent events.
 - Added native agent event detail inspection with metadata and JSON copy support.
 - Added safe native agent event actions for selecting matching workspaces, opening local paths and links, and copying Codex continuation context.
+- Added shared Rust Core, FFI, and Swift bridge generation for Codex handoff prompts from agent events.
 - Added a fail-open hook helper script that local agents can call to append events into Nexus before a local socket server is available.
 - Added an explicit local-write confirmation checkbox to the Tauri create-workspace flow.
 - Added frontend desktop bridge in `src/desktop.ts`.

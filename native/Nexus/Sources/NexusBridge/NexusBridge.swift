@@ -11,6 +11,7 @@ public protocol NexusBridge {
     func appendAuditEvent(request: AppendAuditEventRequest) async throws -> AppendAuditEventResponse
     func appendAgentEvent(request: AppendAgentEventRequest) async throws -> AppendAgentEventResponse
     func readAgentEvents(request: ReadAgentEventsRequest) async throws -> [AgentEvent]
+    func agentEventHandoffPrompt(request: AgentEventHandoffPromptRequest) async throws -> AgentEventHandoffPromptResponse
     func rebuildSearchIndex(request: RebuildSearchIndexRequest) async throws -> RebuildSearchIndexResponse
     func searchIndex(request: SearchIndexRequest) async throws -> [SearchResult]
     func createWorkspace(request: CreateWorkspaceRequest) async throws -> CreateWorkspaceResponse
@@ -105,13 +106,22 @@ public final class PreviewNexusBridge: NexusBridge {
                 timestamp: "preview",
                 source: "codex",
                 sessionId: "preview-session",
-                workspaceFolder: request.workspaceFolder,
+                workspaceFolder: request.workspaceFolder ?? "2026-05-25-yibao-pay-log",
                 kind: "permission",
                 title: "Agent event preview",
                 summary: "Set NEXUS_CORE_LIBRARY to read real local agent hook events.",
-                severity: "info"
+                severity: "info",
+                metadata: [
+                    "workspaceFolder": request.workspaceFolder ?? "2026-05-25-yibao-pay-log",
+                    "documentPath": "~/ks_project/workspaces/2026-05-25-yibao-pay-log/handoff.md",
+                    "docs": "https://github.com/murong171111/nexus-local-ai-workbench"
+                ]
             )
         ]
+    }
+
+    public func agentEventHandoffPrompt(request: AgentEventHandoffPromptRequest) async throws -> AgentEventHandoffPromptResponse {
+        AgentEventHandoffPromptResponse(prompt: request.event.fallbackHandoffPrompt)
     }
 
     public func rebuildSearchIndex(request: RebuildSearchIndexRequest) async throws -> RebuildSearchIndexResponse {
@@ -149,6 +159,7 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
     private let appendAuditEventFunction: BridgeCall
     private let appendAgentEventFunction: BridgeCall
     private let readAgentEventsFunction: BridgeCall
+    private let agentEventHandoffPromptFunction: BridgeCall
     private let rebuildSearchIndexFunction: BridgeCall
     private let searchIndexFunction: BridgeCall
     private let createWorkspaceFunction: BridgeCall
@@ -192,6 +203,10 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
             self.readAgentEventsFunction = try Self.loadSymbol(
                 handle: handle,
                 name: "nexus_read_agent_events_json"
+            )
+            self.agentEventHandoffPromptFunction = try Self.loadSymbol(
+                handle: handle,
+                name: "nexus_agent_event_handoff_prompt_json"
             )
             self.rebuildSearchIndexFunction = try Self.loadSymbol(
                 handle: handle,
@@ -247,6 +262,10 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
 
     public func readAgentEvents(request: ReadAgentEventsRequest) async throws -> [AgentEvent] {
         try call(readAgentEventsFunction, request: request)
+    }
+
+    public func agentEventHandoffPrompt(request: AgentEventHandoffPromptRequest) async throws -> AgentEventHandoffPromptResponse {
+        try call(agentEventHandoffPromptFunction, request: request)
     }
 
     public func rebuildSearchIndex(request: RebuildSearchIndexRequest) async throws -> RebuildSearchIndexResponse {
