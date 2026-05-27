@@ -41,6 +41,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Rust Core and the Swift/Rust bridge now support local agent event append/read flows backed by `agent-events.jsonl`.
 - Native SwiftUI sidebar now shows recent agent events from the local bridge, with preview fallback data when Rust Core is not loaded.
 - Native SwiftUI agent events can now be opened for full context, metadata inspection, and JSON copy.
+- Native SwiftUI agent event details now expose safe next-step actions for matching workspaces, local paths, web links, and Codex context copy.
 - Added a fail-open `nexus-agent-event` hook helper script for local agents to append events before the socket bridge exists.
 - Rust Core dashboard scans now enrich workspace activity timelines from the local JSONL audit log, with Tauri and native SwiftUI shells consuming the same activity field.
 - User-visible workspace actions now append audit events for document opens, Codex handoffs, copied prompts, copied risk instructions, and copied worktree commands.

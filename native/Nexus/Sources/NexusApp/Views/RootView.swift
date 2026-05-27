@@ -47,6 +47,7 @@ struct RootView: View {
         }
         .sheet(item: $appState.selectedAgentEvent) { event in
             AgentEventDetailSheet(event: event)
+                .environmentObject(appState)
         }
     }
 }
@@ -1523,12 +1524,38 @@ private struct AgentEventRow: View {
 
 private struct AgentEventDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var appState: AppState
     let event: AgentEvent
 
     private var metadataRows: [(String, String)] {
         event.metadata
             .map { ($0.key, $0.value) }
             .sorted { $0.0 < $1.0 }
+    }
+
+    private var workspaceMatch: WorkspaceSummary? {
+        let candidates = [
+            event.workspaceFolder,
+            event.metadata["workspaceFolder"],
+            event.metadata["folder"],
+            event.metadata["workspace"],
+            event.metadata["workspacePath"],
+            event.metadata["path"]
+        ]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        return appState.workspaces.first { workspace in
+            candidates.contains(workspace.folder) || candidates.contains(workspace.path)
+        }
+    }
+
+    private var localTargets: [AgentEventTarget] {
+        AgentEventTarget.localTargets(from: event.metadata)
+    }
+
+    private var webTargets: [AgentEventTarget] {
+        AgentEventTarget.webTargets(from: event.metadata)
     }
 
     var body: some View {
@@ -1574,6 +1601,63 @@ private struct AgentEventDetailSheet: View {
                     AgentEventField(label: "Event ID", value: event.id)
                 }
 
+                SectionBlock(title: "下一步 / Actions") {
+                    if let workspace = workspaceMatch {
+                        AgentEventActionRow(
+                            title: "选中工作区 / Select workspace",
+                            detail: workspace.folder,
+                            systemImage: "scope",
+                            isEnabled: true
+                        ) {
+                            appState.selectedWorkspaceID = workspace.id
+                        }
+
+                        AgentEventActionRow(
+                            title: "打开工作区目录 / Open workspace folder",
+                            detail: workspace.path,
+                            systemImage: "folder",
+                            isEnabled: FileManager.default.fileExists(atPath: workspace.path)
+                        ) {
+                            openLocalPath(workspace.path)
+                        }
+                    } else {
+                        Text("No matching workspace in current dashboard")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    ForEach(localTargets) { target in
+                        AgentEventActionRow(
+                            title: "打开本地路径 / Open local path",
+                            detail: "\(target.key): \(target.value)",
+                            systemImage: target.exists ? "doc.viewfinder" : "doc.badge.clock",
+                            isEnabled: target.exists
+                        ) {
+                            openLocalPath(target.value)
+                        }
+                    }
+
+                    ForEach(webTargets) { target in
+                        AgentEventActionRow(
+                            title: "打开链接 / Open link",
+                            detail: "\(target.key): \(target.value)",
+                            systemImage: "arrow.up.right.square",
+                            isEnabled: true
+                        ) {
+                            openURL(target.value)
+                        }
+                    }
+
+                    AgentEventActionRow(
+                        title: "复制 Codex 上下文 / Copy Codex context",
+                        detail: "Use this when continuing the event in Codex",
+                        systemImage: "doc.on.clipboard",
+                        isEnabled: true
+                    ) {
+                        copyCodexContext()
+                    }
+                }
+
                 SectionBlock(title: "Metadata") {
                     if metadataRows.isEmpty {
                         Text("No metadata")
@@ -1599,7 +1683,7 @@ private struct AgentEventDetailSheet: View {
             }
         }
         .padding(22)
-        .frame(width: 620, height: 560)
+        .frame(width: 680, height: 640)
     }
 
     private var symbol: String {
@@ -1636,6 +1720,42 @@ private struct AgentEventDetailSheet: View {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(payload, forType: .string)
     }
+
+    private func copyCodexContext() {
+        let metadata = metadataRows
+            .map { "- \($0.0): \($0.1)" }
+            .joined(separator: "\n")
+        let payload = """
+        Continue from this Nexus agent event.
+
+        Title: \(event.title)
+        Kind: \(event.kind)
+        Severity: \(event.severity)
+        Source: \(event.source)
+        Session: \(event.sessionId)
+        Workspace: \(event.workspaceFolder ?? "No workspace")
+        Event ID: \(event.id)
+        Time: \(event.timestamp)
+
+        Summary:
+        \(event.summary)
+
+        Metadata:
+        \(metadata.isEmpty ? "- No metadata" : metadata)
+        """
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(payload, forType: .string)
+    }
+
+    private func openLocalPath(_ rawPath: String) {
+        guard let url = AgentEventTarget.localURL(from: rawPath) else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    private func openURL(_ rawURL: String) {
+        guard let url = URL(string: rawURL.trimmingCharacters(in: .whitespacesAndNewlines)) else { return }
+        NSWorkspace.shared.open(url)
+    }
 }
 
 private struct AgentEventField: View {
@@ -1653,6 +1773,113 @@ private struct AgentEventField: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct AgentEventActionRow: View {
+    let title: String
+    let detail: String
+    let systemImage: String
+    let isEnabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .center, spacing: 10) {
+                Image(systemName: systemImage)
+                    .frame(width: 18)
+                    .foregroundStyle(isEnabled ? NexusPalette.accent : .secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.caption.weight(.semibold))
+                    Text(detail)
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Spacer()
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.55)
+    }
+}
+
+private struct AgentEventTarget: Identifiable {
+    let key: String
+    let value: String
+    let exists: Bool
+
+    var id: String {
+        "\(key):\(value)"
+    }
+
+    static func localTargets(from metadata: [String: String]) -> [AgentEventTarget] {
+        uniqueTargets(from: metadata) { key, value in
+            guard isLocalPathKey(key) || localURL(from: value) != nil else { return nil }
+            guard let url = localURL(from: value) else { return nil }
+            return AgentEventTarget(
+                key: key,
+                value: value,
+                exists: FileManager.default.fileExists(atPath: url.path)
+            )
+        }
+    }
+
+    static func webTargets(from metadata: [String: String]) -> [AgentEventTarget] {
+        uniqueTargets(from: metadata) { key, value in
+            guard isWebURL(value) else { return nil }
+            return AgentEventTarget(key: key, value: value, exists: true)
+        }
+    }
+
+    static func localURL(from rawValue: String) -> URL? {
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if trimmed.hasPrefix("file://") {
+            return URL(string: trimmed)
+        }
+
+        guard trimmed.hasPrefix("/") || trimmed.hasPrefix("~/") else {
+            return nil
+        }
+
+        return URL(fileURLWithPath: (trimmed as NSString).expandingTildeInPath)
+    }
+
+    private static func uniqueTargets(
+        from metadata: [String: String],
+        mapper: (String, String) -> AgentEventTarget?
+    ) -> [AgentEventTarget] {
+        var seenValues: Set<String> = []
+        return metadata
+            .sorted { $0.key < $1.key }
+            .compactMap { key, value in
+                guard let target = mapper(key, value) else { return nil }
+                let normalizedValue = target.value.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !seenValues.contains(normalizedValue) else { return nil }
+                seenValues.insert(normalizedValue)
+                return target
+            }
+    }
+
+    private static func isLocalPathKey(_ key: String) -> Bool {
+        let normalizedKey = key.lowercased()
+        return normalizedKey.contains("path")
+            || normalizedKey.contains("file")
+            || normalizedKey.contains("folder")
+            || normalizedKey.contains("directory")
+    }
+
+    private static func isWebURL(_ value: String) -> Bool {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed), let scheme = url.scheme?.lowercased() else {
+            return false
+        }
+        return scheme == "http" || scheme == "https"
     }
 }
 
