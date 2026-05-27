@@ -9,6 +9,7 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - SwiftUI workspace navigation shell.
 - AppKit-ready Mac integration boundary.
 - Sample data view model that mirrors the Rust Core dashboard contract.
+- Native top-bar search popover backed by the Swift/Rust SQLite + FTS bridge, with preview metadata fallback.
 - Build-only validation through Swift Package Manager.
 
 ## Build
@@ -29,4 +30,4 @@ For local development, build the bridge library from the repository root:
 npm run ffi:build
 ```
 
-Then launch the native shell with `NEXUS_CORE_LIBRARY` pointing to the generated `libnexus_ffi.dylib`. If the variable is missing or the library cannot be loaded, the shell falls back to preview data.
+Then launch the native shell with `NEXUS_CORE_LIBRARY` pointing to the generated `libnexus_ffi.dylib`. If the variable is missing or the library cannot be loaded, the shell falls back to preview data and metadata search results.

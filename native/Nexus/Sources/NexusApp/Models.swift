@@ -111,6 +111,89 @@ struct RiskAlert: Identifiable, Hashable {
     let detail: String
 }
 
+struct SearchResultGroup: Identifiable {
+    let id: String
+    let label: String
+    let results: [SearchResult]
+}
+
+extension SearchResult {
+    var stableID: String {
+        "\(workspaceFolder)-\(documentKey)-\(documentPath)"
+    }
+
+    var displayKind: String {
+        switch kind {
+        case "workspace":
+            "workspace"
+        case "services":
+            "services"
+        case "tasks":
+            "tasks"
+        case "decisions":
+            "decisions"
+        case "delivery":
+            "delivery"
+        case "sql":
+            "sql"
+        case "status":
+            "status"
+        case "branches":
+            "branch"
+        default:
+            kind
+        }
+    }
+
+    var groupID: String {
+        switch kind {
+        case "workspace":
+            "workspace"
+        case "sql":
+            "sql"
+        case "services", "branches", "status":
+            "state"
+        case "tasks", "decisions", "delivery":
+            "workflow"
+        default:
+            "documents"
+        }
+    }
+
+    var groupLabel: String {
+        switch groupID {
+        case "workspace":
+            "工作区 / Workspace"
+        case "sql":
+            "SQL 与数据变更 / SQL"
+        case "state":
+            "服务与状态 / State"
+        case "workflow":
+            "任务与交付 / Workflow"
+        default:
+            "文档 / Documents"
+        }
+    }
+}
+
+func groupSearchResults(_ results: [SearchResult]) -> [SearchResultGroup] {
+    var groups: [SearchResultGroup] = []
+    var indexByID: [String: Int] = [:]
+
+    for result in results {
+        if let index = indexByID[result.groupID] {
+            var group = groups[index]
+            group = SearchResultGroup(id: group.id, label: group.label, results: group.results + [result])
+            groups[index] = group
+        } else {
+            indexByID[result.groupID] = groups.count
+            groups.append(SearchResultGroup(id: result.groupID, label: result.groupLabel, results: [result]))
+        }
+    }
+
+    return groups
+}
+
 struct WorkspaceSummary: Identifiable, Hashable {
     let id: String
     let name: String

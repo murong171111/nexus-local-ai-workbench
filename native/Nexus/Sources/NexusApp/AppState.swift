@@ -19,6 +19,11 @@ final class AppState: ObservableObject {
     @Published var documentPreview: DocumentSnapshot?
     @Published var widgetSnapshot: WidgetSnapshot?
     @Published var lastCreatedWorkspace: CreateWorkspaceResponse?
+    @Published var searchResults: [SearchResult] = []
+    @Published var selectedSearchResultIndex = 0
+    @Published var isSearching = false
+    @Published var searchIndexSummary: RebuildSearchIndexResponse?
+    @Published var searchError: String?
 
     @Published var agentStatus: AgentStatus
     private let bridge: NexusBridge
@@ -46,17 +51,32 @@ final class AppState: ObservableObject {
         workspaces.first { $0.id == selectedWorkspaceID } ?? filteredWorkspaces.first
     }
 
-    private var auditRootPath: String {
+    var orderedSearchResults: [SearchResult] {
+        groupSearchResults(searchResults).flatMap(\.results)
+    }
+
+    var hasSearchQuery: Bool {
+        !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var applicationSupportRootPath: String {
         guard let applicationSupport = FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
         ).first else {
-            return "~/Library/Application Support/com.ks.nexus/audit"
+            return "~/Library/Application Support/com.ks.nexus"
         }
         return applicationSupport
             .appendingPathComponent("com.ks.nexus")
-            .appendingPathComponent("audit")
             .path
+    }
+
+    private var auditRootPath: String {
+        "\(applicationSupportRootPath)/audit"
+    }
+
+    private var searchIndexPath: String {
+        "\(applicationSupportRootPath)/nexus-index.sqlite3"
     }
 
     var filteredWorkspaces: [WorkspaceSummary] {
@@ -126,6 +146,7 @@ final class AppState: ObservableObject {
                     generatedAt: ISO8601DateFormatter().string(from: Date())
                 )
             )
+            await rebuildSearchIndex(reportErrors: false)
             bridgeMode = bridge.modeDescription
             agentStatus = AgentStatus(
                 title: "Ready",
@@ -142,12 +163,98 @@ final class AppState: ObservableObject {
         }
     }
 
+    func rebuildSearchIndex(reportErrors: Bool = true) async {
+        do {
+            searchIndexSummary = try await bridge.rebuildSearchIndex(
+                request: RebuildSearchIndexRequest(
+                    indexPath: searchIndexPath,
+                    workspacesRoot: workspaceRoot,
+                    sourceReposRoot: sourceReposRoot,
+                    docsRoot: docsRoot
+                )
+            )
+            searchError = nil
+            if hasSearchQuery {
+                await searchForCurrentQuery()
+            }
+        } catch {
+            searchIndexSummary = nil
+            searchError = error.localizedDescription
+            if reportErrors {
+                lastError = error.localizedDescription
+            }
+        }
+    }
+
+    func searchForCurrentQuery() async {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty else {
+            searchResults = []
+            selectedSearchResultIndex = 0
+            searchError = nil
+            return
+        }
+
+        isSearching = true
+        defer {
+            isSearching = false
+        }
+
+        do {
+            let indexedResults = try await bridge.searchIndex(
+                request: SearchIndexRequest(indexPath: searchIndexPath, query: trimmedQuery, limit: 10)
+            )
+            searchResults = indexedResults.isEmpty ? fallbackSearchResults(matching: trimmedQuery) : indexedResults
+            selectedSearchResultIndex = 0
+            searchError = nil
+        } catch {
+            searchResults = fallbackSearchResults(matching: trimmedQuery)
+            selectedSearchResultIndex = 0
+            searchError = error.localizedDescription
+        }
+    }
+
+    func moveSearchSelection(_ direction: Int) {
+        let results = orderedSearchResults
+        guard !results.isEmpty else { return }
+        selectedSearchResultIndex = (selectedSearchResultIndex + direction + results.count) % results.count
+    }
+
+    func clearSearch() {
+        query = ""
+        searchResults = []
+        selectedSearchResultIndex = 0
+        searchError = nil
+    }
+
+    func openSelectedSearchResult() {
+        let results = orderedSearchResults
+        guard !results.isEmpty else { return }
+        let index = min(selectedSearchResultIndex, results.count - 1)
+        openSearchResult(results[index])
+    }
+
+    func openSearchResult(_ result: SearchResult) {
+        selectedWorkspaceID = result.workspaceFolder
+        let shouldOpenDocument = result.kind != "workspace"
+        clearSearch()
+
+        guard shouldOpenDocument else { return }
+        Task {
+            await loadDocument(path: result.documentPath)
+        }
+    }
+
     func loadHandoffForSelectedWorkspace() async {
         guard let workspace = selectedWorkspace else {
             return
         }
 
         let path = workspace.documentLinks["handoff"] ?? "\(workspace.path)/handoff.md"
+        await loadDocument(path: path)
+    }
+
+    func loadDocument(path: String) async {
         isDocumentLoading = true
         lastError = nil
         defer {
@@ -200,6 +307,41 @@ final class AppState: ObservableObject {
             ),
             bridge: NexusBridgeFactory.makeDefault()
         )
+    }
+
+    private func fallbackSearchResults(matching query: String) -> [SearchResult] {
+        let normalizedQuery = query.lowercased()
+        guard !normalizedQuery.isEmpty else { return [] }
+
+        return workspaces.compactMap { workspace in
+            let haystack = [
+                workspace.name,
+                workspace.folder,
+                workspace.branch,
+                workspace.aiState,
+                workspace.serviceSummary,
+                workspace.worktreeState,
+                workspace.risks.map(\.detail).joined(separator: " ")
+            ]
+            .joined(separator: " ")
+            .lowercased()
+
+            guard haystack.contains(normalizedQuery) else { return nil }
+
+            let riskSummary = workspace.risks.first?.detail ?? "暂无风险"
+            let serviceSummary = workspace.serviceSummary.isEmpty ? "服务待确认" : workspace.serviceSummary
+            return SearchResult(
+                workspaceFolder: workspace.folder,
+                workspaceName: workspace.name,
+                documentKey: "workspace",
+                documentName: "Workspace metadata",
+                documentPath: workspace.path,
+                kind: "workspace",
+                snippet: "\(workspace.branch) · \(serviceSummary) · \(riskSummary)"
+            )
+        }
+        .prefix(10)
+        .map { $0 }
     }
 }
 
