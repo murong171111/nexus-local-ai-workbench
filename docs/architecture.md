@@ -1,6 +1,22 @@
 # Architecture
 
-Nexus is split into four layers.
+Nexus currently has a Tauri preview architecture and a native target architecture.
+
+The accepted medium-term direction is documented in `docs/adr/0001-native-swiftui-rust-core.md`: SwiftUI/AppKit for the long-lived Mac shell, Rust Core for reusable local workflow logic, SQLite/FTS for local indexing, and WidgetKit for Apple ecosystem surfaces.
+
+The current Tauri app remains the working preview app until the native Mac shell reaches core workflow parity.
+
+## Target Native Architecture
+
+- Native shell: SwiftUI with AppKit adapters for Mac-specific integration.
+- Core engine: Rust crates for workspace scanning, git/worktree state, document/risk analysis, settings validation, widget snapshots, and future indexing.
+- Local store: SQLite + FTS under Application Support, rebuildable from workspace Markdown files.
+- Extension surfaces: WidgetKit, menu bar, and future iPad/iPhone companion views.
+- Bridge: a small Swift/Rust contract layer with typed DTOs and explicit error codes.
+
+## Current Preview Architecture
+
+Nexus is currently split into four layers.
 
 ## Desktop Shell
 
@@ -51,3 +67,7 @@ Source repositories are read from a separate configured root. Nexus treats sourc
 - `npm run verify` runs tests, frontend build, and WidgetKit source type-checking.
 - GitHub Actions define pull-request validation and tag-based release builds for Apple Silicon and Intel macOS.
 - Signing, notarization, and automatic updates are intentionally documented but not enabled until Apple Developer credentials and updater signing policy are ready.
+
+## Migration Boundary
+
+New roadmap work should prefer Rust Core for reusable logic and SwiftUI/AppKit for new long-lived Mac UI. The Tauri app should receive only preview maintenance, bug fixes, and small features that help validate workflows before native migration.

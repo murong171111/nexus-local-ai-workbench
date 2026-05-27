@@ -8,13 +8,16 @@ The app is designed as a native local tool, not a browser-only dashboard.
 
 ## Architecture
 
-- Main app shell: Tauri
-- UI: React, TailwindCSS
-- Native core: Rust commands under `src-tauri`
+- Current preview shell: Tauri
+- Current preview UI: React, TailwindCSS
+- Target native shell: SwiftUI + AppKit
+- Target core: reusable Rust crates, called by the native shell and the current Tauri preview shell during migration
 - Workspace data source: user-configured local workspace root
 - Human-readable archive: workspace Markdown files
 - Future local index: SQLite + FTS
-- Future widget surface: Swift WidgetKit extension fed by app-generated snapshots
+- Widget surface: Swift WidgetKit extension fed by app-generated snapshots
+
+See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md` for the accepted medium-term architecture direction.
 
 ## Implemented In This Step
 
@@ -71,12 +74,13 @@ The app should keep three permission levels:
 
 ## Next Engineering Steps
 
-1. Add Apple Developer signing and notarization.
-2. Add Tauri updater support backed by signed GitHub Releases.
-3. Package the WidgetKit extension with a full Xcode target.
-4. Split large frontend and Rust files into feature modules.
-5. Add SQLite state index if the scanned dataset becomes large.
-6. Add menu bar status entry.
+1. Extract workspace, git, document, risk, settings, and widget snapshot logic into a reusable Rust Core crate.
+2. Keep Tauri commands as thin wrappers around Rust Core during migration.
+3. Scaffold the SwiftUI/AppKit native Mac shell.
+4. Add the Swift/Rust bridge and render real workspace data in the native shell.
+5. Add SQLite + FTS indexing in Rust Core.
+6. Package the WidgetKit extension with a full Xcode target and App Group storage.
+7. Add signing, notarization, update channels, and menu bar status after the native shell is ready.
 
 ## Local Build Notes
 
