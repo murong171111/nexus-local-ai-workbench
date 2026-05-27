@@ -37,7 +37,7 @@ import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { Card } from "./components/ui/card";
 import { Input } from "./components/ui/input";
-import { checkEnvironment, createWorkspace, exportSettingsProfile, openExternalUrl, openPath as openPathInDesktop, readTextFile, rebuildSearchIndex, scanSourceRepos, scanWorkspaces, searchIndex, writeWidgetSnapshot, type EnvironmentHealth, type RebuildSearchIndexResponse, type SearchResult, type SourceRepo } from "./desktop";
+import { appendAuditEvent, checkEnvironment, createWorkspace, exportSettingsProfile, openExternalUrl, openPath as openPathInDesktop, readTextFile, rebuildSearchIndex, scanSourceRepos, scanWorkspaces, searchIndex, writeWidgetSnapshot, type EnvironmentHealth, type RebuildSearchIndexResponse, type SearchResult, type SourceRepo } from "./desktop";
 import { cn, riskTone } from "./lib";
 import { branchAlignmentRows, buildWorktreeCommand, createSettingsProfile, fallbackSearchResults, groupSearchResults, normalizeServiceList, orderedSearchResults, parseServiceInput, parseSettingsProfile, settingsProfileFilename, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceScore, type NexusSettingsProfile } from "./workspace-model";
 import type { DashboardData, Workspace } from "./types";
@@ -68,6 +68,24 @@ const statLabels: Record<string, { title: string; desc: string }> = {
   branch: { title: "分支不一致", desc: "Branch mismatch" },
   missing: { title: "缺失 Worktree", desc: "Missing worktree" }
 };
+
+const auditActionLabels: Record<string, string> = {
+  "codex.opened": "Codex 已打开 / Codex opened",
+  "codex_instruction.copied": "Codex 指令已复制 / Instruction copied",
+  "codex_handoff.opened": "Codex 交接已打开 / Codex handoff",
+  "document.opened": "文档已打开 / Document opened",
+  "risk_instruction.copied": "风险指令已复制 / Risk instruction",
+  "workspace.created": "工作区已创建 / Workspace created",
+  "worktree.command.copied": "Worktree 命令已复制 / Worktree command"
+};
+
+function auditActivityTitle(action: string) {
+  return auditActionLabels[action] ?? action.replace(/[_.]/g, " ");
+}
+
+function activityTimestamp() {
+  return new Date().toISOString().slice(0, 16).replace("T", " ");
+}
 
 type NexusSettings = {
   workspacesRoot: string;
@@ -2220,6 +2238,58 @@ export function App() {
   const missing = dashboard.workspaces.filter((workspace) => workspace.gitRows.some((row) => !row.worktree.exists)).length;
   const keyboardSearchResults = useMemo(() => orderedSearchResults(searchResults), [searchResults]);
 
+  const workspaceForTarget = useCallback((target: string) => {
+    return dashboard.workspaces.find((workspace) => {
+      return target === workspace.folder || target.includes(workspace.path) || target.includes(workspace.folder);
+    });
+  }, [dashboard.workspaces]);
+
+  const prependWorkspaceActivity = useCallback((workspace: Workspace, action: string, summary: string) => {
+    const activity = {
+      time: activityTimestamp(),
+      title: auditActivityTitle(action),
+      detail: `Nexus App · ${summary}`
+    };
+    setDashboard((currentData) => ({
+      ...currentData,
+      workspaces: currentData.workspaces.map((item) => {
+        if (item.folder !== workspace.folder) return item;
+        return {
+          ...item,
+          updated: activity.time,
+          activities: [activity, ...(item.activities ?? [])].slice(0, 6)
+        };
+      })
+    }));
+  }, []);
+
+  const recordWorkspaceAction = useCallback(async (
+    workspace: Workspace,
+    action: string,
+    summary: string,
+    options: { target?: string; metadata?: Record<string, string> } = {}
+  ) => {
+    const target = options.target ?? workspace.path;
+    prependWorkspaceActivity(workspace, action, summary);
+    try {
+      await appendAuditEvent({
+        actor: "Nexus App",
+        action,
+        target,
+        summary,
+        metadata: {
+          folder: workspace.folder,
+          workspaceFolder: workspace.folder,
+          name: workspace.name,
+          path: workspace.path,
+          ...options.metadata
+        }
+      });
+    } catch {
+      // Browser preview and unavailable desktop bridges should not block the user action.
+    }
+  }, [prependWorkspaceActivity]);
+
   const toggleDetails = (folder: string) => {
     setExpanded((currentSet) => {
       const next = new Set(currentSet);
@@ -2231,22 +2301,34 @@ export function App() {
 
   const handleOpenCodex = async () => {
     await openExternalUrl(settings.codexUrl || "codex://");
+    if (current) {
+      void recordWorkspaceAction(current, "codex.opened", `Opened Codex for ${current.name}`, {
+        metadata: { codexUrl: settings.codexUrl || "codex://" }
+      });
+    }
     showToast("已打开 Codex");
   };
 
   const copyCommand = async (workspace: Workspace) => {
     await navigator.clipboard.writeText(workspace.worktreeCommand);
+    void recordWorkspaceAction(workspace, "worktree.command.copied", `Copied worktree command for ${workspace.name}`);
     showToast(`已复制 ${workspace.name} 的 worktree 命令`);
   };
 
   const copyInstruction = async (workspace: Workspace, action: "continue" | "git" | "delivery" | "risk" | "worktree") => {
     await navigator.clipboard.writeText(codexInstruction(workspace, action));
+    void recordWorkspaceAction(workspace, "codex_instruction.copied", `Copied ${action} Codex instruction for ${workspace.name}`, {
+      metadata: { instructionType: action }
+    });
     showToast(`已复制 ${workspace.name} 的 Codex 指令`);
   };
 
   const copyAndOpenCodex = async (workspace: Workspace, action: "continue" | "git" | "delivery" | "risk") => {
     await navigator.clipboard.writeText(codexInstruction(workspace, action));
     await openExternalUrl(settings.codexUrl || "codex://");
+    void recordWorkspaceAction(workspace, "codex_handoff.opened", `Copied ${action} instruction and opened Codex for ${workspace.name}`, {
+      metadata: { instructionType: action, codexUrl: settings.codexUrl || "codex://" }
+    });
     showToast(`已复制 ${workspace.name} 的指令并打开 Codex`);
   };
 
@@ -2315,6 +2397,13 @@ export function App() {
     try {
       const content = await readTextFile(path);
       setDocument({ title, path, content });
+      const workspace = workspaceForTarget(path);
+      if (workspace) {
+        void recordWorkspaceAction(workspace, "document.opened", `Opened ${title}`, {
+          target: path,
+          metadata: { documentTitle: title, documentPath: path }
+        });
+      }
     } catch (error) {
       showToast(error instanceof Error ? error.message : "文档读取失败");
     }
@@ -2399,7 +2488,14 @@ export function App() {
         riskCount: workspaceRisks.length,
         updated: todayString(),
         links,
-        worktreeCommand: buildWorktreeCommand(path, settings.sourceReposRoot, input.services, targetBranch)
+        worktreeCommand: buildWorktreeCommand(path, settings.sourceReposRoot, input.services, targetBranch),
+        activities: [
+          {
+            time: activityTimestamp(),
+            title: auditActivityTitle("workspace.created"),
+            detail: `Nexus App · Created workspace ${input.name}`
+          }
+        ]
       };
       setDashboard((currentData) => ({ ...currentData, workspaces: [workspace, ...currentData.workspaces] }));
       setActive(input.folder);
@@ -2413,6 +2509,9 @@ export function App() {
 
   const copyRiskInstruction = async (workspace: Workspace, risk: string) => {
     await navigator.clipboard.writeText(riskInstruction(workspace, risk));
+    void recordWorkspaceAction(workspace, "risk_instruction.copied", `Copied risk instruction for ${risk}`, {
+      metadata: { risk }
+    });
     showToast("已复制风险处理指令");
   };
 

@@ -1,5 +1,6 @@
 use nexus_core::{
-    append_audit_event, create_workspace as create_workspace_core, expand_user_path,
+    append_audit_event as append_audit_event_core, create_workspace as create_workspace_core,
+    expand_user_path,
     export_settings_profile as export_settings_profile_core,
     rebuild_search_index as rebuild_search_index_core, scan_source_repos as scan_source_repos_core,
     scan_workspaces_with_audit as scan_workspaces_core, search_index as search_index_core,
@@ -65,6 +66,17 @@ struct CreateWorkspaceCommandRequest {
     pub target_branch: String,
     #[serde(default)]
     pub confirmed: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AppendAuditEventCommandRequest {
+    actor: Option<String>,
+    action: String,
+    target: String,
+    summary: String,
+    #[serde(default)]
+    metadata: BTreeMap<String, String>,
 }
 
 #[derive(Serialize)]
@@ -288,6 +300,24 @@ fn export_settings_profile(
 }
 
 #[tauri::command]
+fn append_audit_event(
+    app: tauri::AppHandle,
+    request: AppendAuditEventCommandRequest,
+) -> Result<nexus_core::AppendAuditEventResponse, String> {
+    let root = app_audit_root(&app)?;
+    append_audit_event_core(
+        root,
+        AuditEventInput {
+            actor: request.actor.unwrap_or_else(|| "Nexus App".to_string()),
+            action: request.action,
+            target: request.target,
+            summary: request.summary,
+            metadata: request.metadata,
+        },
+    )
+}
+
+#[tauri::command]
 fn create_workspace(
     app: tauri::AppHandle,
     request: CreateWorkspaceCommandRequest,
@@ -416,7 +446,7 @@ fn count_git_like_dirs(root: &Path) -> usize {
 
 fn record_audit_event(app: &tauri::AppHandle, input: AuditEventInput) {
     if let Ok(root) = app_audit_root(app) {
-        let _ = append_audit_event(root, input);
+        let _ = append_audit_event_core(root, input);
     }
 }
 
@@ -484,6 +514,7 @@ pub fn run() {
             search_index,
             write_widget_snapshot,
             export_settings_profile,
+            append_audit_event,
             create_workspace
         ])
         .run(tauri::generate_context!())
