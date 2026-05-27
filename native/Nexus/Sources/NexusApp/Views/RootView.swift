@@ -504,6 +504,18 @@ private struct SidebarView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
 
+            if !appState.agentEvents.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Agent 事件 / Events")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+
+                    ForEach(appState.agentEvents.prefix(3), id: \.id) { event in
+                        AgentEventRow(event: event)
+                    }
+                }
+            }
+
             if let snapshot = appState.widgetSnapshot {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("小组件摘要 / Widget")
@@ -1443,6 +1455,61 @@ private struct Metric: View {
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct AgentEventRow: View {
+    let event: AgentEvent
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: symbol)
+                    .font(.caption)
+                    .foregroundStyle(color)
+                Text(event.source)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                Text(event.kind)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(color)
+            }
+            Text(event.title)
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+            Text(event.summary)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(NexusPalette.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var symbol: String {
+        switch event.kind {
+        case "permission":
+            "hand.raised"
+        case "question":
+            "questionmark.circle"
+        case "tool_use":
+            "terminal"
+        default:
+            "point.3.connected.trianglepath.dotted"
+        }
+    }
+
+    private var color: Color {
+        switch event.severity {
+        case "warning":
+            NexusPalette.warning
+        case "error":
+            NexusPalette.danger
+        default:
+            NexusPalette.accent
+        }
     }
 }
 

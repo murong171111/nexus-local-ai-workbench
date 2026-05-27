@@ -21,6 +21,7 @@ final class AppState: ObservableObject {
     @Published var bridgeMode: String
     @Published var documentPreview: DocumentSnapshot?
     @Published var widgetSnapshot: WidgetSnapshot?
+    @Published var agentEvents: [AgentEvent] = []
     @Published var lastCreatedWorkspace: CreateWorkspaceResponse?
     @Published var pendingWorktreeSetupWorkspace: WorkspaceSummary?
     @Published var lastWorktreeSetupResponse: SetupWorktreesResponse?
@@ -127,6 +128,10 @@ final class AppState: ObservableObject {
 
     private var auditRootPath: String {
         "\(applicationSupportRootPath)/audit"
+    }
+
+    private var agentEventsRootPath: String {
+        "\(applicationSupportRootPath)/agent-events"
     }
 
     private var searchIndexPath: String {
@@ -268,6 +273,9 @@ final class AppState: ObservableObject {
                     generatedAt: ISO8601DateFormatter().string(from: Date())
                 )
             )
+            agentEvents = (try? await bridge.readAgentEvents(
+                request: ReadAgentEventsRequest(eventsRoot: agentEventsRootPath, limit: 8)
+            )) ?? []
             await rebuildSearchIndex(reportErrors: false)
             bridgeMode = bridge.modeDescription
             agentStatus = AgentStatus(

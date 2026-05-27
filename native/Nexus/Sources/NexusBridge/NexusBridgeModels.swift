@@ -246,6 +246,106 @@ public struct AppendAuditEventResponse: Codable, Equatable, Sendable {
     }
 }
 
+public struct AppendAgentEventRequest: Codable, Equatable, Sendable {
+    public let eventsRoot: String
+    public let event: AgentEventInput
+
+    public init(eventsRoot: String, event: AgentEventInput) {
+        self.eventsRoot = eventsRoot
+        self.event = event
+    }
+}
+
+public struct ReadAgentEventsRequest: Codable, Equatable, Sendable {
+    public let eventsRoot: String
+    public let limit: Int?
+    public let workspaceFolder: String?
+
+    public init(eventsRoot: String, limit: Int? = nil, workspaceFolder: String? = nil) {
+        self.eventsRoot = eventsRoot
+        self.limit = limit
+        self.workspaceFolder = workspaceFolder
+    }
+}
+
+public struct AgentEventInput: Codable, Equatable, Sendable {
+    public let source: String
+    public let sessionId: String
+    public let workspaceFolder: String?
+    public let kind: String
+    public let title: String
+    public let summary: String
+    public let severity: String
+    public let metadata: [String: String]
+
+    public init(
+        source: String,
+        sessionId: String,
+        workspaceFolder: String? = nil,
+        kind: String,
+        title: String,
+        summary: String,
+        severity: String,
+        metadata: [String: String] = [:]
+    ) {
+        self.source = source
+        self.sessionId = sessionId
+        self.workspaceFolder = workspaceFolder
+        self.kind = kind
+        self.title = title
+        self.summary = summary
+        self.severity = severity
+        self.metadata = metadata
+    }
+}
+
+public struct AgentEvent: Codable, Equatable, Sendable {
+    public let id: String
+    public let timestamp: String
+    public let source: String
+    public let sessionId: String
+    public let workspaceFolder: String?
+    public let kind: String
+    public let title: String
+    public let summary: String
+    public let severity: String
+    public let metadata: [String: String]
+
+    public init(
+        id: String,
+        timestamp: String,
+        source: String,
+        sessionId: String,
+        workspaceFolder: String? = nil,
+        kind: String,
+        title: String,
+        summary: String,
+        severity: String,
+        metadata: [String: String] = [:]
+    ) {
+        self.id = id
+        self.timestamp = timestamp
+        self.source = source
+        self.sessionId = sessionId
+        self.workspaceFolder = workspaceFolder
+        self.kind = kind
+        self.title = title
+        self.summary = summary
+        self.severity = severity
+        self.metadata = metadata
+    }
+}
+
+public struct AppendAgentEventResponse: Codable, Equatable, Sendable {
+    public let path: String
+    public let event: AgentEvent
+
+    public init(path: String, event: AgentEvent) {
+        self.path = path
+        self.event = event
+    }
+}
+
 public struct RebuildSearchIndexRequest: Codable, Equatable, Sendable {
     public let indexPath: String
     public let workspacesRoot: String

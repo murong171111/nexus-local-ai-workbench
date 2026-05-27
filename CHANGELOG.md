@@ -38,6 +38,8 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Native pinned workspaces with local persistence so important requirement workspaces stay at the top of the Mac shell.
 - Native Settings can now be opened from the sidebar, persists configured local roots, and can save/reload or reset default paths.
 - Native SwiftUI session actions are now actionable for document follow-ups and confirmed worktree setup, with visible created/skipped/failed results.
+- Rust Core and the Swift/Rust bridge now support local agent event append/read flows backed by `agent-events.jsonl`.
+- Native SwiftUI sidebar now shows recent agent events from the local bridge, with preview fallback data when Rust Core is not loaded.
 - Rust Core dashboard scans now enrich workspace activity timelines from the local JSONL audit log, with Tauri and native SwiftUI shells consuming the same activity field.
 - User-visible workspace actions now append audit events for document opens, Codex handoffs, copied prompts, copied risk instructions, and copied worktree commands.
 - Rust Core now emits workspace readiness checks for service scope, target branch, worktrees, branch alignment, dirty worktrees, delivery records, SQL directory presence, and blocked tasks.

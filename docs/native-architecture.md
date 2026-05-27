@@ -48,17 +48,19 @@ The first native shell scaffold is available at `native/Nexus`. It is a Swift Pa
 - Settings profile validation.
 - Settings profile export file naming and JSON serialization.
 - Widget snapshot generation.
+- Agent event ingestion and local JSONL persistence for future hook helpers and in-app approval surfaces.
 - Future SQLite indexing and full-text search.
 
 ### Swift/Rust Bridge
 
 - The initial bridge uses a small C ABI with JSON request/response payloads. It is intentionally simple while the native app shape is still moving.
-- `crates/nexus-ffi` currently exposes workspace scans with readiness checks, session actions, and audit-log activity enrichment, source-repository scans, document reads, widget snapshot computation, JSONL audit event append, SQLite/FTS index rebuild/search, confirmed workspace creation, and confirmed worktree setup over `nexus-core`.
+- `crates/nexus-ffi` currently exposes workspace scans with readiness checks, session actions, and audit-log activity enrichment, source-repository scans, document reads, widget snapshot computation, JSONL audit event append, JSONL agent event append/read, SQLite/FTS index rebuild/search, confirmed workspace creation, and confirmed worktree setup over `nexus-core`.
 - `native/Nexus/Sources/NexusBridge` owns Swift `Codable` DTOs, preview fallback data, and optional dynamic library loading through `NEXUS_CORE_LIBRARY`.
 - The native SwiftUI shell uses the same search bridge to rebuild/query the local index, then falls back to in-memory workspace metadata when the dynamic library is not configured.
 - Native search results surface selected-result context from the current workspace model, including branch, service count, risk, and recent activity.
 - The native shell stores lightweight personal UI preferences, such as local root paths, the selected search scope, and pinned workspace IDs, in `UserDefaults`. These preferences are local conveniences; Markdown workspace records and Rust Core scan output remain the product source of truth.
 - Native document reads append `document.opened` audit events when the Rust Core bridge is available and update the visible timeline immediately.
+- Native agent event reads load recent local agent hook events into the sidebar when the Rust Core bridge is available.
 - Native session actions can open follow-up documents and execute confirmed worktree setup through the Swift/Rust bridge. Worktree setup remains a confirmed local write and reports created, skipped, and failed services back to the user.
 - The command surface should grow in this order: scan, read document, compute widget snapshot, create workspace skeleton, audit local actions, rebuild/search the local index, produce worktree plans, and execute confirmed worktree setup.
 - Local write operations must include explicit confirmation in the bridge request, not only in UI copy.
@@ -69,6 +71,7 @@ The first native shell scaffold is available at `native/Nexus`. It is a Swift Pa
 - SQLite database under Application Support. The first database file is `nexus-index.sqlite3`.
 - FTS tables for workspace Markdown, delivery records, tasks, decisions, SQL notes, and service scopes.
 - Audit log table for local writes and generated commands. The current bridge uses append-only JSONL under Application Support as the durable source that dashboard scans and SQLite can index later.
+- Agent event JSONL for local AI agent lifecycle, prompt, question, permission, and tool-use events. These events are operational telemetry, not workspace source-of-truth records.
 - Rebuildable from the human-readable workspace folders.
 
 ### Widget And Companion Surfaces

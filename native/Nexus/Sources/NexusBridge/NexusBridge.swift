@@ -9,6 +9,8 @@ public protocol NexusBridge {
     func readDocument(request: ReadDocumentRequest) async throws -> DocumentSnapshot
     func widgetSnapshot(request: WidgetSnapshotRequest) async throws -> WidgetSnapshot
     func appendAuditEvent(request: AppendAuditEventRequest) async throws -> AppendAuditEventResponse
+    func appendAgentEvent(request: AppendAgentEventRequest) async throws -> AppendAgentEventResponse
+    func readAgentEvents(request: ReadAgentEventsRequest) async throws -> [AgentEvent]
     func rebuildSearchIndex(request: RebuildSearchIndexRequest) async throws -> RebuildSearchIndexResponse
     func searchIndex(request: SearchIndexRequest) async throws -> [SearchResult]
     func createWorkspace(request: CreateWorkspaceRequest) async throws -> CreateWorkspaceResponse
@@ -92,6 +94,26 @@ public final class PreviewNexusBridge: NexusBridge {
         throw NexusBridgeError.coreError("Audit logging requires Rust Core bridge. Set NEXUS_CORE_LIBRARY to a local libnexus_ffi.dylib.")
     }
 
+    public func appendAgentEvent(request: AppendAgentEventRequest) async throws -> AppendAgentEventResponse {
+        throw NexusBridgeError.coreError("Agent event logging requires Rust Core bridge. Set NEXUS_CORE_LIBRARY to a local libnexus_ffi.dylib.")
+    }
+
+    public func readAgentEvents(request: ReadAgentEventsRequest) async throws -> [AgentEvent] {
+        [
+            AgentEvent(
+                id: "preview-agent-event",
+                timestamp: "preview",
+                source: "codex",
+                sessionId: "preview-session",
+                workspaceFolder: request.workspaceFolder,
+                kind: "permission",
+                title: "Agent event preview",
+                summary: "Set NEXUS_CORE_LIBRARY to read real local agent hook events.",
+                severity: "info"
+            )
+        ]
+    }
+
     public func rebuildSearchIndex(request: RebuildSearchIndexRequest) async throws -> RebuildSearchIndexResponse {
         RebuildSearchIndexResponse(path: request.indexPath, workspaceCount: 0, documentCount: 0)
     }
@@ -125,6 +147,8 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
     private let readDocumentFunction: BridgeCall
     private let widgetSnapshotFunction: BridgeCall
     private let appendAuditEventFunction: BridgeCall
+    private let appendAgentEventFunction: BridgeCall
+    private let readAgentEventsFunction: BridgeCall
     private let rebuildSearchIndexFunction: BridgeCall
     private let searchIndexFunction: BridgeCall
     private let createWorkspaceFunction: BridgeCall
@@ -160,6 +184,14 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
             self.appendAuditEventFunction = try Self.loadSymbol(
                 handle: handle,
                 name: "nexus_append_audit_event_json"
+            )
+            self.appendAgentEventFunction = try Self.loadSymbol(
+                handle: handle,
+                name: "nexus_append_agent_event_json"
+            )
+            self.readAgentEventsFunction = try Self.loadSymbol(
+                handle: handle,
+                name: "nexus_read_agent_events_json"
             )
             self.rebuildSearchIndexFunction = try Self.loadSymbol(
                 handle: handle,
@@ -207,6 +239,14 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
 
     public func appendAuditEvent(request: AppendAuditEventRequest) async throws -> AppendAuditEventResponse {
         try call(appendAuditEventFunction, request: request)
+    }
+
+    public func appendAgentEvent(request: AppendAgentEventRequest) async throws -> AppendAgentEventResponse {
+        try call(appendAgentEventFunction, request: request)
+    }
+
+    public func readAgentEvents(request: ReadAgentEventsRequest) async throws -> [AgentEvent] {
+        try call(readAgentEventsFunction, request: request)
     }
 
     public func rebuildSearchIndex(request: RebuildSearchIndexRequest) async throws -> RebuildSearchIndexResponse {

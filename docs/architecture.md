@@ -8,7 +8,7 @@ The current Tauri app remains the working preview app until the native Mac shell
 
 The native shell scaffold currently lives in `native/Nexus` as a Swift Package. It validates the long-lived SwiftUI/AppKit direction without changing the preview app distribution path.
 
-The first Swift/Rust bridge lives in `crates/nexus-ffi` and `native/Nexus/Sources/NexusBridge`. It uses C ABI functions with JSON payloads for scans, document reads, widget snapshot computation, audit events, SQLite/FTS index rebuild/search, confirmed workspace creation, and confirmed worktree setup, with a preview fallback when no local dynamic library is configured.
+The first Swift/Rust bridge lives in `crates/nexus-ffi` and `native/Nexus/Sources/NexusBridge`. It uses C ABI functions with JSON payloads for scans, document reads, widget snapshot computation, audit events, agent events, SQLite/FTS index rebuild/search, confirmed workspace creation, and confirmed worktree setup, with a preview fallback when no local dynamic library is configured.
 
 ## Target Native Architecture
 
@@ -60,8 +60,9 @@ Source repositories are read from a separate configured root. Nexus treats sourc
 7. The dashboard scan reads matching audit events back into each workspace activity timeline, so the cards and native detail view can show real local actions instead of only static scan summaries.
 8. Nexus can rebuild `nexus-index.sqlite3` from workspace Markdown and `sql/` notes, then query it through the Tauri command layer or Swift/Rust bridge.
 9. The Tauri preview app and native SwiftUI shell show grouped local index matches in the top search popover, support keyboard navigation, and open matched workspaces or documents.
-10. The app writes a compact WidgetKit snapshot to Application Support.
-11. The WidgetKit extension reads that snapshot and opens Nexus through `nexus://` links.
+10. The native SwiftUI shell can read recent local agent events from `agent-events.jsonl` through the Swift/Rust bridge and show them in the sidebar.
+11. The app writes a compact WidgetKit snapshot to Application Support.
+12. The WidgetKit extension reads that snapshot and opens Nexus through `nexus://` links.
 
 ## Safety Boundaries
 
