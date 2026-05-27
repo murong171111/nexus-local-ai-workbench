@@ -20,6 +20,14 @@ public struct ScanSourceReposRequest: Codable, Equatable, Sendable {
     }
 }
 
+public struct ReadDocumentRequest: Codable, Equatable, Sendable {
+    public let path: String
+
+    public init(path: String) {
+        self.path = path
+    }
+}
+
 public struct DashboardSnapshot: Codable, Equatable, Sendable {
     public let generatedAt: String
     public let workspacesRoot: String
@@ -162,6 +170,22 @@ public struct SourceRepositorySnapshot: Codable, Equatable, Sendable {
         self.branch = branch
         self.dirty = dirty
         self.summary = summary
+    }
+}
+
+public struct DocumentSnapshot: Codable, Equatable, Sendable {
+    public let path: String
+    public let name: String
+    public let `extension`: String
+    public let isMarkdown: Bool
+    public let content: String
+
+    public init(path: String, name: String, extension: String, isMarkdown: Bool, content: String) {
+        self.path = path
+        self.name = name
+        self.extension = `extension`
+        self.isMarkdown = isMarkdown
+        self.content = content
     }
 }
 

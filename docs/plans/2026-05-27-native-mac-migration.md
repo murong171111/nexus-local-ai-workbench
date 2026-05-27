@@ -79,7 +79,7 @@
 
 ## Phase 3: Bridge And Feature Parity Slice
 
-**Status:** Started. `crates/nexus-ffi` now exposes a small C ABI + JSON bridge for read-only workspace and source repository scans, and the Swift package has a `NexusBridge` target with DTOs and optional dynamic library loading through `NEXUS_CORE_LIBRARY`.
+**Status:** Started. `crates/nexus-ffi` now exposes a small C ABI + JSON bridge for read-only workspace scans, source repository scans, and document reads. The Swift package has a `NexusBridge` target with DTOs and optional dynamic library loading through `NEXUS_CORE_LIBRARY`.
 
 **Goal:** Make the native app read real workspace data.
 

@@ -1,4 +1,4 @@
-use nexus_core::{scan_source_repos, scan_workspaces};
+use nexus_core::{read_document, scan_source_repos, scan_workspaces};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -15,6 +15,12 @@ struct ScanWorkspacesRequest {
 #[serde(rename_all = "camelCase")]
 struct ScanSourceReposRequest {
     source_repos_root: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReadDocumentRequest {
+    path: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -40,6 +46,13 @@ pub unsafe extern "C" fn nexus_scan_workspaces_json(input_json: *const c_char) -
 pub unsafe extern "C" fn nexus_scan_source_repos_json(input_json: *const c_char) -> *mut c_char {
     bridge_call(input_json, |request: ScanSourceReposRequest| {
         scan_source_repos(&request.source_repos_root)
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn nexus_read_document_json(input_json: *const c_char) -> *mut c_char {
+    bridge_call(input_json, |request: ReadDocumentRequest| {
+        read_document(&request.path)
     })
 }
 
@@ -168,5 +181,28 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("input json could not be decoded"));
+    }
+
+    #[test]
+    fn read_document_bridge_returns_document_snapshot() {
+        let root = std::env::temp_dir().join(format!("nexus-ffi-document-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let document = root.join("handoff.md");
+        fs::write(&document, "# Handoff\n\nReady.\n").unwrap();
+
+        let request = format!(r#"{{"path":"{}"}}"#, document.to_string_lossy());
+        let input = CString::new(request).unwrap();
+        let output = unsafe { nexus_read_document_json(input.as_ptr()) };
+        let response = unsafe { CStr::from_ptr(output).to_string_lossy().to_string() };
+        unsafe { nexus_string_free(output) };
+
+        let value = serde_json::from_str::<Value>(&response).unwrap();
+        assert_eq!(value["ok"], true);
+        assert_eq!(value["data"]["name"], "handoff.md");
+        assert_eq!(value["data"]["isMarkdown"], true);
+        assert!(value["data"]["content"].as_str().unwrap().contains("Ready"));
+
+        fs::remove_dir_all(root).unwrap();
     }
 }

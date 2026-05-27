@@ -1,7 +1,9 @@
+mod documents;
 mod git;
 mod settings;
 mod workspace;
 
+pub use documents::{read_document, DocumentSnapshot};
 pub use git::{
     expand_user_path, git_status, normalize_git_branch, scan_source_repos, target_branch_confirmed,
     GitStatus, SourceRepo,

@@ -236,6 +236,7 @@ private struct InspectorView: View {
 }
 
 private struct WorkspaceDetailView: View {
+    @EnvironmentObject private var appState: AppState
     let workspace: WorkspaceSummary
 
     var body: some View {
@@ -304,6 +305,29 @@ private struct WorkspaceDetailView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
+                    }
+                }
+            }
+
+            SectionBlock(title: "文档预览 / Documents") {
+                Button {
+                    Task {
+                        await appState.loadHandoffForSelectedWorkspace()
+                    }
+                } label: {
+                    Label(appState.isDocumentLoading ? "Loading handoff" : "Load handoff", systemImage: "doc.text")
+                }
+                .buttonStyle(.bordered)
+                .disabled(appState.isDocumentLoading)
+
+                if let document = appState.documentPreview {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(document.name)
+                            .font(.caption.weight(.semibold))
+                        Text(String(document.content.prefix(260)))
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(6)
                     }
                 }
             }
