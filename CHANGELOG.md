@@ -11,6 +11,8 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - `nexus-core` Rust crate foundation for reusable git, source-repository, workspace scanning, document parsing, and risk detection logic.
 - Reusable Rust Core support for settings profile export and standard workspace skeleton creation.
 - SwiftUI/AppKit native Mac shell scaffold with sample workspace navigation and CI build validation.
+- `nexus-ffi` C ABI + JSON bridge scaffold for Swift-callable Rust Core read-only workspace and source-repository scanning.
+- Swift `NexusBridge` target with typed dashboard DTOs, preview fallback data, and optional dynamic library loading through `NEXUS_CORE_LIBRARY`.
 - Native architecture roadmap for the SwiftUI/AppKit + Rust Core migration path.
 - Public maintenance docs and GitHub collaboration templates.
 - CI and release workflow definitions for future automated validation and DMG publishing.

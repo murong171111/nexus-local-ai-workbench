@@ -1,4 +1,5 @@
 import Foundation
+import NexusBridge
 
 enum WorkspaceFilter: String, CaseIterable, Identifiable {
     case all = "全部"
@@ -128,6 +129,69 @@ struct WorkspaceSummary: Identifiable, Hashable {
         services.map(\.name).joined(separator: ", ")
     }
 
+    init(
+        id: String,
+        name: String,
+        folder: String,
+        path: String,
+        branch: String,
+        state: WorkspaceState,
+        riskLevel: RiskLevel,
+        aiState: String,
+        worktreeState: String,
+        services: [ServiceStatus],
+        activities: [ActivityEvent],
+        risks: [RiskAlert]
+    ) {
+        self.id = id
+        self.name = name
+        self.folder = folder
+        self.path = path
+        self.branch = branch
+        self.state = state
+        self.riskLevel = riskLevel
+        self.aiState = aiState
+        self.worktreeState = worktreeState
+        self.services = services
+        self.activities = activities
+        self.risks = risks
+    }
+
+    init(snapshot: WorkspaceSnapshot) {
+        let services = snapshot.gitRows.map { row in
+            ServiceStatus(
+                name: row.service,
+                branch: row.worktree.branch,
+                worktree: row.worktree.summary,
+                gitSummary: row.source.summary
+            )
+        }
+        let risks = snapshot.risks.map { risk in
+            RiskAlert(title: riskTitle(risk), detail: risk)
+        }
+        let worktreeState = services.isEmpty
+            ? "No confirmed services"
+            : "\(services.count) services · \(snapshot.gitRows.filter { !$0.worktree.exists }.count) missing"
+        let firstActivity = snapshot.risks.first ?? "Workspace scanned"
+
+        self.init(
+            id: snapshot.folder,
+            name: snapshot.name,
+            folder: snapshot.folder,
+            path: snapshot.path,
+            branch: snapshot.targetBranch,
+            state: WorkspaceState(snapshot.state),
+            riskLevel: RiskLevel(riskCount: snapshot.riskCount),
+            aiState: snapshot.riskCount == 0 ? "Ready for Codex continuation" : "\(snapshot.riskCount) risks need review",
+            worktreeState: worktreeState,
+            services: services,
+            activities: [
+                ActivityEvent(time: snapshot.updated, title: firstActivity, detail: "Loaded from Nexus Core dashboard snapshot")
+            ],
+            risks: risks
+        )
+    }
+
     static let previewData: [WorkspaceSummary] = [
         WorkspaceSummary(
             id: "2026-05-25-yibao-pay-log",
@@ -174,4 +238,38 @@ struct WorkspaceSummary: Identifiable, Hashable {
             risks: []
         )
     ]
+}
+
+private extension WorkspaceState {
+    init(_ rawState: String) {
+        switch rawState.lowercased() {
+        case "developing", "development":
+            self = .developing
+        case "ready", "delivery", "done":
+            self = .ready
+        case "blocked", "阻塞":
+            self = .blocked
+        default:
+            self = .analyzing
+        }
+    }
+}
+
+private extension RiskLevel {
+    init(riskCount: Int) {
+        if riskCount >= 3 {
+            self = .high
+        } else if riskCount > 0 {
+            self = .medium
+        } else {
+            self = .low
+        }
+    }
+}
+
+private func riskTitle(_ risk: String) -> String {
+    guard let title = risk.split(separator: ":", maxSplits: 1).first else {
+        return risk
+    }
+    return String(title)
 }

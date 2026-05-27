@@ -130,6 +130,14 @@ npm run widget:typecheck
 npm run native:build
 ```
 
+构建 Rust Core 桥接动态库：
+
+```bash
+npm run ffi:build
+```
+
+原生壳开发时，可以把 `NEXUS_CORE_LIBRARY` 指向构建出的 `libnexus_ffi.dylib`，用于通过 Rust Core 读取真实工作区数据。未设置时，Swift 壳会使用预览兜底数据。
+
 运行本地标准验证：
 
 ```bash

@@ -24,6 +24,9 @@ struct RootView: View {
                 .frame(width: 328)
         }
         .background(NexusPalette.background)
+        .task {
+            await appState.refreshFromBridge()
+        }
     }
 }
 
@@ -44,14 +47,18 @@ private struct TopCommandBar: View {
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
             Button {
+                Task {
+                    await appState.refreshFromBridge()
+                }
             } label: {
-                Label("Command", systemImage: "command")
+                Label(appState.isLoading ? "Loading" : "Refresh", systemImage: "arrow.clockwise")
             }
             .buttonStyle(.bordered)
+            .disabled(appState.isLoading)
 
             Spacer()
 
-            Label("Git clean", systemImage: "checkmark.circle")
+            Label(appState.bridgeMode, systemImage: "point.3.connected.trianglepath.dotted")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -90,11 +97,17 @@ private struct SidebarView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Label(appState.agentStatus.title, systemImage: "circle.fill")
                         .font(.subheadline.weight(.medium))
-                        .foregroundStyle(NexusPalette.success)
+                        .foregroundStyle(appState.lastError == nil ? NexusPalette.success : NexusPalette.danger)
                     Text(appState.agentStatus.detail)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                    if let lastError = appState.lastError {
+                        Text(lastError)
+                            .font(.caption2)
+                            .foregroundStyle(NexusPalette.danger)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 .padding(12)
                 .background(NexusPalette.panel)
@@ -301,20 +314,19 @@ private struct WorkspaceDetailView: View {
 }
 
 struct SettingsView: View {
-    @State private var workspaceRoot = "~/ks_project/workspaces"
-    @State private var sourceReposRoot = "~/ks_project/source-repos"
-    @State private var docsRoot = "~/ks_project/docs"
+    @EnvironmentObject private var appState: AppState
 
     var body: some View {
         Form {
             Section("Local Paths") {
-                TextField("Workspaces root", text: $workspaceRoot)
-                TextField("Source repositories root", text: $sourceReposRoot)
-                TextField("Delivery documents root", text: $docsRoot)
+                TextField("Workspaces root", text: $appState.workspaceRoot)
+                TextField("Source repositories root", text: $appState.sourceReposRoot)
+                TextField("Delivery documents root", text: $appState.docsRoot)
             }
 
             Section("Native Shell") {
-                Text("This shell is intentionally local-first. Signing, notarization, updater, and App Group setup are later distribution concerns.")
+                Text("Bridge mode: \(appState.bridgeMode)")
+                Text("Set NEXUS_CORE_LIBRARY to a local libnexus_ffi.dylib to load real workspace data through Rust Core during development.")
                     .foregroundStyle(.secondary)
             }
         }

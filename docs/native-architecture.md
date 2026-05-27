@@ -49,9 +49,11 @@ The first native shell scaffold is available at `native/Nexus`. It is a Swift Pa
 
 ### Swift/Rust Bridge
 
-- Stable typed DTOs shared by Swift and Rust.
-- Small command surface: scan, index, read document, create workspace skeleton, produce worktree plan, write widget snapshot, and audit local actions.
-- Clear error model with user-facing messages and machine-readable codes.
+- The initial bridge uses a small C ABI with JSON request/response payloads. It is intentionally simple while the native app shape is still moving.
+- `crates/nexus-ffi` currently exposes read-only workspace and source-repository scans over `nexus-core`.
+- `native/Nexus/Sources/NexusBridge` owns Swift `Codable` DTOs, preview fallback data, and optional dynamic library loading through `NEXUS_CORE_LIBRARY`.
+- The command surface should grow in this order: scan, read document, compute widget snapshot, create workspace skeleton, produce worktree plan, and audit local actions.
+- Bridge responses use explicit success/error envelopes so the native shell can show user-facing failures without guessing.
 
 ### Local Store
 

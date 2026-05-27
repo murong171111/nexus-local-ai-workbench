@@ -8,9 +8,11 @@ let package = Package(
         .macOS(.v13)
     ],
     products: [
+        .library(name: "NexusBridge", targets: ["NexusBridge"]),
         .executable(name: "NexusNative", targets: ["NexusApp"])
     ],
     targets: [
-        .executableTarget(name: "NexusApp")
+        .target(name: "NexusBridge"),
+        .executableTarget(name: "NexusApp", dependencies: ["NexusBridge"])
     ]
 )
