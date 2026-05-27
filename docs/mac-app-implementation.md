@@ -33,6 +33,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
   - `read_text_file`
   - `write_widget_snapshot`
 - Added Rust Core JSONL audit logging for confirmed workspace creation and settings profile export.
+- Added Rust Core dashboard activity enrichment from the local JSONL audit log.
 - Added Rust Core SQLite + FTS index rebuild/search support for workspace Markdown and SQL notes.
 - Added Tauri commands for rebuilding and querying the local search index.
 - Added a top-bar global search popover that uses the local index in the packaged app and workspace metadata fallback in browser preview mode.
@@ -92,7 +93,7 @@ The local search index is stored at `~/Library/Application Support/com.ks.nexus/
 2. Keep Tauri commands as thin wrappers around Rust Core during migration.
 3. Scaffold the SwiftUI/AppKit native Mac shell.
 4. Add the Swift/Rust bridge and render real workspace data in the native shell.
-5. Expand native search scopes into reusable saved filters and add richer activity ingestion from audit logs.
+5. Expand native search scopes into reusable saved filters and add more audited event types for document opens, generated commands, and future task automation.
 6. Package the WidgetKit extension with a full Xcode target and App Group storage.
 7. Add signing, notarization, update channels, and menu bar status after the native shell is ready.
 

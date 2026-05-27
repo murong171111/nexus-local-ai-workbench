@@ -10,6 +10,8 @@ Nexus keeps a small append-only JSONL audit log for user-visible local writes. T
 
 The Rust Core accepts a custom audit root for native shell and test scenarios, but the packaged Mac app should use the Application Support location above.
 
+The dashboard scan now reads this JSONL file and attaches matching events to each workspace as recent activity. Matching uses the event `metadata.folder`, `metadata.workspace`, `metadata.workspaceFolder`, or a target path that contains the workspace folder/path.
+
 ## Event Shape
 
 Each line is a standalone JSON object:
@@ -35,6 +37,7 @@ Each line is a standalone JSON object:
 - `workspace.created`: written after confirmed workspace creation succeeds.
 - `settings_profile.exported`: written after a settings profile export succeeds.
 - `nexus_append_audit_event_json`: available through the Swift/Rust bridge for future native shell actions.
+- Workspace scans enrich each workspace card/detail timeline with the latest matching audit events, while falling back to the scan summary when no event exists.
 
 ## Not Audited Yet
 
@@ -45,4 +48,4 @@ Each line is a standalone JSON object:
 
 ## Migration Path
 
-Markdown workspace files remain the human-readable source of truth. The audit JSONL file is the durable write trail. Future SQLite tables should index this file instead of replacing it as the only copy.
+Markdown workspace files remain the human-readable source of truth. The audit JSONL file is the durable write trail. SQLite tables should index this file for fast search and richer timelines instead of replacing it as the only copy.

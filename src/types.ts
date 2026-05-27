@@ -13,6 +13,12 @@ export type GitRow = {
   source: GitStatus;
 };
 
+export type WorkspaceActivity = {
+  time: string;
+  title: string;
+  detail: string;
+};
+
 export type Workspace = {
   name: string;
   folder: string;
@@ -35,6 +41,7 @@ export type Workspace = {
   updated: string;
   links: Record<string, string>;
   worktreeCommand: string;
+  activities?: WorkspaceActivity[];
 };
 
 export type DashboardData = {

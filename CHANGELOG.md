@@ -36,6 +36,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Native search-result context preview with workspace risk, branch/service summary, and compact activity timeline.
 - Native search scope controls for workspace/state/workflow/SQL/document-focused search in the SwiftUI shell.
 - Native pinned workspaces with local persistence so important requirement workspaces stay at the top of the Mac shell.
+- Rust Core dashboard scans now enrich workspace activity timelines from the local JSONL audit log, with Tauri and native SwiftUI shells consuming the same activity field.
 - Explicit local-write confirmation in the Tauri create-workspace flow.
 - Branch alignment checks, filters, prompts, and UI warnings for worktrees that do not match the workspace target branch.
 - Manual service input parsing for commas, spaces, new lines, semicolons, and Chinese separators when creating workspaces.
