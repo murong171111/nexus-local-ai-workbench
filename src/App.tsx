@@ -10,6 +10,7 @@ import {
   ChevronDown,
   CircleDot,
   Command,
+  Database,
   Download,
   ExternalLink,
   FileText,
@@ -36,9 +37,9 @@ import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { Card } from "./components/ui/card";
 import { Input } from "./components/ui/input";
-import { checkEnvironment, createWorkspace, exportSettingsProfile, openExternalUrl, openPath as openPathInDesktop, readTextFile, scanSourceRepos, scanWorkspaces, writeWidgetSnapshot, type EnvironmentHealth, type SourceRepo } from "./desktop";
+import { checkEnvironment, createWorkspace, exportSettingsProfile, openExternalUrl, openPath as openPathInDesktop, readTextFile, rebuildSearchIndex, scanSourceRepos, scanWorkspaces, searchIndex, writeWidgetSnapshot, type EnvironmentHealth, type RebuildSearchIndexResponse, type SearchResult, type SourceRepo } from "./desktop";
 import { cn, riskTone } from "./lib";
-import { branchAlignmentRows, buildWorktreeCommand, createSettingsProfile, normalizeServiceList, parseServiceInput, parseSettingsProfile, settingsProfileFilename, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceScore, type NexusSettingsProfile } from "./workspace-model";
+import { branchAlignmentRows, buildWorktreeCommand, createSettingsProfile, fallbackSearchResults, normalizeServiceList, parseServiceInput, parseSettingsProfile, settingsProfileFilename, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceScore, type NexusSettingsProfile } from "./workspace-model";
 import type { DashboardData, Workspace } from "./types";
 
 const initialData = rawData as DashboardData;
@@ -74,6 +75,14 @@ type NexusSettings = {
   docsRoot: string;
   codexUrl: string;
   refreshIntervalSeconds: number;
+};
+
+type SearchIndexState = {
+  state: "idle" | "building" | "ready" | "preview" | "error";
+  message: string;
+  path?: string;
+  workspaceCount?: number;
+  documentCount?: number;
 };
 
 const settingsStorageKey = "nexus-settings";
@@ -315,20 +324,30 @@ function TopBar({
   current,
   dashboard,
   refreshEnabled,
+  searchResults,
+  searchSearching,
+  searchIndexState,
   onToggleRefresh,
   onRefresh,
   onCommand,
-  onOpenCodex
+  onOpenCodex,
+  onOpenSearchResult,
+  onRebuildSearchIndex
 }: {
   query: string;
   setQuery: (query: string) => void;
   current?: Workspace;
   dashboard: DashboardData;
   refreshEnabled: boolean;
+  searchResults: SearchResult[];
+  searchSearching: boolean;
+  searchIndexState: SearchIndexState;
   onToggleRefresh: () => void;
   onRefresh: () => void;
   onCommand: () => void;
   onOpenCodex: () => void;
+  onOpenSearchResult: (result: SearchResult) => void;
+  onRebuildSearchIndex: () => void;
 }) {
   const dirty = dashboard.workspaces.flatMap((workspace) => workspace.gitRows).filter((row) => row.worktree.dirty).length;
   const branchMismatches = dashboard.workspaces.reduce((sum, workspace) => sum + branchAlignmentRows(workspace).length, 0);
@@ -338,7 +357,15 @@ function TopBar({
       <div className="flex flex-wrap items-center gap-2 xl:gap-3">
         <div className="relative min-w-[260px] flex-1 xl:max-w-xl">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
-          <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索工作区、服务、分支、风险..." className="pl-9" />
+          <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索工作区、文档、SQL、任务..." className="pl-9" />
+          <SearchResultsPopover
+            query={query}
+            results={searchResults}
+            searching={searchSearching}
+            indexState={searchIndexState}
+            onOpenResult={onOpenSearchResult}
+            onRebuild={onRebuildSearchIndex}
+          />
         </div>
         <Button variant="outline" className="mono" onClick={onCommand}>
           <Command className="h-4 w-4" />
@@ -377,6 +404,98 @@ function TopBar({
       </div>
     </header>
   );
+}
+
+function SearchResultsPopover({
+  query,
+  results,
+  searching,
+  indexState,
+  onOpenResult,
+  onRebuild
+}: {
+  query: string;
+  results: SearchResult[];
+  searching: boolean;
+  indexState: SearchIndexState;
+  onOpenResult: (result: SearchResult) => void;
+  onRebuild: () => void;
+}) {
+  const trimmedQuery = query.trim();
+  if (!trimmedQuery) return null;
+
+  const stateTone = indexState.state === "ready" ? "green" : indexState.state === "error" ? "amber" : "muted";
+
+  return (
+    <div className="absolute left-0 right-0 top-full z-40 mt-2 overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-[0_18px_48px_rgba(15,23,42,0.14)]">
+      <div className="flex items-center justify-between gap-3 border-b border-neutral-100 px-3 py-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <Database className="h-3.5 w-3.5 text-blue-600" />
+          <span className="truncate text-xs font-medium text-neutral-700">本地索引搜索 / Local index</span>
+          <Badge tone={stateTone}>{indexState.message}</Badge>
+        </div>
+        <button className="shrink-0 rounded border border-neutral-200 px-2 py-1 text-[11px] text-neutral-600 hover:bg-neutral-50" onClick={onRebuild}>
+          重建索引
+        </button>
+      </div>
+      <div className="max-h-[420px] overflow-auto p-2">
+        {searching ? (
+          <div className="flex items-center gap-2 rounded-md px-3 py-4 text-sm text-neutral-500">
+            <RefreshCw className="h-4 w-4 animate-spin" />
+            正在搜索本地索引...
+          </div>
+        ) : results.length ? (
+          results.map((result) => (
+            <button
+              key={`${result.workspaceFolder}-${result.documentKey}-${result.documentPath}`}
+              onClick={() => onOpenResult(result)}
+              className="grid w-full gap-1 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-neutral-100"
+            >
+              <div className="flex min-w-0 items-center gap-2">
+                <Badge tone={result.kind === "sql" ? "amber" : result.kind === "workspace" ? "blue" : "muted"}>{searchKindLabel(result.kind)}</Badge>
+                <span className="min-w-0 truncate text-sm font-medium text-neutral-950">{result.workspaceName}</span>
+                <span className="mono shrink-0 text-[11px] text-neutral-400">{result.documentName}</span>
+              </div>
+              <div className="max-h-10 overflow-hidden text-xs leading-5 text-neutral-500">{result.snippet || result.documentPath}</div>
+            </button>
+          ))
+        ) : (
+          <div className="rounded-md px-3 py-4 text-sm text-neutral-500">
+            没有命中文档索引。卡片列表仍会按工作区元数据过滤。
+          </div>
+        )}
+      </div>
+      {indexState.documentCount !== undefined && (
+        <div className="mono border-t border-neutral-100 px-3 py-2 text-[11px] text-neutral-400">
+          {indexState.workspaceCount ?? 0} workspaces / {indexState.documentCount} docs
+        </div>
+      )}
+    </div>
+  );
+}
+
+function searchKindLabel(kind: string) {
+  const labels: Record<string, string> = {
+    workspace: "workspace",
+    services: "services",
+    tasks: "tasks",
+    decisions: "decisions",
+    delivery: "delivery",
+    sql: "sql",
+    status: "status",
+    branches: "branch"
+  };
+  return labels[kind] ?? kind;
+}
+
+function searchIndexReadyState(rebuilt: RebuildSearchIndexResponse): SearchIndexState {
+  return {
+    state: "ready",
+    message: "ready",
+    path: rebuilt.path,
+    workspaceCount: rebuilt.workspaceCount,
+    documentCount: rebuilt.documentCount
+  };
 }
 
 function WorkspaceCard({
@@ -639,6 +758,7 @@ function CommandPalette({
   current,
   setFilter,
   refreshData,
+  rebuildSearchIndex,
   onOpenCodex
 }: {
   open: boolean;
@@ -646,6 +766,7 @@ function CommandPalette({
   current?: Workspace;
   setFilter: (filter: string) => void;
   refreshData: () => void;
+  rebuildSearchIndex: () => void;
   onOpenCodex: () => void;
 }) {
   const [commandQuery, setCommandQuery] = useState("");
@@ -680,6 +801,16 @@ function CommandPalette({
       icon: RefreshCw,
       run: () => {
         refreshData();
+        onOpenChange(false);
+      }
+    },
+    {
+      id: "rebuild-index",
+      label: "重建本地搜索索引",
+      hint: "Rebuild SQLite + FTS",
+      icon: Database,
+      run: () => {
+        rebuildSearchIndex();
         onOpenChange(false);
       }
     },
@@ -1773,6 +1904,18 @@ export function App() {
   const [environmentHealth, setEnvironmentHealth] = useState<EnvironmentHealth>(() => browserEnvironmentFallback(settings, initialData, []));
   const [environmentChecking, setEnvironmentChecking] = useState(false);
   const [environmentChecked, setEnvironmentChecked] = useState(false);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searchSearching, setSearchSearching] = useState(false);
+  const [searchIndexState, setSearchIndexState] = useState<SearchIndexState>({
+    state: "idle",
+    message: "not built"
+  });
+  const searchRequestRef = useRef(0);
+
+  const showToast = useCallback((message: string) => {
+    setToast(message);
+    window.setTimeout(() => setToast(""), 1800);
+  }, []);
 
   const refreshData = useCallback(async () => {
     const scanned = await scanWorkspaces({
@@ -1836,6 +1979,38 @@ export function App() {
     }
   }, [dashboard, settings, sourceRepos]);
 
+  const refreshSearchIndex = useCallback(async (options: { showToast?: boolean } = {}) => {
+    setSearchIndexState((currentState) => ({
+      ...currentState,
+      state: "building",
+      message: "building"
+    }));
+    try {
+      const rebuilt = await rebuildSearchIndex({
+        workspacesRoot: settings.workspacesRoot,
+        sourceReposRoot: settings.sourceReposRoot,
+        docsRoot: settings.docsRoot
+      });
+      if (!rebuilt) {
+        setSearchIndexState({
+          state: "preview",
+          message: "preview"
+        });
+        return null;
+      }
+      setSearchIndexState(searchIndexReadyState(rebuilt));
+      if (options.showToast) showToast(`已重建索引：${rebuilt.documentCount} 份文档`);
+      return rebuilt;
+    } catch (error) {
+      setSearchIndexState({
+        state: "error",
+        message: "index error"
+      });
+      if (options.showToast) showToast(error instanceof Error ? error.message : "索引重建失败");
+      return null;
+    }
+  }, [settings.docsRoot, settings.sourceReposRoot, settings.workspacesRoot, showToast]);
+
   useEffect(() => {
     const hasModal = commandOpen || settingsOpen || onboardingOpen || createOpen || Boolean(drawerFolder) || Boolean(document);
     if (!hasModal) return;
@@ -1886,6 +2061,39 @@ export function App() {
   useEffect(() => {
     void refreshEnvironmentHealth();
   }, [settings.workspacesRoot, settings.sourceReposRoot, settings.docsRoot]);
+
+  useEffect(() => {
+    void refreshSearchIndex();
+  }, [refreshSearchIndex]);
+
+  useEffect(() => {
+    const trimmed = query.trim();
+    const requestId = searchRequestRef.current + 1;
+    searchRequestRef.current = requestId;
+
+    if (!trimmed) {
+      setSearchResults([]);
+      setSearchSearching(false);
+      return;
+    }
+
+    setSearchSearching(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const indexed = await searchIndex({ query: trimmed, limit: 8 });
+        const results = indexed ?? fallbackSearchResults(dashboard, trimmed, 8);
+        if (searchRequestRef.current === requestId) setSearchResults(results);
+      } catch {
+        if (searchRequestRef.current === requestId) {
+          setSearchResults(fallbackSearchResults(dashboard, trimmed, 8));
+        }
+      } finally {
+        if (searchRequestRef.current === requestId) setSearchSearching(false);
+      }
+    }, 180);
+
+    return () => window.clearTimeout(timer);
+  }, [dashboard, query]);
 
   useEffect(() => {
     if (!refreshEnabled) return;
@@ -1939,11 +2147,6 @@ export function App() {
     });
   };
 
-  const showToast = (message: string) => {
-    setToast(message);
-    window.setTimeout(() => setToast(""), 1800);
-  };
-
   const handleOpenCodex = async () => {
     await openExternalUrl(settings.codexUrl || "codex://");
     showToast("已打开 Codex");
@@ -1974,6 +2177,7 @@ export function App() {
     void refreshData();
     void refreshSourceRepos();
     void refreshEnvironmentHealth();
+    void refreshSearchIndex();
   };
 
   const handleExportSettings = async () => {
@@ -2034,6 +2238,21 @@ export function App() {
     }
   };
 
+  const handleRefreshAll = () => {
+    void refreshData();
+    void refreshSearchIndex({ showToast: true });
+  };
+
+  const handleOpenSearchResult = (result: SearchResult) => {
+    setActive(result.workspaceFolder);
+    setQuery("");
+    if (result.kind === "workspace") {
+      setDrawerFolder(result.workspaceFolder);
+      return;
+    }
+    void openDocument(`${result.workspaceName} / ${result.documentName}`, result.documentPath);
+  };
+
   const handleCreateWorkspace = async (input: { name: string; folder: string; services: string[]; targetBranch: string; confirmed: boolean }) => {
     try {
       const result = await createWorkspace({
@@ -2092,6 +2311,7 @@ export function App() {
       setDashboard((currentData) => ({ ...currentData, workspaces: [workspace, ...currentData.workspaces] }));
       setActive(input.folder);
       setCreateOpen(false);
+      void refreshSearchIndex();
       showToast(`已创建工作区 ${input.name}`);
     } catch (error) {
       showToast(error instanceof Error ? error.message : "创建工作区失败");
@@ -2121,10 +2341,15 @@ export function App() {
           current={current}
           dashboard={dashboard}
           refreshEnabled={refreshEnabled}
+          searchResults={searchResults}
+          searchSearching={searchSearching}
+          searchIndexState={searchIndexState}
           onToggleRefresh={() => setRefreshEnabled((value) => !value)}
-          onRefresh={refreshData}
+          onRefresh={handleRefreshAll}
           onCommand={() => setCommandOpen(true)}
           onOpenCodex={handleOpenCodex}
+          onOpenSearchResult={handleOpenSearchResult}
+          onRebuildSearchIndex={() => void refreshSearchIndex({ showToast: true })}
         />
         <div className="px-4 py-4 xl:px-5 xl:py-5">
           <div className="mb-5 grid gap-3 xl:flex xl:items-end xl:justify-between">
@@ -2192,7 +2417,15 @@ export function App() {
         </div>
       </main>
       <RightRail current={current} visible={visible} />
-      <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} current={current} setFilter={setFilter} refreshData={refreshData} onOpenCodex={handleOpenCodex} />
+      <CommandPalette
+        open={commandOpen}
+        onOpenChange={setCommandOpen}
+        current={current}
+        setFilter={setFilter}
+        refreshData={handleRefreshAll}
+        rebuildSearchIndex={() => void refreshSearchIndex({ showToast: true })}
+        onOpenCodex={handleOpenCodex}
+      />
       <CreateWorkspacePanel
         open={createOpen}
         settings={settings}

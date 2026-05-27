@@ -23,6 +23,16 @@ export type BranchAlignmentRow = {
   sourceBranch: string;
 };
 
+export type WorkspaceSearchResult = {
+  workspaceFolder: string;
+  workspaceName: string;
+  documentKey: string;
+  documentName: string;
+  documentPath: string;
+  kind: string;
+  snippet: string;
+};
+
 export function slugify(value: string) {
   return value
     .trim()
@@ -183,4 +193,58 @@ export function widgetSnapshotFromDashboard(dashboard: DashboardData, activeFold
     topRisks: dashboard.workspaces.flatMap((workspace) => workspace.risks.map((risk) => `${workspace.name}: ${risk}`)).slice(0, 3),
     deepLink: activeWorkspace ? `nexus://workspace/${encodeURIComponent(activeWorkspace.folder)}` : "nexus://"
   };
+}
+
+export function fallbackSearchResults(dashboard: DashboardData, query: string, limit = 8): WorkspaceSearchResult[] {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return [];
+
+  return dashboard.workspaces
+    .map((workspace) => {
+      const parts = [
+        workspace.name,
+        workspace.folder,
+        workspace.targetBranch,
+        workspace.sourceRoot,
+        ...workspace.confirmedServices,
+        ...workspace.candidateServices,
+        ...workspace.risks,
+        workspace.worktreeCommand
+      ];
+      const haystack = parts.join(" ").toLowerCase();
+      if (!haystack.includes(normalizedQuery)) return null;
+
+      return {
+        workspaceFolder: workspace.folder,
+        workspaceName: workspace.name,
+        documentKey: "workspace",
+        documentName: "Workspace metadata",
+        documentPath: workspace.links.folder || workspace.path,
+        kind: "workspace",
+        snippet: compactSearchSnippet(
+          [
+            workspace.targetBranch,
+            workspace.confirmedServices.join(", ") || "服务待确认",
+            workspace.risks[0] || "暂无风险"
+          ].join(" · "),
+          query
+        )
+      };
+    })
+    .filter((result): result is WorkspaceSearchResult => Boolean(result))
+    .slice(0, Math.max(1, limit));
+}
+
+export function compactSearchSnippet(content: string, query: string, radius = 72) {
+  const trimmed = content.replace(/\s+/g, " ").trim();
+  if (!trimmed) return "";
+
+  const lower = trimmed.toLowerCase();
+  const needle = query.trim().toLowerCase();
+  const index = needle ? lower.indexOf(needle) : -1;
+  if (index < 0) return trimmed.slice(0, radius * 2);
+
+  const start = Math.max(0, index - radius);
+  const end = Math.min(trimmed.length, index + needle.length + radius);
+  return `${start > 0 ? "..." : ""}${trimmed.slice(start, end)}${end < trimmed.length ? "..." : ""}`;
 }

@@ -16,6 +16,7 @@ It is designed for teams that work across multiple local service repositories an
 - Exportable and importable team settings profile for sharing local path conventions.
 - Local audit log for confirmed workspace creation and settings profile exports.
 - Local SQLite + FTS index foundation for workspace Markdown, service scope, tasks, decisions, delivery records, and SQL notes.
+- Global search popover for indexed workspace documents, SQL notes, and browser-preview metadata fallback.
 - First-run onboarding for configuring local workspace, source repository, and delivery document paths.
 - Environment health checks for configured directories and Git availability.
 - Native workspace scanning from the configured paths; no local Python script is required for the packaged app.
@@ -84,7 +85,9 @@ Nexus writes JSONL audit events to `~/Library/Application Support/com.ks.nexus/a
 
 ## Local Search Index
 
-Nexus can rebuild a local SQLite + FTS index at `~/Library/Application Support/com.ks.nexus/nexus-index.sqlite3`. The index is a cache that can be rebuilt from human-readable workspace folders. The first indexed sources are standard workspace Markdown files and `sql/` notes.
+Nexus can rebuild a local SQLite + FTS index at `~/Library/Application Support/com.ks.nexus/nexus-index.sqlite3`. The index is a cache that can be rebuilt from human-readable workspace folders. The indexed sources are standard workspace Markdown files and `sql/` notes.
+
+The top search field queries this local index in the packaged app. Results open the matched document in the in-app viewer. In browser preview mode, the same popover falls back to workspace metadata so the search UI remains testable without Tauri.
 
 ## Local Development
 

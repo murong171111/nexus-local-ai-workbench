@@ -3,7 +3,9 @@ import test from "node:test";
 import {
   buildWorktreeCommand,
   branchAlignmentRows,
+  compactSearchSnippet,
   createSettingsProfile,
+  fallbackSearchResults,
   hasConfirmedTargetBranch,
   normalizeServiceList,
   normalizeGitBranch,
@@ -171,6 +173,38 @@ test("widgetSnapshotFromDashboard summarizes active workspace state", () => {
   assert.deepEqual(snapshot.topRisks, ["Risky Workspace: branch mismatch", "Risky Workspace: missing delivery note"]);
   assert.equal(snapshot.deepLink, "nexus://workspace/2026-01-01-risky");
   assert.match(snapshot.generatedAt, /^\d{4}-\d{2}-\d{2}T/);
+});
+
+test("fallbackSearchResults mirrors indexed search result shape for browser preview", () => {
+  const dashboard = {
+    generatedAt: "2026-01-01T00:00:00.000Z",
+    workspacesRoot: "/workspace",
+    sourceReposRoot: "/source",
+    docsRoot: "/docs",
+    workspaces: [
+      workspace({
+        name: "Pay Log Workspace",
+        folder: "2026-01-01-pay-log",
+        targetBranch: "chen/pay-log",
+        confirmedServices: ["order", "store-cashier"],
+        risks: ["交付记录待补充"],
+        links: { folder: "/workspace/2026-01-01-pay-log" }
+      })
+    ]
+  };
+
+  const results = fallbackSearchResults(dashboard, "store-cashier", 5);
+
+  assert.equal(results.length, 1);
+  assert.equal(results[0].workspaceName, "Pay Log Workspace");
+  assert.equal(results[0].kind, "workspace");
+  assert.equal(results[0].documentPath, "/workspace/2026-01-01-pay-log");
+  assert.match(results[0].snippet, /store-cashier/);
+});
+
+test("compactSearchSnippet keeps nearby context around a query", () => {
+  const snippet = compactSearchSnippet("alpha beta gamma pay_log delta epsilon", "pay_log", 6);
+  assert.equal(snippet, "...gamma pay_log delta...");
 });
 
 test("createSettingsProfile serializes shareable Nexus path settings", () => {
