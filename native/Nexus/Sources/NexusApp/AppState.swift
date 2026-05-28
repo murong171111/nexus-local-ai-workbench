@@ -509,6 +509,18 @@ final class AppState: ObservableObject {
         }
     }
 
+    func focusWorkspace(id: WorkspaceSummary.ID) {
+        if selectedWorkspaceID != id {
+            documentPreview = nil
+        }
+        selectedFilter = .all
+        clearSearch()
+        selectedWorkspaceID = id
+        Task {
+            await refreshWidgetSnapshot()
+        }
+    }
+
     func requestTaskStatusUpdate(_ item: TaskCenterItem, status: String) {
         guard let workspace = workspaces.first(where: { $0.id == item.workspaceID }) else {
             return
@@ -1540,6 +1552,8 @@ final class AppState: ObservableObject {
     private func markLocalWriteFeedback(
         title: String,
         detail: String,
+        workspaceID: WorkspaceSummary.ID,
+        workspaceName: String,
         documentPath: String,
         documentLabel: String,
         systemImage: String
@@ -1548,6 +1562,8 @@ final class AppState: ObservableObject {
             title: title,
             detail: detail,
             timestamp: Self.activityTimestamp(),
+            workspaceID: workspaceID,
+            workspaceName: workspaceName,
             documentPath: documentPath,
             documentLabel: documentLabel,
             systemImage: systemImage
@@ -1608,6 +1624,8 @@ final class AppState: ObservableObject {
                     markLocalWriteFeedback(
                         title: "任务状态已写回 / Task updated",
                         detail: "\(response.task.title): \(response.previousStatus) -> \(response.task.status)。Workflow 已刷新，可继续查看交付焦点。",
+                        workspaceID: update.workspaceID,
+                        workspaceName: update.workspaceName,
                         documentPath: response.path,
                         documentLabel: "打开 tasks.md",
                         systemImage: "checkmark.circle"
@@ -1648,6 +1666,8 @@ final class AppState: ObservableObject {
                     markLocalWriteFeedback(
                         title: "生命周期已写回 / Lifecycle updated",
                         detail: "\(update.currentLabel) -> \(update.nextLabel)。workspace.md 和 STATUS.md 已更新，Workflow 焦点已重新计算。",
+                        workspaceID: update.workspaceID,
+                        workspaceName: update.workspaceName,
                         documentPath: response.statusDocumentPath,
                         documentLabel: "打开 STATUS.md",
                         systemImage: "arrow.triangle.2.circlepath.circle"

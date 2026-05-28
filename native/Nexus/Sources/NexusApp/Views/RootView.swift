@@ -2208,7 +2208,7 @@ private struct LocalWriteFeedbackView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
-                        Text("\(feedback.timestamp) · Workspace state refreshed")
+                        Text("\(feedback.timestamp) · \(feedback.workspaceName) · Workspace state refreshed")
                             .font(.system(size: 10, design: .monospaced))
                             .foregroundStyle(.secondary)
                     }
@@ -2226,6 +2226,15 @@ private struct LocalWriteFeedbackView: View {
                 }
 
                 HStack(spacing: 8) {
+                    Button {
+                        appState.focusWorkspace(id: feedback.workspaceID)
+                    } label: {
+                        Label("聚焦工作区", systemImage: "scope")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .help("清空筛选并选中刚刚写回的工作区 / Focus the updated workspace")
+
                     Button {
                         Task {
                             await appState.loadDocument(path: feedback.documentPath)
