@@ -38,6 +38,9 @@ struct RootView: View {
         .task {
             await appState.refreshFromBridge()
         }
+        .task(id: appState.automationScheduleToken) {
+            await appState.runAutomationScheduleLoop()
+        }
         .sheet(isPresented: $isCreateWorkspacePresented) {
             CreateWorkspaceSheet()
                 .environmentObject(appState)
@@ -1759,6 +1762,33 @@ struct SettingsView: View {
                     Text("Set NEXUS_CORE_LIBRARY to a local libnexus_ffi.dylib to load real workspace data through Rust Core during development.")
                         .foregroundStyle(.secondary)
                 }
+
+                Section("Automation") {
+                    Toggle(
+                        "Enable scheduled local checks",
+                        isOn: Binding(
+                            get: { appState.isAutomationScheduleEnabled },
+                            set: { appState.setAutomationScheduleEnabled($0) }
+                        )
+                    )
+
+                    Picker(
+                        "Check interval",
+                        selection: Binding(
+                            get: { appState.automationIntervalMinutes },
+                            set: { appState.setAutomationIntervalMinutes($0) }
+                        )
+                    ) {
+                        ForEach(AppState.supportedAutomationIntervals, id: \.self) { minutes in
+                            Text("\(minutes) min").tag(minutes)
+                        }
+                    }
+                    .disabled(!appState.isAutomationScheduleEnabled)
+
+                    Text("Last run: \(appState.lastAutomationRunAt ?? "None")")
+                    Text("Scheduled checks scan local workspace and git state, then write a fail-open audit event when the Rust Core bridge is available.")
+                        .foregroundStyle(.secondary)
+                }
             }
 
             HStack {
@@ -1790,7 +1820,7 @@ struct SettingsView: View {
             appState.persistLocalPaths()
         }
         .padding(20)
-        .frame(width: 620, height: 420)
+        .frame(width: 620, height: 520)
     }
 }
 

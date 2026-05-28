@@ -36,6 +36,9 @@ final class AppState: ObservableObject {
     @Published var searchError: String?
     @Published var isRunningAutomationCheck = false
     @Published var lastAutomationCheck: LocalAutomationCheckResponse?
+    @Published var isAutomationScheduleEnabled: Bool
+    @Published var automationIntervalMinutes: Int
+    @Published var lastAutomationRunAt: String?
 
     @Published var agentStatus: AgentStatus
     private let bridge: NexusBridge
@@ -48,11 +51,16 @@ final class AppState: ObservableObject {
         static let workspaceRoot = "nexus.native.workspaceRoot"
         static let sourceReposRoot = "nexus.native.sourceReposRoot"
         static let docsRoot = "nexus.native.docsRoot"
+        static let isAutomationScheduleEnabled = "nexus.native.isAutomationScheduleEnabled"
+        static let automationIntervalMinutes = "nexus.native.automationIntervalMinutes"
+        static let lastAutomationRunAt = "nexus.native.lastAutomationRunAt"
     }
 
     static let defaultWorkspaceRoot = "~/ks_project/workspaces"
     static let defaultSourceReposRoot = "~/ks_project/source-repos"
     static let defaultDocsRoot = "~/ks_project/docs"
+    static let supportedAutomationIntervals = [5, 15, 30, 60]
+    static let defaultAutomationIntervalMinutes = 30
 
     init(
         workspaces: [WorkspaceSummary],
@@ -91,6 +99,13 @@ final class AppState: ObservableObject {
         self.selectedTaskCenterFilter = TaskCenterFilter(
             rawValue: defaults.string(forKey: DefaultsKey.selectedTaskCenterFilter) ?? ""
         ) ?? .all
+        self.isAutomationScheduleEnabled = defaults.object(
+            forKey: DefaultsKey.isAutomationScheduleEnabled
+        ) == nil ? false : defaults.bool(forKey: DefaultsKey.isAutomationScheduleEnabled)
+        self.automationIntervalMinutes = Self.normalizedAutomationInterval(
+            defaults.integer(forKey: DefaultsKey.automationIntervalMinutes)
+        )
+        self.lastAutomationRunAt = defaults.string(forKey: DefaultsKey.lastAutomationRunAt)
         self.selectedWorkspaceID = workspaces.first?.id
     }
 
@@ -188,6 +203,10 @@ final class AppState: ObservableObject {
 
     var hasSearchQuery: Bool {
         !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var automationScheduleToken: String {
+        "\(isAutomationScheduleEnabled)-\(automationIntervalMinutes)"
     }
 
     private var applicationSupportRootPath: String {
@@ -450,7 +469,32 @@ final class AppState: ObservableObject {
         }
     }
 
-    func runLocalAutomationCheck() async {
+    func setAutomationScheduleEnabled(_ enabled: Bool) {
+        isAutomationScheduleEnabled = enabled
+        defaults.set(enabled, forKey: DefaultsKey.isAutomationScheduleEnabled)
+    }
+
+    func setAutomationIntervalMinutes(_ minutes: Int) {
+        automationIntervalMinutes = Self.normalizedAutomationInterval(minutes)
+        defaults.set(automationIntervalMinutes, forKey: DefaultsKey.automationIntervalMinutes)
+    }
+
+    func runAutomationScheduleLoop() async {
+        guard isAutomationScheduleEnabled else { return }
+        while !Task.isCancelled && isAutomationScheduleEnabled {
+            let nanoseconds = UInt64(max(1, automationIntervalMinutes)) * 60 * 1_000_000_000
+            do {
+                try await Task.sleep(nanoseconds: nanoseconds)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled && isAutomationScheduleEnabled else { return }
+            await runLocalAutomationCheck(actor: "Nexus Scheduler")
+        }
+    }
+
+    func runLocalAutomationCheck(actor: String = "Nexus Native") async {
+        guard !isRunningAutomationCheck else { return }
         isRunningAutomationCheck = true
         lastError = nil
         defer {
@@ -458,16 +502,19 @@ final class AppState: ObservableObject {
         }
 
         do {
+            let generatedAt = ISO8601DateFormatter().string(from: Date())
             let response = try await bridge.localAutomationCheck(
                 request: LocalAutomationCheckRequest(
                     workspacesRoot: workspaceRoot,
                     sourceReposRoot: sourceReposRoot,
                     docsRoot: docsRoot,
                     auditRoot: auditRootPath,
-                    actor: "Nexus Native",
-                    generatedAt: ISO8601DateFormatter().string(from: Date())
+                    actor: actor,
+                    generatedAt: generatedAt
                 )
             )
+            lastAutomationRunAt = generatedAt
+            defaults.set(generatedAt, forKey: DefaultsKey.lastAutomationRunAt)
             lastAutomationCheck = response
             if let auditError = response.auditError {
                 lastError = "Automation audit failed: \(auditError)"
@@ -873,6 +920,13 @@ final class AppState: ObservableObject {
         let value = defaults.string(forKey: key)?.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let value, !value.isEmpty else { return fallback }
         return value
+    }
+
+    private static func normalizedAutomationInterval(_ value: Int) -> Int {
+        guard value > 0 else { return defaultAutomationIntervalMinutes }
+        return supportedAutomationIntervals.min { left, right in
+            abs(left - value) < abs(right - value)
+        } ?? defaultAutomationIntervalMinutes
     }
 }
 
