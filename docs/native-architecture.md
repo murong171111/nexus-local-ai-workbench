@@ -59,6 +59,7 @@ The first native shell scaffold is available at `native/Nexus`. It is a Swift Pa
 - The native SwiftUI shell uses the same search bridge to rebuild/query the local index, then falls back to in-memory workspace metadata when the dynamic library is not configured.
 - Native search results surface selected-result context from the current workspace model, including branch, service count, risk, and recent activity.
 - The native shell stores lightweight personal UI preferences, such as local root paths, the selected search scope, and pinned workspace IDs, in `UserDefaults`. These preferences are local conveniences; Markdown workspace records and Rust Core scan output remain the product source of truth.
+- The native Settings surface can import and export the same shareable Nexus settings profile shape used by the Tauri preview app, so small teams can pass path conventions without copying workspace content or code.
 - Native document reads render Markdown by default, keep a source toggle for raw content, append `document.opened` audit events when the Rust Core bridge is available, and update the visible timeline immediately.
 - Native widget snapshots are written by the SwiftUI shell to Application Support and mirrored to `group.com.ks.nexus` when an App Group container is available, keeping unsigned local development and signed WidgetKit packaging on the same data contract.
 - Native agent event reads load recent local agent hook events into the sidebar when the Rust Core bridge is available.

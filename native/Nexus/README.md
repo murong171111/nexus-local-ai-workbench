@@ -13,7 +13,7 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - Search result context previews with workspace risk, branch/service summary, and compact activity timeline.
 - Persisted native search scopes for workspace, state, workflow, SQL, and document-focused searches.
 - Pinned workspaces in the sidebar and workspace card flow, stored as local Mac preferences.
-- Sidebar Settings sheet with persisted workspace, source repository, and delivery document roots.
+- Sidebar Settings sheet with persisted workspace, source repository, delivery document roots, Codex URL, refresh interval, and compatible team profile import/export.
 - Native document preview renders Markdown by default and keeps a source-mode toggle for raw workspace files.
 - Native widget snapshot writing to Application Support, with automatic `group.com.ks.nexus` App Group mirroring when the signed app has that entitlement.
 - Recent agent event sidebar feed backed by the Swift/Rust agent event bridge, with detail inspection, safe metadata actions, shared task drafts, confirmed `tasks.md` writeback, Codex handoff prompts, and JSON copy support.

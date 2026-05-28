@@ -3,6 +3,33 @@ import Foundation
 import NexusBridge
 import UserNotifications
 
+private struct NativeSettingsProfile: Codable {
+    let schemaVersion: Int
+    let app: String
+    let exportedAt: String
+    let settings: NativeSettingsProfileSettings
+    let notes: [String]
+}
+
+private struct NativeSettingsProfileSettings: Codable {
+    let workspacesRoot: String
+    let sourceReposRoot: String
+    let docsRoot: String
+    let codexUrl: String
+    let refreshIntervalSeconds: Int
+}
+
+private enum SettingsProfileError: LocalizedError {
+    case invalid(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalid(let message):
+            return message
+        }
+    }
+}
+
 @MainActor
 final class AppState: ObservableObject {
     @Published var query = ""
@@ -15,6 +42,8 @@ final class AppState: ObservableObject {
     @Published var workspaceRoot: String
     @Published var sourceReposRoot: String
     @Published var docsRoot: String
+    @Published var codexURL: String
+    @Published var refreshIntervalSeconds: Int
     @Published var isLoading = false
     @Published var isDocumentLoading = false
     @Published var isCreatingWorkspace = false
@@ -27,6 +56,8 @@ final class AppState: ObservableObject {
     @Published var widgetSnapshot: WidgetSnapshot?
     @Published var widgetSnapshotStorageStatus = "Not written"
     @Published var widgetSnapshotStoragePaths: [String] = []
+    @Published var settingsProfileStatus = "No profile imported or exported"
+    @Published var lastSettingsProfilePath: String?
     @Published var agentEvents: [AgentEvent] = []
     @Published var selectedAgentEvent: AgentEvent?
     @Published var pendingTaskStatusUpdate: TaskStatusUpdate?
@@ -62,6 +93,8 @@ final class AppState: ObservableObject {
         static let workspaceRoot = "nexus.native.workspaceRoot"
         static let sourceReposRoot = "nexus.native.sourceReposRoot"
         static let docsRoot = "nexus.native.docsRoot"
+        static let codexURL = "nexus.native.codexURL"
+        static let refreshIntervalSeconds = "nexus.native.refreshIntervalSeconds"
         static let isAutomationScheduleEnabled = "nexus.native.isAutomationScheduleEnabled"
         static let automationIntervalMinutes = "nexus.native.automationIntervalMinutes"
         static let lastAutomationRunAt = "nexus.native.lastAutomationRunAt"
@@ -75,6 +108,8 @@ final class AppState: ObservableObject {
     static let defaultWorkspaceRoot = "~/ks_project/workspaces"
     static let defaultSourceReposRoot = "~/ks_project/source-repos"
     static let defaultDocsRoot = "~/ks_project/docs"
+    static let defaultCodexURL = "codex://"
+    static let defaultRefreshIntervalSeconds = 10
     static let widgetAppGroupIdentifier = "group.com.ks.nexus"
     static let widgetSnapshotFileName = "widget-snapshot.json"
     static let supportedAutomationIntervals = [5, 15, 30, 60]
@@ -89,6 +124,8 @@ final class AppState: ObservableObject {
         workspaceRoot: String = "~/ks_project/workspaces",
         sourceReposRoot: String = "~/ks_project/source-repos",
         docsRoot: String = "~/ks_project/docs",
+        codexURL: String = "codex://",
+        refreshIntervalSeconds: Int = 10,
         bridgeMode: String = "Preview",
         defaults: UserDefaults = .standard
     ) {
@@ -110,6 +147,16 @@ final class AppState: ObservableObject {
             defaults: defaults,
             key: DefaultsKey.docsRoot,
             fallback: docsRoot
+        )
+        self.codexURL = Self.storedPath(
+            defaults: defaults,
+            key: DefaultsKey.codexURL,
+            fallback: codexURL
+        )
+        self.refreshIntervalSeconds = Self.normalizedRefreshInterval(
+            defaults.object(forKey: DefaultsKey.refreshIntervalSeconds) == nil
+                ? refreshIntervalSeconds
+                : defaults.integer(forKey: DefaultsKey.refreshIntervalSeconds)
         )
         self.bridgeMode = bridge.modeDescription.isEmpty ? bridgeMode : bridge.modeDescription
         self.pinnedWorkspaceIDs = Set(defaults.stringArray(forKey: DefaultsKey.pinnedWorkspaceIDs) ?? [])
@@ -477,12 +524,20 @@ final class AppState: ObservableObject {
             docsRoot.trimmingCharacters(in: .whitespacesAndNewlines),
             forKey: DefaultsKey.docsRoot
         )
+        defaults.set(
+            codexURL.trimmingCharacters(in: .whitespacesAndNewlines),
+            forKey: DefaultsKey.codexURL
+        )
+        refreshIntervalSeconds = Self.normalizedRefreshInterval(refreshIntervalSeconds)
+        defaults.set(refreshIntervalSeconds, forKey: DefaultsKey.refreshIntervalSeconds)
     }
 
     func resetLocalPaths() {
         workspaceRoot = Self.defaultWorkspaceRoot
         sourceReposRoot = Self.defaultSourceReposRoot
         docsRoot = Self.defaultDocsRoot
+        codexURL = Self.defaultCodexURL
+        refreshIntervalSeconds = Self.defaultRefreshIntervalSeconds
         persistLocalPaths()
     }
 
@@ -492,6 +547,79 @@ final class AppState: ObservableObject {
         selectedWorkspaceID = nil
         documentPreview = nil
         await refreshFromBridge()
+    }
+
+    var settingsProfileDefaultFilename: String {
+        let date = ISO8601DateFormatter().string(from: Date()).prefix(10)
+        return "nexus-settings-profile-\(date).json"
+    }
+
+    func exportSettingsProfile(to url: URL) async {
+        persistLocalPaths()
+        let profile = NativeSettingsProfile(
+            schemaVersion: 1,
+            app: "Nexus",
+            exportedAt: ISO8601DateFormatter().string(from: Date()),
+            settings: NativeSettingsProfileSettings(
+                workspacesRoot: workspaceRoot.trimmingCharacters(in: .whitespacesAndNewlines),
+                sourceReposRoot: sourceReposRoot.trimmingCharacters(in: .whitespacesAndNewlines),
+                docsRoot: docsRoot.trimmingCharacters(in: .whitespacesAndNewlines),
+                codexUrl: codexURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ? Self.defaultCodexURL
+                    : codexURL.trimmingCharacters(in: .whitespacesAndNewlines),
+                refreshIntervalSeconds: Self.normalizedRefreshInterval(refreshIntervalSeconds)
+            ),
+            notes: [
+                "This file stores local Nexus path conventions for team sharing.",
+                "Review paths after importing because every machine can use different local roots."
+            ]
+        )
+
+        do {
+            let payload = try Self.profileEncoder.encode(profile)
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try payload.write(to: url, options: .atomic)
+            settingsProfileStatus = "Exported \(url.lastPathComponent)"
+            lastSettingsProfilePath = url.path
+            await recordSettingsProfileAudit(
+                action: "settings_profile.exported",
+                target: url.path,
+                summary: "Exported a shareable Nexus settings profile"
+            )
+        } catch {
+            settingsProfileStatus = "Export failed: \(error.localizedDescription)"
+            lastError = settingsProfileStatus
+        }
+    }
+
+    func importSettingsProfile(from url: URL) async {
+        do {
+            let payload = try Data(contentsOf: url)
+            let profile = try JSONDecoder().decode(NativeSettingsProfile.self, from: payload)
+            let settings = try Self.validatedSettings(from: profile)
+
+            workspaceRoot = settings.workspacesRoot
+            sourceReposRoot = settings.sourceReposRoot
+            docsRoot = settings.docsRoot
+            codexURL = settings.codexUrl
+            refreshIntervalSeconds = settings.refreshIntervalSeconds
+            persistLocalPaths()
+
+            settingsProfileStatus = "Imported \(url.lastPathComponent)"
+            lastSettingsProfilePath = url.path
+            await recordSettingsProfileAudit(
+                action: "settings_profile.imported",
+                target: url.path,
+                summary: "Imported a shared Nexus settings profile"
+            )
+            await reloadConfiguredPaths()
+        } catch {
+            settingsProfileStatus = "Import failed: \(error.localizedDescription)"
+            lastError = settingsProfileStatus
+        }
     }
 
     func workspace(for result: SearchResult) -> WorkspaceSummary? {
@@ -1265,6 +1393,28 @@ final class AppState: ObservableObject {
         response?.highPriorityTaskCount ?? 0
     }
 
+    private func recordSettingsProfileAudit(action: String, target: String, summary: String) async {
+        _ = try? await bridge.appendAuditEvent(
+            request: AppendAuditEventRequest(
+                auditRoot: auditRootPath,
+                event: AuditEventInput(
+                    actor: "Nexus Native",
+                    action: action,
+                    target: target,
+                    summary: summary,
+                    metadata: [
+                        "path": target,
+                        "workspacesRoot": workspaceRoot,
+                        "sourceReposRoot": sourceReposRoot,
+                        "docsRoot": docsRoot,
+                        "codexUrl": codexURL,
+                        "refreshIntervalSeconds": "\(refreshIntervalSeconds)"
+                    ]
+                )
+            )
+        )
+    }
+
     private func recordWorkspaceAction(
         action: String,
         target: String,
@@ -1312,6 +1462,10 @@ final class AppState: ObservableObject {
             return "Codex 指令已复制 / Instruction copied"
         case "codex_task_handoff.copied":
             return "任务上下文已复制 / Task handoff copied"
+        case "settings_profile.exported":
+            return "设置已导出 / Settings exported"
+        case "settings_profile.imported":
+            return "设置已导入 / Settings imported"
         default:
             return action.replacingOccurrences(of: "_", with: " ")
                 .replacingOccurrences(of: ".", with: " ")
@@ -1337,6 +1491,44 @@ final class AppState: ObservableObject {
         let value = defaults.string(forKey: key)?.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let value, !value.isEmpty else { return fallback }
         return value
+    }
+
+    private static var profileEncoder: JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return encoder
+    }
+
+    private static func validatedSettings(
+        from profile: NativeSettingsProfile
+    ) throws -> NativeSettingsProfileSettings {
+        guard profile.app == "Nexus" else {
+            throw SettingsProfileError.invalid("配置文件不是 Nexus Profile")
+        }
+        guard profile.schemaVersion == 1 else {
+            throw SettingsProfileError.invalid("暂不支持该配置版本")
+        }
+
+        let workspacesRoot = try requiredProfilePath(profile.settings.workspacesRoot, label: "workspacesRoot")
+        let sourceReposRoot = try requiredProfilePath(profile.settings.sourceReposRoot, label: "sourceReposRoot")
+        let docsRoot = try requiredProfilePath(profile.settings.docsRoot, label: "docsRoot")
+        let codexUrl = profile.settings.codexUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return NativeSettingsProfileSettings(
+            workspacesRoot: workspacesRoot,
+            sourceReposRoot: sourceReposRoot,
+            docsRoot: docsRoot,
+            codexUrl: codexUrl.isEmpty ? defaultCodexURL : codexUrl,
+            refreshIntervalSeconds: normalizedRefreshInterval(profile.settings.refreshIntervalSeconds)
+        )
+    }
+
+    private static func requiredProfilePath(_ value: String, label: String) throws -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw SettingsProfileError.invalid("配置文件缺少 \(label)")
+        }
+        return trimmed
     }
 
     private func requestAutomationNotificationAuthorization() async -> (granted: Bool, status: String) {
@@ -1415,6 +1607,10 @@ final class AppState: ObservableObject {
         return supportedAutomationIntervals.min { left, right in
             abs(left - value) < abs(right - value)
         } ?? defaultAutomationIntervalMinutes
+    }
+
+    private static func normalizedRefreshInterval(_ value: Int) -> Int {
+        max(3, value)
     }
 
     private func automationNotificationSignals(

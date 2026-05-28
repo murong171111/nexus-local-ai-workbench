@@ -39,6 +39,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Native SwiftUI now writes WidgetKit snapshots to Application Support and mirrors them to `group.com.ks.nexus` when an App Group container is available.
 - Native pinned workspaces with local persistence so important requirement workspaces stay at the top of the Mac shell.
 - Native Settings can now be opened from the sidebar, persists configured local roots, and can save/reload or reset default paths.
+- Native Settings can now import and export shareable Nexus team profiles compatible with the Tauri preview app.
 - Native SwiftUI session actions are now actionable for document follow-ups and confirmed worktree setup, with visible created/skipped/failed results.
 - Rust Core and the Swift/Rust bridge now support local agent event append/read flows backed by `agent-events.jsonl`.
 - Native SwiftUI sidebar now shows recent agent events from the local bridge, with preview fallback data when Rust Core is not loaded.

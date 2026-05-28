@@ -13,7 +13,7 @@ It is designed for teams that work across multiple local service repositories an
 - In-app workspace creation using the `ks-project-demand-workspace` layout.
 - In-app Markdown document preview for status, service scope, branch notes, tasks, and delivery records.
 - Local path settings for workspaces, source repositories, and delivery document roots.
-- Exportable and importable team settings profile for sharing local path conventions, including first-run onboarding import.
+- Exportable and importable team settings profiles for sharing local path conventions, including first-run onboarding import and native Settings import/export.
 - Local audit log for confirmed workspace creation and settings profile exports.
 - Local SQLite + FTS index foundation for workspace Markdown, service scope, tasks, decisions, delivery records, and SQL notes.
 - Native SwiftUI Markdown document preview with preview/source modes for workspace handoff documents and search result documents.
@@ -51,7 +51,7 @@ On first launch:
 5. Optionally create the demo workspace from onboarding to inspect the standard Markdown structure.
 6. Click the refresh button in the top bar.
 
-To share Nexus setup with another teammate, open `Settings` and use `Export configuration`. The generated JSON contains only path conventions, the Codex URL scheme, and refresh interval. Teammates can use `Import configuration`, then adjust paths for their own machine if needed.
+To share Nexus setup with another teammate, open `Settings` and export a `nexus-settings-profile-*.json`. The generated JSON contains only path conventions, the Codex URL scheme, and refresh interval. Teammates can import the profile from first-run onboarding or native Settings, then adjust paths for their own machine if needed.
 
 ## Workspace Layout
 
@@ -89,7 +89,7 @@ Nexus does not automatically execute worktree commands. Review the generated scr
 
 ## Local Audit Log
 
-Nexus writes JSONL audit events to `~/Library/Application Support/com.ks.nexus/audit/audit-log.jsonl` for user-visible local writes such as workspace creation and settings profile export. High-frequency cache writes, such as widget snapshot refreshes, are not audited.
+Nexus writes JSONL audit events to `~/Library/Application Support/com.ks.nexus/audit/audit-log.jsonl` for user-visible local writes such as workspace creation and settings profile import/export. High-frequency cache writes, such as widget snapshot refreshes, are not audited.
 
 The native menu bar can run a local automation check manually or on a persisted schedule while Nexus is running. That check scans workspace Markdown and git state for refresh, risk, delivery, task, worktree, and dirty-service signals, then appends an `automation.check.completed` audit event when the Rust Core bridge is available. Optional macOS notifications are off by default, support cooldown and signal preferences, and only fire when a check result matches the selected minimum status.
 
