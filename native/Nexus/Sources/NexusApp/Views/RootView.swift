@@ -1924,40 +1924,23 @@ private struct WorkspaceDetailView: View {
                 }
             }
 
-            if !readinessChecks.isEmpty {
-                SectionBlock(title: "就绪检查 / Readiness") {
-                    ForEach(readinessChecks) { check in
-                        HealthCheckRow(check: check)
+            RiskReviewView(
+                workspace: workspace,
+                checks: riskReviewChecks,
+                codexAction: {
+                    copyToPasteboard(appState.riskReviewPrompt(for: workspace))
+                    Task {
+                        await appState.recordRiskReviewHandoffCopied(for: workspace)
                     }
                 }
-            }
+            )
+            .environmentObject(appState)
 
             if !workspace.sessionActions.isEmpty {
                 SectionBlock(title: "会话动作 / Session actions") {
                     ForEach(workspace.sessionActions) { action in
                         SessionActionRow(action: action) {
                             run(action)
-                        }
-                    }
-                }
-            }
-
-            SectionBlock(title: "风险告警 / Risks") {
-                if workspace.risks.isEmpty {
-                    Label("No active risk", systemImage: "checkmark.circle")
-                        .foregroundStyle(NexusPalette.success)
-                } else {
-                    ForEach(workspace.risks) { risk in
-                        Label {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(risk.title)
-                                Text(risk.detail)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        } icon: {
-                            Image(systemName: "exclamationmark.triangle")
-                                .foregroundStyle(NexusPalette.warning)
                         }
                     }
                 }
@@ -1996,7 +1979,7 @@ private struct WorkspaceDetailView: View {
         }
     }
 
-    private var readinessChecks: [WorkspaceHealthCheck] {
+    private var riskReviewChecks: [WorkspaceHealthCheck] {
         workspace.healthChecks.filter { check in
             check.id != "delivery-record" && check.action != "delivery"
         }
@@ -2776,6 +2759,227 @@ private struct WorkflowStatusView: View {
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+private struct RiskReviewView: View {
+    @EnvironmentObject private var appState: AppState
+    let workspace: WorkspaceSummary
+    let checks: [WorkspaceHealthCheck]
+    let codexAction: () -> Void
+
+    private var blockerChecks: [WorkspaceHealthCheck] {
+        checks.filter { Self.statusKind($0.status) == "blocker" }
+    }
+
+    private var warningChecks: [WorkspaceHealthCheck] {
+        checks.filter { Self.statusKind($0.status) == "warning" }
+    }
+
+    private var visibleChecks: [WorkspaceHealthCheck] {
+        let attentionChecks = checks.filter { Self.statusKind($0.status) != "pass" }
+        let source = attentionChecks.isEmpty ? checks : attentionChecks
+        return Array(source.prefix(4))
+    }
+
+    private var missingWorktreeServices: [String] {
+        workspace.services
+            .filter { !$0.worktreeExists }
+            .map(\.name)
+    }
+
+    private var hasSignals: Bool {
+        !workspace.risks.isEmpty || !blockerChecks.isEmpty || !warningChecks.isEmpty
+    }
+
+    private var statusTitle: String {
+        if !blockerChecks.isEmpty {
+            return "存在阻塞项 / Blocked"
+        }
+        if hasSignals {
+            return "需要复核 / Review needed"
+        }
+        return "风险清晰 / Clear"
+    }
+
+    private var statusDetail: String {
+        if !blockerChecks.isEmpty {
+            return "\(blockerChecks.count) 个检查未通过，建议先处理阻塞项，再进入开发或交付。"
+        }
+        if hasSignals {
+            return "发现 \(workspace.risks.count) 个风险和 \(warningChecks.count) 个警告，建议复制风险复核 Prompt 交给 Codex 继续分析。"
+        }
+        return "当前没有活动风险，非交付类就绪检查也没有发现阻塞。"
+    }
+
+    private var statusColor: Color {
+        if !blockerChecks.isEmpty {
+            return NexusPalette.danger
+        }
+        if hasSignals {
+            return NexusPalette.warning
+        }
+        return NexusPalette.success
+    }
+
+    private var statusIcon: String {
+        if !blockerChecks.isEmpty {
+            return "xmark.octagon"
+        }
+        if hasSignals {
+            return "exclamationmark.triangle"
+        }
+        return "checkmark.circle"
+    }
+
+    private var statusPath: String {
+        workspace.documentLinks["status"] ?? "\(workspace.path)/STATUS.md"
+    }
+
+    var body: some View {
+        SectionBlock(title: "风险复核 / Risk review") {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    WorkflowMetric(
+                        label: "Risks",
+                        value: "\(workspace.risks.count)",
+                        tone: workspace.risks.isEmpty ? NexusPalette.success : NexusPalette.warning
+                    )
+                    WorkflowMetric(
+                        label: "Blockers",
+                        value: "\(blockerChecks.count)",
+                        tone: blockerChecks.isEmpty ? NexusPalette.success : NexusPalette.danger
+                    )
+                    WorkflowMetric(
+                        label: "Warnings",
+                        value: "\(warningChecks.count)",
+                        tone: warningChecks.isEmpty ? NexusPalette.success : NexusPalette.warning
+                    )
+                }
+
+                HStack(alignment: .top, spacing: 9) {
+                    Image(systemName: statusIcon)
+                        .foregroundStyle(statusColor)
+                        .frame(width: 15)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(statusTitle)
+                            .font(.subheadline.weight(.medium))
+                        Text(statusDetail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                LazyVGrid(columns: actionColumns, alignment: .leading, spacing: 8) {
+                    Button {
+                        Task {
+                            await appState.runLocalAutomationCheck(actor: "Nexus Risk Review")
+                        }
+                    } label: {
+                        Label(appState.isRunningAutomationCheck ? "Checking" : "Run check", systemImage: "checklist.checked")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(appState.isRunningAutomationCheck)
+
+                    Button {
+                        Task {
+                            await appState.loadDocument(path: statusPath)
+                        }
+                    } label: {
+                        Label("Status", systemImage: "doc.text")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    if !missingWorktreeServices.isEmpty {
+                        Button {
+                            appState.presentWorktreeSetup(for: workspace)
+                        } label: {
+                            Label("Worktree", systemImage: "arrow.triangle.branch")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(!appState.canSetupWorktrees(in: workspace))
+                    }
+
+                    Button {
+                        codexAction()
+                    } label: {
+                        Label("Copy prompt", systemImage: "point.3.connected.trianglepath.dotted")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+
+                if hasSignals {
+                    VStack(alignment: .leading, spacing: 10) {
+                        if !workspace.risks.isEmpty {
+                            ForEach(Array(workspace.risks.prefix(3))) { risk in
+                                RiskReviewSignalRow(risk: risk)
+                            }
+
+                            if workspace.risks.count > 3 {
+                                Text("Showing 3 of \(workspace.risks.count) risk signals. Run check or copy Codex risk prompt for the full review.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+
+                        if !visibleChecks.isEmpty {
+                            Divider()
+                            ForEach(visibleChecks) { check in
+                                HealthCheckRow(check: check)
+                            }
+                        }
+                    }
+                } else if checks.isEmpty {
+                    Label("暂未生成就绪检查。运行本地检查后，Nexus 会在这里汇总服务、分支、worktree 和任务风险。", systemImage: "info.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Label("当前风险复核通过。可以继续查看任务、交付记录，或运行本地检查刷新状态。", systemImage: "checkmark.circle")
+                        .font(.caption)
+                        .foregroundStyle(NexusPalette.success)
+                }
+            }
+        }
+    }
+
+    private static func statusKind(_ status: String) -> String {
+        switch status.lowercased() {
+        case "pass", "ok", "ready":
+            return "pass"
+        case "warning", "warn", "review":
+            return "warning"
+        default:
+            return "blocker"
+        }
+    }
+
+    private var actionColumns: [GridItem] {
+        [GridItem(.adaptive(minimum: 112), spacing: 8, alignment: .leading)]
+    }
+}
+
+private struct RiskReviewSignalRow: View {
+    let risk: RiskAlert
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: "exclamationmark.triangle")
+                .foregroundStyle(NexusPalette.warning)
+                .frame(width: 15)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(risk.title)
+                    .font(.subheadline.weight(.medium))
+                Text(risk.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }

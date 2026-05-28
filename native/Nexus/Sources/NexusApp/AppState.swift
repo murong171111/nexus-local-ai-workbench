@@ -1037,6 +1037,49 @@ final class AppState: ObservableObject {
         ].joined(separator: "\n")
     }
 
+    func riskReviewPrompt(for workspace: WorkspaceSummary) -> String {
+        let riskLines = workspace.risks.isEmpty
+            ? ["- 暂无显式风险。"]
+            : workspace.risks.map { "- \($0.title): \($0.detail)" }
+        let checkLines = workspace.healthChecks
+            .filter { check in
+                let status = check.status.lowercased()
+                return status != "pass" && status != "ok"
+            }
+            .map { "- \($0.label) [\($0.status)]: \($0.detail)" }
+        let actionLines = workspace.sessionActions.isEmpty
+            ? ["- 暂无推荐会话动作。"]
+            : workspace.sessionActions.map { "- \($0.label) [\($0.priority)]: \($0.detail)" }
+
+        return [
+            "请对这个 Nexus 工作区做一次风险复核，并给出下一步处理顺序。",
+            "",
+            "## 工作区",
+            "- 名称: \(workspace.name)",
+            "- 目录: \(workspace.path)",
+            "- 文件夹: \(workspace.folder)",
+            "- 目标分支: \(workspace.branch)",
+            "- 涉及服务: \(workspace.serviceSummary.isEmpty ? "待确认" : workspace.serviceSummary)",
+            "- Worktree: \(workspace.worktreeState)",
+            "",
+            "## 当前风险",
+            riskLines.joined(separator: "\n"),
+            "",
+            "## 未通过检查",
+            checkLines.isEmpty ? "- 暂无未通过检查。" : checkLines.joined(separator: "\n"),
+            "",
+            "## 推荐动作",
+            actionLines.joined(separator: "\n"),
+            "",
+            "## 处理要求",
+            "- 先读取 workspace.md、STATUS.md、services.md、branches.md、tasks.md 和交付记录。",
+            "- 判断风险属于需求范围、分支、worktree、服务 git 状态、任务阻塞、SQL/交付记录，还是实现逻辑。",
+            "- 给出阻塞项、可并行项和建议处理顺序。",
+            "- 如果处理涉及代码、SQL、业务逻辑、接口、DTO、配置或验证变化，同步更新交付记录。",
+            "- 处理完成后回到 Nexus 运行本地检查并刷新状态。"
+        ].joined(separator: "\n")
+    }
+
     func openWorkspaceInFinder(_ workspace: WorkspaceSummary) async {
         let url = Self.localFileURL(for: workspace.path)
         NSWorkspace.shared.activateFileViewerSelecting([url])
@@ -1113,6 +1156,19 @@ final class AppState: ObservableObject {
                 "stage": workspace.lifecycle.stage,
                 "progress": "\(workspace.lifecycle.progress)",
                 "documentKey": workspace.lifecycle.documentKey
+            ],
+            workspaceOverride: workspace
+        )
+    }
+
+    func recordRiskReviewHandoffCopied(for workspace: WorkspaceSummary) async {
+        await recordWorkspaceAction(
+            action: "risk_review_handoff.copied",
+            target: workspace.path,
+            summary: "Copied risk review handoff",
+            metadata: [
+                "riskCount": "\(workspace.risks.count)",
+                "healthCheckCount": "\(workspace.healthChecks.count)"
             ],
             workspaceOverride: workspace
         )
@@ -1654,6 +1710,8 @@ final class AppState: ObservableObject {
             return "Codex 指令已复制 / Instruction copied"
         case "codex_task_handoff.copied":
             return "任务上下文已复制 / Task handoff copied"
+        case "risk_review_handoff.copied":
+            return "风险复核已复制 / Risk review copied"
         case "settings_profile.exported":
             return "设置已导出 / Settings exported"
         case "settings_profile.imported":
