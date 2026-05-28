@@ -20,6 +20,7 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - Post-create next-step panel that focuses the new workspace and routes the user toward `handoff.md`, confirmed worktree setup, Codex handoff, or local checks.
 - Result-aware native Codex handoff from worktree setup results, including created, skipped, and failed service details.
 - In-card local-check feedback after running checks from native worktree setup results.
+- Chinese-first result labels and action help in the native worktree setup result card.
 - Native document preview renders Markdown by default and keeps a source-mode toggle for raw workspace files.
 - Native workspace detail handoff actions open the workspace in Finder, Terminal, or Codex, copying workspace context for Codex first.
 - Native widget snapshot writing to Application Support, with automatic `group.com.ks.nexus` App Group mirroring when the signed app has that entitlement.

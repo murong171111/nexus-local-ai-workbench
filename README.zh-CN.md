@@ -107,7 +107,7 @@ Nexus 默认识别每个需求工作区下的 Markdown 文档和本地 worktree 
 
 创建完成后，Nexus 会自动选中新工作区、清理旧的文档预览，并在右侧详情中展示下一步面板：查看初始化回执、打开 `handoff.md`、在服务和分支已确认时创建 worktree、交接 Codex，或运行本地检查。
 
-Nexus 不会在创建工作区时自动创建 worktree。你需要先确认分支和服务范围，再使用原生 worktree 创建动作执行已确认的本地 `git fetch` 和 `git worktree add` 流程。在执行前，Nexus 会展示预检结果：目标分支是否已确认、哪些服务缺失 worktree、源仓库是否存在、将写入哪个 `repos/<service>` 目录。执行完成后，Nexus 会刷新工作区状态，展示 created/skipped/failed 服务结果，并提供 Finder、带结果的 Codex 交接和本地检查后续入口。从结果卡运行本地检查后，会直接在卡片内显示检查摘要。
+Nexus 不会在创建工作区时自动创建 worktree。你需要先确认分支和服务范围，再使用原生 worktree 创建动作执行已确认的本地 `git fetch` 和 `git worktree add` 流程。在执行前，Nexus 会展示预检结果：目标分支是否已确认、哪些服务缺失 worktree、源仓库是否存在、将写入哪个 `repos/<service>` 目录。执行完成后，Nexus 会刷新工作区状态，以中文优先展示已创建、已跳过、失败的服务结果，并提供 Finder、带结果的 Codex 交接和本地检查后续入口。从结果卡运行本地检查后，会直接在卡片内显示检查摘要。
 
 ## 本地审计日志
 

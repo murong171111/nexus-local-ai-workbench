@@ -1490,9 +1490,9 @@ private struct WorktreeSetupResultView: View {
                     .lineLimit(2)
             }
 
-            WorktreeSetupResultGroup(title: "Created", results: response.created, color: NexusPalette.success)
-            WorktreeSetupResultGroup(title: "Skipped", results: response.skipped, color: .secondary)
-            WorktreeSetupResultGroup(title: "Failed", results: response.failed, color: NexusPalette.danger)
+            WorktreeSetupResultGroup(title: "已创建 / Created", results: response.created, color: NexusPalette.success)
+            WorktreeSetupResultGroup(title: "已跳过 / Skipped", results: response.skipped, color: .secondary)
+            WorktreeSetupResultGroup(title: "失败 / Failed", results: response.failed, color: NexusPalette.danger)
 
             HStack(spacing: 8) {
                 Button {
@@ -1500,17 +1500,18 @@ private struct WorktreeSetupResultView: View {
                         await appState.openWorkspaceInFinder(workspace)
                     }
                 } label: {
-                    Label("Finder", systemImage: "folder")
+                    Label("打开 Finder", systemImage: "folder")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                .help("打开当前工作区目录 / Open workspace folder")
 
                 Button {
                     Task {
                         await appState.openWorktreeSetupResultInCodex(response, in: workspace)
                     }
                 } label: {
-                    Label("Codex", systemImage: "point.3.connected.trianglepath.dotted")
+                    Label("交接 Codex", systemImage: "point.3.connected.trianglepath.dotted")
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
@@ -1528,15 +1529,16 @@ private struct WorktreeSetupResultView: View {
                         }
                     }
                 } label: {
-                    Label(appState.isRunningAutomationCheck ? "Checking" : "Check", systemImage: "checklist")
+                    Label(appState.isRunningAutomationCheck ? "检查中" : "运行检查", systemImage: "checklist")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                .help("运行本地检查并在结果卡内显示摘要 / Run local check and show the summary here")
                 .disabled(appState.isRunningAutomationCheck)
 
                 Spacer()
 
-                Button("Close") {
+                Button("关闭") {
                     closeAction()
                 }
                 .buttonStyle(.borderless)
@@ -1563,7 +1565,7 @@ private struct WorktreeSetupResultView: View {
     }
 
     private var resultSummary: String {
-        "\(response.created.count) created · \(response.skipped.count) skipped · \(response.failed.count) failed"
+        "\(response.created.count) 已创建 · \(response.skipped.count) 已跳过 · \(response.failed.count) 失败"
     }
 
     private var resultGuidance: String {
@@ -1625,24 +1627,28 @@ private struct WorktreeSetupFollowUpCheckView: View {
 
             HStack(spacing: 8) {
                 WorktreeSetupCheckMetric(
-                    label: "Risk",
+                    label: "风险",
                     value: check.riskCount,
-                    tone: check.riskCount > 0 ? NexusPalette.warning : NexusPalette.success
+                    tone: check.riskCount > 0 ? NexusPalette.warning : NexusPalette.success,
+                    help: "风险数量 / Risk count"
                 )
                 WorktreeSetupCheckMetric(
-                    label: "Task",
+                    label: "任务",
                     value: check.openTaskCount,
-                    tone: check.highPriorityTaskCount > 0 ? NexusPalette.warning : NexusPalette.accent
+                    tone: check.highPriorityTaskCount > 0 ? NexusPalette.warning : NexusPalette.accent,
+                    help: "未完成任务数量 / Open task count"
                 )
                 WorktreeSetupCheckMetric(
                     label: "WT",
                     value: worktreeIssueCount,
-                    tone: worktreeIssueCount > 0 ? NexusPalette.warning : NexusPalette.success
+                    tone: worktreeIssueCount > 0 ? NexusPalette.warning : NexusPalette.success,
+                    help: "worktree 缺失或异常数量 / Worktree issue count"
                 )
                 WorktreeSetupCheckMetric(
-                    label: "Dirty",
+                    label: "改动",
                     value: check.dirtyServiceCount,
-                    tone: check.dirtyServiceCount > 0 ? NexusPalette.warning : NexusPalette.success
+                    tone: check.dirtyServiceCount > 0 ? NexusPalette.warning : NexusPalette.success,
+                    help: "未提交服务数量 / Dirty service count"
                 )
             }
         }
@@ -1656,6 +1662,7 @@ private struct WorktreeSetupCheckMetric: View {
     let label: String
     let value: Int
     let tone: Color
+    let help: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -1667,6 +1674,7 @@ private struct WorktreeSetupCheckMetric: View {
                 .foregroundStyle(tone)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .help(help)
     }
 }
 
