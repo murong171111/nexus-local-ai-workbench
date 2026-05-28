@@ -23,7 +23,7 @@ It is designed for teams that work across multiple local service repositories an
 - Workspace lifecycle stages derived from local workspace evidence, with native progress, next-action, document-open, worktree setup, and Codex handoff controls.
 - Confirmed lifecycle writeback from the native shell into `workspace.md` and `STATUS.md`, with local audit events for status transitions.
 - Global search popover for indexed workspace documents, SQL notes, and browser-preview metadata fallback, with grouped results and keyboard navigation.
-- First-run onboarding for configuring local workspace, source repository, and delivery document paths.
+- First-run onboarding for importing team profiles, configuring local paths, scanning source repositories, and optionally creating a demo workspace.
 - Environment health checks for configured directories and Git availability.
 - Native workspace scanning from the configured paths; no local Python script is required for the packaged app.
 - Native source repository scanning so workspace creation can select services from real local repositories.
@@ -47,7 +47,8 @@ On first launch:
    - Delivery documents root, for example `~/ks_project/docs`
 3. Click `Save`.
 4. Click `Scan source repositories` to populate the service picker.
-5. Click the refresh button in the top bar.
+5. Optionally create the demo workspace from onboarding to inspect the standard Markdown structure.
+6. Click the refresh button in the top bar.
 
 To share Nexus setup with another teammate, open `Settings` and use `Export configuration`. The generated JSON contains only path conventions, the Codex URL scheme, and refresh interval. Teammates can use `Import configuration`, then adjust paths for their own machine if needed.
 
