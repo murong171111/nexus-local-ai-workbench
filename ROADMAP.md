@@ -51,7 +51,7 @@ This roadmap describes the next product and engineering steps for Nexus. The cur
 
 - Package the WidgetKit extension in a full Xcode target attached to the native Mac app. `[core snapshot computation started]`
 - Add App Group storage for widget snapshots.
-- Add menu bar quick status.
+- Add menu bar quick status. `[started in native SwiftUI shell]`
 - Add optional local automation hooks for refresh, risk scans, and delivery checks. `[activity timeline ingestion and user-action audit events started]`
 
 ## 0.6.x: Distribution Readiness

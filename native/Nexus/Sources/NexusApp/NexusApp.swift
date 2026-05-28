@@ -12,6 +12,17 @@ struct NexusNativeApp: App {
         }
         .windowStyle(.titleBar)
 
+        MenuBarExtra {
+            MenuBarStatusView()
+                .environmentObject(appState)
+        } label: {
+            Label(
+                appState.menuBarSummary.menuTitle,
+                systemImage: appState.menuBarSummary.systemImage
+            )
+        }
+        .menuBarExtraStyle(.menu)
+
         Settings {
             SettingsView()
                 .environmentObject(appState)

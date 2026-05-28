@@ -150,6 +150,36 @@ final class AppState: ObservableObject {
         allTaskCenterItems.count
     }
 
+    var menuBarSummary: MenuBarStatusSummary {
+        let riskyWorkspaceCount = workspaces.filter { workspace in
+            workspace.riskLevel == .high || workspace.riskLevel == .medium
+        }.count
+        let blockedWorkspaceCount = workspaces.filter { $0.state == .blocked }.count
+        let activeWorkspaceCount = workspaces.filter { workspace in
+            workspace.state == .developing || workspace.state == .analyzing
+        }.count
+        let services = workspaces.flatMap(\.services)
+        let dirtyServiceCount = services.filter { service in
+            let normalized = "\(service.gitSummary) \(service.worktree)".lowercased()
+            return normalized.contains("dirty") || normalized.contains("未提交")
+        }.count
+        let missingWorktreeCount = services.filter { !$0.worktreeExists }.count
+
+        return MenuBarStatusSummary(
+            workspaceCount: workspaces.count,
+            activeWorkspaceCount: activeWorkspaceCount,
+            riskyWorkspaceCount: riskyWorkspaceCount,
+            blockedWorkspaceCount: blockedWorkspaceCount,
+            openTaskCount: taskCenterTotalCount,
+            highPriorityTaskCount: taskCenterCount(for: .high),
+            agentTaskCount: taskCenterCount(for: .agent),
+            missingWorktreeCount: missingWorktreeCount,
+            dirtyServiceCount: dirtyServiceCount,
+            activeWorkspaceName: selectedWorkspace?.name,
+            bridgeMode: bridgeMode
+        )
+    }
+
     func taskCenterCount(for filter: TaskCenterFilter) -> Int {
         allTaskCenterItems.filter { filter.matches($0) }.count
     }

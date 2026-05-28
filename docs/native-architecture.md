@@ -62,6 +62,7 @@ The first native shell scaffold is available at `native/Nexus`. It is a Swift Pa
 - Native document reads append `document.opened` audit events when the Rust Core bridge is available and update the visible timeline immediately.
 - Native agent event reads load recent local agent hook events into the sidebar when the Rust Core bridge is available.
 - Native session actions can open follow-up documents and execute confirmed worktree setup through the Swift/Rust bridge. Worktree setup remains a confirmed local write and reports created, skipped, and failed services back to the user.
+- The native shell includes a menu bar status item for quick workspace, risk, task, worktree, refresh, settings, recent-workspace, and copy-summary actions without opening the full window first.
 - The command surface should grow in this order: scan, read document, compute widget snapshot, create workspace skeleton, audit local actions, rebuild/search the local index, produce worktree plans, and execute confirmed worktree setup.
 - Local write operations must include explicit confirmation in the bridge request, not only in UI copy.
 - Bridge responses use explicit success/error envelopes so the native shell can show user-facing failures without guessing.
