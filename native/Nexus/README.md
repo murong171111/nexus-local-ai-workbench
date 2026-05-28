@@ -20,6 +20,7 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - Confirmed native task status updates for marking local tasks complete or deferred in `tasks.md`.
 - Task-level Codex handoff prompts that can be copied from the Task Center or workspace detail.
 - Persisted Task Center filters for all, high-priority, agent-sourced, and deferred tasks.
+- Menu bar quick status with workspace, risk, task, worktree, refresh, settings, recent-workspace, and copy-summary actions.
 - Workspace timelines populated from the Rust Core dashboard activity field, including local audit-log events when the bridge is available.
 - Native document opens append audit events and update the visible workspace timeline.
 - Native workspace detail shows Rust Core readiness checks for local development and delivery gates.
