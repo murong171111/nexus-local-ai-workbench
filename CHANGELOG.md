@@ -52,6 +52,8 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Native SwiftUI workspace details now start with a Command Center that consolidates lifecycle progress, branch/service/risk/task signals, Codex continuation, local checks, next-step routing, and Finder/Terminal handoff.
 - Native SwiftUI now shows actionable empty states for missing workspaces, empty filters, and unselected details, with direct Settings, New Workspace, Refresh, and Environment Check actions.
 - Native SwiftUI worktree setup now includes a preflight review for target branch readiness, missing worktrees, source repositories, and workspace-local write locations before local Git commands can run.
+- Native SwiftUI now shows a dismissible Codex handoff feedback panel after workspace, lifecycle, risk, task, automation, or agent-event context is copied.
+- Documentation now includes a Chinese complete product-shape blueprint for the Mac-first local AI development workbench target.
 - Rust Core and the Swift/Rust bridge now support local agent event append/read flows backed by `agent-events.jsonl`.
 - Native SwiftUI sidebar now shows recent agent events from the local bridge, with preview fallback data when Rust Core is not loaded.
 - Native SwiftUI agent events can now be opened for full context, metadata inspection, and JSON copy.

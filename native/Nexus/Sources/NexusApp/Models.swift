@@ -337,6 +337,14 @@ struct ServiceStatus: Identifiable, Hashable {
     let sourceExists: Bool
 }
 
+struct CodexHandoffFeedback: Identifiable, Hashable {
+    let id = UUID()
+    let title: String
+    let detail: String
+    let timestamp: String
+    let systemImage: String
+}
+
 struct ActivityEvent: Identifiable, Hashable {
     let id = UUID()
     let time: String
