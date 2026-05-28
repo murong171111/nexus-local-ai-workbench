@@ -179,6 +179,29 @@ pub struct UpdateWorkspaceTaskResponse {
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct UpdateWorkspaceLifecycleRequest {
+    pub workspace_path: String,
+    pub state: String,
+    pub focus: Option<String>,
+    pub next_action: Option<String>,
+    pub confirmed: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateWorkspaceLifecycleResponse {
+    pub workspace_path: String,
+    pub workspace_document_path: String,
+    pub status_document_path: String,
+    pub previous_state: String,
+    pub state: String,
+    pub focus: String,
+    pub next_action: String,
+    pub updated: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WorkspaceTaskHandoffPromptRequest {
     pub workspace_name: String,
     pub workspace_folder: String,
@@ -567,6 +590,80 @@ pub fn update_workspace_task(
         path: tasks_path.to_string_lossy().to_string(),
         task,
         previous_status,
+        updated: true,
+    })
+}
+
+pub fn update_workspace_lifecycle(
+    request: UpdateWorkspaceLifecycleRequest,
+) -> Result<UpdateWorkspaceLifecycleResponse, String> {
+    if !request.confirmed {
+        return Err("workspace lifecycle update requires explicit confirmation".to_string());
+    }
+
+    let state = normalized_lifecycle_state(&request.state)?;
+    let workspace = expand_user_path(&request.workspace_path);
+    if !workspace.exists() {
+        return Err(format!("workspace does not exist: {}", workspace.display()));
+    }
+    if !workspace.is_dir() {
+        return Err(format!(
+            "workspace is not a directory: {}",
+            workspace.display()
+        ));
+    }
+
+    let workspace_document_path = workspace.join("workspace.md");
+    let status_document_path = workspace.join("STATUS.md");
+    let workspace_content = if workspace_document_path.exists() {
+        fs::read_to_string(&workspace_document_path).map_err(|error| error.to_string())?
+    } else {
+        "# Workspace\n\n".to_string()
+    };
+    let previous_state = extract_bullet_value(&workspace_content, "当前状态")
+        .unwrap_or_else(|| "unknown".to_string());
+
+    let focus = request
+        .focus
+        .as_deref()
+        .map(markdown_table_cell)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| lifecycle_default_focus(&state).to_string());
+    let next_action = request
+        .next_action
+        .as_deref()
+        .map(markdown_table_cell)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| lifecycle_default_next_action(&state).to_string());
+    let updated_at = generated_at();
+
+    let next_workspace_content =
+        upsert_bullet_value(&workspace_content, "当前状态", &state);
+    fs::write(&workspace_document_path, next_workspace_content)
+        .map_err(|error| error.to_string())?;
+
+    let status_content = if status_document_path.exists() {
+        fs::read_to_string(&status_document_path).map_err(|error| error.to_string())?
+    } else {
+        "# STATUS\n\n".to_string()
+    };
+    let next_status_content = update_status_document(
+        &status_content,
+        &state,
+        &focus,
+        &next_action,
+        &updated_at,
+    );
+    fs::write(&status_document_path, next_status_content).map_err(|error| error.to_string())?;
+
+    Ok(UpdateWorkspaceLifecycleResponse {
+        workspace_path: workspace.to_string_lossy().to_string(),
+        workspace_document_path: workspace_document_path.to_string_lossy().to_string(),
+        status_document_path: status_document_path.to_string_lossy().to_string(),
+        previous_state,
+        state,
+        focus,
+        next_action,
         updated: true,
     })
 }
@@ -1115,6 +1212,40 @@ fn workspace_lifecycle(
         );
     }
 
+    if normalized_state.contains("delivery") || normalized_state.contains("交付") {
+        return lifecycle(
+            "delivery",
+            "交付整理 / Delivery",
+            "工作区已进入交付整理阶段。".to_string(),
+            80,
+            "补齐交付记录、SQL、验证和风险说明。",
+            "delivery",
+        );
+    }
+
+    if normalized_state == "done"
+        || normalized_state.contains("completed")
+        || normalized_state.contains("complete")
+        || normalized_state.contains("已完成")
+        || normalized_state == "完成"
+    {
+        return lifecycle(
+            "done",
+            "待归档 / Done",
+            if risk_count == 0 && task_counts.blocked == 0 {
+                "工作区已标记完成，可以确认 PR/发布状态后归档。".to_string()
+            } else {
+                format!(
+                    "工作区已标记完成，但仍有 {} 个风险信号需要复核。",
+                    risk_count
+                )
+            },
+            95,
+            "确认 PR/发布状态后归档工作区。",
+            "delivery",
+        );
+    }
+
     if delivery_exists && !delivery_stale && open_tasks == 0 && risk_count == 0 {
         return lifecycle(
             "done",
@@ -1547,6 +1678,9 @@ fn audit_action_label(action: &str) -> String {
         "codex_instruction.copied" => "Codex 指令已复制 / Instruction copied".to_string(),
         "document.opened" => "文档已打开 / Document opened".to_string(),
         "agent_task_draft.appended" => "Agent 任务已写入 / Agent task added".to_string(),
+        "workspace_lifecycle.updated" => {
+            "生命周期已更新 / Lifecycle updated".to_string()
+        }
         "risk_instruction.copied" => "风险指令已复制 / Risk instruction".to_string(),
         "worktree.command.copied" => "Worktree 命令已复制 / Worktree command".to_string(),
         "worktree.command.generated" => "Worktree 命令已生成 / Worktree command".to_string(),
@@ -1586,6 +1720,95 @@ fn extract_bullet_value(text: &str, label: &str) -> Option<String> {
         }
     }
     None
+}
+
+fn upsert_bullet_value(text: &str, label: &str, value: &str) -> String {
+    let mut replaced = false;
+    let mut lines = text
+        .lines()
+        .map(|line| {
+            let trimmed = line.trim();
+            let prefixes = [format!("- {}:", label), format!("- {}：", label)];
+            if prefixes.iter().any(|prefix| trimmed.starts_with(prefix)) {
+                replaced = true;
+                format!("- {}: {}", label, value)
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>();
+
+    if !replaced {
+        if !lines.is_empty() && !lines.last().is_some_and(|line| line.trim().is_empty()) {
+            lines.push(String::new());
+        }
+        lines.push(format!("- {}: {}", label, value));
+    }
+
+    let mut content = lines.join("\n");
+    if text.ends_with('\n') || !content.ends_with('\n') {
+        content.push('\n');
+    }
+    content
+}
+
+fn update_status_document(
+    text: &str,
+    state: &str,
+    focus: &str,
+    next_action: &str,
+    updated_at: &str,
+) -> String {
+    let with_state = upsert_bullet_value(text, "状态", state);
+    let with_focus = upsert_bullet_value(&with_state, "当前焦点", focus);
+    let with_next = upsert_bullet_value(&with_focus, "下一步", next_action);
+    upsert_bullet_value(&with_next, "更新时间", updated_at)
+}
+
+fn normalized_lifecycle_state(value: &str) -> Result<String, String> {
+    let normalized = value.trim().to_lowercase();
+    let state = match normalized.as_str() {
+        "scoping" | "scope" | "analyzing" | "analysis" | "范围确认" | "分析中" => "scoping",
+        "setup" | "environment" | "环境准备" | "准备中" => "setup",
+        "developing" | "development" | "dev" | "开发中" => "developing",
+        "delivery" | "delivering" | "交付" | "交付整理" => "delivery",
+        "done" | "ready" | "completed" | "complete" | "完成" | "已完成" => "done",
+        "blocked" | "block" | "阻塞" => "blocked",
+        "archived" | "archive" | "归档" | "已归档" => "archived",
+        _ => {
+            return Err(format!(
+                "unsupported lifecycle state: {}",
+                value.trim()
+            ))
+        }
+    };
+    Ok(state.to_string())
+}
+
+fn lifecycle_default_focus(state: &str) -> &'static str {
+    match state {
+        "scoping" => "确认需求范围、服务范围和目标分支",
+        "setup" => "创建 workspace-local worktree 并完成就绪检查",
+        "developing" => "编码、验证，并持续同步交付记录",
+        "delivery" => "补齐交付记录、SQL、验证和风险说明",
+        "done" => "确认 PR、CI、发布和遗留风险",
+        "blocked" => "解除阻塞项",
+        "archived" => "保留历史上下文",
+        _ => "继续处理工作区",
+    }
+}
+
+fn lifecycle_default_next_action(state: &str) -> &'static str {
+    match state {
+        "scoping" => "补齐 workspace.md、services.md 和 branches.md",
+        "setup" => "确认后创建缺失 worktree",
+        "developing" => "继续开发并运行必要验证",
+        "delivery" => "更新交付记录并完成验证",
+        "done" => "确认可以归档或进入观察",
+        "blocked" => "先处理阻塞原因，再恢复生命周期",
+        "archived" => "需要再次开发时从 handoff 恢复上下文",
+        _ => "刷新 Nexus 并确认下一步",
+    }
 }
 
 fn section(text: &str, heading: &str) -> String {
@@ -2147,6 +2370,70 @@ mod tests {
         );
         assert_eq!(done.stage, "done");
         assert_eq!(done.progress, 95);
+    }
+
+    #[test]
+    fn update_workspace_lifecycle_requires_confirmation_and_rewrites_status_docs() {
+        let root = std::env::temp_dir().join(format!(
+            "nexus-core-lifecycle-update-{}",
+            std::process::id()
+        ));
+        let workspace = root.join("2026-05-28-lifecycle");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(workspace.join("repos/order")).unwrap();
+        fs::write(
+            workspace.join("workspace.md"),
+            "# Lifecycle\n\n- 需求名称: Lifecycle Demo\n- 当前状态: developing\n- 目标分支: chen/lifecycle\n",
+        )
+        .unwrap();
+        fs::write(
+            workspace.join("services.md"),
+            "# Services\n\n## 已确认相关\n\n| 服务 | 源仓库 | 说明 |\n| --- | --- | --- |\n| order | ~/source-repos/order | core |\n",
+        )
+        .unwrap();
+        fs::write(
+            workspace.join("STATUS.md"),
+            "# STATUS\n\n- 状态: developing\n- 当前焦点: 编码\n- 下一步: 继续验证\n- 更新时间: old\n",
+        )
+        .unwrap();
+
+        let rejected = update_workspace_lifecycle(UpdateWorkspaceLifecycleRequest {
+            workspace_path: workspace.to_string_lossy().to_string(),
+            state: "delivery".to_string(),
+            focus: None,
+            next_action: None,
+            confirmed: false,
+        });
+        assert!(rejected
+            .unwrap_err()
+            .contains("requires explicit confirmation"));
+
+        let response = update_workspace_lifecycle(UpdateWorkspaceLifecycleRequest {
+            workspace_path: workspace.to_string_lossy().to_string(),
+            state: "delivery".to_string(),
+            focus: Some("补齐交付材料".to_string()),
+            next_action: Some("更新交付记录".to_string()),
+            confirmed: true,
+        })
+        .unwrap();
+        assert!(response.updated);
+        assert_eq!(response.previous_state, "developing");
+        assert_eq!(response.state, "delivery");
+        assert_eq!(response.focus, "补齐交付材料");
+
+        let workspace_md = fs::read_to_string(workspace.join("workspace.md")).unwrap();
+        assert!(workspace_md.contains("- 当前状态: delivery"));
+        let status_md = fs::read_to_string(workspace.join("STATUS.md")).unwrap();
+        assert!(status_md.contains("- 状态: delivery"));
+        assert!(status_md.contains("- 当前焦点: 补齐交付材料"));
+        assert!(status_md.contains("- 下一步: 更新交付记录"));
+        assert!(status_md.contains("- 更新时间: "));
+
+        let dashboard =
+            scan_workspaces(&root.to_string_lossy(), "~/source-repos", "~/docs").unwrap();
+        assert_eq!(dashboard.workspaces[0].state, "delivery");
+
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

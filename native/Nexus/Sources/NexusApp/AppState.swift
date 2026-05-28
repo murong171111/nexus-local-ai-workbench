@@ -20,6 +20,7 @@ final class AppState: ObservableObject {
     @Published var isCreatingWorkspace = false
     @Published var isSettingUpWorktrees = false
     @Published var isUpdatingTask = false
+    @Published var isUpdatingLifecycle = false
     @Published var lastError: String?
     @Published var bridgeMode: String
     @Published var documentPreview: DocumentSnapshot?
@@ -27,6 +28,7 @@ final class AppState: ObservableObject {
     @Published var agentEvents: [AgentEvent] = []
     @Published var selectedAgentEvent: AgentEvent?
     @Published var pendingTaskStatusUpdate: TaskStatusUpdate?
+    @Published var pendingLifecycleStatusUpdate: LifecycleStatusUpdate?
     @Published var lastCreatedWorkspace: CreateWorkspaceResponse?
     @Published var pendingWorktreeSetupWorkspace: WorkspaceSummary?
     @Published var lastWorktreeSetupResponse: SetupWorktreesResponse?
@@ -344,6 +346,20 @@ final class AppState: ObservableObject {
             taskTitle: task.title,
             currentStatus: task.status,
             nextStatus: status
+        )
+    }
+
+    func requestLifecycleStatusUpdate(_ transition: LifecycleTransition, in workspace: WorkspaceSummary) {
+        pendingLifecycleStatusUpdate = LifecycleStatusUpdate(
+            workspaceID: workspace.id,
+            workspaceName: workspace.name,
+            workspacePath: workspace.path,
+            currentStage: workspace.lifecycle.stage,
+            currentLabel: workspace.lifecycle.label,
+            nextState: transition.state,
+            nextLabel: transition.label,
+            focus: transition.focus,
+            nextAction: transition.nextAction
         )
     }
 
@@ -957,6 +973,37 @@ final class AppState: ObservableObject {
             )
             if response.updated {
                 pendingTaskStatusUpdate = nil
+                await refreshFromBridge()
+            }
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    func confirmPendingLifecycleStatusUpdate(confirmed: Bool) async {
+        guard let update = pendingLifecycleStatusUpdate else {
+            return
+        }
+        isUpdatingLifecycle = true
+        lastError = nil
+        defer {
+            isUpdatingLifecycle = false
+        }
+
+        do {
+            let response = try await bridge.updateWorkspaceLifecycle(
+                request: UpdateWorkspaceLifecycleRequest(
+                    workspacePath: update.workspacePath,
+                    state: update.nextState,
+                    focus: update.focus,
+                    nextAction: update.nextAction,
+                    confirmed: confirmed,
+                    auditRoot: auditRootPath,
+                    actor: "Nexus Native"
+                )
+            )
+            if response.updated {
+                pendingLifecycleStatusUpdate = nil
                 await refreshFromBridge()
             }
         } catch {

@@ -60,6 +60,10 @@ struct RootView: View {
             TaskStatusUpdateSheet(update: update)
                 .environmentObject(appState)
         }
+        .sheet(item: $appState.pendingLifecycleStatusUpdate) { update in
+            LifecycleStatusUpdateSheet(update: update)
+                .environmentObject(appState)
+        }
         .sheet(item: $appState.selectedAgentEvent) { event in
             AgentEventDetailSheet(event: event)
                 .environmentObject(appState)
@@ -969,6 +973,68 @@ private struct TaskStatusUpdateSheet: View {
     }
 }
 
+private struct LifecycleStatusUpdateSheet: View {
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmed = false
+    let update: LifecycleStatusUpdate
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("更新生命周期 / Update lifecycle")
+                    .font(.title3.weight(.semibold))
+                Text("Nexus will update workspace.md and STATUS.md after confirmation, then append an audit event when the Rust Core bridge is available.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            SectionBlock(title: "生命周期 / Lifecycle") {
+                VStack(alignment: .leading, spacing: 8) {
+                    TaskStatusMetaRow(label: "Workspace", value: update.workspaceName)
+                    TaskStatusMetaRow(label: "Stage", value: "\(update.currentLabel) -> \(update.nextLabel)")
+                    TaskStatusMetaRow(label: "State", value: "\(update.currentStage) -> \(update.nextState)")
+                    TaskStatusMetaRow(label: "Focus", value: update.focus)
+                    TaskStatusMetaRow(label: "Next", value: update.nextAction)
+                    TaskStatusMetaRow(label: "Files", value: "workspace.md, STATUS.md")
+                }
+            }
+
+            Toggle("确认写入 workspace.md 和 STATUS.md / Confirm local write", isOn: $confirmed)
+
+            HStack {
+                Button("Cancel") {
+                    appState.pendingLifecycleStatusUpdate = nil
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Spacer()
+
+                Button(appState.isUpdatingLifecycle ? "Updating" : "Update") {
+                    Task {
+                        await appState.confirmPendingLifecycleStatusUpdate(confirmed: confirmed)
+                        if appState.lastError == nil {
+                            dismiss()
+                        }
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!confirmed || appState.isUpdatingLifecycle)
+            }
+
+            if let error = appState.lastError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(NexusPalette.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(22)
+        .frame(width: 600)
+    }
+}
+
 private struct TaskStatusMetaRow: View {
     let label: String
     let value: String
@@ -1076,6 +1142,30 @@ private struct FlowTags: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(NexusPalette.badge)
                     .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            }
+        }
+    }
+}
+
+private struct FlowTagsButtonRow: View {
+    let transitions: [LifecycleTransition]
+    let action: (LifecycleTransition) -> Void
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 112), spacing: 8)], alignment: .leading, spacing: 8) {
+            ForEach(transitions) { transition in
+                Button {
+                    action(transition)
+                } label: {
+                    Label(transition.label, systemImage: transition.systemImage)
+                        .font(.caption.weight(.medium))
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 6)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
         }
     }
@@ -1470,6 +1560,9 @@ private struct WorkspaceDetailView: View {
                     Task {
                         await appState.recordLifecycleHandoffCopied(for: workspace)
                     }
+                },
+                transitionAction: { transition in
+                    appState.requestLifecycleStatusUpdate(transition, in: workspace)
                 }
             )
 
@@ -1672,6 +1765,7 @@ private struct LifecycleDetailView: View {
     let workspace: WorkspaceSummary
     let openAction: () -> Void
     let codexAction: () -> Void
+    let transitionAction: (LifecycleTransition) -> Void
 
     var body: some View {
         SectionBlock(title: "生命周期 / Lifecycle") {
@@ -1719,6 +1813,18 @@ private struct LifecycleDetailView: View {
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+                }
+
+                if !workspace.lifecycleTransitions.isEmpty {
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text("状态写回 / Status writeback")
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(.secondary)
+
+                        FlowTagsButtonRow(transitions: workspace.lifecycleTransitions) { transition in
+                            transitionAction(transition)
+                        }
+                    }
                 }
             }
         }

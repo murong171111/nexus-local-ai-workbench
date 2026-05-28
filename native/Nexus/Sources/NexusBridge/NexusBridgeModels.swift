@@ -506,6 +506,65 @@ public struct UpdateWorkspaceTaskResponse: Codable, Equatable, Sendable {
     }
 }
 
+public struct UpdateWorkspaceLifecycleRequest: Codable, Equatable, Sendable {
+    public let workspacePath: String
+    public let state: String
+    public let focus: String?
+    public let nextAction: String?
+    public let confirmed: Bool
+    public let auditRoot: String?
+    public let actor: String?
+
+    public init(
+        workspacePath: String,
+        state: String,
+        focus: String? = nil,
+        nextAction: String? = nil,
+        confirmed: Bool,
+        auditRoot: String? = nil,
+        actor: String? = nil
+    ) {
+        self.workspacePath = workspacePath
+        self.state = state
+        self.focus = focus
+        self.nextAction = nextAction
+        self.confirmed = confirmed
+        self.auditRoot = auditRoot
+        self.actor = actor
+    }
+}
+
+public struct UpdateWorkspaceLifecycleResponse: Codable, Equatable, Sendable {
+    public let workspacePath: String
+    public let workspaceDocumentPath: String
+    public let statusDocumentPath: String
+    public let previousState: String
+    public let state: String
+    public let focus: String
+    public let nextAction: String
+    public let updated: Bool
+
+    public init(
+        workspacePath: String,
+        workspaceDocumentPath: String,
+        statusDocumentPath: String,
+        previousState: String,
+        state: String,
+        focus: String,
+        nextAction: String,
+        updated: Bool
+    ) {
+        self.workspacePath = workspacePath
+        self.workspaceDocumentPath = workspaceDocumentPath
+        self.statusDocumentPath = statusDocumentPath
+        self.previousState = previousState
+        self.state = state
+        self.focus = focus
+        self.nextAction = nextAction
+        self.updated = updated
+    }
+}
+
 public struct WorkspaceTaskHandoffPromptRequest: Codable, Equatable, Sendable {
     public let workspaceName: String
     public let workspaceFolder: String

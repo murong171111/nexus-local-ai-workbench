@@ -38,6 +38,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added Rust Core readiness checks and surfaced them in the Tauri preview cards, workspace drawer, and native SwiftUI detail panel.
 - Added Rust Core session actions and surfaced them in the Tauri preview cards, workspace drawer, and native SwiftUI detail panel.
 - Added Rust Core workspace lifecycle derivation and native SwiftUI lifecycle displays with progress, next-action, document-open, worktree setup, and Codex handoff controls.
+- Added confirmed Rust Core, FFI, and native SwiftUI lifecycle writeback for `workspace.md` and `STATUS.md`, with local audit events for status transitions.
 - Added confirmed worktree setup through Rust Core, FFI, and the Tauri preview UI, with audit logging and command-copy fallback in browser preview mode.
 - Added Rust Core SQLite + FTS index rebuild/search support for workspace Markdown and SQL notes.
 - Added Tauri commands for rebuilding and querying the local search index.

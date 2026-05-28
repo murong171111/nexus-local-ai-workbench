@@ -21,6 +21,7 @@ It is designed for teams that work across multiple local service repositories an
 - Local automation checks for refresh, risk, delivery, task, worktree, and dirty-service signals, exposed through Rust Core, the Swift/Rust bridge, the native menu bar, optional scheduled checks, and configurable macOS notifications.
 - Native SwiftUI Automation Action Center that turns local check signals into risk focus, delivery document opens, task focus, worktree review, and Codex handoff prompts.
 - Workspace lifecycle stages derived from local workspace evidence, with native progress, next-action, document-open, worktree setup, and Codex handoff controls.
+- Confirmed lifecycle writeback from the native shell into `workspace.md` and `STATUS.md`, with local audit events for status transitions.
 - Global search popover for indexed workspace documents, SQL notes, and browser-preview metadata fallback, with grouped results and keyboard navigation.
 - First-run onboarding for configuring local workspace, source repository, and delivery document paths.
 - Environment health checks for configured directories and Git availability.
@@ -97,6 +98,8 @@ The native right inspector also includes an Automation Action Center. After a ch
 Rust Core derives a lifecycle stage for every workspace from the current Markdown, task, risk, service, branch, delivery, and git worktree state. The native shell shows that lifecycle on each workspace card and in the detail inspector with progress, current reason, next action, and Codex handoff controls.
 
 The current stages are `scoping`, `setup`, `developing`, `delivery`, `done`, `blocked`, and `archived`. Nexus does not overwrite lifecycle files automatically; it reads local evidence and guides the next safe action.
+
+When the Rust Core bridge is available, lifecycle transitions such as `developing`, `delivery`, `done`, `blocked`, and `archived` can be written back after explicit confirmation. The write updates `workspace.md` and `STATUS.md`, then appends a `workspace_lifecycle.updated` audit event. It does not move folders, delete worktrees, change git branches, or mark tasks complete.
 
 ## Local Search Index
 
