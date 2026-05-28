@@ -39,7 +39,7 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - Native workspace cards and details show Rust Core lifecycle stages with progress, next action, and Codex handoff controls.
 - Native lifecycle transitions can be confirmed and written back to `workspace.md` and `STATUS.md` through Rust Core and FFI, with local audit logging.
 - Archived workspaces can be filtered and restored later while staying out of active Task Center, menu-bar, and automation attention counts.
-- Native worktree setup is available from session actions when the Rust Core bridge is loaded, guarded by an explicit confirmation sheet and result summary.
+- Native worktree setup is available from session actions when the Rust Core bridge is loaded, guarded by an explicit confirmation sheet, refreshed workspace state, result summary, and Finder/Codex/local-check follow-up actions.
 - Build-only validation through Swift Package Manager.
 
 ## Build

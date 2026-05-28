@@ -1015,12 +1015,23 @@ private struct WorktreeSetupSheet: View {
     @State private var confirmed = false
     let workspace: WorkspaceSummary
 
+    private var currentWorkspace: WorkspaceSummary {
+        appState.workspaces.first { $0.id == workspace.id } ?? workspace
+    }
+
     private var missingServices: [String] {
-        appState.missingWorktreeServices(in: workspace)
+        appState.missingWorktreeServices(in: currentWorkspace)
     }
 
     private var canRun: Bool {
-        confirmed && appState.canSetupWorktrees(in: workspace) && !appState.isSettingUpWorktrees
+        confirmed && appState.canSetupWorktrees(in: currentWorkspace) && !appState.isSettingUpWorktrees
+    }
+
+    private var branchIsReady: Bool {
+        !currentWorkspace.branch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !["待确认", "未确认", "pending", "tbd", "todo"].contains { marker in
+                currentWorkspace.branch.lowercased().contains(marker)
+            }
     }
 
     var body: some View {
@@ -1035,9 +1046,9 @@ private struct WorktreeSetupSheet: View {
                 }
 
                 VStack(alignment: .leading, spacing: 10) {
-                    WorktreeSetupMetaRow(label: "Workspace", value: workspace.path)
+                    WorktreeSetupMetaRow(label: "Workspace", value: currentWorkspace.path)
                     WorktreeSetupMetaRow(label: "Source repos", value: appState.sourceReposRoot)
-                    WorktreeSetupMetaRow(label: "Target branch", value: workspace.branch)
+                    WorktreeSetupMetaRow(label: "Target branch", value: currentWorkspace.branch)
                 }
 
                 SectionBlock(title: "缺失服务 / Missing services") {
@@ -1049,7 +1060,20 @@ private struct WorktreeSetupSheet: View {
                     }
                 }
 
+                if !branchIsReady {
+                    Label("目标分支仍待确认，不能创建 worktree。请先在工作区文档中确认目标分支。", systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(NexusPalette.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if missingServices.isEmpty {
+                    Text("当前没有需要创建的 worktree，可以关闭弹窗后继续 Codex 交接或本地检查。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 Toggle("确认执行本地 git fetch 与 git worktree add", isOn: $confirmed)
+                    .disabled(missingServices.isEmpty || !branchIsReady)
 
                 HStack {
                     Button("Close") {
@@ -1061,7 +1085,7 @@ private struct WorktreeSetupSheet: View {
 
                     Button(appState.isSettingUpWorktrees ? "Setting up" : "Setup worktrees") {
                         Task {
-                            await appState.setupMissingWorktrees(for: workspace, confirmed: confirmed)
+                            await appState.setupMissingWorktrees(for: currentWorkspace, confirmed: confirmed)
                         }
                     }
                     .keyboardShortcut(.defaultAction)
@@ -1069,7 +1093,14 @@ private struct WorktreeSetupSheet: View {
                 }
 
                 if let response = appState.lastWorktreeSetupResponse {
-                    WorktreeSetupResultView(response: response)
+                    WorktreeSetupResultView(
+                        response: response,
+                        workspace: currentWorkspace,
+                        closeAction: {
+                            dismiss()
+                        }
+                    )
+                    .environmentObject(appState)
                 }
 
                 if let error = appState.lastError {
@@ -1242,13 +1273,25 @@ private struct WorktreeSetupMetaRow: View {
 }
 
 private struct WorktreeSetupResultView: View {
+    @EnvironmentObject private var appState: AppState
     let response: SetupWorktreesResponse
+    let workspace: WorkspaceSummary
+    let closeAction: () -> Void
+
+    private var hasFailure: Bool {
+        !response.failed.isEmpty
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label(resultSummary, systemImage: response.failed.isEmpty ? "checkmark.circle" : "exclamationmark.triangle")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(response.failed.isEmpty ? NexusPalette.success : NexusPalette.warning)
+
+            Text(resultGuidance)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
             if !response.command.isEmpty {
                 Text(response.command)
@@ -1260,6 +1303,47 @@ private struct WorktreeSetupResultView: View {
             WorktreeSetupResultGroup(title: "Created", results: response.created, color: NexusPalette.success)
             WorktreeSetupResultGroup(title: "Skipped", results: response.skipped, color: .secondary)
             WorktreeSetupResultGroup(title: "Failed", results: response.failed, color: NexusPalette.danger)
+
+            HStack(spacing: 8) {
+                Button {
+                    Task {
+                        await appState.openWorkspaceInFinder(workspace)
+                    }
+                } label: {
+                    Label("Finder", systemImage: "folder")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Button {
+                    Task {
+                        await appState.openWorkspaceInCodex(workspace)
+                    }
+                } label: {
+                    Label("Codex", systemImage: "point.3.connected.trianglepath.dotted")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+
+                Button {
+                    Task {
+                        await appState.runLocalAutomationCheck()
+                    }
+                } label: {
+                    Label(appState.isRunningAutomationCheck ? "Checking" : "Check", systemImage: "checklist")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(appState.isRunningAutomationCheck)
+
+                Spacer()
+
+                Button("Close") {
+                    closeAction()
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+            }
         }
         .padding(12)
         .background(NexusPalette.badge)
@@ -1268,6 +1352,16 @@ private struct WorktreeSetupResultView: View {
 
     private var resultSummary: String {
         "\(response.created.count) created · \(response.skipped.count) skipped · \(response.failed.count) failed"
+    }
+
+    private var resultGuidance: String {
+        if hasFailure {
+            return "部分服务没有创建成功。请先查看失败明细；修复源仓库、分支或本地路径后可以再次执行。"
+        }
+        if response.created.isEmpty {
+            return "没有新增 worktree。可以关闭弹窗，继续 Codex 交接或运行本地检查确认状态。"
+        }
+        return "worktree 已写入工作区。下一步建议运行本地检查，确认分支和未提交状态后再交接 Codex。"
     }
 }
 

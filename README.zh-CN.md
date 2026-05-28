@@ -30,6 +30,7 @@ Nexus 是一个面向 macOS 的本地 AI 开发工作台，用来管理需求工
 - 支持环境健康检查，用于确认本地路径和 Git 是否可用。
 - 打包后的应用通过原生命令扫描配置路径，不依赖本地 Python 脚本。
 - 原生新建工作区流程支持扫描源仓库目录、筛选服务候选、勾选真实本地服务，并允许在需求早期把服务范围标记为待确认；创建后会聚焦新工作区，并给出 handoff、worktree、Codex 和本地检查入口。
+- 原生 worktree 创建完成后会刷新工作区状态，解释 created/skipped/failed 服务，并把下一步引导到 Finder、Codex 或本地检查。
 - 支持分支一致性检查，当 worktree 实际分支和工作区目标分支不一致时会标记风险。
 - 新建工作区时生成 `bootstrap-report.md` 和 `scripts/worktree-commands.sh`，用于半自动创建 worktree。
 - 当 `交付记录.md` 仍是占位内容时，会提示交付记录待补充。
@@ -95,7 +96,7 @@ Nexus 默认识别每个需求工作区下的 Markdown 文档和本地 worktree 
 
 创建完成后，Nexus 会自动选中新工作区、清理旧的文档预览，并在右侧详情中展示下一步面板：打开 `handoff.md`、在服务和分支已确认时创建 worktree、交接 Codex，或运行本地检查。
 
-Nexus 不会自动执行 worktree 命令。你需要先确认分支和服务范围，再人工执行生成的脚本。
+Nexus 不会在创建工作区时自动创建 worktree。你需要先确认分支和服务范围，再使用原生 worktree 创建动作执行已确认的本地 `git fetch` 和 `git worktree add` 流程。执行完成后，Nexus 会刷新工作区状态，展示 created/skipped/failed 服务结果，并提供 Finder、Codex 和本地检查后续入口。
 
 ## 本地审计日志
 
