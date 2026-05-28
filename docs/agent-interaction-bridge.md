@@ -94,6 +94,19 @@ Workspace task rows are now scanned as structured task snapshots:
 
 The native SwiftUI sidebar shows open tasks across all workspaces in a local Task Center. Selecting a task moves focus to the owning workspace, and the workspace detail panel shows its task rows alongside readiness, session actions, risk, activity, and documents.
 
+## Task Status Updates
+
+The native shell can update a scanned workspace task after explicit confirmation:
+
+- `完成` changes the matching table row status to `已完成`.
+- `延期` changes the matching table row status to `延期`.
+- Rust Core matches tasks by the stable task ID emitted during scanning.
+- Normal workspace tasks use `<workspace-folder>:task-<index>`.
+- Agent-sourced tasks use `<workspace-folder>:<event-id>` when the row detail contains `event=<agent-event-id>`.
+- Successful FFI writes append a `workspace_task.updated` audit event when an audit root is provided.
+
+Status updates only rewrite the matched Markdown table row in `tasks.md`. Nexus does not modify unrelated task rows or execute any command metadata.
+
 ## Storage Boundary
 
 Agent events are not workspace source-of-truth records. They are local operational telemetry used for:

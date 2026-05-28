@@ -17,12 +17,14 @@ final class AppState: ObservableObject {
     @Published var isDocumentLoading = false
     @Published var isCreatingWorkspace = false
     @Published var isSettingUpWorktrees = false
+    @Published var isUpdatingTask = false
     @Published var lastError: String?
     @Published var bridgeMode: String
     @Published var documentPreview: DocumentSnapshot?
     @Published var widgetSnapshot: WidgetSnapshot?
     @Published var agentEvents: [AgentEvent] = []
     @Published var selectedAgentEvent: AgentEvent?
+    @Published var pendingTaskStatusUpdate: TaskStatusUpdate?
     @Published var lastCreatedWorkspace: CreateWorkspaceResponse?
     @Published var pendingWorktreeSetupWorkspace: WorkspaceSummary?
     @Published var lastWorktreeSetupResponse: SetupWorktreesResponse?
@@ -217,6 +219,25 @@ final class AppState: ObservableObject {
 
     func selectTaskCenterItem(_ item: TaskCenterItem) {
         selectedWorkspaceID = item.workspaceID
+    }
+
+    func requestTaskStatusUpdate(_ item: TaskCenterItem, status: String) {
+        guard let workspace = workspaces.first(where: { $0.id == item.workspaceID }) else {
+            return
+        }
+        requestTaskStatusUpdate(item.task, in: workspace, status: status)
+    }
+
+    func requestTaskStatusUpdate(_ task: WorkspaceTask, in workspace: WorkspaceSummary, status: String) {
+        pendingTaskStatusUpdate = TaskStatusUpdate(
+            workspaceID: workspace.id,
+            workspaceName: workspace.name,
+            workspacePath: workspace.path,
+            taskID: task.id,
+            taskTitle: task.title,
+            currentStatus: task.status,
+            nextStatus: status
+        )
     }
 
     func isPinned(_ workspace: WorkspaceSummary) -> Bool {
@@ -480,6 +501,36 @@ final class AppState: ObservableObject {
         } catch {
             lastError = error.localizedDescription
             return nil
+        }
+    }
+
+    func confirmPendingTaskStatusUpdate(confirmed: Bool) async {
+        guard let update = pendingTaskStatusUpdate else {
+            return
+        }
+        isUpdatingTask = true
+        lastError = nil
+        defer {
+            isUpdatingTask = false
+        }
+
+        do {
+            let response = try await bridge.updateWorkspaceTask(
+                request: UpdateWorkspaceTaskRequest(
+                    workspacePath: update.workspacePath,
+                    taskId: update.taskID,
+                    status: update.nextStatus,
+                    confirmed: confirmed,
+                    auditRoot: auditRootPath,
+                    actor: "Nexus Native"
+                )
+            )
+            if response.updated {
+                pendingTaskStatusUpdate = nil
+                await refreshFromBridge()
+            }
+        } catch {
+            lastError = error.localizedDescription
         }
     }
 

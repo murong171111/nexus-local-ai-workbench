@@ -3,10 +3,11 @@ use nexus_core::{
     append_agent_task_draft, append_audit_event_from_root, create_workspace,
     read_agent_events_from_root, read_document, rebuild_search_index, scan_source_repos,
     scan_workspaces, scan_workspaces_with_audit, search_index, setup_worktrees,
-    widget_snapshot_from_dashboard, AgentEvent, AgentEventInput, AgentEventTaskDraftResponse,
-    AppendAgentTaskDraftRequest as CoreAppendAgentTaskDraftRequest, AuditEventInput,
-    CreateWorkspaceRequest as CoreCreateWorkspaceRequest,
+    update_workspace_task, widget_snapshot_from_dashboard, AgentEvent, AgentEventInput,
+    AgentEventTaskDraftResponse, AppendAgentTaskDraftRequest as CoreAppendAgentTaskDraftRequest,
+    AuditEventInput, CreateWorkspaceRequest as CoreCreateWorkspaceRequest,
     SetupWorktreesRequest as CoreSetupWorktreesRequest,
+    UpdateWorkspaceTaskRequest as CoreUpdateWorkspaceTaskRequest,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::ffi::{CStr, CString};
@@ -108,6 +109,18 @@ struct AgentEventTaskDraftBridgeRequest {
 struct AppendAgentTaskDraftBridgeRequest {
     workspace_path: String,
     draft: AgentEventTaskDraftResponse,
+    confirmed: bool,
+    audit_root: Option<String>,
+    actor: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateWorkspaceTaskBridgeRequest {
+    workspace_path: String,
+    task_id: String,
+    status: String,
+    detail: Option<String>,
     confirmed: bool,
     audit_root: Option<String>,
     actor: Option<String>,
@@ -257,6 +270,52 @@ pub unsafe extern "C" fn nexus_append_agent_task_draft_json(
                             ("taskTitle".to_string(), response.title.clone()),
                             ("category".to_string(), request.draft.category),
                             ("priority".to_string(), request.draft.priority),
+                        ]
+                        .into_iter()
+                        .collect(),
+                    },
+                );
+            }
+        }
+
+        Ok(response)
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn nexus_update_workspace_task_json(
+    input_json: *const c_char,
+) -> *mut c_char {
+    bridge_call(input_json, |request: UpdateWorkspaceTaskBridgeRequest| {
+        let response = update_workspace_task(CoreUpdateWorkspaceTaskRequest {
+            workspace_path: request.workspace_path.clone(),
+            task_id: request.task_id.clone(),
+            status: request.status.clone(),
+            detail: request.detail.clone(),
+            confirmed: request.confirmed,
+        })?;
+
+        if response.updated {
+            if let Some(audit_root) = request.audit_root.as_deref() {
+                let _ = append_audit_event_from_root(
+                    audit_root,
+                    AuditEventInput {
+                        actor: request.actor.unwrap_or_else(|| "Nexus Native".to_string()),
+                        action: "workspace_task.updated".to_string(),
+                        target: response.path.clone(),
+                        summary: format!(
+                            "Updated task {} from {} to {}",
+                            response.task.title, response.previous_status, response.task.status
+                        ),
+                        metadata: [
+                            ("workspace".to_string(), request.workspace_path),
+                            ("taskId".to_string(), request.task_id),
+                            ("taskTitle".to_string(), response.task.title.clone()),
+                            (
+                                "previousStatus".to_string(),
+                                response.previous_status.clone(),
+                            ),
+                            ("status".to_string(), response.task.status.clone()),
                         ]
                         .into_iter()
                         .collect(),
@@ -757,6 +816,46 @@ mod tests {
         let audit = fs::read_to_string(audit_root.join("audit-log.jsonl")).unwrap();
         assert!(audit.contains("agent_task_draft.appended"));
         assert!(audit.contains("agent-1"));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn update_workspace_task_bridge_writes_status_and_audit() {
+        let root = std::env::temp_dir().join(format!(
+            "nexus-ffi-task-status-update-{}",
+            std::process::id()
+        ));
+        let workspace = root.join("2026-05-28-task-demo");
+        let audit_root = root.join("audit");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&workspace).unwrap();
+        fs::write(
+            workspace.join("tasks.md"),
+            "# Tasks\n\n| 任务 | 状态 | 说明 |\n| --- | --- | --- |\n| 核对任务中心 | 进行中 | priority=high |\n",
+        )
+        .unwrap();
+
+        let request = format!(
+            r#"{{"workspacePath":"{}","taskId":"2026-05-28-task-demo:task-0","status":"已完成","confirmed":true,"auditRoot":"{}","actor":"Nexus Test"}}"#,
+            workspace.to_string_lossy(),
+            audit_root.to_string_lossy()
+        );
+        let input = CString::new(request).unwrap();
+        let output = unsafe { nexus_update_workspace_task_json(input.as_ptr()) };
+        let response = unsafe { CStr::from_ptr(output).to_string_lossy().to_string() };
+        unsafe { nexus_string_free(output) };
+
+        let value = serde_json::from_str::<Value>(&response).unwrap();
+        assert_eq!(value["ok"], true);
+        assert_eq!(value["data"]["task"]["title"], "核对任务中心");
+        assert_eq!(value["data"]["task"]["status"], "已完成");
+        assert_eq!(value["data"]["previousStatus"], "进行中");
+        let tasks = fs::read_to_string(workspace.join("tasks.md")).unwrap();
+        assert!(tasks.contains("| 核对任务中心 | 已完成 | priority=high |"));
+        let audit = fs::read_to_string(audit_root.join("audit-log.jsonl")).unwrap();
+        assert!(audit.contains("workspace_task.updated"));
+        assert!(audit.contains("previousStatus"));
 
         fs::remove_dir_all(root).unwrap();
     }
