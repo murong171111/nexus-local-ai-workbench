@@ -4596,6 +4596,7 @@ private struct TaskCenterSidebarRow: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.mini)
+                .help("打开 tasks.md / Open task source document")
 
                 Button("完成") {
                     completeAction()
@@ -4603,6 +4604,7 @@ private struct TaskCenterSidebarRow: View {
                 .buttonStyle(.bordered)
                 .controlSize(.mini)
                 .disabled(item.task.isDone)
+                .help("确认后写入 tasks.md 为已完成")
 
                 Button("延期") {
                     deferAction()
@@ -4610,12 +4612,14 @@ private struct TaskCenterSidebarRow: View {
                 .buttonStyle(.bordered)
                 .controlSize(.mini)
                 .disabled(item.task.isDone || item.task.status.contains("延期"))
+                .help("确认后写入 tasks.md 为延期")
 
                 Button("Codex") {
                     codexAction()
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.mini)
+                .help("复制任务级 Codex 上下文 / Copy task handoff")
             }
         }
         .padding(10)
@@ -4688,6 +4692,7 @@ private struct WorkspaceTaskRow: View {
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.mini)
+                        .help("确认后写入 tasks.md 为已完成")
 
                         Button("延期") {
                             deferAction()
@@ -4695,6 +4700,7 @@ private struct WorkspaceTaskRow: View {
                         .buttonStyle(.bordered)
                         .controlSize(.mini)
                         .disabled(task.status.contains("延期"))
+                        .help("确认后写入 tasks.md 为延期")
                     }
                 }
                 HStack(spacing: 5) {
@@ -4703,12 +4709,14 @@ private struct WorkspaceTaskRow: View {
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
+                    .help("打开 tasks.md / Open task source document")
 
                     Button("Codex") {
                         codexAction()
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
+                    .help("复制任务级 Codex 上下文 / Copy task handoff")
                 }
             }
         }
@@ -5142,14 +5150,14 @@ private struct PathSettingRow: View {
     }
 
     private var statusLabel: String {
-        guard let check else { return "not checked" }
+        guard let check else { return "未检查" }
         switch check.status {
         case "pass":
-            return "ready"
+            return "可用"
         case "blocker":
-            return "needs path"
+            return "需处理"
         default:
-            return "review"
+            return "复核"
         }
     }
 
@@ -5181,14 +5189,16 @@ private struct PathSettingRow: View {
                     .textFieldStyle(.roundedBorder)
                     .font(.system(.caption, design: .monospaced))
 
-                Button("Choose") {
+                Button("选择") {
                     chooseAction()
                 }
+                .help("选择本地目录 / Choose local directory")
 
-                Button("Reveal") {
+                Button("打开") {
                     revealAction()
                 }
                 .disabled(!canReveal)
+                .help(canReveal ? "在 Finder 中打开 / Reveal in Finder" : "先运行 Environment Check 确认路径存在")
             }
 
             Text(check?.summary ?? "Run Environment Check after choosing a path.")
