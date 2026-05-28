@@ -1967,21 +1967,8 @@ private struct WorkspaceDetailView: View {
                 ActivityTimelineView(events: workspace.activities)
             }
 
-            SectionBlock(title: "文档预览 / Documents") {
-                Button {
-                    Task {
-                        await appState.loadHandoffForSelectedWorkspace()
-                    }
-                } label: {
-                    Label(appState.isDocumentLoading ? "Loading handoff" : "Load handoff", systemImage: "doc.text")
-                }
-                .buttonStyle(.bordered)
-                .disabled(appState.isDocumentLoading)
-
-                if let document = appState.documentPreview {
-                    NativeDocumentPreview(document: document)
-                }
-            }
+            WorkspaceDocumentsHubView(workspace: workspace)
+                .environmentObject(appState)
 
             Spacer()
         }
@@ -2021,6 +2008,114 @@ private enum NativeDocumentMode: String, CaseIterable, Identifiable {
     case source = "源码"
 
     var id: String { rawValue }
+}
+
+private struct WorkspaceDocumentEntry: Identifiable {
+    let key: String
+    let label: String
+    let description: String
+    let systemImage: String
+    let fallbackRelativePath: String
+
+    var id: String { key }
+}
+
+private struct WorkspaceDocumentsHubView: View {
+    @EnvironmentObject private var appState: AppState
+    let workspace: WorkspaceSummary
+
+    private let standardEntries: [WorkspaceDocumentEntry] = [
+        WorkspaceDocumentEntry(key: "workspace", label: "Workspace", description: "需求范围", systemImage: "doc.text", fallbackRelativePath: "workspace.md"),
+        WorkspaceDocumentEntry(key: "status", label: "Status", description: "当前状态", systemImage: "gauge.with.dots.needle.bottom.50percent", fallbackRelativePath: "STATUS.md"),
+        WorkspaceDocumentEntry(key: "services", label: "Services", description: "服务范围", systemImage: "square.stack.3d.up", fallbackRelativePath: "services.md"),
+        WorkspaceDocumentEntry(key: "branches", label: "Branches", description: "分支记录", systemImage: "arrow.triangle.branch", fallbackRelativePath: "branches.md"),
+        WorkspaceDocumentEntry(key: "tasks", label: "Tasks", description: "任务列表", systemImage: "checklist", fallbackRelativePath: "tasks.md"),
+        WorkspaceDocumentEntry(key: "delivery", label: "Delivery", description: "交付记录", systemImage: "shippingbox", fallbackRelativePath: "交付记录.md"),
+        WorkspaceDocumentEntry(key: "handoff", label: "Handoff", description: "Codex 上下文", systemImage: "point.3.connected.trianglepath.dotted", fallbackRelativePath: "handoff.md"),
+        WorkspaceDocumentEntry(key: "bootstrap", label: "Bootstrap", description: "初始化报告", systemImage: "doc.badge.gearshape", fallbackRelativePath: "bootstrap-report.md"),
+        WorkspaceDocumentEntry(key: "worktreeScript", label: "Worktree script", description: "创建脚本", systemImage: "terminal", fallbackRelativePath: "scripts/worktree-commands.sh")
+    ]
+
+    private var activePreview: DocumentSnapshot? {
+        guard let document = appState.documentPreview else {
+            return nil
+        }
+        let knownPaths = Set(documentEntries.map(\.path))
+        if knownPaths.contains(document.path) || document.path.hasPrefix(workspace.path) {
+            return document
+        }
+        return nil
+    }
+
+    private var documentEntries: [ResolvedWorkspaceDocumentEntry] {
+        standardEntries.map { entry in
+            ResolvedWorkspaceDocumentEntry(
+                entry: entry,
+                path: workspace.documentLinks[entry.key] ?? "\(workspace.path)/\(entry.fallbackRelativePath)"
+            )
+        }
+    }
+
+    var body: some View {
+        SectionBlock(title: "文档入口 / Documents") {
+            VStack(alignment: .leading, spacing: 12) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 116), spacing: 8)], alignment: .leading, spacing: 8) {
+                    ForEach(documentEntries) { entry in
+                        Button {
+                            Task {
+                                await appState.loadDocument(path: entry.path)
+                            }
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Label(entry.label, systemImage: entry.systemImage)
+                                    .font(.caption.weight(.semibold))
+                                    .lineLimit(1)
+                                Text(entry.description)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(8)
+                            .background(NexusPalette.badge)
+                            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(appState.isDocumentLoading)
+                        .help(entry.path)
+                    }
+                }
+
+                if appState.isDocumentLoading {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Loading document...")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if let document = activePreview {
+                    NativeDocumentPreview(document: document)
+                } else {
+                    Label("选择一个文档后在这里预览。", systemImage: "doc.text.magnifyingglass")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+}
+
+private struct ResolvedWorkspaceDocumentEntry: Identifiable {
+    let entry: WorkspaceDocumentEntry
+    let path: String
+
+    var id: String { entry.key }
+    var label: String { entry.label }
+    var description: String { entry.description }
+    var systemImage: String { entry.systemImage }
 }
 
 private struct NativeDocumentPreview: View {
