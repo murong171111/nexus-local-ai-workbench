@@ -2,6 +2,11 @@ import AppKit
 import NexusBridge
 import SwiftUI
 
+private func copyToPasteboard(_ payload: String) {
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(payload, forType: .string)
+}
+
 struct RootView: View {
     @EnvironmentObject private var appState: AppState
     @State private var isCreateWorkspacePresented = false
@@ -552,6 +557,9 @@ private struct SidebarView: View {
                             },
                             deferAction: {
                                 appState.requestTaskStatusUpdate(item, status: "延期")
+                            },
+                            codexAction: {
+                                copyTaskHandoff(item)
                             }
                         )
                     }
@@ -662,6 +670,18 @@ private struct SidebarView: View {
         }
         .padding(18)
         .background(NexusPalette.sidebar)
+    }
+
+    private func copyTaskHandoff(_ item: TaskCenterItem) {
+        guard let workspace = appState.workspaces.first(where: { $0.id == item.workspaceID }) else {
+            return
+        }
+        appState.selectTaskCenterItem(item)
+        Task {
+            let payload = await appState.workspaceTaskHandoffPrompt(for: item.task, in: workspace)
+            copyToPasteboard(payload)
+            await appState.recordTaskHandoffCopied(task: item.task, in: workspace)
+        }
     }
 }
 
@@ -1174,6 +1194,9 @@ private struct WorkspaceDetailView: View {
                             },
                             deferAction: {
                                 appState.requestTaskStatusUpdate(task, in: workspace, status: "延期")
+                            },
+                            codexAction: {
+                                copyTaskHandoff(task, in: workspace)
                             }
                         )
                     }
@@ -1261,6 +1284,14 @@ private struct WorkspaceDetailView: View {
             ?? "\(workspace.path)/handoff.md"
         Task {
             await appState.loadDocument(path: documentPath)
+        }
+    }
+
+    private func copyTaskHandoff(_ task: WorkspaceTask, in workspace: WorkspaceSummary) {
+        Task {
+            let payload = await appState.workspaceTaskHandoffPrompt(for: task, in: workspace)
+            copyToPasteboard(payload)
+            await appState.recordTaskHandoffCopied(task: task, in: workspace)
         }
     }
 }
@@ -1427,6 +1458,7 @@ private struct TaskCenterSidebarRow: View {
     let selectAction: () -> Void
     let completeAction: () -> Void
     let deferAction: () -> Void
+    let codexAction: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -1470,6 +1502,12 @@ private struct TaskCenterSidebarRow: View {
                 .buttonStyle(.bordered)
                 .controlSize(.mini)
                 .disabled(item.task.isDone || item.task.status.contains("延期"))
+
+                Button("Codex") {
+                    codexAction()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
             }
         }
         .padding(10)
@@ -1497,6 +1535,7 @@ private struct WorkspaceTaskRow: View {
     let task: WorkspaceTask
     let completeAction: () -> Void
     let deferAction: () -> Void
+    let codexAction: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 9) {
@@ -1549,6 +1588,11 @@ private struct WorkspaceTaskRow: View {
                         .disabled(task.status.contains("延期"))
                     }
                 }
+                Button("Codex") {
+                    codexAction()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
             }
         }
     }

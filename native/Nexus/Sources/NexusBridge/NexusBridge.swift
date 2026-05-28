@@ -15,6 +15,7 @@ public protocol NexusBridge {
     func agentEventTaskDraft(request: AgentEventTaskDraftRequest) async throws -> AgentEventTaskDraftResponse
     func appendAgentTaskDraft(request: AppendAgentTaskDraftRequest) async throws -> AppendAgentTaskDraftResponse
     func updateWorkspaceTask(request: UpdateWorkspaceTaskRequest) async throws -> UpdateWorkspaceTaskResponse
+    func workspaceTaskHandoffPrompt(request: WorkspaceTaskHandoffPromptRequest) async throws -> WorkspaceTaskHandoffPromptResponse
     func rebuildSearchIndex(request: RebuildSearchIndexRequest) async throws -> RebuildSearchIndexResponse
     func searchIndex(request: SearchIndexRequest) async throws -> [SearchResult]
     func createWorkspace(request: CreateWorkspaceRequest) async throws -> CreateWorkspaceResponse
@@ -145,6 +146,10 @@ public final class PreviewNexusBridge: NexusBridge {
         throw NexusBridgeError.coreError("Task status updates require Rust Core bridge. Set NEXUS_CORE_LIBRARY to a local libnexus_ffi.dylib.")
     }
 
+    public func workspaceTaskHandoffPrompt(request: WorkspaceTaskHandoffPromptRequest) async throws -> WorkspaceTaskHandoffPromptResponse {
+        WorkspaceTaskHandoffPromptResponse(prompt: request.fallbackPrompt)
+    }
+
     public func rebuildSearchIndex(request: RebuildSearchIndexRequest) async throws -> RebuildSearchIndexResponse {
         RebuildSearchIndexResponse(path: request.indexPath, workspaceCount: 0, documentCount: 0)
     }
@@ -184,6 +189,7 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
     private let agentEventTaskDraftFunction: BridgeCall
     private let appendAgentTaskDraftFunction: BridgeCall
     private let updateWorkspaceTaskFunction: BridgeCall
+    private let workspaceTaskHandoffPromptFunction: BridgeCall
     private let rebuildSearchIndexFunction: BridgeCall
     private let searchIndexFunction: BridgeCall
     private let createWorkspaceFunction: BridgeCall
@@ -243,6 +249,10 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
             self.updateWorkspaceTaskFunction = try Self.loadSymbol(
                 handle: handle,
                 name: "nexus_update_workspace_task_json"
+            )
+            self.workspaceTaskHandoffPromptFunction = try Self.loadSymbol(
+                handle: handle,
+                name: "nexus_workspace_task_handoff_prompt_json"
             )
             self.rebuildSearchIndexFunction = try Self.loadSymbol(
                 handle: handle,
@@ -314,6 +324,10 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
 
     public func updateWorkspaceTask(request: UpdateWorkspaceTaskRequest) async throws -> UpdateWorkspaceTaskResponse {
         try call(updateWorkspaceTaskFunction, request: request)
+    }
+
+    public func workspaceTaskHandoffPrompt(request: WorkspaceTaskHandoffPromptRequest) async throws -> WorkspaceTaskHandoffPromptResponse {
+        try call(workspaceTaskHandoffPromptFunction, request: request)
     }
 
     public func rebuildSearchIndex(request: RebuildSearchIndexRequest) async throws -> RebuildSearchIndexResponse {

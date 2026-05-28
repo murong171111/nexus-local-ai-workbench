@@ -107,6 +107,17 @@ The native shell can update a scanned workspace task after explicit confirmation
 
 Status updates only rewrite the matched Markdown table row in `tasks.md`. Nexus does not modify unrelated task rows or execute any command metadata.
 
+## Task Codex Handoff
+
+Workspace tasks can also produce a copyable Codex handoff prompt through Rust Core, FFI, and the Swift bridge. The prompt includes:
+
+- Workspace name, folder, path, target branch, source repository root, and `tasks.md` path.
+- Task ID, title, status, priority, source, and source event ID when present.
+- The task detail text.
+- A workflow reminder to read workspace documents, inspect `repos/<service>` worktrees, keep SQL and delivery docs aligned, and report touched services, branches, verification, and risks.
+
+The native Task Center and workspace task rows expose this as a `Codex` action. The action copies the generated prompt to the pasteboard and appends a `codex_task_handoff.copied` audit event. It does not open Codex or execute task detail text by itself.
+
 ## Storage Boundary
 
 Agent events are not workspace source-of-truth records. They are local operational telemetry used for:
