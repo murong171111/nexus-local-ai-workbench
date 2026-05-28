@@ -1,5 +1,6 @@
 mod agent;
 mod audit;
+mod automation;
 mod documents;
 mod git;
 mod index;
@@ -17,6 +18,10 @@ pub use audit::{
     append_audit_event, append_audit_event_from_root, audit_log_path, read_audit_events,
     read_audit_events_from_root, AppendAuditEventResponse, AuditEvent, AuditEventInput,
     AUDIT_LOG_FILE,
+};
+pub use automation::{
+    local_automation_check, LocalAutomationCheckRequest, LocalAutomationCheckResponse,
+    LocalAutomationSignal,
 };
 pub use documents::{read_document, DocumentSnapshot};
 pub use git::{

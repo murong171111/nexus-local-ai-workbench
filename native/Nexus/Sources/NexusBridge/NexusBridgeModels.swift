@@ -760,6 +760,105 @@ public struct SearchResult: Codable, Equatable, Sendable {
     }
 }
 
+public struct LocalAutomationCheckRequest: Codable, Equatable, Sendable {
+    public let workspacesRoot: String
+    public let sourceReposRoot: String
+    public let docsRoot: String
+    public let auditRoot: String?
+    public let actor: String?
+    public let generatedAt: String
+
+    public init(
+        workspacesRoot: String,
+        sourceReposRoot: String,
+        docsRoot: String,
+        auditRoot: String? = nil,
+        actor: String? = nil,
+        generatedAt: String
+    ) {
+        self.workspacesRoot = workspacesRoot
+        self.sourceReposRoot = sourceReposRoot
+        self.docsRoot = docsRoot
+        self.auditRoot = auditRoot
+        self.actor = actor
+        self.generatedAt = generatedAt
+    }
+}
+
+public struct LocalAutomationCheckResponse: Codable, Equatable, Sendable {
+    public let generatedAt: String
+    public let status: String
+    public let summary: String
+    public let workspaceCount: Int
+    public let riskCount: Int
+    public let deliveryIssueCount: Int
+    public let openTaskCount: Int
+    public let highPriorityTaskCount: Int
+    public let missingWorktreeCount: Int
+    public let dirtyServiceCount: Int
+    public let signals: [LocalAutomationSignal]
+    public let auditEventId: String?
+    public let auditError: String?
+
+    public init(
+        generatedAt: String,
+        status: String,
+        summary: String,
+        workspaceCount: Int,
+        riskCount: Int,
+        deliveryIssueCount: Int,
+        openTaskCount: Int,
+        highPriorityTaskCount: Int,
+        missingWorktreeCount: Int,
+        dirtyServiceCount: Int,
+        signals: [LocalAutomationSignal],
+        auditEventId: String? = nil,
+        auditError: String? = nil
+    ) {
+        self.generatedAt = generatedAt
+        self.status = status
+        self.summary = summary
+        self.workspaceCount = workspaceCount
+        self.riskCount = riskCount
+        self.deliveryIssueCount = deliveryIssueCount
+        self.openTaskCount = openTaskCount
+        self.highPriorityTaskCount = highPriorityTaskCount
+        self.missingWorktreeCount = missingWorktreeCount
+        self.dirtyServiceCount = dirtyServiceCount
+        self.signals = signals
+        self.auditEventId = auditEventId
+        self.auditError = auditError
+    }
+}
+
+public struct LocalAutomationSignal: Codable, Equatable, Identifiable, Sendable {
+    public let id: String
+    public let kind: String
+    public let severity: String
+    public let title: String
+    public let detail: String
+    public let count: Int
+    public let action: String
+
+    public init(
+        id: String,
+        kind: String,
+        severity: String,
+        title: String,
+        detail: String,
+        count: Int,
+        action: String
+    ) {
+        self.id = id
+        self.kind = kind
+        self.severity = severity
+        self.title = title
+        self.detail = detail
+        self.count = count
+        self.action = action
+    }
+}
+
 public struct DashboardSnapshot: Codable, Equatable, Sendable {
     public let generatedAt: String
     public let workspacesRoot: String
@@ -1201,6 +1300,52 @@ public extension WidgetSnapshot {
             missingWorktreeCount: allGitRows.filter { !$0.worktree.exists }.count,
             topRisks: Array(topRisks),
             deepLink: activeWorkspace.map { "nexus://workspace/\($0.folder.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? $0.folder)" } ?? "nexus://"
+        )
+    }
+}
+
+public extension LocalAutomationCheckResponse {
+    static func preview(generatedAt: String) -> LocalAutomationCheckResponse {
+        LocalAutomationCheckResponse(
+            generatedAt: generatedAt,
+            status: "review",
+            summary: "Preview automation check found 2 risks, 1 delivery issue, and 2 open tasks.",
+            workspaceCount: 1,
+            riskCount: 2,
+            deliveryIssueCount: 1,
+            openTaskCount: 2,
+            highPriorityTaskCount: 1,
+            missingWorktreeCount: 1,
+            dirtyServiceCount: 1,
+            signals: [
+                LocalAutomationSignal(
+                    id: "refresh.completed",
+                    kind: "refresh",
+                    severity: "info",
+                    title: "刷新完成 / Refresh completed",
+                    detail: "Scanned preview workspaces from local Markdown and git state.",
+                    count: 1,
+                    action: "refresh"
+                ),
+                LocalAutomationSignal(
+                    id: "risk.scan",
+                    kind: "risk",
+                    severity: "warning",
+                    title: "风险扫描 / Risk scan",
+                    detail: "2 preview risk signals need review.",
+                    count: 2,
+                    action: "review-risk"
+                ),
+                LocalAutomationSignal(
+                    id: "delivery.check",
+                    kind: "delivery",
+                    severity: "warning",
+                    title: "交付检查 / Delivery check",
+                    detail: "1 preview workspace needs delivery-record attention.",
+                    count: 1,
+                    action: "update-delivery"
+                )
+            ]
         )
     }
 }

@@ -18,6 +18,7 @@ public protocol NexusBridge {
     func workspaceTaskHandoffPrompt(request: WorkspaceTaskHandoffPromptRequest) async throws -> WorkspaceTaskHandoffPromptResponse
     func rebuildSearchIndex(request: RebuildSearchIndexRequest) async throws -> RebuildSearchIndexResponse
     func searchIndex(request: SearchIndexRequest) async throws -> [SearchResult]
+    func localAutomationCheck(request: LocalAutomationCheckRequest) async throws -> LocalAutomationCheckResponse
     func createWorkspace(request: CreateWorkspaceRequest) async throws -> CreateWorkspaceResponse
     func setupWorktrees(request: SetupWorktreesRequest) async throws -> SetupWorktreesResponse
 }
@@ -158,6 +159,10 @@ public final class PreviewNexusBridge: NexusBridge {
         []
     }
 
+    public func localAutomationCheck(request: LocalAutomationCheckRequest) async throws -> LocalAutomationCheckResponse {
+        LocalAutomationCheckResponse.preview(generatedAt: request.generatedAt)
+    }
+
     public func createWorkspace(request: CreateWorkspaceRequest) async throws -> CreateWorkspaceResponse {
         guard request.confirmed else {
             throw NexusBridgeError.coreError("workspace creation requires explicit confirmation")
@@ -192,6 +197,7 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
     private let workspaceTaskHandoffPromptFunction: BridgeCall
     private let rebuildSearchIndexFunction: BridgeCall
     private let searchIndexFunction: BridgeCall
+    private let localAutomationCheckFunction: BridgeCall
     private let createWorkspaceFunction: BridgeCall
     private let setupWorktreesFunction: BridgeCall
     private let freeFunction: BridgeFree
@@ -261,6 +267,10 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
             self.searchIndexFunction = try Self.loadSymbol(
                 handle: handle,
                 name: "nexus_search_index_json"
+            )
+            self.localAutomationCheckFunction = try Self.loadSymbol(
+                handle: handle,
+                name: "nexus_local_automation_check_json"
             )
             self.createWorkspaceFunction = try Self.loadSymbol(
                 handle: handle,
@@ -336,6 +346,10 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
 
     public func searchIndex(request: SearchIndexRequest) async throws -> [SearchResult] {
         try call(searchIndexFunction, request: request)
+    }
+
+    public func localAutomationCheck(request: LocalAutomationCheckRequest) async throws -> LocalAutomationCheckResponse {
+        try call(localAutomationCheckFunction, request: request)
     }
 
     public func createWorkspace(request: CreateWorkspaceRequest) async throws -> CreateWorkspaceResponse {
