@@ -94,11 +94,36 @@ public struct CreateWorkspaceRequest: Codable, Equatable, Sendable {
 public struct CreateWorkspaceResponse: Codable, Equatable, Sendable {
     public let path: String
     public let folder: String
+    public let generatedFiles: [WorkspaceInitializationFile]?
+    public let initializationChecks: [WorkspaceInitializationCheck]?
 
-    public init(path: String, folder: String) {
+    public init(
+        path: String,
+        folder: String,
+        generatedFiles: [WorkspaceInitializationFile]? = nil,
+        initializationChecks: [WorkspaceInitializationCheck]? = nil
+    ) {
         self.path = path
         self.folder = folder
+        self.generatedFiles = generatedFiles
+        self.initializationChecks = initializationChecks
     }
+}
+
+public struct WorkspaceInitializationFile: Codable, Equatable, Sendable, Identifiable {
+    public var id: String { relativePath }
+
+    public let label: String
+    public let relativePath: String
+    public let kind: String
+    public let exists: Bool
+}
+
+public struct WorkspaceInitializationCheck: Codable, Equatable, Sendable, Identifiable {
+    public let id: String
+    public let label: String
+    public let detail: String
+    public let status: String
 }
 
 public struct SetupWorktreesRequest: Codable, Equatable, Sendable {

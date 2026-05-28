@@ -1214,6 +1214,16 @@ mod tests {
         let value = serde_json::from_str::<Value>(&response).unwrap();
         assert_eq!(value["ok"], true);
         assert_eq!(value["data"]["folder"], "2026-05-27-bridge-create");
+        assert!(value["data"]["generatedFiles"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|file| file["relativePath"] == "STATUS.md" && file["exists"] == true));
+        assert!(value["data"]["initializationChecks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|check| check["id"] == "status-initial-state" && check["status"] == "pass"));
         let workspace = root.join("2026-05-27-bridge-create");
         assert!(workspace.join("AGENTS.md").exists());
         assert!(workspace.join("交付记录.md").exists());

@@ -29,7 +29,7 @@ It is designed for teams that work across multiple local service repositories an
 - First-run onboarding for importing team profiles, configuring local paths, scanning source repositories, and optionally creating a demo workspace.
 - Environment health checks for configured directories and Git availability.
 - Native workspace scanning from the configured paths; no local Python script is required for the packaged app.
-- Native create-workspace flow that scans source repositories, filters service candidates, selects real local services, leaves service scope pending when needed, then focuses the new workspace with handoff, worktree, Codex, and check actions.
+- Native create-workspace flow that scans source repositories, filters service candidates, selects real local services, leaves service scope pending when needed, then focuses the new workspace with an initialization receipt, handoff, worktree, Codex, and check actions.
 - Native worktree setup includes a preflight review for target branch readiness, missing worktrees, source repositories, and workspace-local write locations, then refreshes the workspace state after running and routes the next step to Finder, Codex, or local checks.
 - Native workspace Command Center that puts lifecycle progress, a primary-path recommendation, branch/service/risk/task signals, Codex continuation, local checks, Finder, and Terminal at the top of each detail view.
 - Native Codex handoff feedback that confirms when workspace, lifecycle, risk, task, automation, or agent-event context has been copied and explains the next paste step.
@@ -100,9 +100,9 @@ The `repos/<service>` directories are intended to be git worktrees for isolated 
 
 Use the `New Workspace` action in the left rail. Nexus can scan the configured source repository root, filter the detected repositories, and let you select services from that local list. You can still type service names manually when a repository is not present yet, or leave service scope pending during early scoping. Manual service input supports commas, spaces, new lines, semicolons, and Chinese separators such as `、` and `，`.
 
-Before writing files, Nexus shows a summary of the target path, branch, and service scope. Creating a workspace requires confirming the local write, then writes the standard Markdown document set and records selected services in `services.md` and `branches.md`. It also generates `bootstrap-report.md`, `scripts/worktree-commands.sh`, and a local audit event.
+Before writing files, Nexus shows a summary of the target path, branch, and service scope. Creating a workspace requires confirming the local write, then writes the standard Markdown document set and records selected services in `services.md` and `branches.md`. It also generates `bootstrap-report.md`, `scripts/worktree-commands.sh`, a local audit event, and an initialization receipt that verifies the generated files, initial `STATUS.md`, service scope, target branch, and worktree readiness.
 
-After creation, Nexus selects the new workspace, clears stale document previews, and shows a short next-step panel for opening `handoff.md`, creating confirmed worktrees when the branch and services are ready, handing off to Codex, or running the local check.
+After creation, Nexus selects the new workspace, clears stale document previews, and shows a short next-step panel with the initialization receipt, opening `handoff.md`, creating confirmed worktrees when the branch and services are ready, handing off to Codex, or running the local check.
 
 Nexus does not automatically create worktrees during workspace creation. When the branch and service scope are confirmed, use the native worktree setup action to run a confirmed local `git fetch` and `git worktree add` flow. Before the action is enabled, Nexus shows a preflight review for target branch readiness, missing worktrees, source repositories, and the workspace-local `repos/<service>` write location. After it runs, Nexus refreshes the workspace state, shows created/skipped/failed service results, and offers Finder, Codex, and local-check follow-ups.
 
