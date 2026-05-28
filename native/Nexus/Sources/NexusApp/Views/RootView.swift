@@ -2056,6 +2056,13 @@ private struct InspectorView: View {
                     }
                 }
 
+                if let feedback = appState.localWriteFeedback {
+                    LocalWriteFeedbackView(feedback: feedback) {
+                        appState.clearLocalWriteFeedback()
+                    }
+                    .environmentObject(appState)
+                }
+
                 AutomationActionCenterView()
 
                 if let workspace = appState.selectedWorkspace {
@@ -2176,6 +2183,72 @@ private struct CodexHandoffFeedbackView: View {
                 Label("如果 Codex 没有自动带入内容，直接粘贴剪贴板里的上下文。", systemImage: "doc.on.clipboard")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+private struct LocalWriteFeedbackView: View {
+    @EnvironmentObject private var appState: AppState
+    let feedback: LocalWriteFeedback
+    let dismissAction: () -> Void
+
+    var body: some View {
+        SectionBlock(title: "本地写入 / Writeback") {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 9) {
+                    Image(systemName: feedback.systemImage)
+                        .foregroundStyle(NexusPalette.success)
+                        .frame(width: 16)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(feedback.title)
+                            .font(.subheadline.weight(.semibold))
+                        Text(feedback.detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text("\(feedback.timestamp) · Workspace state refreshed")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Button {
+                        dismissAction()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(.plain)
+                    .help("关闭写回提示 / Dismiss")
+                }
+
+                HStack(spacing: 8) {
+                    Button {
+                        Task {
+                            await appState.loadDocument(path: feedback.documentPath)
+                        }
+                    } label: {
+                        Label(feedback.documentLabel, systemImage: "doc.text")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("打开刚刚写回的源文档 / Open the updated source document")
+
+                    Button {
+                        Task {
+                            await appState.runLocalAutomationCheck(actor: "Nexus Writeback")
+                        }
+                    } label: {
+                        Label(appState.isRunningAutomationCheck ? "检查中" : "运行检查", systemImage: "checklist.checked")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(appState.isRunningAutomationCheck)
+                    .help("写回后重新运行本地检查 / Run local checks after writeback")
+                }
             }
         }
     }

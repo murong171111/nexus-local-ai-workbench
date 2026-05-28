@@ -110,6 +110,7 @@ final class AppState: ObservableObject {
     @Published var pendingWorktreeSetupWorkspace: WorkspaceSummary?
     @Published var lastWorktreeSetupResponse: SetupWorktreesResponse?
     @Published var codexHandoffFeedback: CodexHandoffFeedback?
+    @Published var localWriteFeedback: LocalWriteFeedback?
     @Published var searchResults: [SearchResult] = []
     @Published var selectedSearchResultIndex = 0
     @Published var isSearching = false
@@ -1523,11 +1524,32 @@ final class AppState: ObservableObject {
         codexHandoffFeedback = nil
     }
 
+    func clearLocalWriteFeedback() {
+        localWriteFeedback = nil
+    }
+
     private func markCodexHandoff(title: String, detail: String, systemImage: String) {
         codexHandoffFeedback = CodexHandoffFeedback(
             title: title,
             detail: detail,
             timestamp: Self.activityTimestamp(),
+            systemImage: systemImage
+        )
+    }
+
+    private func markLocalWriteFeedback(
+        title: String,
+        detail: String,
+        documentPath: String,
+        documentLabel: String,
+        systemImage: String
+    ) {
+        localWriteFeedback = LocalWriteFeedback(
+            title: title,
+            detail: detail,
+            timestamp: Self.activityTimestamp(),
+            documentPath: documentPath,
+            documentLabel: documentLabel,
             systemImage: systemImage
         )
     }
@@ -1582,6 +1604,15 @@ final class AppState: ObservableObject {
             if response.updated {
                 pendingTaskStatusUpdate = nil
                 await refreshFromBridge()
+                if lastError == nil {
+                    markLocalWriteFeedback(
+                        title: "任务状态已写回 / Task updated",
+                        detail: "\(response.task.title): \(response.previousStatus) -> \(response.task.status)。Workflow 已刷新，可继续查看交付焦点。",
+                        documentPath: response.path,
+                        documentLabel: "打开 tasks.md",
+                        systemImage: "checkmark.circle"
+                    )
+                }
             }
         } catch {
             lastError = error.localizedDescription
@@ -1613,6 +1644,15 @@ final class AppState: ObservableObject {
             if response.updated {
                 pendingLifecycleStatusUpdate = nil
                 await refreshFromBridge()
+                if lastError == nil {
+                    markLocalWriteFeedback(
+                        title: "生命周期已写回 / Lifecycle updated",
+                        detail: "\(update.currentLabel) -> \(update.nextLabel)。workspace.md 和 STATUS.md 已更新，Workflow 焦点已重新计算。",
+                        documentPath: response.statusDocumentPath,
+                        documentLabel: "打开 STATUS.md",
+                        systemImage: "arrow.triangle.2.circlepath.circle"
+                    )
+                }
             }
         } catch {
             lastError = error.localizedDescription

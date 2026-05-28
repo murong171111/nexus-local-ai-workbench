@@ -56,6 +56,7 @@ src-tauri/target/release/bundle/dmg/Nexus_0.1.0_aarch64.dmg
   - Codex handoff actions show the Handoff feedback panel after copying workspace, lifecycle, risk, task, automation, or agent-event context.
   - Workspace detail shows the Workflow summary with task counts, delivery status, delivery-readiness checks, task/delivery document opens, local check, and Codex handoff.
   - Workflow starts with a delivery focus card that routes the next action to branch/service documents, worktree setup, task review, risk handoff, delivery records, local checks, Codex, or lifecycle confirmation.
+  - Task status and lifecycle writebacks show a dismissible local-write feedback card with source-document review and follow-up check actions.
   - Task Center and workspace task rows can open the owning `tasks.md` document for source review before status changes or Codex handoff.
   - Task-level Codex actions copy task context, open the configured Codex URL, and write task handoff audit events.
   - Workflow delivery readiness can route into the confirmed lifecycle writeback sheet for entering delivery or marking the workspace done.

@@ -60,6 +60,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Native Task Center and workspace task rows now open the owning `tasks.md` document directly, keeping task review close to the source Markdown record.
 - Native SwiftUI action labels now use clearer Chinese-first wording and hover help for path recovery, task documents, task status updates, and task Codex handoff.
 - Native Task Center and workspace task rows now copy task context and open Codex in one action, with task-specific handoff feedback and audit records.
+- Native task and lifecycle writebacks now show a dismissible local-write feedback card with updated source-document and follow-up check actions.
 - Native Workflow delivery summary now recommends lifecycle writebacks from delivery readiness, routing users into the existing confirmation flow for entering delivery or marking done.
 - Native Workflow action labels now use Chinese-first wording and hover help for task documents, delivery records, local checks, and workspace Codex handoff.
 - Native Workflow now starts with a delivery focus card that turns branch, service, worktree, task, risk, SQL, dirty-service, and delivery-record state into one recommended next action.
