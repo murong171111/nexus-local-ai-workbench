@@ -47,6 +47,15 @@ struct MenuBarStatusView: View {
         .disabled(appState.isRunningAutomationCheck)
 
         Button {
+            appState.setAutomationScheduleEnabled(!appState.isAutomationScheduleEnabled)
+        } label: {
+            Label(
+                appState.isAutomationScheduleEnabled ? "暂停定期检查 / Pause Schedule" : "启用定期检查 / Enable Schedule",
+                systemImage: appState.isAutomationScheduleEnabled ? "pause.circle" : "timer"
+            )
+        }
+
+        Button {
             copyToPasteboard(summary.clipboardText)
         } label: {
             Label("复制状态摘要 / Copy Summary", systemImage: "doc.on.doc")
@@ -78,6 +87,11 @@ struct MenuBarStatusView: View {
                     Text("\(signal.title): \(signal.count)")
                 }
             }
+        }
+
+        Section("调度 / Schedule") {
+            Text(appState.isAutomationScheduleEnabled ? "已启用 · \(appState.automationIntervalMinutes) min" : "未启用")
+            Text("最近运行: \(appState.lastAutomationRunAt ?? "None")")
         }
 
         if !appState.workspaces.isEmpty {
