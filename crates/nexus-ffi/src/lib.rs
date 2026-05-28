@@ -3,12 +3,13 @@ use nexus_core::{
     append_agent_task_draft, append_audit_event_from_root, create_workspace,
     local_automation_check, read_agent_events_from_root, read_document, rebuild_search_index,
     scan_source_repos, scan_workspaces, scan_workspaces_with_audit, search_index, setup_worktrees,
-    update_workspace_task, widget_snapshot_from_dashboard, workspace_task_handoff_prompt,
-    AgentEvent, AgentEventInput, AgentEventTaskDraftResponse,
+    update_workspace_lifecycle, update_workspace_task, widget_snapshot_from_dashboard,
+    workspace_task_handoff_prompt, AgentEvent, AgentEventInput, AgentEventTaskDraftResponse,
     AppendAgentTaskDraftRequest as CoreAppendAgentTaskDraftRequest, AuditEventInput,
     CreateWorkspaceRequest as CoreCreateWorkspaceRequest,
     LocalAutomationCheckRequest as CoreLocalAutomationCheckRequest,
     SetupWorktreesRequest as CoreSetupWorktreesRequest,
+    UpdateWorkspaceLifecycleRequest as CoreUpdateWorkspaceLifecycleRequest,
     UpdateWorkspaceTaskRequest as CoreUpdateWorkspaceTaskRequest, WorkspaceTask,
     WorkspaceTaskHandoffPromptRequest,
 };
@@ -124,6 +125,18 @@ struct UpdateWorkspaceTaskBridgeRequest {
     task_id: String,
     status: String,
     detail: Option<String>,
+    confirmed: bool,
+    audit_root: Option<String>,
+    actor: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateWorkspaceLifecycleBridgeRequest {
+    workspace_path: String,
+    state: String,
+    focus: Option<String>,
+    next_action: Option<String>,
     confirmed: bool,
     audit_root: Option<String>,
     actor: Option<String>,
@@ -341,6 +354,49 @@ pub unsafe extern "C" fn nexus_update_workspace_task_json(
                                 response.previous_status.clone(),
                             ),
                             ("status".to_string(), response.task.status.clone()),
+                        ]
+                        .into_iter()
+                        .collect(),
+                    },
+                );
+            }
+        }
+
+        Ok(response)
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn nexus_update_workspace_lifecycle_json(
+    input_json: *const c_char,
+) -> *mut c_char {
+    bridge_call(input_json, |request: UpdateWorkspaceLifecycleBridgeRequest| {
+        let response = update_workspace_lifecycle(CoreUpdateWorkspaceLifecycleRequest {
+            workspace_path: request.workspace_path.clone(),
+            state: request.state.clone(),
+            focus: request.focus.clone(),
+            next_action: request.next_action.clone(),
+            confirmed: request.confirmed,
+        })?;
+
+        if response.updated {
+            if let Some(audit_root) = request.audit_root.as_deref() {
+                let _ = append_audit_event_from_root(
+                    audit_root,
+                    AuditEventInput {
+                        actor: request.actor.unwrap_or_else(|| "Nexus Native".to_string()),
+                        action: "workspace_lifecycle.updated".to_string(),
+                        target: response.workspace_path.clone(),
+                        summary: format!(
+                            "Updated lifecycle from {} to {}",
+                            response.previous_state, response.state
+                        ),
+                        metadata: [
+                            ("workspace".to_string(), request.workspace_path),
+                            ("previousState".to_string(), response.previous_state.clone()),
+                            ("state".to_string(), response.state.clone()),
+                            ("focus".to_string(), response.focus.clone()),
+                            ("nextAction".to_string(), response.next_action.clone()),
                         ]
                         .into_iter()
                         .collect(),
@@ -971,6 +1027,53 @@ mod tests {
         let audit = fs::read_to_string(audit_root.join("audit-log.jsonl")).unwrap();
         assert!(audit.contains("workspace_task.updated"));
         assert!(audit.contains("previousStatus"));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn update_workspace_lifecycle_bridge_writes_status_and_audit() {
+        let root = std::env::temp_dir().join(format!(
+            "nexus-ffi-lifecycle-update-{}",
+            std::process::id()
+        ));
+        let workspace = root.join("2026-05-28-lifecycle-demo");
+        let audit_root = root.join("audit");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&workspace).unwrap();
+        fs::write(
+            workspace.join("workspace.md"),
+            "# Lifecycle\n\n- 需求名称: Lifecycle Demo\n- 当前状态: developing\n- 目标分支: chen/lifecycle\n",
+        )
+        .unwrap();
+        fs::write(
+            workspace.join("STATUS.md"),
+            "# STATUS\n\n- 状态: developing\n- 当前焦点: 编码\n- 下一步: 继续验证\n- 更新时间: old\n",
+        )
+        .unwrap();
+
+        let request = format!(
+            r#"{{"workspacePath":"{}","state":"archived","focus":"保留历史上下文","nextAction":"需要时从 handoff 恢复","confirmed":true,"auditRoot":"{}","actor":"Nexus Test"}}"#,
+            workspace.to_string_lossy(),
+            audit_root.to_string_lossy()
+        );
+        let input = CString::new(request).unwrap();
+        let output = unsafe { nexus_update_workspace_lifecycle_json(input.as_ptr()) };
+        let response = unsafe { CStr::from_ptr(output).to_string_lossy().to_string() };
+        unsafe { nexus_string_free(output) };
+
+        let value = serde_json::from_str::<Value>(&response).unwrap();
+        assert_eq!(value["ok"], true);
+        assert_eq!(value["data"]["previousState"], "developing");
+        assert_eq!(value["data"]["state"], "archived");
+        let workspace_md = fs::read_to_string(workspace.join("workspace.md")).unwrap();
+        assert!(workspace_md.contains("- 当前状态: archived"));
+        let status_md = fs::read_to_string(workspace.join("STATUS.md")).unwrap();
+        assert!(status_md.contains("- 状态: archived"));
+        assert!(status_md.contains("- 当前焦点: 保留历史上下文"));
+        let audit = fs::read_to_string(audit_root.join("audit-log.jsonl")).unwrap();
+        assert!(audit.contains("workspace_lifecycle.updated"));
+        assert!(audit.contains("previousState"));
 
         fs::remove_dir_all(root).unwrap();
     }

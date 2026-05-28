@@ -195,6 +195,7 @@ enum WorkspaceState: String, Hashable {
     case developing = "developing"
     case ready = "ready"
     case blocked = "blocked"
+    case archived = "archived"
 
     var label: String {
         switch self {
@@ -206,6 +207,8 @@ enum WorkspaceState: String, Hashable {
             "可交付 / Ready"
         case .blocked:
             "阻塞 / Blocked"
+        case .archived:
+            "已归档 / Archived"
         }
     }
 }
@@ -451,6 +454,72 @@ struct TaskStatusUpdate: Identifiable, Hashable {
     }
 }
 
+struct LifecycleTransition: Identifiable, Hashable {
+    let state: String
+    let label: String
+    let focus: String
+    let nextAction: String
+    let systemImage: String
+
+    var id: String { state }
+
+    static let developing = LifecycleTransition(
+        state: "developing",
+        label: "进入开发 / Develop",
+        focus: "编码、验证，并持续同步交付记录",
+        nextAction: "继续开发并运行必要验证",
+        systemImage: "hammer"
+    )
+
+    static let delivery = LifecycleTransition(
+        state: "delivery",
+        label: "进入交付 / Delivery",
+        focus: "补齐交付记录、SQL、验证和风险说明",
+        nextAction: "更新交付记录并完成验证",
+        systemImage: "doc.text"
+    )
+
+    static let done = LifecycleTransition(
+        state: "done",
+        label: "标记完成 / Done",
+        focus: "确认 PR、CI、发布和遗留风险",
+        nextAction: "确认可以归档或进入观察",
+        systemImage: "checkmark.seal"
+    )
+
+    static let blocked = LifecycleTransition(
+        state: "blocked",
+        label: "标记阻塞 / Block",
+        focus: "解除阻塞项",
+        nextAction: "先处理阻塞原因，再恢复生命周期",
+        systemImage: "pause.circle"
+    )
+
+    static let archived = LifecycleTransition(
+        state: "archived",
+        label: "归档 / Archive",
+        focus: "保留历史上下文",
+        nextAction: "需要再次开发时从 handoff 恢复上下文",
+        systemImage: "archivebox"
+    )
+}
+
+struct LifecycleStatusUpdate: Identifiable, Hashable {
+    let workspaceID: WorkspaceSummary.ID
+    let workspaceName: String
+    let workspacePath: String
+    let currentStage: String
+    let currentLabel: String
+    let nextState: String
+    let nextLabel: String
+    let focus: String
+    let nextAction: String
+
+    var id: String {
+        "\(workspaceID):\(nextState)"
+    }
+}
+
 struct SearchResultGroup: Identifiable {
     let id: String
     let label: String
@@ -555,6 +624,25 @@ struct WorkspaceSummary: Identifiable, Hashable {
 
     var serviceSummary: String {
         services.map(\.name).joined(separator: ", ")
+    }
+
+    var lifecycleTransitions: [LifecycleTransition] {
+        switch lifecycle.stage {
+        case "scoping", "setup":
+            return [.developing, .blocked]
+        case "developing", "ready":
+            return [.delivery, .blocked]
+        case "delivery":
+            return [.done, .blocked]
+        case "done":
+            return [.archived, .delivery]
+        case "blocked":
+            return [.developing, .delivery]
+        case "archived":
+            return [.developing]
+        default:
+            return [.developing, .delivery, .blocked]
+        }
     }
 
     init(
@@ -887,6 +975,8 @@ private extension WorkspaceState {
             self = .ready
         case "blocked", "阻塞":
             self = .blocked
+        case "archived", "archive", "归档", "已归档":
+            self = .archived
         default:
             self = .analyzing
         }
