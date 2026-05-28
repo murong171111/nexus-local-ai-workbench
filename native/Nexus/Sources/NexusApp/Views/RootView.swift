@@ -1141,6 +1141,8 @@ private struct WorkspaceCard: View {
                 Pill(label: workspace.aiState, systemImage: "sparkle.magnifyingglass")
             }
 
+            LifecycleCompactView(lifecycle: workspace.lifecycle)
+
             HStack(spacing: 16) {
                 Metric(label: "服务 / Services", value: "\(workspace.services.count)")
                 Metric(label: "任务 / Tasks", value: "\(workspace.tasks.filter { !$0.isDone }.count) open")
@@ -1456,6 +1458,21 @@ private struct WorkspaceDetailView: View {
                     .lineLimit(2)
             }
 
+            LifecycleDetailView(
+                workspace: workspace,
+                openAction: {
+                    Task {
+                        await appState.runLifecycleAction(for: workspace)
+                    }
+                },
+                codexAction: {
+                    copyToPasteboard(appState.lifecycleHandoffPrompt(for: workspace))
+                    Task {
+                        await appState.recordLifecycleHandoffCopied(for: workspace)
+                    }
+                }
+            )
+
             SectionBlock(title: "服务 Git 状态 / Services") {
                 ForEach(workspace.services) { service in
                     VStack(alignment: .leading, spacing: 3) {
@@ -1583,6 +1600,178 @@ private struct WorkspaceDetailView: View {
             let payload = await appState.workspaceTaskHandoffPrompt(for: task, in: workspace)
             copyToPasteboard(payload)
             await appState.recordTaskHandoffCopied(task: task, in: workspace)
+        }
+    }
+}
+
+private struct LifecycleCompactView: View {
+    let lifecycle: WorkspaceLifecycle
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 8) {
+                Label(lifecycle.label, systemImage: symbol)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(color)
+                Spacer()
+                Text("\(lifecycle.progress)%")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+
+            ProgressView(value: lifecycle.normalizedProgress)
+                .progressViewStyle(.linear)
+                .tint(color)
+
+            Text(lifecycle.nextAction)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .padding(10)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var symbol: String {
+        switch lifecycle.stage {
+        case "scoping":
+            "magnifyingglass"
+        case "setup":
+            "wrench.and.screwdriver"
+        case "developing":
+            "hammer"
+        case "delivery":
+            "doc.text"
+        case "done":
+            "checkmark.seal"
+        case "archived":
+            "archivebox"
+        case "blocked":
+            "pause.circle"
+        default:
+            "point.3.connected.trianglepath.dotted"
+        }
+    }
+
+    private var color: Color {
+        switch lifecycle.stage {
+        case "blocked":
+            NexusPalette.danger
+        case "delivery", "setup":
+            NexusPalette.warning
+        case "done", "archived":
+            NexusPalette.success
+        default:
+            NexusPalette.accent
+        }
+    }
+}
+
+private struct LifecycleDetailView: View {
+    let workspace: WorkspaceSummary
+    let openAction: () -> Void
+    let codexAction: () -> Void
+
+    var body: some View {
+        SectionBlock(title: "生命周期 / Lifecycle") {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: symbol)
+                        .foregroundStyle(color)
+                        .frame(width: 16)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(workspace.lifecycle.label)
+                            .font(.subheadline.weight(.semibold))
+                        Text(workspace.lifecycle.detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Text("\(workspace.lifecycle.progress)%")
+                        .font(.system(.caption, design: .monospaced).weight(.semibold))
+                        .foregroundStyle(color)
+                }
+
+                ProgressView(value: workspace.lifecycle.normalizedProgress)
+                    .progressViewStyle(.linear)
+                    .tint(color)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("下一步 / Next")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                    Text(workspace.lifecycle.nextAction)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                HStack(spacing: 8) {
+                    Button(actionLabel) {
+                        openAction()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    Button("Codex") {
+                        codexAction()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+        }
+    }
+
+    private var actionLabel: String {
+        switch workspace.lifecycle.documentKey {
+        case "worktreeScript":
+            "Worktree"
+        case "delivery":
+            "Delivery"
+        case "tasks":
+            "Tasks"
+        case "branches":
+            "Branch"
+        case "services":
+            "Services"
+        default:
+            "Open"
+        }
+    }
+
+    private var symbol: String {
+        switch workspace.lifecycle.stage {
+        case "scoping":
+            "magnifyingglass"
+        case "setup":
+            "wrench.and.screwdriver"
+        case "developing":
+            "hammer"
+        case "delivery":
+            "doc.text"
+        case "done":
+            "checkmark.seal"
+        case "archived":
+            "archivebox"
+        case "blocked":
+            "pause.circle"
+        default:
+            "point.3.connected.trianglepath.dotted"
+        }
+    }
+
+    private var color: Color {
+        switch workspace.lifecycle.stage {
+        case "blocked":
+            NexusPalette.danger
+        case "delivery", "setup":
+            NexusPalette.warning
+        case "done", "archived":
+            NexusPalette.success
+        default:
+            NexusPalette.accent
         }
     }
 }

@@ -664,6 +664,64 @@ final class AppState: ObservableObject {
         }
     }
 
+    func runLifecycleAction(for workspace: WorkspaceSummary) async {
+        selectedWorkspaceID = workspace.id
+        let documentKey = workspace.lifecycle.documentKey
+        if documentKey == "worktreeScript" && !missingWorktreeServices(in: workspace).isEmpty {
+            presentWorktreeSetup(for: workspace)
+            return
+        }
+
+        let path = workspace.documentLinks[documentKey]
+            ?? workspace.documentLinks["handoff"]
+            ?? "\(workspace.path)/handoff.md"
+        await loadDocument(path: path)
+    }
+
+    func lifecycleHandoffPrompt(for workspace: WorkspaceSummary) -> String {
+        [
+            "请根据 Nexus 工作区生命周期继续推进本地开发流程。",
+            "",
+            "## 工作区",
+            "- 名称: \(workspace.name)",
+            "- 目录: \(workspace.path)",
+            "- 文件夹: \(workspace.folder)",
+            "- 目标分支: \(workspace.branch)",
+            "- 涉及服务: \(workspace.serviceSummary.isEmpty ? "待确认" : workspace.serviceSummary)",
+            "",
+            "## 生命周期",
+            "- 阶段: \(workspace.lifecycle.label)",
+            "- 进度: \(workspace.lifecycle.progress)%",
+            "- 当前说明: \(workspace.lifecycle.detail)",
+            "- 下一步: \(workspace.lifecycle.nextAction)",
+            "",
+            "## 当前信号",
+            "- 风险数: \(workspace.risks.count)",
+            "- 未完成任务: \(workspace.tasks.filter { !$0.isDone }.count)",
+            "- Worktree: \(workspace.worktreeState)",
+            "",
+            "## 处理要求",
+            "- 先读取工作区 Markdown，尤其是 AGENTS.md、STATUS.md、tasks.md、branches.md 和交付记录。",
+            "- 按生命周期下一步处理，不要跳过服务范围、分支、worktree、交付记录这些前置条件。",
+            "- 如果涉及代码、SQL、业务逻辑、接口、DTO、配置或验证变化，同步更新交付记录。",
+            "- 处理完成后回到 Nexus 刷新，并重新确认生命周期阶段。"
+        ].joined(separator: "\n")
+    }
+
+    func recordLifecycleHandoffCopied(for workspace: WorkspaceSummary) async {
+        await recordWorkspaceAction(
+            action: "lifecycle_handoff.copied",
+            target: workspace.path,
+            summary: "Copied lifecycle handoff for \(workspace.lifecycle.label)",
+            metadata: [
+                "stage": workspace.lifecycle.stage,
+                "progress": "\(workspace.lifecycle.progress)",
+                "documentKey": workspace.lifecycle.documentKey
+            ],
+            workspaceOverride: workspace
+        )
+    }
+
     func automationSignalHandoffPrompt(for signal: LocalAutomationSignal) -> String {
         let selected = selectedWorkspace
         let workspaceLines: [String]

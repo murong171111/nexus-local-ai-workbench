@@ -358,6 +358,19 @@ struct WorkspaceSessionAction: Identifiable, Hashable {
     let documentKey: String
 }
 
+struct WorkspaceLifecycle: Hashable {
+    let stage: String
+    let label: String
+    let detail: String
+    let progress: Int
+    let nextAction: String
+    let documentKey: String
+
+    var normalizedProgress: Double {
+        Double(min(max(progress, 0), 100)) / 100
+    }
+}
+
 struct WorkspaceTask: Identifiable, Hashable {
     let id: String
     let title: String
@@ -537,6 +550,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
     let risks: [RiskAlert]
     let healthChecks: [WorkspaceHealthCheck]
     let sessionActions: [WorkspaceSessionAction]
+    let lifecycle: WorkspaceLifecycle
     let tasks: [WorkspaceTask]
 
     var serviceSummary: String {
@@ -559,6 +573,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
         risks: [RiskAlert],
         healthChecks: [WorkspaceHealthCheck] = [],
         sessionActions: [WorkspaceSessionAction] = [],
+        lifecycle: WorkspaceLifecycle,
         tasks: [WorkspaceTask] = []
     ) {
         self.id = id
@@ -576,6 +591,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
         self.risks = risks
         self.healthChecks = healthChecks
         self.sessionActions = sessionActions
+        self.lifecycle = lifecycle
         self.tasks = tasks
     }
 
@@ -637,6 +653,14 @@ struct WorkspaceSummary: Identifiable, Hashable {
                 sourceEventID: task.sourceEventId
             )
         }
+        let lifecycle = WorkspaceLifecycle(
+            snapshot: snapshot.lifecycle,
+            state: snapshot.state,
+            targetBranch: snapshot.targetBranch,
+            services: services,
+            risks: risks,
+            tasks: tasks
+        )
 
         self.init(
             id: snapshot.folder,
@@ -654,6 +678,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
             risks: risks,
             healthChecks: healthChecks,
             sessionActions: sessionActions,
+            lifecycle: lifecycle,
             tasks: tasks
         )
     }
@@ -691,6 +716,14 @@ struct WorkspaceSummary: Identifiable, Hashable {
                 WorkspaceSessionAction(id: "create-worktrees", label: "创建缺失 worktree / Create worktrees", detail: "缺少 worktree: commodity", priority: "high", status: "recommended", instructionType: "worktree", documentKey: "worktreeScript"),
                 WorkspaceSessionAction(id: "start-codex-session", label: "启动 Codex 会话 / Start Codex session", detail: "复制当前工作区上下文，带着上方动作进入 Codex 继续处理。", priority: "low", status: "recommended", instructionType: "continue", documentKey: "handoff")
             ],
+            lifecycle: WorkspaceLifecycle(
+                stage: "setup",
+                label: "环境准备 / Setup",
+                detail: "还有 1 个服务缺少 workspace-local worktree。",
+                progress: 35,
+                nextAction: "创建缺失 worktree 后再进入开发。",
+                documentKey: "worktreeScript"
+            ),
             tasks: [
                 WorkspaceTask(id: "task-pay-log-chain", title: "核对 pay_log 回填链路", status: "进行中", detail: "确认 order 与 store-cashier 的写入路径", priority: "high", source: "workspace", sourceEventID: nil),
                 WorkspaceTask(id: "task-delivery-doc", title: "补齐交付记录", status: "待办", detail: "新增 SQL 或逻辑后补齐验证说明", priority: "medium", source: "workspace", sourceEventID: nil),
@@ -723,6 +756,14 @@ struct WorkspaceSummary: Identifiable, Hashable {
             sessionActions: [
                 WorkspaceSessionAction(id: "start-codex-session", label: "启动 Codex 会话 / Start Codex session", detail: "就绪检查已通过，可以复制完整上下文并进入开发会话。", priority: "high", status: "recommended", instructionType: "continue", documentKey: "handoff")
             ],
+            lifecycle: WorkspaceLifecycle(
+                stage: "ready",
+                label: "就绪 / Ready",
+                detail: "服务、分支和 worktree 已就绪，可以启动 Codex 开发会话。",
+                progress: 45,
+                nextAction: "复制 handoff 上下文并进入开发。",
+                documentKey: "handoff"
+            ),
             tasks: [
                 WorkspaceTask(id: "task-snapshot-plan", title: "确认价格快照方案", status: "已完成", detail: "方案已归档到工作区文档", priority: "normal", source: "workspace", sourceEventID: nil)
             ]
@@ -746,8 +787,94 @@ struct WorkspaceSummary: Identifiable, Hashable {
             risks: risks,
             healthChecks: healthChecks,
             sessionActions: sessionActions,
+            lifecycle: lifecycle,
             tasks: tasks
         )
+    }
+}
+
+extension WorkspaceLifecycle {
+    init(
+        snapshot: WorkspaceLifecycleSnapshot?,
+        state: String,
+        targetBranch: String,
+        services: [ServiceStatus],
+        risks: [RiskAlert],
+        tasks: [WorkspaceTask]
+    ) {
+        if let snapshot {
+            self.init(
+                stage: snapshot.stage,
+                label: snapshot.label,
+                detail: snapshot.detail,
+                progress: snapshot.progress,
+                nextAction: snapshot.nextAction,
+                documentKey: snapshot.documentKey
+            )
+            return
+        }
+
+        let openTasks = tasks.filter { !$0.isDone }.count
+        let hasMissingWorktree = services.contains { !$0.worktreeExists }
+        let hasDeliveryRisk = risks.contains { risk in
+            let normalized = "\(risk.title) \(risk.detail)".lowercased()
+            return normalized.contains("交付") || normalized.contains("delivery")
+        }
+        if state.lowercased().contains("blocked") || state.contains("阻塞") {
+            self.init(
+                stage: "blocked",
+                label: "阻塞 / Blocked",
+                detail: "工作区处于阻塞状态，需要先确认阻塞原因。",
+                progress: 25,
+                nextAction: "先处理阻塞项。",
+                documentKey: "tasks"
+            )
+        } else if targetBranch.contains("待确认") || services.isEmpty {
+            self.init(
+                stage: "scoping",
+                label: "范围确认 / Scoping",
+                detail: "服务范围或目标分支仍待确认。",
+                progress: 15,
+                nextAction: "补齐服务范围和目标分支。",
+                documentKey: services.isEmpty ? "services" : "branches"
+            )
+        } else if hasMissingWorktree {
+            self.init(
+                stage: "setup",
+                label: "环境准备 / Setup",
+                detail: "仍有服务缺少 workspace-local worktree。",
+                progress: 35,
+                nextAction: "创建缺失 worktree 后再进入开发。",
+                documentKey: "worktreeScript"
+            )
+        } else if hasDeliveryRisk {
+            self.init(
+                stage: "delivery",
+                label: "交付整理 / Delivery",
+                detail: "交付记录需要补齐。",
+                progress: 80,
+                nextAction: "补齐交付记录、SQL、验证和风险说明。",
+                documentKey: "delivery"
+            )
+        } else if openTasks == 0 && risks.isEmpty {
+            self.init(
+                stage: "done",
+                label: "待归档 / Done",
+                detail: "暂无开放任务和风险，可以归档或保留观察。",
+                progress: 95,
+                nextAction: "确认 PR/发布状态后归档工作区。",
+                documentKey: "delivery"
+            )
+        } else {
+            self.init(
+                stage: "developing",
+                label: "开发中 / Developing",
+                detail: "\(openTasks) 个开放任务需要继续处理。",
+                progress: 60,
+                nextAction: "继续编码、验证，并保持交付记录同步。",
+                documentKey: "tasks"
+            )
+        }
     }
 }
 

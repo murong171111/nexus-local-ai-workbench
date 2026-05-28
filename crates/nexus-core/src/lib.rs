@@ -43,6 +43,6 @@ pub use workspace::{
     AppendAgentTaskDraftRequest, AppendAgentTaskDraftResponse, CreateWorkspaceRequest,
     CreateWorkspaceResponse, DashboardData, GitRow, SetupWorktreesRequest, SetupWorktreesResponse,
     TaskCounts, UpdateWorkspaceTaskRequest, UpdateWorkspaceTaskResponse, WorkspaceActivity,
-    WorkspaceData, WorkspaceHealthCheck, WorkspaceSessionAction, WorkspaceTask,
+    WorkspaceData, WorkspaceHealthCheck, WorkspaceLifecycle, WorkspaceSessionAction, WorkspaceTask,
     WorkspaceTaskHandoffPromptRequest, WorkspaceTaskHandoffPromptResponse, WorktreeSetupResult,
 };

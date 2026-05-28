@@ -37,6 +37,15 @@ export type WorkspaceSessionAction = {
   documentKey: string;
 };
 
+export type WorkspaceLifecycle = {
+  stage: string;
+  label: string;
+  detail: string;
+  progress: number;
+  nextAction: string;
+  documentKey: string;
+};
+
 export type Workspace = {
   name: string;
   folder: string;
@@ -56,6 +65,7 @@ export type Workspace = {
   gitRows: GitRow[];
   risks: string[];
   riskCount: number;
+  lifecycle?: WorkspaceLifecycle;
   updated: string;
   links: Record<string, string>;
   worktreeCommand: string;

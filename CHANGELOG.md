@@ -56,6 +56,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Native SwiftUI now supports optional local macOS notifications for automation checks that need review or attention.
 - Native SwiftUI automation notifications now support cooldown, minimum-status, and per-signal preferences.
 - Native SwiftUI now includes an Automation Action Center that turns local check signals into focus, delivery, task, worktree, and Codex handoff actions.
+- Rust Core and native SwiftUI now derive and display workspace lifecycle stages from scoping through setup, development, delivery, done, blocked, and archived states.
 - Added a fail-open `nexus-agent-event` hook helper script for local agents to append events before the socket bridge exists.
 - Rust Core dashboard scans now enrich workspace activity timelines from the local JSONL audit log, with Tauri and native SwiftUI shells consuming the same activity field.
 - User-visible workspace actions now append audit events for document opens, Codex handoffs, copied prompts, copied risk instructions, and copied worktree commands.
