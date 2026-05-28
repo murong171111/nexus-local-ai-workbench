@@ -25,7 +25,7 @@ This roadmap describes the next product and engineering steps for Nexus. The cur
 - Keep Tauri commands as thin wrappers around Rust Core during the transition.
 - Define stable Swift/Rust DTO contracts for dashboard data, workspace documents, settings profiles, and audit events. `[started for dashboard/source scans, documents, widgets, workspace creation, and audit events]`
 - Add a SwiftUI/AppKit Mac shell that can render sample workspace data. `[started]`
-- Add native settings and path configuration in the SwiftUI shell.
+- Add native settings and path configuration in the SwiftUI shell. `[started with persisted paths and team profile import/export]`
 - Decide and document the Swift/Rust bridge mechanism. `[started with C ABI + JSON]`
 
 ## 0.3.x: Native Workspace Operations
@@ -64,7 +64,7 @@ This roadmap describes the next product and engineering steps for Nexus. The cur
 - Add native updater support backed by signed GitHub Releases.
 - Add release notes automation using `CHANGELOG.md`.
 - Expand first-run onboarding with team profile import and optional demo workspace creation. `[started in Tauri preview UI]`
-- Add settings export/import for team sharing. `[done in 0.1.x preview]`
+- Add settings export/import for team sharing. `[done in 0.1.x preview; started in native SwiftUI shell]`
 
 ## 0.7.x: Agent Interaction Bridge
 

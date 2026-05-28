@@ -1,6 +1,7 @@
 import AppKit
 import NexusBridge
 import SwiftUI
+import UniformTypeIdentifiers
 
 private func copyToPasteboard(_ payload: String) {
     NSPasteboard.general.clearContents()
@@ -2426,6 +2427,32 @@ struct SettingsView: View {
                     TextField("Workspaces root", text: $appState.workspaceRoot)
                     TextField("Source repositories root", text: $appState.sourceReposRoot)
                     TextField("Delivery documents root", text: $appState.docsRoot)
+                    TextField("Codex URL", text: $appState.codexURL)
+                    Stepper(
+                        "Profile refresh interval: \(appState.refreshIntervalSeconds) sec",
+                        value: $appState.refreshIntervalSeconds,
+                        in: 3...3600,
+                        step: 1
+                    )
+                }
+
+                Section("Team Profile") {
+                    Text(appState.settingsProfileStatus)
+                    if let path = appState.lastSettingsProfilePath {
+                        Text(path)
+                            .font(.system(.caption, design: .monospaced))
+                            .textSelection(.enabled)
+                    }
+                    HStack {
+                        Button("Import Profile") {
+                            importProfile()
+                        }
+                        Button("Export Profile") {
+                            exportProfile()
+                        }
+                    }
+                    Text("Profiles are compatible with the Tauri preview app and store workspaces, source repositories, delivery documents, Codex URL, and refresh interval.")
+                        .foregroundStyle(.secondary)
                 }
 
                 Section("Native Shell") {
@@ -2562,11 +2589,40 @@ struct SettingsView: View {
         .onChange(of: appState.workspaceRoot) { _ in appState.persistLocalPaths() }
         .onChange(of: appState.sourceReposRoot) { _ in appState.persistLocalPaths() }
         .onChange(of: appState.docsRoot) { _ in appState.persistLocalPaths() }
+        .onChange(of: appState.codexURL) { _ in appState.persistLocalPaths() }
+        .onChange(of: appState.refreshIntervalSeconds) { _ in appState.persistLocalPaths() }
         .onDisappear {
             appState.persistLocalPaths()
         }
         .padding(20)
-        .frame(width: 620, height: 520)
+        .frame(width: 660, height: 620)
+    }
+
+    private func importProfile() {
+        let panel = NSOpenPanel()
+        panel.title = "Import Nexus Settings Profile"
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task {
+            await appState.importSettingsProfile(from: url)
+        }
+    }
+
+    private func exportProfile() {
+        let panel = NSSavePanel()
+        panel.title = "Export Nexus Settings Profile"
+        panel.allowedContentTypes = [.json]
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = appState.settingsProfileDefaultFilename
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        Task {
+            await appState.exportSettingsProfile(to: url)
+        }
     }
 }
 
