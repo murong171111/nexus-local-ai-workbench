@@ -19,6 +19,14 @@ It checks:
 
 The native Mac menu bar can run this check from `Run Checks`. The result appears in the same menu as a compact automation summary.
 
+The native right inspector also exposes an Automation Action Center. It keeps the hook read-mostly, but turns emitted signals into local UI actions:
+
+- risk signals focus the risky workspace filter
+- delivery signals open the selected or first matching delivery record
+- task signals focus the Task Center and high-priority filter when needed
+- worktree signals select the first affected workspace and can present the confirmed worktree setup sheet
+- each actionable signal can copy a Codex handoff prompt with local paths, current workspace context, and the suggested next action
+
 The native Settings panel can also enable scheduled checks while Nexus is running. The schedule is a local `UserDefaults` preference with supported intervals of 5, 15, 30, and 60 minutes. It is not a LaunchAgent, daemon, or system notification channel; closing Nexus stops the loop.
 
 Optional macOS notifications can be enabled from Settings or the menu bar. Nexus asks for local notification authorization only when the user turns this on. Notifications are sent only when the automation result matches the selected minimum status. Clean checks stay quiet.
@@ -53,6 +61,7 @@ The hook is read-mostly:
 - It can run periodically only while the native app process is alive.
 - It can send local macOS notifications only after explicit user authorization.
 - It throttles notifications through local cooldown and signal preferences.
+- It can focus existing UI state and copy Codex prompts derived from check output.
 - It does not run generated worktree scripts.
 - It does not change task status or delivery documents.
 - It does not execute command metadata from agents.

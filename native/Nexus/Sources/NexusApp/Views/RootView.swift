@@ -137,6 +137,19 @@ private struct TopCommandBar: View {
             .buttonStyle(.bordered)
             .disabled(appState.isLoading)
 
+            Button {
+                Task {
+                    await appState.runLocalAutomationCheck()
+                }
+            } label: {
+                Label(
+                    appState.isRunningAutomationCheck ? "Checking" : "Checks",
+                    systemImage: "checklist.checked"
+                )
+            }
+            .buttonStyle(.bordered)
+            .disabled(appState.isRunningAutomationCheck)
+
             Spacer()
 
             Label(appState.bridgeMode, systemImage: "point.3.connected.trianglepath.dotted")
@@ -1149,19 +1162,279 @@ private struct InspectorView: View {
     @EnvironmentObject private var appState: AppState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            if let workspace = appState.selectedWorkspace {
-                ScrollView {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                AutomationActionCenterView()
+
+                if let workspace = appState.selectedWorkspace {
                     WorkspaceDetailView(workspace: workspace)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    Text("选择一个工作区")
+                        .foregroundStyle(.secondary)
                 }
-            } else {
-                Text("选择一个工作区")
-                    .foregroundStyle(.secondary)
             }
         }
         .padding(18)
         .background(NexusPalette.inspector)
+    }
+}
+
+private struct AutomationActionCenterView: View {
+    @EnvironmentObject private var appState: AppState
+
+    var body: some View {
+        SectionBlock(title: "自动化动作 / Automation") {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: statusSymbol)
+                        .foregroundStyle(statusColor)
+                        .frame(width: 16)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(statusTitle)
+                            .font(.subheadline.weight(.semibold))
+                        Text(statusDetail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer()
+
+                    Button(appState.isRunningAutomationCheck ? "Checking" : "Run") {
+                        Task {
+                            await appState.runLocalAutomationCheck()
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(appState.isRunningAutomationCheck)
+                }
+
+                if let check = appState.lastAutomationCheck {
+                    AutomationCheckMetrics(check: check)
+
+                    if appState.actionableAutomationSignals.isEmpty {
+                        Label("当前没有需要处理的自动化动作", systemImage: "checkmark.circle")
+                            .font(.caption)
+                            .foregroundStyle(NexusPalette.success)
+                    } else {
+                        ForEach(appState.actionableAutomationSignals.prefix(5)) { signal in
+                            AutomationSignalRow(signal: signal)
+                        }
+                    }
+                } else {
+                    Text("运行本地检查后，这里会把风险、交付、任务和 worktree 信号转换成可执行动作。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private var statusTitle: String {
+        guard let check = appState.lastAutomationCheck else {
+            return appState.isRunningAutomationCheck ? "检查中 / Checking" : "等待检查 / Ready"
+        }
+        switch check.status {
+        case "attention":
+            return "需要立即处理 / Attention"
+        case "review":
+            return "需要复核 / Review"
+        default:
+            return "状态清洁 / Clean"
+        }
+    }
+
+    private var statusDetail: String {
+        if appState.isRunningAutomationCheck {
+            return "正在扫描 workspace、git、任务、交付记录和 worktree 状态。"
+        }
+        if let check = appState.lastAutomationCheck {
+            return "\(check.summary) · \(check.generatedAt)"
+        }
+        return "本地自动化检查尚未运行。"
+    }
+
+    private var statusSymbol: String {
+        guard let check = appState.lastAutomationCheck else {
+            return appState.isRunningAutomationCheck ? "arrow.triangle.2.circlepath" : "checklist"
+        }
+        switch check.status {
+        case "attention":
+            return "xmark.octagon"
+        case "review":
+            return "exclamationmark.triangle"
+        default:
+            return "checkmark.circle"
+        }
+    }
+
+    private var statusColor: Color {
+        guard let check = appState.lastAutomationCheck else {
+            return NexusPalette.accent
+        }
+        switch check.status {
+        case "attention":
+            return NexusPalette.danger
+        case "review":
+            return NexusPalette.warning
+        default:
+            return NexusPalette.success
+        }
+    }
+}
+
+private struct AutomationCheckMetrics: View {
+    let check: LocalAutomationCheckResponse
+
+    var body: some View {
+        HStack(spacing: 8) {
+            AutomationMetric(
+                label: "Risk",
+                value: check.riskCount,
+                tone: check.riskCount > 0 ? NexusPalette.warning : NexusPalette.success
+            )
+            AutomationMetric(
+                label: "Delivery",
+                value: check.deliveryIssueCount,
+                tone: check.deliveryIssueCount > 0 ? NexusPalette.warning : NexusPalette.success
+            )
+            AutomationMetric(
+                label: "Tasks",
+                value: check.openTaskCount,
+                tone: check.highPriorityTaskCount > 0 ? NexusPalette.warning : NexusPalette.accent
+            )
+            AutomationMetric(
+                label: "WT",
+                value: worktreeIssueCount,
+                tone: worktreeIssueCount > 0 ? NexusPalette.warning : NexusPalette.success
+            )
+        }
+    }
+
+    private var worktreeIssueCount: Int {
+        check.missingWorktreeCount + check.dirtyServiceCount
+    }
+}
+
+private struct AutomationMetric: View {
+    let label: String
+    let value: Int
+    let tone: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.secondary)
+            Text("\(value)")
+                .font(.system(.caption, design: .monospaced).weight(.semibold))
+                .foregroundStyle(tone)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+}
+
+private struct AutomationSignalRow: View {
+    @EnvironmentObject private var appState: AppState
+    let signal: LocalAutomationSignal
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: symbol)
+                    .foregroundStyle(color)
+                    .frame(width: 15)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(signal.title)
+                            .font(.caption.weight(.semibold))
+                            .lineLimit(1)
+                        Text("\(signal.count)")
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(color)
+                    }
+                    Text(signal.detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+
+            HStack(spacing: 6) {
+                Button(actionLabel) {
+                    Task {
+                        await appState.runAutomationSignalAction(signal)
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+
+                Button("Codex") {
+                    let prompt = appState.automationSignalHandoffPrompt(for: signal)
+                    copyToPasteboard(prompt)
+                    Task {
+                        await appState.recordAutomationSignalHandoffCopied(signal)
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(color.opacity(0.07))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var actionLabel: String {
+        switch signal.action {
+        case "review-risk":
+            "Focus"
+        case "update-delivery":
+            "Delivery"
+        case "review-worktrees":
+            "Worktree"
+        case "review-tasks":
+            "Tasks"
+        case "refresh":
+            "Refresh"
+        default:
+            "Open"
+        }
+    }
+
+    private var symbol: String {
+        switch signal.kind {
+        case "risk":
+            "exclamationmark.triangle"
+        case "delivery":
+            "doc.text"
+        case "task":
+            "checklist"
+        case "worktree":
+            "terminal"
+        default:
+            "sparkles"
+        }
+    }
+
+    private var color: Color {
+        switch signal.severity {
+        case "error":
+            NexusPalette.danger
+        case "warning":
+            NexusPalette.warning
+        default:
+            NexusPalette.accent
+        }
     }
 }
 

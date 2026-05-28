@@ -199,6 +199,13 @@ final class AppState: ObservableObject {
         allTaskCenterItems.count
     }
 
+    var actionableAutomationSignals: [LocalAutomationSignal] {
+        guard let lastAutomationCheck else { return [] }
+        return lastAutomationCheck.signals.filter { signal in
+            signal.action != "none" && signal.kind != "refresh"
+        }
+    }
+
     var menuBarSummary: MenuBarStatusSummary {
         let riskyWorkspaceCount = workspaces.filter { workspace in
             workspace.riskLevel == .high || workspace.riskLevel == .medium
@@ -615,6 +622,112 @@ final class AppState: ObservableObject {
         }
     }
 
+    func runAutomationSignalAction(_ signal: LocalAutomationSignal) async {
+        switch signal.action {
+        case "review-risk":
+            selectedFilter = .risky
+            if let workspace = firstWorkspaceWithRisk() {
+                selectedWorkspaceID = workspace.id
+            }
+        case "update-delivery":
+            selectedFilter = .risky
+            let workspace = firstWorkspaceWithDeliveryIssue() ?? selectedWorkspace
+            if let workspace {
+                selectedWorkspaceID = workspace.id
+                let path = workspace.documentLinks["delivery"]
+                    ?? workspace.documentLinks["handoff"]
+                    ?? "\(workspace.path)/交付记录.md"
+                await loadDocument(path: path)
+            }
+        case "review-worktrees":
+            if let workspace = firstWorkspaceWithMissingWorktrees() ?? firstWorkspaceWithDirtyServices() {
+                selectedWorkspaceID = workspace.id
+                if !missingWorktreeServices(in: workspace).isEmpty {
+                    presentWorktreeSetup(for: workspace)
+                }
+            }
+        case "review-tasks":
+            if highPriorityTaskCount(from: lastAutomationCheck) > 0 {
+                setTaskCenterFilter(.high)
+            } else {
+                setTaskCenterFilter(.all)
+            }
+            if let item = taskCenterItems.first ?? allTaskCenterItems.first {
+                selectTaskCenterItem(item)
+            }
+        case "refresh":
+            await refreshFromBridge()
+        default:
+            if let workspace = selectedWorkspace {
+                selectedWorkspaceID = workspace.id
+            }
+        }
+    }
+
+    func automationSignalHandoffPrompt(for signal: LocalAutomationSignal) -> String {
+        let selected = selectedWorkspace
+        let workspaceLines: [String]
+        if let selected {
+            workspaceLines = [
+                "- 当前工作区: \(selected.name)",
+                "- 工作区目录: \(selected.path)",
+                "- 目标分支: \(selected.branch)",
+                "- 涉及服务: \(selected.serviceSummary.isEmpty ? "待确认" : selected.serviceSummary)",
+                "- 风险数: \(selected.risks.count)",
+                "- 未完成任务: \(selected.tasks.filter { !$0.isDone }.count)"
+            ]
+        } else {
+            workspaceLines = ["- 当前工作区: 未选择"]
+        }
+
+        return ([
+            "请根据 Nexus 自动化检查结果继续处理本地工作区。",
+            "",
+            "## 自动化信号",
+            "- 类型: \(signal.kind)",
+            "- 严重级别: \(signal.severity)",
+            "- 标题: \(signal.title)",
+            "- 详情: \(signal.detail)",
+            "- 数量: \(signal.count)",
+            "- 建议动作: \(signal.action)",
+            "",
+            "## 本地路径",
+            "- Workspaces root: \(workspaceRoot)",
+            "- Source repos root: \(sourceReposRoot)",
+            "- Docs root: \(docsRoot)",
+            "",
+            "## 当前上下文"
+        ] + workspaceLines + [
+            "",
+            "## 处理要求",
+            "- 先读取相关工作区 Markdown，再决定是否修改代码或文档。",
+            "- 如果涉及代码、SQL、业务逻辑、接口、DTO、配置或验证变化，同步更新交付记录。",
+            "- 优先在 workspace-local repos/<service> worktree 中处理，不直接切换源仓库分支。",
+            "- 处理完成后回到 Nexus 刷新并再次运行自动化检查。"
+        ]).joined(separator: "\n")
+    }
+
+    func recordAutomationSignalHandoffCopied(_ signal: LocalAutomationSignal) async {
+        _ = try? await bridge.appendAuditEvent(
+            request: AppendAuditEventRequest(
+                auditRoot: auditRootPath,
+                event: AuditEventInput(
+                    actor: "Nexus Native",
+                    action: "automation_signal_handoff.copied",
+                    target: workspaceRoot,
+                    summary: "Copied handoff for \(signal.title)",
+                    metadata: [
+                        "signalId": signal.id,
+                        "kind": signal.kind,
+                        "severity": signal.severity,
+                        "action": signal.action,
+                        "count": "\(signal.count)"
+                    ]
+                )
+            )
+        )
+    }
+
     func moveSearchSelection(_ direction: Int) {
         let results = orderedSearchResults
         guard !results.isEmpty else { return }
@@ -935,6 +1048,45 @@ final class AppState: ObservableObject {
             .sorted()
 
         defaults.set(orderedPinnedIDs + orphanedPinnedIDs, forKey: DefaultsKey.pinnedWorkspaceIDs)
+    }
+
+    private func firstWorkspaceWithRisk() -> WorkspaceSummary? {
+        workspaces.first { workspace in
+            workspace.riskLevel == .high || workspace.riskLevel == .medium || !workspace.risks.isEmpty
+        }
+    }
+
+    private func firstWorkspaceWithDeliveryIssue() -> WorkspaceSummary? {
+        workspaces.first { workspace in
+            workspace.risks.contains { risk in
+                let normalized = "\(risk.title) \(risk.detail)".lowercased()
+                return normalized.contains("交付记录") || normalized.contains("delivery")
+            } || workspace.healthChecks.contains { check in
+                let normalizedStatus = check.status.lowercased()
+                return check.id == "delivery-record"
+                    && normalizedStatus != "pass"
+                    && normalizedStatus != "ok"
+            }
+        }
+    }
+
+    private func firstWorkspaceWithMissingWorktrees() -> WorkspaceSummary? {
+        workspaces.first { workspace in
+            workspace.services.contains { !$0.worktreeExists }
+        }
+    }
+
+    private func firstWorkspaceWithDirtyServices() -> WorkspaceSummary? {
+        workspaces.first { workspace in
+            workspace.services.contains { service in
+                let normalized = "\(service.gitSummary) \(service.worktree)".lowercased()
+                return normalized.contains("dirty") || normalized.contains("未提交")
+            }
+        }
+    }
+
+    private func highPriorityTaskCount(from response: LocalAutomationCheckResponse?) -> Int {
+        response?.highPriorityTaskCount ?? 0
     }
 
     private func recordWorkspaceAction(
