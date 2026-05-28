@@ -47,6 +47,7 @@ src-tauri/target/release/bundle/dmg/Nexus_0.1.0_aarch64.dmg
   - Branch alignment filters and warnings appear when a worktree branch differs from the workspace target branch.
   - Source repository scanning populates the create-workspace service picker.
   - Native create-workspace can filter scanned services, accept manual services, leave service scope pending, and show the final path/branch/service summary before writing files.
+  - After native workspace creation, the app focuses the new workspace and shows the post-create next-step panel.
   - Settings export writes a Nexus team profile JSON, and importing that profile applies the same path conventions.
   - Creating a workspace writes `bootstrap-report.md` and `scripts/worktree-commands.sh`.
   - Markdown preview works.

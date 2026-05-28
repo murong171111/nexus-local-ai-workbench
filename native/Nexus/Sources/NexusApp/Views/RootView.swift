@@ -1735,6 +1735,10 @@ private struct WorkspaceDetailView: View {
                     .lineLimit(2)
             }
 
+            if appState.lastCreatedWorkspace?.folder == workspace.folder {
+                WorkspaceCreationNextStepsView(workspace: workspace)
+            }
+
             SectionBlock(title: "本地入口 / Local handoff") {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
@@ -2283,6 +2287,124 @@ private struct SessionActionRow: View {
             NexusPalette.accent
         default:
             Color.gray
+        }
+    }
+}
+
+private struct WorkspaceCreationNextStepsView: View {
+    @EnvironmentObject private var appState: AppState
+    let workspace: WorkspaceSummary
+
+    private var missingWorktrees: [String] {
+        appState.missingWorktreeServices(in: workspace)
+    }
+
+    private var worktreeHint: String {
+        if workspace.services.isEmpty {
+            return "先补齐服务范围，之后才能生成准确的 worktree。"
+        }
+        if !branchLooksConfirmed {
+            return "目标分支仍待确认，确认分支后再创建 worktree。"
+        }
+        if missingWorktrees.isEmpty {
+            return "当前服务已具备 workspace-local worktree。"
+        }
+        return "缺失 worktree: \(missingWorktrees.joined(separator: ", "))"
+    }
+
+    private var branchLooksConfirmed: Bool {
+        let normalizedBranch = workspace.branch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalizedBranch.isEmpty else { return false }
+        return !["待确认", "未确认", "pending", "tbd", "todo"].contains { normalizedBranch.contains($0) }
+    }
+
+    var body: some View {
+        SectionBlock(title: "创建后下一步 / Next steps") {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "checkmark.circle")
+                        .foregroundStyle(NexusPalette.success)
+                        .frame(width: 16)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Workspace created")
+                            .font(.subheadline.weight(.semibold))
+                        Text("Nexus 已选中新工作区。先看 handoff，再按服务和分支状态决定是否创建 worktree。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer()
+
+                    Button {
+                        appState.dismissCreatedWorkspaceFollowUp()
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Dismiss")
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    SummaryLine(label: "Path", value: workspace.path)
+                    SummaryLine(label: "Branch", value: workspace.branch)
+                    SummaryLine(
+                        label: "Services",
+                        value: workspace.services.isEmpty
+                            ? "服务范围待确认 / Scope pending"
+                            : workspace.services.map(\.name).joined(separator: ", ")
+                    )
+                }
+
+                Text(worktreeHint)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Button {
+                        Task {
+                            await appState.loadHandoffForSelectedWorkspace()
+                        }
+                    } label: {
+                        Label("打开 handoff / Open handoff", systemImage: "doc.text")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(appState.isDocumentLoading)
+
+                    Button {
+                        appState.presentWorktreeSetup(for: workspace)
+                    } label: {
+                        Label("创建 worktree / Setup worktrees", systemImage: "arrow.triangle.branch")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(!appState.canSetupWorktrees(in: workspace))
+
+                    Button {
+                        Task {
+                            await appState.openWorkspaceInCodex(workspace)
+                        }
+                    } label: {
+                        Label("交接 Codex / Open Codex", systemImage: "point.3.connected.trianglepath.dotted")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+
+                    Button {
+                        Task {
+                            await appState.runLocalAutomationCheck()
+                        }
+                    } label: {
+                        Label(appState.isRunningAutomationCheck ? "检查中 / Checking" : "运行检查 / Run check", systemImage: "checklist")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(appState.isRunningAutomationCheck)
+                }
+            }
         }
     }
 }
