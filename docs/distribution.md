@@ -57,6 +57,7 @@ src-tauri/target/release/bundle/dmg/Nexus_0.1.0_aarch64.dmg
   - Workspace detail shows the Workflow summary with task counts, delivery status, delivery-readiness checks, task/delivery document opens, local check, and Codex handoff.
   - Task Center and workspace task rows can open the owning `tasks.md` document for source review before status changes or Codex handoff.
   - Task-level Codex actions copy task context, open the configured Codex URL, and write task handoff audit events.
+  - Workflow delivery readiness can route into the confirmed lifecycle writeback sheet for entering delivery or marking the workspace done.
   - Workspace detail shows the Risk Review summary with risk/blocker/warning counts, status document access, local check, worktree follow-up, and Codex risk prompt copy.
   - Workspace detail shows the Documents Hub and clears stale previews after switching workspaces.
   - Settings export writes a Nexus team profile JSON, and importing that profile applies the same path conventions.
