@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import NexusBridge
+import UserNotifications
 
 @MainActor
 final class AppState: ObservableObject {
@@ -39,6 +40,8 @@ final class AppState: ObservableObject {
     @Published var isAutomationScheduleEnabled: Bool
     @Published var automationIntervalMinutes: Int
     @Published var lastAutomationRunAt: String?
+    @Published var areAutomationNotificationsEnabled: Bool
+    @Published var automationNotificationStatus: String
 
     @Published var agentStatus: AgentStatus
     private let bridge: NexusBridge
@@ -54,6 +57,7 @@ final class AppState: ObservableObject {
         static let isAutomationScheduleEnabled = "nexus.native.isAutomationScheduleEnabled"
         static let automationIntervalMinutes = "nexus.native.automationIntervalMinutes"
         static let lastAutomationRunAt = "nexus.native.lastAutomationRunAt"
+        static let areAutomationNotificationsEnabled = "nexus.native.areAutomationNotificationsEnabled"
     }
 
     static let defaultWorkspaceRoot = "~/ks_project/workspaces"
@@ -106,6 +110,13 @@ final class AppState: ObservableObject {
             defaults.integer(forKey: DefaultsKey.automationIntervalMinutes)
         )
         self.lastAutomationRunAt = defaults.string(forKey: DefaultsKey.lastAutomationRunAt)
+        let storedNotificationsEnabled = defaults.bool(
+            forKey: DefaultsKey.areAutomationNotificationsEnabled
+        )
+        self.areAutomationNotificationsEnabled = storedNotificationsEnabled
+        self.automationNotificationStatus = storedNotificationsEnabled
+            ? "Checking authorization"
+            : "Disabled"
         self.selectedWorkspaceID = workspaces.first?.id
     }
 
@@ -479,6 +490,29 @@ final class AppState: ObservableObject {
         defaults.set(automationIntervalMinutes, forKey: DefaultsKey.automationIntervalMinutes)
     }
 
+    func setAutomationNotificationsEnabled(_ enabled: Bool) async {
+        guard enabled else {
+            areAutomationNotificationsEnabled = false
+            automationNotificationStatus = "Disabled"
+            defaults.set(false, forKey: DefaultsKey.areAutomationNotificationsEnabled)
+            return
+        }
+
+        let authorization = await requestAutomationNotificationAuthorization()
+        areAutomationNotificationsEnabled = authorization.granted
+        automationNotificationStatus = authorization.status
+        defaults.set(authorization.granted, forKey: DefaultsKey.areAutomationNotificationsEnabled)
+    }
+
+    func refreshAutomationNotificationStatus() async {
+        let settings = await notificationSettings()
+        automationNotificationStatus = Self.notificationStatusLabel(settings.authorizationStatus)
+        if settings.authorizationStatus == .denied || settings.authorizationStatus == .notDetermined {
+            areAutomationNotificationsEnabled = false
+            defaults.set(false, forKey: DefaultsKey.areAutomationNotificationsEnabled)
+        }
+    }
+
     func runAutomationScheduleLoop() async {
         guard isAutomationScheduleEnabled else { return }
         while !Task.isCancelled && isAutomationScheduleEnabled {
@@ -519,6 +553,7 @@ final class AppState: ObservableObject {
             if let auditError = response.auditError {
                 lastError = "Automation audit failed: \(auditError)"
             }
+            await sendAutomationNotificationIfNeeded(response)
             await refreshFromBridge()
             lastAutomationCheck = response
         } catch {
@@ -922,11 +957,87 @@ final class AppState: ObservableObject {
         return value
     }
 
+    private func requestAutomationNotificationAuthorization() async -> (granted: Bool, status: String) {
+        await withCheckedContinuation { continuation in
+            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, error in
+                let status: String
+                if let error {
+                    status = "Failed: \(error.localizedDescription)"
+                } else {
+                    status = granted ? "Authorized" : "Denied"
+                }
+                continuation.resume(returning: (granted, status))
+            }
+        }
+    }
+
+    private func notificationSettings() async -> UNNotificationSettings {
+        await withCheckedContinuation { continuation in
+            UNUserNotificationCenter.current().getNotificationSettings { settings in
+                continuation.resume(returning: settings)
+            }
+        }
+    }
+
+    private func sendAutomationNotificationIfNeeded(_ response: LocalAutomationCheckResponse) async {
+        guard areAutomationNotificationsEnabled else { return }
+        guard response.status != "clean" else { return }
+
+        let settings = await notificationSettings()
+        automationNotificationStatus = Self.notificationStatusLabel(settings.authorizationStatus)
+        guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else {
+            areAutomationNotificationsEnabled = false
+            defaults.set(false, forKey: DefaultsKey.areAutomationNotificationsEnabled)
+            return
+        }
+
+        let content = UNMutableNotificationContent()
+        content.title = response.status == "attention"
+            ? "Nexus needs attention"
+            : "Nexus review needed"
+        content.body = response.summary
+        content.sound = .default
+        content.userInfo = [
+            "generatedAt": response.generatedAt,
+            "status": response.status,
+            "riskCount": response.riskCount,
+            "openTaskCount": response.openTaskCount
+        ]
+
+        let request = UNNotificationRequest(
+            identifier: "nexus-automation-\(response.generatedAt)",
+            content: content,
+            trigger: nil
+        )
+        do {
+            try await UNUserNotificationCenter.current().add(request)
+        } catch {
+            automationNotificationStatus = "Failed: \(error.localizedDescription)"
+        }
+    }
+
     private static func normalizedAutomationInterval(_ value: Int) -> Int {
         guard value > 0 else { return defaultAutomationIntervalMinutes }
         return supportedAutomationIntervals.min { left, right in
             abs(left - value) < abs(right - value)
         } ?? defaultAutomationIntervalMinutes
+    }
+
+    private static func notificationStatusLabel(_ status: UNAuthorizationStatus) -> String {
+        switch status {
+        case .notDetermined:
+            return "Not requested"
+        case .denied:
+            return "Denied"
+        case .authorized:
+            return "Authorized"
+        case .provisional:
+            return "Provisional"
+        case .ephemeral:
+            return "Ephemeral"
+        @unknown default:
+            return "Unknown"
+        }
     }
 }
 

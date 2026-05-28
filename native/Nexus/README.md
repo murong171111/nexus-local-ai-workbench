@@ -23,6 +23,7 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - Menu bar quick status with workspace, risk, task, worktree, refresh, settings, recent-workspace, and copy-summary actions.
 - Menu bar local automation checks backed by Rust Core for refresh, risk, delivery, task, worktree, and dirty-service signals.
 - Persisted scheduled automation checks with 5/15/30/60 minute intervals while Nexus is running.
+- Optional local macOS notifications for automation checks that need review or attention.
 - Workspace timelines populated from the Rust Core dashboard activity field, including local audit-log events when the bridge is available.
 - Native document opens append audit events and update the visible workspace timeline.
 - Native workspace detail shows Rust Core readiness checks for local development and delivery gates.
