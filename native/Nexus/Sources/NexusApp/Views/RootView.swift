@@ -1029,14 +1029,28 @@ private struct WorktreeSetupSheet: View {
         appState.missingWorktreeServices(in: currentWorkspace)
     }
 
+    private var missingSourceServices: [String] {
+        currentWorkspace.services
+            .filter { service in
+                !service.worktreeExists && !service.sourceExists
+            }
+            .map(\.name)
+    }
+
+    private var preflightIsReady: Bool {
+        branchIsReady && !missingServices.isEmpty && missingSourceServices.isEmpty
+    }
+
     private var canRun: Bool {
-        confirmed && appState.canSetupWorktrees(in: currentWorkspace) && !appState.isSettingUpWorktrees
+        confirmed && preflightIsReady && !appState.isSettingUpWorktrees
     }
 
     private var branchIsReady: Bool {
-        !currentWorkspace.branch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let normalized = currentWorkspace.branch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return !normalized.isEmpty
+            && normalized != "-"
             && !["待确认", "未确认", "pending", "tbd", "todo"].contains { marker in
-                currentWorkspace.branch.lowercased().contains(marker)
+                normalized.contains(marker)
             }
     }
 
@@ -1057,35 +1071,46 @@ private struct WorktreeSetupSheet: View {
                     WorktreeSetupMetaRow(label: "Target branch", value: currentWorkspace.branch)
                 }
 
-                SectionBlock(title: "缺失服务 / Missing services") {
-                    if missingServices.isEmpty {
-                        Label("All selected services already have worktrees", systemImage: "checkmark.circle")
-                            .foregroundStyle(NexusPalette.success)
-                    } else {
-                        FlowTags(values: missingServices)
+                WorktreeSetupPreflightView(
+                    branchIsReady: branchIsReady,
+                    missingServices: missingServices,
+                    missingSourceServices: missingSourceServices,
+                    targetBranch: currentWorkspace.branch,
+                    sourceReposRoot: appState.sourceReposRoot,
+                    workspacePath: currentWorkspace.path
+                )
+
+                if preflightIsReady {
+                    SectionBlock(title: "将要执行 / Local git operations") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("Nexus 会为 \(missingServices.count) 个服务执行 git fetch origin 和 git worktree add。", systemImage: "terminal")
+                                .font(.caption)
+                            Text("\(currentWorkspace.path)/repos/<service>")
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                            FlowTags(values: missingServices)
+                        }
                     }
                 }
 
-                if !branchIsReady {
-                    Label("目标分支仍待确认，不能创建 worktree。请先在工作区文档中确认目标分支。", systemImage: "exclamationmark.triangle")
-                        .font(.caption)
-                        .foregroundStyle(NexusPalette.warning)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else if missingServices.isEmpty {
-                    Text("当前没有需要创建的 worktree，可以关闭弹窗后继续 Codex 交接或本地检查。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Toggle("确认执行本地 git fetch 与 git worktree add", isOn: $confirmed)
-                    .disabled(missingServices.isEmpty || !branchIsReady)
+                Toggle("确认执行本地 git fetch 与 git worktree add / Confirm local git write", isOn: $confirmed)
+                    .disabled(!preflightIsReady)
 
                 HStack {
                     Button("Close") {
                         dismiss()
                     }
                     .keyboardShortcut(.cancelAction)
+
+                    Button(appState.isLoading ? "Refreshing" : "Refresh") {
+                        Task {
+                            await appState.refreshFromBridge()
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(appState.isLoading || appState.isSettingUpWorktrees)
 
                     Spacer()
 
@@ -1096,6 +1121,13 @@ private struct WorktreeSetupSheet: View {
                     }
                     .keyboardShortcut(.defaultAction)
                     .disabled(!canRun)
+                }
+
+                if !preflightIsReady {
+                    Text(preflightGuidance)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 if let response = appState.lastWorktreeSetupResponse {
@@ -1119,6 +1151,143 @@ private struct WorktreeSetupSheet: View {
         }
         .padding(22)
         .frame(width: 620)
+    }
+
+    private var preflightGuidance: String {
+        if !branchIsReady {
+            return "先在 branches.md 或 workspace.md 中确认目标分支，再创建 workspace-local worktree。"
+        }
+        if missingServices.isEmpty {
+            return "当前没有需要创建的 worktree，可以关闭弹窗后继续 Codex 交接或本地检查。"
+        }
+        if !missingSourceServices.isEmpty {
+            return "缺少源仓库：\(missingSourceServices.joined(separator: ", "))。请先同步 source repositories root，或在 Settings 中调整路径后刷新。"
+        }
+        return "预检通过后，需要显式确认才会执行本地 git 命令。"
+    }
+}
+
+private struct WorktreeSetupPreflightView: View {
+    let branchIsReady: Bool
+    let missingServices: [String]
+    let missingSourceServices: [String]
+    let targetBranch: String
+    let sourceReposRoot: String
+    let workspacePath: String
+
+    private var hasServicesToCreate: Bool {
+        !missingServices.isEmpty
+    }
+
+    private var sourceReposReady: Bool {
+        missingSourceServices.isEmpty
+    }
+
+    var body: some View {
+        SectionBlock(title: "预检 / Preflight") {
+            VStack(alignment: .leading, spacing: 10) {
+                WorktreePreflightRow(
+                    title: "目标分支 / Target branch",
+                    detail: branchIsReady ? targetBranch : "目标分支仍待确认",
+                    status: branchIsReady ? .pass : .blocker
+                )
+
+                WorktreePreflightRow(
+                    title: "缺失 worktree / Missing worktrees",
+                    detail: hasServicesToCreate ? "\(missingServices.count) services: \(missingServices.joined(separator: ", "))" : "没有需要创建的 worktree",
+                    status: hasServicesToCreate ? .pass : .blockedDone
+                )
+
+                WorktreePreflightRow(
+                    title: "源仓库 / Source repositories",
+                    detail: sourceReposReady ? sourceReposRoot : "缺少: \(missingSourceServices.joined(separator: ", "))",
+                    status: sourceReposReady ? .pass : .blocker
+                )
+
+                WorktreePreflightRow(
+                    title: "写入位置 / Workspace-local repos",
+                    detail: "\(workspacePath)/repos/<service>",
+                    status: .info
+                )
+            }
+        }
+    }
+}
+
+private enum WorktreePreflightStatus {
+    case pass
+    case blocker
+    case blockedDone
+    case info
+
+    var symbol: String {
+        switch self {
+        case .pass:
+            return "checkmark.circle"
+        case .blocker:
+            return "xmark.octagon"
+        case .blockedDone:
+            return "checkmark.seal"
+        case .info:
+            return "info.circle"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .pass, .blockedDone:
+            return NexusPalette.success
+        case .blocker:
+            return NexusPalette.danger
+        case .info:
+            return NexusPalette.accent
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .pass:
+            return "ready"
+        case .blocker:
+            return "block"
+        case .blockedDone:
+            return "done"
+        case .info:
+            return "info"
+        }
+    }
+}
+
+private struct WorktreePreflightRow: View {
+    let title: String
+    let detail: String
+    let status: WorktreePreflightStatus
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: status.symbol)
+                .foregroundStyle(status.color)
+                .frame(width: 15)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline.weight(.medium))
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            Spacer()
+
+            Text(status.label)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(status.color)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(status.color.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
     }
 }
 
