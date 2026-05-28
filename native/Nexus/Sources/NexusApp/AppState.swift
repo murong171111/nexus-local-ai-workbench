@@ -1411,6 +1411,102 @@ final class AppState: ObservableObject {
         )
     }
 
+    func openWorktreeSetupResultInCodex(_ response: SetupWorktreesResponse, in workspace: WorkspaceSummary) async {
+        let prompt = worktreeSetupResultHandoffPrompt(response, in: workspace)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(prompt, forType: .string)
+
+        let rawURL = codexURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? Self.defaultCodexURL
+            : codexURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let url = URL(string: rawURL) {
+            NSWorkspace.shared.open(url)
+            markCodexHandoff(
+                title: "Codex 已打开 / Worktree result copied",
+                detail: "\(workspace.name) · \(response.created.count) created · \(response.failed.count) failed",
+                systemImage: "arrow.triangle.branch"
+            )
+        } else {
+            lastError = "Invalid Codex URL: \(rawURL)"
+            markCodexHandoff(
+                title: "worktree 结果已复制 / URL needs review",
+                detail: "\(workspace.name) · Codex URL 无效，请在 Settings 中修正。",
+                systemImage: "exclamationmark.triangle"
+            )
+        }
+
+        await recordWorkspaceAction(
+            action: "codex_worktree_setup.opened",
+            target: workspace.path,
+            summary: "Copied worktree setup result and opened Codex",
+            metadata: [
+                "tool": "Codex",
+                "codexUrl": rawURL,
+                "targetBranch": response.targetBranch,
+                "created": "\(response.created.count)",
+                "skipped": "\(response.skipped.count)",
+                "failed": "\(response.failed.count)"
+            ],
+            workspaceOverride: workspace
+        )
+    }
+
+    private func worktreeSetupResultHandoffPrompt(_ response: SetupWorktreesResponse, in workspace: WorkspaceSummary) -> String {
+        let failedGuidance = response.failed.isEmpty
+            ? "worktree 创建没有失败项。先运行本地检查，确认分支、dirty 状态和风险后再继续开发。"
+            : "优先处理 failed 服务，检查源仓库、目标分支、本地路径或 git 输出后，再重新执行 worktree 创建。"
+
+        return [
+            "请根据 Nexus worktree 创建结果继续处理当前工作区。",
+            "",
+            "## 工作区",
+            "- 名称: \(workspace.name)",
+            "- 文件夹: \(workspace.folder)",
+            "- 路径: \(workspace.path)",
+            "- 目标分支: \(response.targetBranch)",
+            "- Source repos root: \(sourceReposRoot)",
+            "",
+            "## worktree 创建结果",
+            "- Created: \(response.created.count)",
+            "- Skipped: \(response.skipped.count)",
+            "- Failed: \(response.failed.count)",
+            "",
+            "### Created",
+            worktreeSetupResultLines(response.created),
+            "",
+            "### Skipped",
+            worktreeSetupResultLines(response.skipped),
+            "",
+            "### Failed",
+            worktreeSetupResultLines(response.failed),
+            "",
+            "## 本地命令摘要",
+            response.command.isEmpty ? "- Nexus 未返回命令摘要。" : response.command,
+            "",
+            "## 下一步要求",
+            "- \(failedGuidance)",
+            "- 不要删除 worktree、reset、clean 或切换源仓库分支，除非用户明确要求。",
+            "- 继续前读取 workspace.md、STATUS.md、branches.md、services.md、tasks.md 和交付记录。",
+            "- 如果后续修改代码、SQL、配置或业务逻辑，同步更新交付记录。",
+            "- 处理完成后回到 Nexus 刷新，并运行本地检查。"
+        ].joined(separator: "\n")
+    }
+
+    private func worktreeSetupResultLines(_ results: [WorktreeSetupResult]) -> String {
+        guard !results.isEmpty else {
+            return "- none"
+        }
+
+        return results.map { result in
+            [
+                "- \(result.service): \(result.status)",
+                "  - detail: \(result.detail)",
+                "  - source: \(result.sourcePath)",
+                "  - worktree: \(result.worktreePath)"
+            ].joined(separator: "\n")
+        }.joined(separator: "\n")
+    }
+
     func markAgentEventHandoffCopied(_ event: AgentEvent) {
         let target = event.workspaceFolder ?? event.id
         markCodexHandoff(
@@ -1785,6 +1881,8 @@ final class AppState: ObservableObject {
             return "任务 Codex 已打开 / Task Codex opened"
         case "codex_task_handoff.copied":
             return "任务上下文已复制 / Task handoff copied"
+        case "codex_worktree_setup.opened":
+            return "worktree 结果已交接 / Worktree result opened"
         case "risk_review_handoff.copied":
             return "风险复核已复制 / Risk review copied"
         case "settings_profile.exported":

@@ -62,6 +62,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Native Task Center and workspace task rows now copy task context and open Codex in one action, with task-specific handoff feedback and audit records.
 - Native Workflow delivery summary now recommends lifecycle writebacks from delivery readiness, routing users into the existing confirmation flow for entering delivery or marking done.
 - Native Workflow action labels now use Chinese-first wording and hover help for task documents, delivery records, local checks, and workspace Codex handoff.
+- Native worktree setup results now copy created/skipped/failed details into the Codex handoff before opening Codex.
 - Documentation now includes a Chinese complete product-shape blueprint for the Mac-first local AI development workbench target.
 - Rust Core and the Swift/Rust bridge now support local agent event append/read flows backed by `agent-events.jsonl`.
 - Native SwiftUI sidebar now shows recent agent events from the local bridge, with preview fallback data when Rust Core is not loaded.

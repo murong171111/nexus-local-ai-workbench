@@ -51,7 +51,7 @@ src-tauri/target/release/bundle/dmg/Nexus_0.1.0_aarch64.dmg
   - After native workspace creation, the app focuses the new workspace and shows the post-create next-step panel.
   - Empty workspace and empty-filter states show configured paths, environment health, Settings, New Workspace, Refresh, Environment Check, and Show all actions as applicable.
   - Native worktree setup shows target branch, missing worktree, source repository, and workspace-local write-location preflight rows before the confirmation toggle is enabled.
-  - Native worktree setup refreshes the active workspace state and shows created/skipped/failed results with Finder, Codex, and local-check follow-ups.
+  - Native worktree setup refreshes the active workspace state and shows created/skipped/failed results with Finder, result-aware Codex, and local-check follow-ups.
   - Workspace detail starts with the Command Center and exposes lifecycle progress, primary-path guidance, branch/service/risk/task signals, Codex continuation, next-step routing, local check, Finder, and Terminal.
   - Codex handoff actions show the Handoff feedback panel after copying workspace, lifecycle, risk, task, automation, or agent-event context.
   - Workspace detail shows the Workflow summary with task counts, delivery status, delivery-readiness checks, task/delivery document opens, local check, and Codex handoff.
