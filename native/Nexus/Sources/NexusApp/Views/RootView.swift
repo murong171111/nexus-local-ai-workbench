@@ -4036,31 +4036,34 @@ private struct WorkflowStatusView: View {
                             await appState.loadDocument(path: tasksPath)
                         }
                     } label: {
-                        Label("Tasks", systemImage: "checklist")
+                        Label("任务", systemImage: "checklist")
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+                    .help("打开 tasks.md / Open tasks document")
 
                     Button {
                         Task {
                             await appState.loadDocument(path: deliveryPath)
                         }
                     } label: {
-                        Label("Delivery", systemImage: "doc.text")
+                        Label("交付", systemImage: "doc.text")
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+                    .help("打开交付记录 / Open delivery record")
 
                     Button {
                         Task {
                             await appState.runLocalAutomationCheck()
                         }
                     } label: {
-                        Label(appState.isRunningAutomationCheck ? "Checking" : "Check", systemImage: "checklist.checked")
+                        Label(appState.isRunningAutomationCheck ? "检查中" : "检查", systemImage: "checklist.checked")
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .disabled(appState.isRunningAutomationCheck)
+                    .help("运行本地自动化检查 / Run local checks")
 
                     Button {
                         Task {
@@ -4071,6 +4074,7 @@ private struct WorkflowStatusView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
+                    .help("复制工作区上下文并打开 Codex / Copy workspace context and open Codex")
                 }
 
                 DeliveryReadinessChecklistView(items: readinessItems)
