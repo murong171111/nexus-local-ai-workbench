@@ -2377,6 +2377,9 @@ private struct WorkspaceDetailView: View {
                 },
                 taskCodexAction: { task in
                     copyTaskHandoff(task, in: workspace)
+                },
+                lifecycleAction: { transition in
+                    appState.requestLifecycleStatusUpdate(transition, in: workspace)
                 }
             )
             .environmentObject(appState)
@@ -3698,6 +3701,7 @@ private struct WorkflowStatusView: View {
     let deferTaskAction: (WorkspaceTask) -> Void
     let openTaskDocumentAction: (WorkspaceTask) -> Void
     let taskCodexAction: (WorkspaceTask) -> Void
+    let lifecycleAction: (LifecycleTransition) -> Void
 
     private var openTasks: [WorkspaceTask] {
         workspace.tasks.filter { !$0.isDone }
@@ -3787,6 +3791,53 @@ private struct WorkflowStatusView: View {
             sqlReadiness,
             dirtyServiceReadiness
         ]
+    }
+
+    private var nonPassingReadinessItems: [DeliveryReadinessItem] {
+        readinessItems.filter { $0.status != .pass }
+    }
+
+    private var hasDeliveryBlockers: Bool {
+        nonPassingReadinessItems.contains { $0.status == .blocker }
+    }
+
+    private var hasDeliveryWarnings: Bool {
+        nonPassingReadinessItems.contains { $0.status == .warning }
+    }
+
+    private var lifecycleRecommendation: DeliveryLifecycleRecommendation? {
+        switch workspace.lifecycle.stage {
+        case "delivery":
+            if nonPassingReadinessItems.isEmpty {
+                return DeliveryLifecycleRecommendation(
+                    title: "交付检查已就绪 / Ready to finish",
+                    detail: "任务、风险、服务、分支、交付记录和 SQL 检查暂无明显阻塞，可以进入完成确认。",
+                    transition: .done,
+                    tone: NexusPalette.success,
+                    systemImage: "checkmark.seal"
+                )
+            }
+
+            return DeliveryLifecycleRecommendation(
+                title: "交付仍需处理 / Delivery needs review",
+                detail: "还有 \(nonPassingReadinessItems.count) 个检查项需要处理，先打开交付记录或运行本地检查后再标记完成。",
+                transition: nil,
+                tone: hasDeliveryBlockers ? NexusPalette.danger : NexusPalette.warning,
+                systemImage: hasDeliveryBlockers ? "xmark.octagon" : "exclamationmark.triangle"
+            )
+        case "done", "archived":
+            return nil
+        default:
+            return DeliveryLifecycleRecommendation(
+                title: "准备交付状态 / Prepare delivery",
+                detail: hasDeliveryWarnings || hasDeliveryBlockers
+                    ? "当前已有交付相关检查项，建议先把生命周期写回为交付整理，再逐项处理 checklist。"
+                    : "交付检查较干净，可以先进入交付整理，最终完成前再做一次本地检查。",
+                transition: .delivery,
+                tone: hasDeliveryBlockers ? NexusPalette.danger : NexusPalette.warning,
+                systemImage: "doc.text"
+            )
+        }
     }
 
     private var branchReadiness: DeliveryReadinessItem {
@@ -4024,6 +4075,12 @@ private struct WorkflowStatusView: View {
 
                 DeliveryReadinessChecklistView(items: readinessItems)
 
+                if let lifecycleRecommendation {
+                    DeliveryLifecycleRecommendationView(recommendation: lifecycleRecommendation) { transition in
+                        lifecycleAction(transition)
+                    }
+                }
+
                 if openTasks.isEmpty {
                     Label("当前没有开放任务。可以继续查看交付记录或运行本地检查确认状态。", systemImage: "checkmark.circle")
                         .font(.caption)
@@ -4116,6 +4173,52 @@ private struct DeliveryReadinessItem: Identifiable {
     let detail: String
     let status: DeliveryReadinessStatus
     let systemImage: String
+}
+
+private struct DeliveryLifecycleRecommendation {
+    let title: String
+    let detail: String
+    let transition: LifecycleTransition?
+    let tone: Color
+    let systemImage: String
+}
+
+private struct DeliveryLifecycleRecommendationView: View {
+    let recommendation: DeliveryLifecycleRecommendation
+    let action: (LifecycleTransition) -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: recommendation.systemImage)
+                .foregroundStyle(recommendation.tone)
+                .frame(width: 15)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(recommendation.title)
+                    .font(.subheadline.weight(.medium))
+                Text(recommendation.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer()
+
+            if let transition = recommendation.transition {
+                Button {
+                    action(transition)
+                } label: {
+                    Label(transition.label, systemImage: transition.systemImage)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help("打开确认弹窗，写回 workspace.md 和 STATUS.md")
+            }
+        }
+        .padding(10)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
 }
 
 private struct DeliveryReadinessChecklistView: View {
