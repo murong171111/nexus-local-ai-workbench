@@ -34,6 +34,7 @@ The first native shell scaffold is available at `native/Nexus`. It is a Swift Pa
 - Explicit confirmation flows for operations that create files, create worktrees, or change local state.
 - Create-workspace UX for scanning source repositories, filtering service candidates, accepting manual fallback services, showing pending scope, summarizing the local write before confirmation, and guiding the user to the next safe step after creation.
 - Workspace workflow summary that keeps task status, delivery-record status, document opens, local checks, and Codex handoff together instead of scattering them across unrelated sections.
+- Workspace Documents Hub that maps standard workspace files to native preview/source rendering and avoids stale previews when the selected workspace changes.
 
 ### Rust Core
 

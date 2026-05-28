@@ -50,6 +50,7 @@ src-tauri/target/release/bundle/dmg/Nexus_0.1.0_aarch64.dmg
   - After native workspace creation, the app focuses the new workspace and shows the post-create next-step panel.
   - Native worktree setup refreshes the active workspace state and shows created/skipped/failed results with Finder, Codex, and local-check follow-ups.
   - Workspace detail shows the Workflow summary with task counts, delivery status, task/delivery document opens, local check, and Codex handoff.
+  - Workspace detail shows the Documents Hub and clears stale previews after switching workspaces.
   - Settings export writes a Nexus team profile JSON, and importing that profile applies the same path conventions.
   - Creating a workspace writes `bootstrap-report.md` and `scripts/worktree-commands.sh`.
   - Markdown preview works.

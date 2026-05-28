@@ -488,6 +488,9 @@ final class AppState: ObservableObject {
     }
 
     func select(_ workspace: WorkspaceSummary) {
+        if selectedWorkspaceID != workspace.id {
+            documentPreview = nil
+        }
         selectedWorkspaceID = workspace.id
         Task {
             await refreshWidgetSnapshot()
@@ -495,6 +498,9 @@ final class AppState: ObservableObject {
     }
 
     func selectTaskCenterItem(_ item: TaskCenterItem) {
+        if selectedWorkspaceID != item.workspaceID {
+            documentPreview = nil
+        }
         selectedWorkspaceID = item.workspaceID
         Task {
             await refreshWidgetSnapshot()

@@ -32,6 +32,7 @@ It is designed for teams that work across multiple local service repositories an
 - Native create-workspace flow that scans source repositories, filters service candidates, selects real local services, leaves service scope pending when needed, then focuses the new workspace with handoff, worktree, Codex, and check actions.
 - Native worktree setup refreshes the workspace state after running, explains created/skipped/failed services, and routes the next step to Finder, Codex, or local checks.
 - Native workflow summary in workspace detail for open tasks, blocked tasks, delivery status, task documents, delivery records, local checks, and Codex handoff.
+- Native workspace Documents Hub for opening and previewing the standard workspace files without leaving the detail view.
 - Branch alignment checks that flag worktrees whose actual branch does not match the workspace target branch.
 - Workspace bootstrap reports and reviewable `scripts/worktree-commands.sh` files for semi-automated worktree setup.
 - Delivery-record completeness warnings when `交付记录.md` still needs real change notes.
@@ -106,6 +107,8 @@ The native menu bar can run a local automation check manually or on a persisted 
 The native right inspector also includes an Automation Action Center. After a check runs, Nexus converts risk, delivery, task, and worktree signals into clickable actions such as focusing a risky workspace, opening delivery notes, selecting the Task Center, presenting the worktree setup confirmation, or copying a Codex prompt with the current local paths and workspace context.
 
 Each workspace detail view includes a `Workflow` section that keeps task and delivery state together. It summarizes open and blocked tasks, shows whether the delivery record is ready or needs review, opens `tasks.md` and `交付记录.md`, runs the local check, and hands the current context to Codex.
+
+The workspace detail view also includes a `Documents` hub for the standard workspace files: `workspace.md`, `STATUS.md`, `services.md`, `branches.md`, `tasks.md`, `交付记录.md`, `handoff.md`, `bootstrap-report.md`, and `scripts/worktree-commands.sh`. Selecting a document opens it in the native preview/source viewer and clears stale previews when switching workspaces.
 
 Archived workspaces remain visible in the workspace list and Archive filter, but they are excluded from active menu-bar counts, Task Center totals, and automation attention signals.
 
