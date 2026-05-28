@@ -64,6 +64,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added persisted native scheduled automation checks with 5/15/30/60 minute intervals while Nexus is running.
 - Added optional local macOS notifications for automation checks that return review or attention status.
 - Added automation notification preferences for cooldown, minimum status, and signal types.
+- Added a native Automation Action Center that turns local check signals into focus, delivery, task, worktree, and Codex handoff actions.
 - Added a fail-open hook helper script that local agents can call to append events into Nexus before a local socket server is available.
 - Added an explicit local-write confirmation checkbox to the Tauri create-workspace flow.
 - Added frontend desktop bridge in `src/desktop.ts`.
