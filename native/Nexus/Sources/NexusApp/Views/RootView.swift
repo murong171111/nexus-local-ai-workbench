@@ -1833,45 +1833,8 @@ private struct WorkspaceDetailView: View {
                 WorkspaceCreationNextStepsView(workspace: workspace)
             }
 
-            SectionBlock(title: "本地入口 / Local handoff") {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 8) {
-                        Button {
-                            Task {
-                                await appState.openWorkspaceInFinder(workspace)
-                            }
-                        } label: {
-                            Label("Finder", systemImage: "folder")
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-
-                        Button {
-                            Task {
-                                await appState.openWorkspaceInTerminal(workspace)
-                            }
-                        } label: {
-                            Label("Terminal", systemImage: "terminal")
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-
-                        Button {
-                            Task {
-                                await appState.openWorkspaceInCodex(workspace)
-                            }
-                        } label: {
-                            Label("Codex", systemImage: "point.3.connected.trianglepath.dotted")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                    }
-
-                    Text("Codex 会复制当前工作区上下文，并打开 Settings 中配置的 URL。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
+            WorkspaceCommandCenterView(workspace: workspace)
+                .environmentObject(appState)
 
             LifecycleDetailView(
                 workspace: workspace,
@@ -1937,7 +1900,7 @@ private struct WorkspaceDetailView: View {
             .environmentObject(appState)
 
             if !workspace.sessionActions.isEmpty {
-                SectionBlock(title: "会话动作 / Session actions") {
+                SectionBlock(title: "建议动作 / Suggested actions") {
                     ForEach(workspace.sessionActions) { action in
                         SessionActionRow(action: action) {
                             run(action)
@@ -1946,12 +1909,12 @@ private struct WorkspaceDetailView: View {
                 }
             }
 
+            WorkspaceDocumentsHubView(workspace: workspace)
+                .environmentObject(appState)
+
             SectionBlock(title: "最近活动 / Activity") {
                 ActivityTimelineView(events: workspace.activities)
             }
-
-            WorkspaceDocumentsHubView(workspace: workspace)
-                .environmentObject(appState)
 
             Spacer()
         }
@@ -2181,6 +2144,236 @@ private struct NativeDocumentPreview: View {
         .onAppear {
             mode = document.isMarkdown ? .preview : .source
         }
+    }
+}
+
+private struct WorkspaceCommandCenterView: View {
+    @EnvironmentObject private var appState: AppState
+    let workspace: WorkspaceSummary
+
+    private var openTaskCount: Int {
+        workspace.tasks.filter { !$0.isDone }.count
+    }
+
+    private var missingWorktreeCount: Int {
+        workspace.services.filter { !$0.worktreeExists }.count
+    }
+
+    private var serviceValue: String {
+        if workspace.services.isEmpty {
+            return "pending"
+        }
+        if missingWorktreeCount > 0 {
+            return "\(workspace.services.count) / \(missingWorktreeCount) miss"
+        }
+        return "\(workspace.services.count) ready"
+    }
+
+    private var branchTone: Color {
+        Self.hasConfirmedTargetBranch(workspace.branch) ? NexusPalette.accent : NexusPalette.warning
+    }
+
+    private var worktreeTone: Color {
+        if workspace.services.isEmpty {
+            return NexusPalette.warning
+        }
+        return missingWorktreeCount == 0 ? NexusPalette.success : NexusPalette.warning
+    }
+
+    private var taskTone: Color {
+        openTaskCount == 0 ? NexusPalette.success : NexusPalette.accent
+    }
+
+    private var lifecycleTone: Color {
+        switch workspace.lifecycle.stage {
+        case "blocked":
+            return NexusPalette.danger
+        case "setup", "delivery":
+            return NexusPalette.warning
+        case "done", "archived":
+            return NexusPalette.success
+        default:
+            return NexusPalette.accent
+        }
+    }
+
+    var body: some View {
+        SectionBlock(title: "工作台 / Command Center") {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: lifecycleSymbol)
+                        .foregroundStyle(lifecycleTone)
+                        .frame(width: 16)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(workspace.lifecycle.label)
+                            .font(.subheadline.weight(.semibold))
+                        Text(workspace.lifecycle.nextAction)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer()
+
+                    Text("\(workspace.lifecycle.progress)%")
+                        .font(.system(.caption, design: .monospaced).weight(.semibold))
+                        .foregroundStyle(lifecycleTone)
+                }
+
+                ProgressView(value: workspace.lifecycle.normalizedProgress)
+                    .progressViewStyle(.linear)
+                    .tint(lifecycleTone)
+
+                LazyVGrid(columns: metricColumns, alignment: .leading, spacing: 8) {
+                    WorkflowMetric(label: "Branch", value: shortBranch, tone: branchTone)
+                    WorkflowMetric(label: "Services", value: serviceValue, tone: worktreeTone)
+                    WorkflowMetric(label: "Risk", value: workspace.riskLevel.label, tone: workspace.risks.isEmpty ? NexusPalette.success : NexusPalette.warning)
+                    WorkflowMetric(label: "Tasks", value: "\(openTaskCount) open", tone: taskTone)
+                }
+
+                LazyVGrid(columns: actionColumns, alignment: .leading, spacing: 8) {
+                    Button {
+                        Task {
+                            await appState.openWorkspaceInCodex(workspace)
+                        }
+                    } label: {
+                        Label("Continue", systemImage: "point.3.connected.trianglepath.dotted")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+
+                    Button {
+                        Task {
+                            await appState.runLifecycleAction(for: workspace)
+                        }
+                    } label: {
+                        Label(nextActionLabel, systemImage: nextActionSymbol)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    Button {
+                        Task {
+                            await appState.runLocalAutomationCheck(actor: "Nexus Command Center")
+                        }
+                    } label: {
+                        Label(appState.isRunningAutomationCheck ? "Checking" : "Run check", systemImage: "checklist.checked")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(appState.isRunningAutomationCheck)
+
+                    Button {
+                        Task {
+                            await appState.openWorkspaceInFinder(workspace)
+                        }
+                    } label: {
+                        Label("Finder", systemImage: "folder")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    Button {
+                        Task {
+                            await appState.openWorkspaceInTerminal(workspace)
+                        }
+                    } label: {
+                        Label("Terminal", systemImage: "terminal")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+
+                Text("先按下一步推进当前阶段；需要接力时用 Continue 复制上下文并打开 Codex，需要手工处理时再进入 Finder 或 Terminal。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var actionColumns: [GridItem] {
+        [GridItem(.adaptive(minimum: 112), spacing: 8, alignment: .leading)]
+    }
+
+    private var metricColumns: [GridItem] {
+        [GridItem(.adaptive(minimum: 96), spacing: 8, alignment: .leading)]
+    }
+
+    private var shortBranch: String {
+        let branch = workspace.branch.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !branch.isEmpty else { return "pending" }
+        if branch.count <= 18 {
+            return branch
+        }
+        return "\(branch.prefix(15))..."
+    }
+
+    private var lifecycleSymbol: String {
+        switch workspace.lifecycle.stage {
+        case "scoping":
+            return "magnifyingglass"
+        case "setup":
+            return "wrench.and.screwdriver"
+        case "developing":
+            return "hammer"
+        case "delivery":
+            return "doc.text"
+        case "done":
+            return "checkmark.seal"
+        case "archived":
+            return "archivebox"
+        case "blocked":
+            return "pause.circle"
+        default:
+            return "point.3.connected.trianglepath.dotted"
+        }
+    }
+
+    private var nextActionLabel: String {
+        switch workspace.lifecycle.documentKey {
+        case "worktreeScript":
+            return "Worktree"
+        case "delivery":
+            return "Delivery"
+        case "tasks":
+            return "Tasks"
+        case "branches":
+            return "Branch"
+        case "services":
+            return "Services"
+        case "status":
+            return "Status"
+        default:
+            return "Open next"
+        }
+    }
+
+    private var nextActionSymbol: String {
+        switch workspace.lifecycle.documentKey {
+        case "worktreeScript":
+            return "arrow.triangle.branch"
+        case "delivery":
+            return "doc.text"
+        case "tasks":
+            return "checklist"
+        case "branches":
+            return "arrow.triangle.branch"
+        case "services":
+            return "square.stack.3d.up"
+        default:
+            return "arrow.right.circle"
+        }
+    }
+
+    private static func hasConfirmedTargetBranch(_ branch: String) -> Bool {
+        let normalized = branch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return false }
+        return !normalized.contains("待确认")
+            && !normalized.contains("pending")
+            && !normalized.contains("todo")
+            && normalized != "-"
     }
 }
 
