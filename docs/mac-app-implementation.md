@@ -57,6 +57,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added structured Rust Core, FFI, and native SwiftUI task snapshots from workspace `tasks.md` rows.
 - Added a native local Task Center in the sidebar and a workspace task section in the detail panel.
 - Added confirmed task status updates from the native Task Center back into `tasks.md`, with FFI audit logging.
+- Added shared Rust Core, FFI, and native SwiftUI Codex handoff prompts for workspace tasks.
 - Added a fail-open hook helper script that local agents can call to append events into Nexus before a local socket server is available.
 - Added an explicit local-write confirmation checkbox to the Tauri create-workspace flow.
 - Added frontend desktop bridge in `src/desktop.ts`.
@@ -109,7 +110,7 @@ The local search index is stored at `~/Library/Application Support/com.ks.nexus/
 2. Keep Tauri commands as thin wrappers around Rust Core during migration.
 3. Scaffold the SwiftUI/AppKit native Mac shell.
 4. Add the Swift/Rust bridge and render real workspace data in the native shell.
-5. Expand native task actions into line-level document jumps, richer task filters, convert-to-Codex handoffs, and more audited event types for validation runs and PR handoff.
+5. Expand native task actions into line-level document jumps, richer task filters, direct Codex launch, and more audited event types for validation runs and PR handoff.
 6. Package the WidgetKit extension with a full Xcode target and App Group storage.
 7. Add signing, notarization, update channels, and menu bar status after the native shell is ready.
 

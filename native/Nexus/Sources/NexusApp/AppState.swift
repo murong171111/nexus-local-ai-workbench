@@ -478,6 +478,46 @@ final class AppState: ObservableObject {
         }
     }
 
+    func workspaceTaskHandoffPrompt(for task: WorkspaceTask, in workspace: WorkspaceSummary) async -> String {
+        let request = WorkspaceTaskHandoffPromptRequest(
+            workspaceName: workspace.name,
+            workspaceFolder: workspace.folder,
+            workspacePath: workspace.path,
+            targetBranch: workspace.branch,
+            sourceRoot: sourceReposRoot,
+            task: WorkspaceTaskSnapshot(
+                id: task.id,
+                title: task.title,
+                status: task.status,
+                detail: task.detail,
+                priority: task.priority,
+                source: task.source,
+                sourceEventId: task.sourceEventID
+            )
+        )
+        do {
+            let response = try await bridge.workspaceTaskHandoffPrompt(request: request)
+            return response.prompt
+        } catch {
+            return request.fallbackPrompt
+        }
+    }
+
+    func recordTaskHandoffCopied(task: WorkspaceTask, in workspace: WorkspaceSummary) async {
+        await recordWorkspaceAction(
+            action: "codex_task_handoff.copied",
+            target: "\(workspace.path)/tasks.md",
+            summary: "Copied task handoff for \(task.title)",
+            metadata: [
+                "taskId": task.id,
+                "taskTitle": task.title,
+                "taskStatus": task.status,
+                "taskSource": task.source
+            ],
+            workspaceOverride: workspace
+        )
+    }
+
     func appendAgentTaskDraft(
         _ draft: AgentEventTaskDraftResponse,
         to workspace: WorkspaceSummary,
@@ -682,9 +722,10 @@ final class AppState: ObservableObject {
         action: String,
         target: String,
         summary: String,
-        metadata: [String: String] = [:]
+        metadata: [String: String] = [:],
+        workspaceOverride: WorkspaceSummary? = nil
     ) async {
-        guard let workspace = selectedWorkspace else { return }
+        guard let workspace = workspaceOverride ?? selectedWorkspace else { return }
         let activity = ActivityEvent(
             time: Self.activityTimestamp(),
             title: Self.auditActivityTitle(action),
@@ -722,6 +763,8 @@ final class AppState: ObservableObject {
             return "Codex 已打开 / Codex opened"
         case "codex_instruction.copied":
             return "Codex 指令已复制 / Instruction copied"
+        case "codex_task_handoff.copied":
+            return "任务上下文已复制 / Task handoff copied"
         default:
             return action.replacingOccurrences(of: "_", with: " ")
                 .replacingOccurrences(of: ".", with: " ")

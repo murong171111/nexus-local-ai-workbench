@@ -18,6 +18,7 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - Local Task Center that reads structured workspace task rows from Rust Core and lets the sidebar focus the owning workspace.
 - Workspace detail task section for reviewing local workspace and agent-sourced tasks without opening Markdown first.
 - Confirmed native task status updates for marking local tasks complete or deferred in `tasks.md`.
+- Task-level Codex handoff prompts that can be copied from the Task Center or workspace detail.
 - Workspace timelines populated from the Rust Core dashboard activity field, including local audit-log events when the bridge is available.
 - Native document opens append audit events and update the visible workspace timeline.
 - Native workspace detail shows Rust Core readiness checks for local development and delivery gates.
@@ -35,7 +36,7 @@ This does not produce a signed `.app` bundle yet. Packaging, signing, notarizati
 
 ## Rust Core Bridge
 
-The Swift package includes a `NexusBridge` target with typed DTOs that match the Rust Core dashboard, source repository, workspace task, document, widget snapshot, audit event, agent event, SQLite/FTS search, confirmed workspace-creation, and confirmed worktree-setup JSON contracts.
+The Swift package includes a `NexusBridge` target with typed DTOs that match the Rust Core dashboard, source repository, workspace task, task handoff prompt, document, widget snapshot, audit event, agent event, SQLite/FTS search, confirmed workspace-creation, and confirmed worktree-setup JSON contracts.
 
 For local development, build the bridge library from the repository root:
 

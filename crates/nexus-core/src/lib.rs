@@ -34,9 +34,10 @@ pub use settings::{
 pub use widget::{widget_snapshot_from_dashboard, WidgetSnapshot};
 pub use workspace::{
     append_agent_task_draft, create_workspace, scan_workspaces, scan_workspaces_with_audit,
-    setup_worktrees, update_workspace_task, worktree_commands, AppendAgentTaskDraftRequest,
-    AppendAgentTaskDraftResponse, CreateWorkspaceRequest, CreateWorkspaceResponse, DashboardData,
-    GitRow, SetupWorktreesRequest, SetupWorktreesResponse, TaskCounts, UpdateWorkspaceTaskRequest,
-    UpdateWorkspaceTaskResponse, WorkspaceActivity, WorkspaceData, WorkspaceHealthCheck,
-    WorkspaceSessionAction, WorkspaceTask, WorktreeSetupResult,
+    setup_worktrees, update_workspace_task, workspace_task_handoff_prompt, worktree_commands,
+    AppendAgentTaskDraftRequest, AppendAgentTaskDraftResponse, CreateWorkspaceRequest,
+    CreateWorkspaceResponse, DashboardData, GitRow, SetupWorktreesRequest, SetupWorktreesResponse,
+    TaskCounts, UpdateWorkspaceTaskRequest, UpdateWorkspaceTaskResponse, WorkspaceActivity,
+    WorkspaceData, WorkspaceHealthCheck, WorkspaceSessionAction, WorkspaceTask,
+    WorkspaceTaskHandoffPromptRequest, WorkspaceTaskHandoffPromptResponse, WorktreeSetupResult,
 };
