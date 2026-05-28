@@ -1371,17 +1371,37 @@ final class AppState: ObservableObject {
         }
     }
 
-    func recordTaskHandoffCopied(task: WorkspaceTask, in workspace: WorkspaceSummary) async {
-        markCodexHandoff(
-            title: "任务上下文已复制 / Task copied",
-            detail: "\(workspace.name) · \(task.title)",
-            systemImage: "checklist"
-        )
+    func openTaskInCodex(_ task: WorkspaceTask, in workspace: WorkspaceSummary) async {
+        let prompt = await workspaceTaskHandoffPrompt(for: task, in: workspace)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(prompt, forType: .string)
+
+        let rawURL = codexURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? Self.defaultCodexURL
+            : codexURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let url = URL(string: rawURL) {
+            NSWorkspace.shared.open(url)
+            markCodexHandoff(
+                title: "Codex 已打开 / Task copied",
+                detail: "\(workspace.name) · \(task.title) · 任务上下文已复制到剪贴板。",
+                systemImage: "checklist"
+            )
+        } else {
+            lastError = "Invalid Codex URL: \(rawURL)"
+            markCodexHandoff(
+                title: "任务上下文已复制 / URL needs review",
+                detail: "\(workspace.name) · \(task.title) · Codex URL 无效，请在 Settings 中修正。",
+                systemImage: "exclamationmark.triangle"
+            )
+        }
+
         await recordWorkspaceAction(
-            action: "codex_task_handoff.copied",
+            action: "codex_task_handoff.opened",
             target: "\(workspace.path)/tasks.md",
-            summary: "Copied task handoff for \(task.title)",
+            summary: "Copied task handoff and opened Codex for \(task.title)",
             metadata: [
+                "tool": "Codex",
+                "codexUrl": rawURL,
                 "taskId": task.id,
                 "taskTitle": task.title,
                 "taskStatus": task.status,
@@ -1761,6 +1781,8 @@ final class AppState: ObservableObject {
             return "Codex 已打开 / Codex opened"
         case "codex_instruction.copied":
             return "Codex 指令已复制 / Instruction copied"
+        case "codex_task_handoff.opened":
+            return "任务 Codex 已打开 / Task Codex opened"
         case "codex_task_handoff.copied":
             return "任务上下文已复制 / Task handoff copied"
         case "risk_review_handoff.copied":

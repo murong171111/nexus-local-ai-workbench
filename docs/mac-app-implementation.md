@@ -62,6 +62,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added direct `tasks.md` open actions from Task Center and workspace detail task rows so task review can jump back to the Markdown source of truth.
 - Added confirmed task status updates from the native Task Center back into `tasks.md`, with FFI audit logging.
 - Added shared Rust Core, FFI, and native SwiftUI Codex handoff prompts for workspace tasks.
+- Added native task-level Codex copy-and-open handoff from Task Center and workspace detail, with task-specific feedback and audit events.
 - Added persisted native Task Center filters for all, high-priority, agent-sourced, and deferred tasks.
 - Added a native menu bar quick status item with workspace, risk, task, worktree, refresh, settings, recent-workspace, and copy-summary actions.
 - Added Rust Core, FFI, Swift bridge, and native menu bar support for local automation checks covering refresh, risk, delivery, task, worktree, and dirty-service signals with fail-open audit logging.

@@ -118,7 +118,7 @@ Workspace tasks can also produce a copyable Codex handoff prompt through Rust Co
 - The task detail text.
 - A workflow reminder to read workspace documents, inspect `repos/<service>` worktrees, keep SQL and delivery docs aligned, and report touched services, branches, verification, and risks.
 
-The native Task Center and workspace task rows expose this as a `Codex` action. The action copies the generated prompt to the pasteboard and appends a `codex_task_handoff.copied` audit event. It does not open Codex or execute task detail text by itself.
+The native Task Center and workspace task rows expose this as a `Codex` action. The action copies the generated prompt to the pasteboard, opens the configured Codex URL, shows task-specific handoff feedback, and appends a `codex_task_handoff.opened` audit event. It does not execute task detail text by itself.
 
 ## Storage Boundary
 

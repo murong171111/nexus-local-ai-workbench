@@ -20,7 +20,7 @@ It is designed for teams that work across multiple local service repositories an
 - Local SQLite + FTS index foundation for workspace Markdown, service scope, tasks, decisions, delivery records, and SQL notes.
 - Native SwiftUI Markdown document preview with preview/source modes for workspace handoff documents and search result documents.
 - Native workspace handoff actions for opening the active workspace in Finder, Terminal, or Codex with copied context.
-- Native SwiftUI Task Center that surfaces open workspace tasks from `tasks.md`, including direct task-document opens, persisted filters, agent-sourced task writebacks, confirmed complete/defer actions, and task-level Codex handoff prompts.
+- Native SwiftUI Task Center that surfaces open workspace tasks from `tasks.md`, including direct task-document opens, persisted filters, agent-sourced task writebacks, confirmed complete/defer actions, and task-level Codex copy-and-open handoff.
 - Native SwiftUI menu bar status for quick workspace, risk, task, worktree, refresh, settings, and copy-summary actions.
 - Local automation checks for refresh, risk, delivery, task, worktree, and dirty-service signals, exposed through Rust Core, the Swift/Rust bridge, the native menu bar, optional scheduled checks, and configurable macOS notifications.
 - Native SwiftUI Automation Action Center that turns local check signals into risk focus, delivery document opens, task focus, worktree review, and Codex handoff prompts.
