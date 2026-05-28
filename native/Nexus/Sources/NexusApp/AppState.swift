@@ -114,6 +114,9 @@ final class AppState: ObservableObject {
     @Published var isSearching = false
     @Published var searchIndexSummary: RebuildSearchIndexResponse?
     @Published var searchError: String?
+    @Published var sourceRepositories: [SourceRepositorySnapshot] = []
+    @Published var isScanningSourceRepositories = false
+    @Published var sourceRepositoryScanError: String?
     @Published var nativeEnvironmentHealth: NativeEnvironmentHealth?
     @Published var isCheckingNativeEnvironment = false
     @Published var isRunningAutomationCheck = false
@@ -607,6 +610,24 @@ final class AppState: ObservableObject {
             sourceReposRoot: sourceReposRoot,
             docsRoot: docsRoot
         )
+    }
+
+    func refreshSourceRepositories() async {
+        guard !isScanningSourceRepositories else { return }
+        isScanningSourceRepositories = true
+        sourceRepositoryScanError = nil
+        defer {
+            isScanningSourceRepositories = false
+        }
+
+        do {
+            sourceRepositories = try await bridge.scanSourceRepos(
+                request: ScanSourceReposRequest(sourceReposRoot: sourceReposRoot)
+            )
+        } catch {
+            sourceRepositories = []
+            sourceRepositoryScanError = error.localizedDescription
+        }
     }
 
     var settingsProfileDefaultFilename: String {

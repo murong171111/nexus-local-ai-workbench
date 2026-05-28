@@ -10,7 +10,7 @@ It is designed for teams that work across multiple local service repositories an
 
 - Native macOS app built with Tauri, React, TailwindCSS, and Swift WidgetKit source.
 - Workspace cards for requirement folders, branches, services, risks, activity, and worktree state.
-- In-app workspace creation using the `ks-project-demand-workspace` layout.
+- In-app workspace creation using the `ks-project-demand-workspace` layout, with scanned service selection, manual fallback, and a confirmation summary.
 - In-app Markdown document preview for status, service scope, branch notes, tasks, and delivery records.
 - Local path settings for workspaces, source repositories, and delivery document roots.
 - Exportable and importable team settings profiles for sharing local path conventions, including first-run onboarding import and native Settings import/export.
@@ -29,7 +29,7 @@ It is designed for teams that work across multiple local service repositories an
 - First-run onboarding for importing team profiles, configuring local paths, scanning source repositories, and optionally creating a demo workspace.
 - Environment health checks for configured directories and Git availability.
 - Native workspace scanning from the configured paths; no local Python script is required for the packaged app.
-- Native source repository scanning so workspace creation can select services from real local repositories.
+- Native create-workspace flow that scans source repositories, filters service candidates, selects real local services, and leaves service scope pending when needed.
 - Branch alignment checks that flag worktrees whose actual branch does not match the workspace target branch.
 - Workspace bootstrap reports and reviewable `scripts/worktree-commands.sh` files for semi-automated worktree setup.
 - Delivery-record completeness warnings when `交付记录.md` still needs real change notes.
@@ -87,9 +87,9 @@ The `repos/<service>` directories are intended to be git worktrees for isolated 
 
 ## Creating Workspaces
 
-Use the `New Workspace` action in the left rail. Nexus can scan the configured source repository root and lets you select services from that local list. You can still type service names manually when a repository is not present yet. Manual service input supports commas, spaces, new lines, semicolons, and Chinese separators such as `、` and `，`.
+Use the `New Workspace` action in the left rail. Nexus can scan the configured source repository root, filter the detected repositories, and let you select services from that local list. You can still type service names manually when a repository is not present yet, or leave service scope pending during early scoping. Manual service input supports commas, spaces, new lines, semicolons, and Chinese separators such as `、` and `，`.
 
-Creating a workspace requires confirming the local write, then writes the standard Markdown document set and records selected services in `services.md` and `branches.md`. It also generates `bootstrap-report.md`, `scripts/worktree-commands.sh`, and a local audit event.
+Before writing files, Nexus shows a summary of the target path, branch, and service scope. Creating a workspace requires confirming the local write, then writes the standard Markdown document set and records selected services in `services.md` and `branches.md`. It also generates `bootstrap-report.md`, `scripts/worktree-commands.sh`, and a local audit event.
 
 Nexus does not automatically execute worktree commands. Review the generated script first, then run it manually when the branch and service scope are confirmed.
 
