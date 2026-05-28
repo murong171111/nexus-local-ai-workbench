@@ -170,7 +170,7 @@ final class AppState: ObservableObject {
     }
 
     var allTaskCenterItems: [TaskCenterItem] {
-        workspaces
+        activeSignalWorkspaces
             .flatMap { workspace in
                 workspace.tasks.map { task in
                     TaskCenterItem(
@@ -209,14 +209,16 @@ final class AppState: ObservableObject {
     }
 
     var menuBarSummary: MenuBarStatusSummary {
-        let riskyWorkspaceCount = workspaces.filter { workspace in
+        let signalWorkspaces = activeSignalWorkspaces
+        let riskyWorkspaceCount = signalWorkspaces.filter { workspace in
             workspace.riskLevel == .high || workspace.riskLevel == .medium
         }.count
-        let blockedWorkspaceCount = workspaces.filter { $0.state == .blocked }.count
-        let activeWorkspaceCount = workspaces.filter { workspace in
+        let blockedWorkspaceCount = signalWorkspaces.filter { $0.state == .blocked }.count
+        let activeWorkspaceCount = signalWorkspaces.filter { workspace in
             workspace.state == .developing || workspace.state == .analyzing
         }.count
-        let services = workspaces.flatMap(\.services)
+        let archivedWorkspaceCount = workspaces.filter(\.isArchived).count
+        let services = signalWorkspaces.flatMap(\.services)
         let dirtyServiceCount = services.filter { service in
             let normalized = "\(service.gitSummary) \(service.worktree)".lowercased()
             return normalized.contains("dirty") || normalized.contains("未提交")
@@ -226,6 +228,7 @@ final class AppState: ObservableObject {
         return MenuBarStatusSummary(
             workspaceCount: workspaces.count,
             activeWorkspaceCount: activeWorkspaceCount,
+            archivedWorkspaceCount: archivedWorkspaceCount,
             riskyWorkspaceCount: riskyWorkspaceCount,
             blockedWorkspaceCount: blockedWorkspaceCount,
             openTaskCount: taskCenterTotalCount,
@@ -284,11 +287,15 @@ final class AppState: ObservableObject {
             case .all:
                 matchesFilter = true
             case .active:
-                matchesFilter = workspace.state == .developing || workspace.state == .analyzing
+                matchesFilter = !workspace.isArchived
+                    && (workspace.state == .developing || workspace.state == .analyzing)
             case .risky:
-                matchesFilter = workspace.riskLevel == .high || workspace.riskLevel == .medium
+                matchesFilter = !workspace.isArchived
+                    && (workspace.riskLevel == .high || workspace.riskLevel == .medium)
             case .blocked:
-                matchesFilter = workspace.state == .blocked
+                matchesFilter = !workspace.isArchived && workspace.state == .blocked
+            case .archived:
+                matchesFilter = workspace.isArchived
             }
 
             guard matchesFilter else { return false }
@@ -1155,14 +1162,18 @@ final class AppState: ObservableObject {
         defaults.set(orderedPinnedIDs + orphanedPinnedIDs, forKey: DefaultsKey.pinnedWorkspaceIDs)
     }
 
+    private var activeSignalWorkspaces: [WorkspaceSummary] {
+        workspaces.filter { !$0.isArchived }
+    }
+
     private func firstWorkspaceWithRisk() -> WorkspaceSummary? {
-        workspaces.first { workspace in
+        activeSignalWorkspaces.first { workspace in
             workspace.riskLevel == .high || workspace.riskLevel == .medium || !workspace.risks.isEmpty
         }
     }
 
     private func firstWorkspaceWithDeliveryIssue() -> WorkspaceSummary? {
-        workspaces.first { workspace in
+        activeSignalWorkspaces.first { workspace in
             workspace.risks.contains { risk in
                 let normalized = "\(risk.title) \(risk.detail)".lowercased()
                 return normalized.contains("交付记录") || normalized.contains("delivery")
@@ -1176,13 +1187,13 @@ final class AppState: ObservableObject {
     }
 
     private func firstWorkspaceWithMissingWorktrees() -> WorkspaceSummary? {
-        workspaces.first { workspace in
+        activeSignalWorkspaces.first { workspace in
             workspace.services.contains { !$0.worktreeExists }
         }
     }
 
     private func firstWorkspaceWithDirtyServices() -> WorkspaceSummary? {
-        workspaces.first { workspace in
+        activeSignalWorkspaces.first { workspace in
             workspace.services.contains { service in
                 let normalized = "\(service.gitSummary) \(service.worktree)".lowercased()
                 return normalized.contains("dirty") || normalized.contains("未提交")

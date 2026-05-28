@@ -93,6 +93,8 @@ The native menu bar can run a local automation check manually or on a persisted 
 
 The native right inspector also includes an Automation Action Center. After a check runs, Nexus converts risk, delivery, task, and worktree signals into clickable actions such as focusing a risky workspace, opening delivery notes, selecting the Task Center, presenting the worktree setup confirmation, or copying a Codex prompt with the current local paths and workspace context.
 
+Archived workspaces remain visible in the workspace list and Archive filter, but they are excluded from active menu-bar counts, Task Center totals, and automation attention signals.
+
 ## Workspace Lifecycle
 
 Rust Core derives a lifecycle stage for every workspace from the current Markdown, task, risk, service, branch, delivery, and git worktree state. The native shell shows that lifecycle on each workspace card and in the detail inspector with progress, current reason, next action, and Codex handoff controls.

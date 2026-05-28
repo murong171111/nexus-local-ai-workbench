@@ -58,7 +58,8 @@ const filterLabels: Record<string, { title: string; desc: string }> = {
   risk: { title: "有风险", desc: "Risk" },
   branch: { title: "分支不一致", desc: "Branch" },
   dirty: { title: "有改动", desc: "Dirty" },
-  missing: { title: "缺 worktree", desc: "Missing" }
+  missing: { title: "缺 worktree", desc: "Missing" },
+  archived: { title: "已归档", desc: "Archive" }
 };
 
 const statLabels: Record<string, { title: string; desc: string }> = {
@@ -68,6 +69,11 @@ const statLabels: Record<string, { title: string; desc: string }> = {
   branch: { title: "分支不一致", desc: "Branch mismatch" },
   missing: { title: "缺失 Worktree", desc: "Missing worktree" }
 };
+
+function workspaceIsArchived(workspace: Workspace) {
+  const normalized = `${workspace.state} ${workspace.lifecycle?.stage ?? ""}`.toLowerCase();
+  return normalized.includes("archived") || normalized.includes("archive") || normalized.includes("归档");
+}
 
 const auditActionLabels: Record<string, string> = {
   "codex.opened": "Codex 已打开 / Codex opened",
@@ -294,7 +300,7 @@ function Sidebar({
   onOpenCreate: () => void;
   onOpenSettings: () => void;
 }) {
-  const filters = ["all", "risk", "branch", "dirty", "missing"];
+  const filters = ["all", "risk", "branch", "dirty", "missing", "archived"];
 
   return (
     <aside className="flex max-h-[42vh] flex-col border-b border-neutral-200 bg-neutral-50 px-3 py-4 lg:sticky lg:top-0 lg:h-screen lg:max-h-none lg:border-b-0 lg:border-r">
@@ -338,8 +344,9 @@ function Sidebar({
                 <span className="block leading-4">{filterLabels[id].title}</span>
                 <span className="mono block text-[10px] text-neutral-400">{filterLabels[id].desc}</span>
               </span>
-              {id === "risk" && <span className="mono text-[11px]">{workspaces.filter((w) => w.riskCount).length}</span>}
-              {id === "branch" && <span className="mono text-[11px]">{workspaces.filter((w) => branchAlignmentRows(w).length).length}</span>}
+              {id === "risk" && <span className="mono text-[11px]">{workspaces.filter((w) => !workspaceIsArchived(w) && w.riskCount).length}</span>}
+              {id === "branch" && <span className="mono text-[11px]">{workspaces.filter((w) => !workspaceIsArchived(w) && branchAlignmentRows(w).length).length}</span>}
+              {id === "archived" && <span className="mono text-[11px]">{workspaces.filter(workspaceIsArchived).length}</span>}
             </button>
           ))}
         </div>
@@ -2444,22 +2451,25 @@ export function App() {
         .join(" ")
         .toLowerCase();
       const matchesQuery = !lower || haystack.includes(lower);
+      const archived = workspaceIsArchived(workspace);
       const matchesFilter =
         filter === "all" ||
-        (filter === "risk" && workspace.riskCount > 0) ||
-        (filter === "branch" && branchAlignmentRows(workspace).length > 0) ||
-        (filter === "dirty" && workspace.gitRows.some((row) => row.worktree.dirty)) ||
-        (filter === "missing" && workspace.gitRows.some((row) => !row.worktree.exists));
+        (filter === "risk" && !archived && workspace.riskCount > 0) ||
+        (filter === "branch" && !archived && branchAlignmentRows(workspace).length > 0) ||
+        (filter === "dirty" && !archived && workspace.gitRows.some((row) => row.worktree.dirty)) ||
+        (filter === "missing" && !archived && workspace.gitRows.some((row) => !row.worktree.exists)) ||
+        (filter === "archived" && archived);
       return matchesQuery && matchesFilter;
     });
   }, [filter, query, sorted]);
 
   const current = visible.find((workspace) => workspace.folder === active) ?? visible[0];
   const drawerWorkspace = dashboard.workspaces.find((workspace) => workspace.folder === drawerFolder);
-  const services = new Set(dashboard.workspaces.flatMap((workspace) => workspace.confirmedServices)).size;
-  const risks = dashboard.workspaces.reduce((sum, workspace) => sum + workspace.riskCount, 0);
-  const branchMismatches = dashboard.workspaces.reduce((sum, workspace) => sum + branchAlignmentRows(workspace).length, 0);
-  const missing = dashboard.workspaces.filter((workspace) => workspace.gitRows.some((row) => !row.worktree.exists)).length;
+  const signalWorkspaces = dashboard.workspaces.filter((workspace) => !workspaceIsArchived(workspace));
+  const services = new Set(signalWorkspaces.flatMap((workspace) => workspace.confirmedServices)).size;
+  const risks = signalWorkspaces.reduce((sum, workspace) => sum + workspace.riskCount, 0);
+  const branchMismatches = signalWorkspaces.reduce((sum, workspace) => sum + branchAlignmentRows(workspace).length, 0);
+  const missing = signalWorkspaces.filter((workspace) => workspace.gitRows.some((row) => !row.worktree.exists)).length;
   const keyboardSearchResults = useMemo(() => orderedSearchResults(searchResults), [searchResults]);
 
   const workspaceForTarget = useCallback((target: string) => {

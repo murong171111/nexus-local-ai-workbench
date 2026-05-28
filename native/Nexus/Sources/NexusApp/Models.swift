@@ -6,6 +6,7 @@ enum WorkspaceFilter: String, CaseIterable, Identifiable {
     case active = "进行中"
     case risky = "有风险"
     case blocked = "阻塞"
+    case archived = "归档"
 
     var id: String { rawValue }
 
@@ -19,6 +20,8 @@ enum WorkspaceFilter: String, CaseIterable, Identifiable {
             "Risk"
         case .blocked:
             "Blocked"
+        case .archived:
+            "Archive"
         }
     }
 
@@ -32,6 +35,8 @@ enum WorkspaceFilter: String, CaseIterable, Identifiable {
             "exclamationmark.triangle"
         case .blocked:
             "pause.circle"
+        case .archived:
+            "archivebox"
         }
     }
 }
@@ -250,6 +255,7 @@ struct AgentStatus: Hashable {
 struct MenuBarStatusSummary: Hashable {
     let workspaceCount: Int
     let activeWorkspaceCount: Int
+    let archivedWorkspaceCount: Int
     let riskyWorkspaceCount: Int
     let blockedWorkspaceCount: Int
     let openTaskCount: Int
@@ -309,6 +315,7 @@ struct MenuBarStatusSummary: Hashable {
             "Active workspace: \(activeWorkspaceName ?? "None")",
             "Workspaces: \(workspaceCount)",
             "Active workspaces: \(activeWorkspaceCount)",
+            "Archived workspaces: \(archivedWorkspaceCount)",
             "Risky workspaces: \(riskyWorkspaceCount)",
             "Blocked workspaces: \(blockedWorkspaceCount)",
             "Open tasks: \(openTaskCount)",
@@ -624,6 +631,10 @@ struct WorkspaceSummary: Identifiable, Hashable {
 
     var serviceSummary: String {
         services.map(\.name).joined(separator: ", ")
+    }
+
+    var isArchived: Bool {
+        state == .archived || lifecycle.stage.lowercased() == "archived"
     }
 
     var lifecycleTransitions: [LifecycleTransition] {
