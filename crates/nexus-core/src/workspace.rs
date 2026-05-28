@@ -146,6 +146,25 @@ pub struct AppendAgentTaskDraftResponse {
     pub already_exists: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateWorkspaceTaskRequest {
+    pub workspace_path: String,
+    pub task_id: String,
+    pub status: String,
+    pub detail: Option<String>,
+    pub confirmed: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateWorkspaceTaskResponse {
+    pub path: String,
+    pub task: WorkspaceTask,
+    pub previous_status: String,
+    pub updated: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetupWorktreesResponse {
@@ -431,6 +450,95 @@ pub fn append_agent_task_draft(
         source_event_id: request.draft.source_event_id,
         appended: true,
         already_exists: false,
+    })
+}
+
+pub fn update_workspace_task(
+    request: UpdateWorkspaceTaskRequest,
+) -> Result<UpdateWorkspaceTaskResponse, String> {
+    if !request.confirmed {
+        return Err("workspace task update requires explicit confirmation".to_string());
+    }
+
+    let task_id = request.task_id.trim();
+    if task_id.is_empty() {
+        return Err("task id is required".to_string());
+    }
+    let status = markdown_table_cell(&request.status);
+    if status.is_empty() {
+        return Err("task status is required".to_string());
+    }
+
+    let workspace = expand_user_path(&request.workspace_path);
+    if !workspace.exists() {
+        return Err(format!("workspace does not exist: {}", workspace.display()));
+    }
+    if !workspace.is_dir() {
+        return Err(format!(
+            "workspace is not a directory: {}",
+            workspace.display()
+        ));
+    }
+
+    let tasks_path = workspace.join("tasks.md");
+    if !tasks_path.exists() {
+        return Err(format!("tasks.md does not exist: {}", tasks_path.display()));
+    }
+
+    let content = fs::read_to_string(&tasks_path).map_err(|error| error.to_string())?;
+    let folder = folder_from_path(&workspace);
+    let mut task_index = 0usize;
+    let mut updated_task = None;
+    let mut previous_status = String::new();
+    let mut lines = Vec::new();
+
+    for line in content.lines() {
+        let Some(mut cells) = markdown_table_row_cells(line) else {
+            lines.push(line.to_string());
+            continue;
+        };
+
+        let Some(current_task) = workspace_task_from_row(&folder, task_index, &cells) else {
+            lines.push(line.to_string());
+            task_index += 1;
+            continue;
+        };
+
+        if current_task.id == task_id {
+            while cells.len() < 3 {
+                cells.push(String::new());
+            }
+            previous_status = cells.get(1).cloned().unwrap_or_default();
+            cells[1] = status.clone();
+            if let Some(detail) = request.detail.as_deref() {
+                cells[2] = markdown_table_cell(detail);
+            }
+            let rewritten = format_markdown_table_row(&cells);
+            let task = workspace_task_from_row(&folder, task_index, &cells)
+                .ok_or_else(|| "updated task row could not be parsed".to_string())?;
+            updated_task = Some(task);
+            lines.push(rewritten);
+        } else {
+            lines.push(line.to_string());
+        }
+        task_index += 1;
+    }
+
+    let Some(task) = updated_task else {
+        return Err(format!("task not found: {task_id}"));
+    };
+
+    let mut next_content = lines.join("\n");
+    if content.ends_with('\n') {
+        next_content.push('\n');
+    }
+    fs::write(&tasks_path, next_content).map_err(|error| error.to_string())?;
+
+    Ok(UpdateWorkspaceTaskResponse {
+        path: tasks_path.to_string_lossy().to_string(),
+        task,
+        previous_status,
+        updated: true,
     })
 }
 
@@ -1234,22 +1342,59 @@ fn section(text: &str, heading: &str) -> String {
 
 fn table_rows(text: &str) -> Vec<Vec<String>> {
     text.lines()
-        .map(str::trim)
-        .filter(|line| line.starts_with('|') && !line.contains("---"))
-        .map(|line| {
-            line.trim_matches('|')
-                .split('|')
-                .map(|cell| cell.trim().replace('`', ""))
-                .collect::<Vec<_>>()
-        })
-        .filter(|row| {
-            !row.is_empty()
-                && !matches!(
-                    row[0].as_str(),
-                    "服务" | "任务" | "需求" | "场景" | "时间" | "工作区"
-                )
-        })
+        .filter_map(markdown_table_row_cells)
+        .map(|row| row.into_iter().map(|cell| cell.replace('`', "")).collect())
         .collect()
+}
+
+fn markdown_table_row_cells(line: &str) -> Option<Vec<String>> {
+    let trimmed = line.trim();
+    if !trimmed.starts_with('|') || !trimmed.contains('|') || is_markdown_table_divider(trimmed) {
+        return None;
+    }
+
+    let row = trimmed
+        .trim_matches('|')
+        .split('|')
+        .map(|cell| cell.trim().replace('`', ""))
+        .collect::<Vec<_>>();
+
+    if row.is_empty()
+        || matches!(
+            row[0].as_str(),
+            "服务" | "任务" | "需求" | "场景" | "时间" | "工作区"
+        )
+    {
+        None
+    } else {
+        Some(row)
+    }
+}
+
+fn is_markdown_table_divider(line: &str) -> bool {
+    let cells = line
+        .trim_matches('|')
+        .split('|')
+        .map(str::trim)
+        .collect::<Vec<_>>();
+    !cells.is_empty()
+        && cells.iter().all(|cell| {
+            !cell.is_empty()
+                && cell
+                    .chars()
+                    .all(|character| matches!(character, '-' | ':' | ' '))
+        })
+}
+
+fn format_markdown_table_row(cells: &[String]) -> String {
+    format!(
+        "| {} |",
+        cells
+            .iter()
+            .map(|cell| markdown_table_cell(cell))
+            .collect::<Vec<_>>()
+            .join(" | ")
+    )
 }
 
 fn service_names_from(rows: &[Vec<String>]) -> Vec<String> {
@@ -1286,32 +1431,34 @@ fn count_tasks(rows: &[Vec<String>]) -> TaskCounts {
 fn workspace_tasks_from_rows(folder: &str, rows: &[Vec<String>]) -> Vec<WorkspaceTask> {
     rows.iter()
         .enumerate()
-        .filter_map(|(index, row)| {
-            let title = row.first()?.trim();
-            if title.is_empty() {
-                return None;
-            }
-            let status = row.get(1).map(|value| value.trim()).unwrap_or("待办");
-            let detail = row.get(2).map(|value| value.trim()).unwrap_or("");
-            let source_event_id = marker_value(detail, "event=");
-            Some(WorkspaceTask {
-                id: source_event_id
-                    .as_ref()
-                    .map(|event_id| format!("{folder}:{event_id}"))
-                    .unwrap_or_else(|| format!("{folder}:task-{index}")),
-                title: title.to_string(),
-                status: status.to_string(),
-                detail: detail.to_string(),
-                priority: task_priority(status, detail),
-                source: if source_event_id.is_some() {
-                    "agent".to_string()
-                } else {
-                    "workspace".to_string()
-                },
-                source_event_id,
-            })
-        })
+        .filter_map(|(index, row)| workspace_task_from_row(folder, index, row))
         .collect()
+}
+
+fn workspace_task_from_row(folder: &str, index: usize, row: &[String]) -> Option<WorkspaceTask> {
+    let title = row.first()?.trim();
+    if title.is_empty() {
+        return None;
+    }
+    let status = row.get(1).map(|value| value.trim()).unwrap_or("待办");
+    let detail = row.get(2).map(|value| value.trim()).unwrap_or("");
+    let source_event_id = marker_value(detail, "event=");
+    Some(WorkspaceTask {
+        id: source_event_id
+            .as_ref()
+            .map(|event_id| format!("{folder}:{event_id}"))
+            .unwrap_or_else(|| format!("{folder}:task-{index}")),
+        title: title.to_string(),
+        status: status.to_string(),
+        detail: detail.to_string(),
+        priority: task_priority(status, detail),
+        source: if source_event_id.is_some() {
+            "agent".to_string()
+        } else {
+            "workspace".to_string()
+        },
+        source_event_id,
+    })
 }
 
 fn task_priority(status: &str, detail: &str) -> String {
@@ -1817,6 +1964,71 @@ mod tests {
             && task.priority == "medium"
             && task.source == "agent"
             && task.source_event_id.as_deref() == Some("agent-1")));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn update_workspace_task_requires_confirmation_and_rewrites_status() {
+        let root = std::env::temp_dir().join(format!(
+            "nexus-core-task-status-update-{}",
+            std::process::id()
+        ));
+        let workspace = root.join("2026-05-28-task-status");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&workspace).unwrap();
+        fs::write(
+            workspace.join("tasks.md"),
+            "# Tasks\n\n| 任务 | 状态 | 说明 |\n| --- | --- | --- |\n| 核对任务中心 | 进行中 | priority=high |\n| Review permission request | 待办 | priority=medium event=agent-1 |\n",
+        )
+        .unwrap();
+
+        let rejected = update_workspace_task(UpdateWorkspaceTaskRequest {
+            workspace_path: workspace.to_string_lossy().to_string(),
+            task_id: "2026-05-28-task-status:task-0".to_string(),
+            status: "已完成".to_string(),
+            detail: None,
+            confirmed: false,
+        });
+        assert!(rejected
+            .unwrap_err()
+            .contains("requires explicit confirmation"));
+
+        let response = update_workspace_task(UpdateWorkspaceTaskRequest {
+            workspace_path: workspace.to_string_lossy().to_string(),
+            task_id: "2026-05-28-task-status:task-0".to_string(),
+            status: "已完成".to_string(),
+            detail: None,
+            confirmed: true,
+        })
+        .unwrap();
+        assert!(response.updated);
+        assert_eq!(response.previous_status, "进行中");
+        assert_eq!(response.task.title, "核对任务中心");
+        assert_eq!(response.task.status, "已完成");
+
+        let response = update_workspace_task(UpdateWorkspaceTaskRequest {
+            workspace_path: workspace.to_string_lossy().to_string(),
+            task_id: "2026-05-28-task-status:agent-1".to_string(),
+            status: "延期".to_string(),
+            detail: Some("priority=medium event=agent-1 deferred=2026-05-28".to_string()),
+            confirmed: true,
+        })
+        .unwrap();
+        assert_eq!(response.previous_status, "待办");
+        assert_eq!(response.task.source_event_id.as_deref(), Some("agent-1"));
+        assert_eq!(response.task.status, "延期");
+
+        let tasks = fs::read_to_string(workspace.join("tasks.md")).unwrap();
+        assert!(tasks.contains("| 核对任务中心 | 已完成 | priority=high |"));
+        assert!(tasks.contains(
+            "| Review permission request | 延期 | priority=medium event=agent-1 deferred=2026-05-28 |"
+        ));
+
+        let dashboard =
+            scan_workspaces(&root.to_string_lossy(), "~/source-repos", "~/docs").unwrap();
+        assert_eq!(dashboard.workspaces[0].task_counts.done, 1);
+        assert_eq!(dashboard.workspaces[0].task_counts.todo, 1);
 
         fs::remove_dir_all(root).unwrap();
     }

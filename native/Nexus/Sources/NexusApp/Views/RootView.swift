@@ -45,6 +45,10 @@ struct RootView: View {
             WorktreeSetupSheet(workspace: workspace)
                 .environmentObject(appState)
         }
+        .sheet(item: $appState.pendingTaskStatusUpdate) { update in
+            TaskStatusUpdateSheet(update: update)
+                .environmentObject(appState)
+        }
         .sheet(item: $appState.selectedAgentEvent) { event in
             AgentEventDetailSheet(event: event)
                 .environmentObject(appState)
@@ -538,12 +542,18 @@ private struct SidebarView: View {
                     }
 
                     ForEach(Array(appState.taskCenterItems.prefix(4))) { item in
-                        Button {
-                            appState.selectTaskCenterItem(item)
-                        } label: {
-                            TaskCenterSidebarRow(item: item)
-                        }
-                        .buttonStyle(.plain)
+                        TaskCenterSidebarRow(
+                            item: item,
+                            selectAction: {
+                                appState.selectTaskCenterItem(item)
+                            },
+                            completeAction: {
+                                appState.requestTaskStatusUpdate(item, status: "已完成")
+                            },
+                            deferAction: {
+                                appState.requestTaskStatusUpdate(item, status: "延期")
+                            }
+                        )
                     }
                 }
             }
@@ -848,6 +858,83 @@ private struct WorktreeSetupSheet: View {
     }
 }
 
+private struct TaskStatusUpdateSheet: View {
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmed = false
+    let update: TaskStatusUpdate
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("更新任务状态 / Update task")
+                    .font(.title3.weight(.semibold))
+                Text("Nexus will update the matching row in this workspace's tasks.md after confirmation.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            SectionBlock(title: "任务 / Task") {
+                VStack(alignment: .leading, spacing: 8) {
+                    TaskStatusMetaRow(label: "Workspace", value: update.workspaceName)
+                    TaskStatusMetaRow(label: "Task", value: update.taskTitle)
+                    TaskStatusMetaRow(label: "Status", value: "\(update.currentStatus) -> \(update.nextStatus)")
+                    TaskStatusMetaRow(label: "Path", value: "\(update.workspacePath)/tasks.md")
+                }
+            }
+
+            Toggle("确认写入 tasks.md / Confirm local write", isOn: $confirmed)
+
+            HStack {
+                Button("Cancel") {
+                    appState.pendingTaskStatusUpdate = nil
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Spacer()
+
+                Button(appState.isUpdatingTask ? "Updating" : "Update") {
+                    Task {
+                        await appState.confirmPendingTaskStatusUpdate(confirmed: confirmed)
+                        if appState.lastError == nil {
+                            dismiss()
+                        }
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!confirmed || appState.isUpdatingTask)
+            }
+
+            if let error = appState.lastError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(NexusPalette.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(22)
+        .frame(width: 560)
+    }
+}
+
+private struct TaskStatusMetaRow: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+        }
+    }
+}
+
 private struct WorktreeSetupMetaRow: View {
     let label: String
     let value: String
@@ -1080,7 +1167,15 @@ private struct WorkspaceDetailView: View {
             if !workspace.tasks.isEmpty {
                 SectionBlock(title: "本地任务 / Tasks") {
                     ForEach(Array(workspace.tasks.prefix(6))) { task in
-                        WorkspaceTaskRow(task: task)
+                        WorkspaceTaskRow(
+                            task: task,
+                            completeAction: {
+                                appState.requestTaskStatusUpdate(task, in: workspace, status: "已完成")
+                            },
+                            deferAction: {
+                                appState.requestTaskStatusUpdate(task, in: workspace, status: "延期")
+                            }
+                        )
                     }
                 }
             }
@@ -1329,28 +1424,53 @@ private struct HealthCheckRow: View {
 
 private struct TaskCenterSidebarRow: View {
     let item: TaskCenterItem
+    let selectAction: () -> Void
+    let completeAction: () -> Void
+    let deferAction: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 6) {
-                Image(systemName: item.task.source == "agent" ? "sparkles" : "checklist")
-                    .font(.caption)
-                    .foregroundStyle(color)
-                Text(item.task.priorityLabel)
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(color)
-                Text(item.task.status)
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                Spacer()
+            Button(action: selectAction) {
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 6) {
+                        Image(systemName: item.task.source == "agent" ? "sparkles" : "checklist")
+                            .font(.caption)
+                            .foregroundStyle(color)
+                        Text(item.task.priorityLabel)
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(color)
+                        Text(item.task.status)
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    Text(item.task.title)
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(2)
+                    Text(item.workspaceName)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Text(item.task.title)
-                .font(.caption.weight(.semibold))
-                .lineLimit(2)
-            Text(item.workspaceName)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+            .buttonStyle(.plain)
+
+            HStack(spacing: 6) {
+                Button("完成") {
+                    completeAction()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+                .disabled(item.task.isDone)
+
+                Button("延期") {
+                    deferAction()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+                .disabled(item.task.isDone || item.task.status.contains("延期"))
+            }
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1375,6 +1495,8 @@ private struct TaskCenterSidebarRow: View {
 
 private struct WorkspaceTaskRow: View {
     let task: WorkspaceTask
+    let completeAction: () -> Void
+    let deferAction: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 9) {
@@ -1411,6 +1533,22 @@ private struct WorkspaceTaskRow: View {
                 Text(statusLabel)
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(.secondary)
+                if !task.isDone {
+                    HStack(spacing: 5) {
+                        Button("完成") {
+                            completeAction()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+
+                        Button("延期") {
+                            deferAction()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                        .disabled(task.status.contains("延期"))
+                    }
+                }
             }
         }
     }

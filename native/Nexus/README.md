@@ -17,6 +17,7 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - Recent agent event sidebar feed backed by the Swift/Rust agent event bridge, with detail inspection, safe metadata actions, shared task drafts, confirmed `tasks.md` writeback, Codex handoff prompts, and JSON copy support.
 - Local Task Center that reads structured workspace task rows from Rust Core and lets the sidebar focus the owning workspace.
 - Workspace detail task section for reviewing local workspace and agent-sourced tasks without opening Markdown first.
+- Confirmed native task status updates for marking local tasks complete or deferred in `tasks.md`.
 - Workspace timelines populated from the Rust Core dashboard activity field, including local audit-log events when the bridge is available.
 - Native document opens append audit events and update the visible workspace timeline.
 - Native workspace detail shows Rust Core readiness checks for local development and delivery gates.

@@ -464,6 +464,48 @@ public struct AppendAgentTaskDraftResponse: Codable, Equatable, Sendable {
     }
 }
 
+public struct UpdateWorkspaceTaskRequest: Codable, Equatable, Sendable {
+    public let workspacePath: String
+    public let taskId: String
+    public let status: String
+    public let detail: String?
+    public let confirmed: Bool
+    public let auditRoot: String?
+    public let actor: String?
+
+    public init(
+        workspacePath: String,
+        taskId: String,
+        status: String,
+        detail: String? = nil,
+        confirmed: Bool,
+        auditRoot: String? = nil,
+        actor: String? = nil
+    ) {
+        self.workspacePath = workspacePath
+        self.taskId = taskId
+        self.status = status
+        self.detail = detail
+        self.confirmed = confirmed
+        self.auditRoot = auditRoot
+        self.actor = actor
+    }
+}
+
+public struct UpdateWorkspaceTaskResponse: Codable, Equatable, Sendable {
+    public let path: String
+    public let task: WorkspaceTaskSnapshot
+    public let previousStatus: String
+    public let updated: Bool
+
+    public init(path: String, task: WorkspaceTaskSnapshot, previousStatus: String, updated: Bool) {
+        self.path = path
+        self.task = task
+        self.previousStatus = previousStatus
+        self.updated = updated
+    }
+}
+
 public extension AgentEvent {
     var fallbackHandoffPrompt: String {
         let metadataLines = metadata
