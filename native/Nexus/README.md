@@ -14,15 +14,15 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - Persisted native search scopes for workspace, state, workflow, SQL, and document-focused searches.
 - Pinned workspaces in the sidebar and workspace card flow, stored as local Mac preferences.
 - Sidebar Settings sheet with persisted workspace, source repository, delivery document roots, Codex URL, refresh interval, and compatible team profile import/export.
-- Native Settings environment check for local path readiness, Git availability, workspace counts, and source repository counts.
+- Native Settings path rows with per-path readiness, directory pickers, reveal actions, and environment checks for local path readiness, Git availability, workspace counts, and source repository counts.
 - Native create-workspace sheet that scans configured source repositories, filters and selects service scope, accepts manual service fallback, shows a confirmation summary before local writes, and shows an initialization receipt after creation.
 - Post-create next-step panel that focuses the new workspace and routes the user toward `handoff.md`, confirmed worktree setup, Codex handoff, or local checks.
 - Native document preview renders Markdown by default and keeps a source-mode toggle for raw workspace files.
 - Native workspace detail handoff actions open the workspace in Finder, Terminal, or Codex, copying workspace context for Codex first.
 - Native widget snapshot writing to Application Support, with automatic `group.com.ks.nexus` App Group mirroring when the signed app has that entitlement.
 - Recent agent event sidebar feed backed by the Swift/Rust agent event bridge, with detail inspection, safe metadata actions, shared task drafts, confirmed `tasks.md` writeback, Codex handoff prompts, and JSON copy support.
-- Local Task Center that reads structured workspace task rows from Rust Core and lets the sidebar focus the owning workspace.
-- Workspace detail task section for reviewing local workspace and agent-sourced tasks without opening Markdown first.
+- Local Task Center that reads structured workspace task rows from Rust Core, lets the sidebar focus the owning workspace, and opens the owning `tasks.md` document directly when deeper review is needed.
+- Workspace detail task section for reviewing local workspace and agent-sourced tasks, with direct access back to the source `tasks.md` record.
 - Confirmed native task status updates for marking local tasks complete or deferred in `tasks.md`.
 - Task-level Codex handoff prompts that can be copied from the Task Center or workspace detail.
 - Persisted Task Center filters for all, high-priority, agent-sourced, and deferred tasks.

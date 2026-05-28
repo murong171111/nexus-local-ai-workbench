@@ -593,6 +593,9 @@ private struct SidebarView: View {
                                 selectAction: {
                                     appState.selectTaskCenterItem(item)
                                 },
+                                openDocumentAction: {
+                                    openTaskDocument(item)
+                                },
                                 completeAction: {
                                     appState.requestTaskStatusUpdate(item, status: "已完成")
                                 },
@@ -727,6 +730,17 @@ private struct SidebarView: View {
             let payload = await appState.workspaceTaskHandoffPrompt(for: item.task, in: workspace)
             copyToPasteboard(payload)
             await appState.recordTaskHandoffCopied(task: item.task, in: workspace)
+        }
+    }
+
+    private func openTaskDocument(_ item: TaskCenterItem) {
+        guard let workspace = appState.workspaces.first(where: { $0.id == item.workspaceID }) else {
+            return
+        }
+        appState.selectTaskCenterItem(item)
+        let path = workspace.documentLinks["tasks"] ?? "\(workspace.path)/tasks.md"
+        Task {
+            await appState.loadDocument(path: path)
         }
     }
 }
@@ -2357,6 +2371,12 @@ private struct WorkspaceDetailView: View {
                 deferTaskAction: { task in
                     appState.requestTaskStatusUpdate(task, in: workspace, status: "延期")
                 },
+                openTaskDocumentAction: { _ in
+                    Task {
+                        let path = workspace.documentLinks["tasks"] ?? "\(workspace.path)/tasks.md"
+                        await appState.loadDocument(path: path)
+                    }
+                },
                 taskCodexAction: { task in
                     copyTaskHandoff(task, in: workspace)
                 }
@@ -3680,6 +3700,7 @@ private struct WorkflowStatusView: View {
     let workspace: WorkspaceSummary
     let completeTaskAction: (WorkspaceTask) -> Void
     let deferTaskAction: (WorkspaceTask) -> Void
+    let openTaskDocumentAction: (WorkspaceTask) -> Void
     let taskCodexAction: (WorkspaceTask) -> Void
 
     private var openTasks: [WorkspaceTask] {
@@ -4016,6 +4037,9 @@ private struct WorkflowStatusView: View {
                         ForEach(Array(openTasks.prefix(4))) { task in
                             WorkspaceTaskRow(
                                 task: task,
+                                openDocumentAction: {
+                                    openTaskDocumentAction(task)
+                                },
                                 completeAction: {
                                     completeTaskAction(task)
                                 },
@@ -4533,6 +4557,7 @@ private struct TaskCenterFilterBar: View {
 private struct TaskCenterSidebarRow: View {
     let item: TaskCenterItem
     let selectAction: () -> Void
+    let openDocumentAction: () -> Void
     let completeAction: () -> Void
     let deferAction: () -> Void
     let codexAction: () -> Void
@@ -4566,6 +4591,12 @@ private struct TaskCenterSidebarRow: View {
             .buttonStyle(.plain)
 
             HStack(spacing: 6) {
+                Button("文档") {
+                    openDocumentAction()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+
                 Button("完成") {
                     completeAction()
                 }
@@ -4610,6 +4641,7 @@ private struct TaskCenterSidebarRow: View {
 
 private struct WorkspaceTaskRow: View {
     let task: WorkspaceTask
+    let openDocumentAction: () -> Void
     let completeAction: () -> Void
     let deferAction: () -> Void
     let codexAction: () -> Void
@@ -4665,11 +4697,19 @@ private struct WorkspaceTaskRow: View {
                         .disabled(task.status.contains("延期"))
                     }
                 }
-                Button("Codex") {
-                    codexAction()
+                HStack(spacing: 5) {
+                    Button("文档") {
+                        openDocumentAction()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+
+                    Button("Codex") {
+                        codexAction()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.mini)
             }
         }
     }
@@ -4775,9 +4815,54 @@ struct SettingsView: View {
 
             Form {
                 Section("Local Paths") {
-                    TextField("Workspaces root", text: $appState.workspaceRoot)
-                    TextField("Source repositories root", text: $appState.sourceReposRoot)
-                    TextField("Delivery documents root", text: $appState.docsRoot)
+                    PathSettingRow(
+                        title: "Workspaces root",
+                        detail: "需求工作区目录 / Requirement workspaces",
+                        path: $appState.workspaceRoot,
+                        check: pathCheck("workspacesRoot"),
+                        chooseAction: {
+                            chooseDirectory(title: "Choose Workspaces Root") { url in
+                                appState.workspaceRoot = url.path
+                                appState.nativeEnvironmentHealth = nil
+                            }
+                        },
+                        revealAction: {
+                            revealPath(appState.workspaceRoot)
+                        }
+                    )
+
+                    PathSettingRow(
+                        title: "Source repositories root",
+                        detail: "源仓库目录 / Source repositories",
+                        path: $appState.sourceReposRoot,
+                        check: pathCheck("sourceReposRoot"),
+                        chooseAction: {
+                            chooseDirectory(title: "Choose Source Repositories Root") { url in
+                                appState.sourceReposRoot = url.path
+                                appState.nativeEnvironmentHealth = nil
+                            }
+                        },
+                        revealAction: {
+                            revealPath(appState.sourceReposRoot)
+                        }
+                    )
+
+                    PathSettingRow(
+                        title: "Delivery documents root",
+                        detail: "交付文档目录 / Delivery documents",
+                        path: $appState.docsRoot,
+                        check: pathCheck("docsRoot"),
+                        chooseAction: {
+                            chooseDirectory(title: "Choose Delivery Documents Root") { url in
+                                appState.docsRoot = url.path
+                                appState.nativeEnvironmentHealth = nil
+                            }
+                        },
+                        revealAction: {
+                            revealPath(appState.docsRoot)
+                        }
+                    )
+
                     TextField("Codex URL", text: $appState.codexURL)
                     Stepper(
                         "Profile refresh interval: \(appState.refreshIntervalSeconds) sec",
@@ -4965,9 +5050,18 @@ struct SettingsView: View {
                 .disabled(appState.isLoading)
             }
         }
-        .onChange(of: appState.workspaceRoot) { _ in appState.persistLocalPaths() }
-        .onChange(of: appState.sourceReposRoot) { _ in appState.persistLocalPaths() }
-        .onChange(of: appState.docsRoot) { _ in appState.persistLocalPaths() }
+        .onChange(of: appState.workspaceRoot) { _ in
+            appState.nativeEnvironmentHealth = nil
+            appState.persistLocalPaths()
+        }
+        .onChange(of: appState.sourceReposRoot) { _ in
+            appState.nativeEnvironmentHealth = nil
+            appState.persistLocalPaths()
+        }
+        .onChange(of: appState.docsRoot) { _ in
+            appState.nativeEnvironmentHealth = nil
+            appState.persistLocalPaths()
+        }
         .onChange(of: appState.codexURL) { _ in appState.persistLocalPaths() }
         .onChange(of: appState.refreshIntervalSeconds) { _ in appState.persistLocalPaths() }
         .onDisappear {
@@ -5007,6 +5101,102 @@ struct SettingsView: View {
         Task {
             await appState.exportSettingsProfile(to: url)
         }
+    }
+
+    private func pathCheck(_ key: String) -> NativeEnvironmentPathCheck? {
+        appState.nativeEnvironmentHealth?.pathChecks.first { $0.key == key }
+    }
+
+    private func chooseDirectory(title: String, onPick: (URL) -> Void) {
+        let panel = NSOpenPanel()
+        panel.title = title
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        onPick(url)
+    }
+
+    private func revealPath(_ rawPath: String) {
+        let expandedPath = NSString(string: rawPath.trimmingCharacters(in: .whitespacesAndNewlines)).expandingTildeInPath
+        guard !expandedPath.isEmpty else { return }
+        let url = URL(fileURLWithPath: expandedPath)
+        if FileManager.default.fileExists(atPath: url.path) {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        }
+    }
+}
+
+private struct PathSettingRow: View {
+    let title: String
+    let detail: String
+    @Binding var path: String
+    let check: NativeEnvironmentPathCheck?
+    let chooseAction: () -> Void
+    let revealAction: () -> Void
+
+    private var status: String {
+        check?.status ?? "warning"
+    }
+
+    private var statusLabel: String {
+        guard let check else { return "not checked" }
+        switch check.status {
+        case "pass":
+            return "ready"
+        case "blocker":
+            return "needs path"
+        default:
+            return "review"
+        }
+    }
+
+    private var canReveal: Bool {
+        check?.exists == true
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.caption.weight(.semibold))
+                    Text(detail)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                EnvironmentStatusPill(status: status)
+                Text(statusLabel)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 8) {
+                TextField(title, text: $path)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(.caption, design: .monospaced))
+
+                Button("Choose") {
+                    chooseAction()
+                }
+
+                Button("Reveal") {
+                    revealAction()
+                }
+                .disabled(!canReveal)
+            }
+
+            Text(check?.summary ?? "Run Environment Check after choosing a path.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.vertical, 4)
     }
 }
 

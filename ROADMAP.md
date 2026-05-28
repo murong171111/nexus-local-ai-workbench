@@ -25,7 +25,7 @@ This roadmap describes the next product and engineering steps for Nexus. The cur
 - Keep Tauri commands as thin wrappers around Rust Core during the transition.
 - Define stable Swift/Rust DTO contracts for dashboard data, workspace documents, settings profiles, and audit events. `[started for dashboard/source scans, documents, widgets, workspace creation, and audit events]`
 - Add a SwiftUI/AppKit Mac shell that can render sample workspace data. `[started]`
-- Add native settings and path configuration in the SwiftUI shell. `[started with persisted paths, team profile import/export, and environment checks]`
+- Add native settings and path configuration in the SwiftUI shell. `[started with persisted paths, path status rows, directory pickers, team profile import/export, and environment checks]`
 - Decide and document the Swift/Rust bridge mechanism. `[started with C ABI + JSON]`
 
 ## 0.3.x: Native Workspace Operations
