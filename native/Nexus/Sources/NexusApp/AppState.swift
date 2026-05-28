@@ -1407,11 +1407,18 @@ final class AppState: ObservableObject {
                 )
             )
             lastCreatedWorkspace = response
+            selectedFilter = .all
             selectedWorkspaceID = response.folder
+            documentPreview = nil
             await refreshFromBridge()
+            selectedWorkspaceID = response.folder
         } catch {
             lastError = error.localizedDescription
         }
+    }
+
+    func dismissCreatedWorkspaceFollowUp() {
+        lastCreatedWorkspace = nil
     }
 
     func presentWorktreeSetup(for workspace: WorkspaceSummary) {
