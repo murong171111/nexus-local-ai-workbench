@@ -28,6 +28,7 @@ npm run tauri:build
 Open the built app and verify:
 
 - Settings can be saved.
+- First-run onboarding can import a shared Nexus settings profile and then save reviewed local paths.
 - Workspace scanning works with a custom workspaces root.
 - Markdown preview opens expected workspace documents.
 - Workspace creation writes the standard document set.
