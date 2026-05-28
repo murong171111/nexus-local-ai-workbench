@@ -30,6 +30,7 @@ It is designed for teams that work across multiple local service repositories an
 - Environment health checks for configured directories and Git availability.
 - Native workspace scanning from the configured paths; no local Python script is required for the packaged app.
 - Native create-workspace flow that scans source repositories, filters service candidates, selects real local services, leaves service scope pending when needed, then focuses the new workspace with handoff, worktree, Codex, and check actions.
+- Native worktree setup refreshes the workspace state after running, explains created/skipped/failed services, and routes the next step to Finder, Codex, or local checks.
 - Branch alignment checks that flag worktrees whose actual branch does not match the workspace target branch.
 - Workspace bootstrap reports and reviewable `scripts/worktree-commands.sh` files for semi-automated worktree setup.
 - Delivery-record completeness warnings when `交付记录.md` still needs real change notes.
@@ -93,7 +94,7 @@ Before writing files, Nexus shows a summary of the target path, branch, and serv
 
 After creation, Nexus selects the new workspace, clears stale document previews, and shows a short next-step panel for opening `handoff.md`, creating confirmed worktrees when the branch and services are ready, handing off to Codex, or running the local check.
 
-Nexus does not automatically execute worktree commands. Review the generated script first, then run it manually when the branch and service scope are confirmed.
+Nexus does not automatically create worktrees during workspace creation. When the branch and service scope are confirmed, use the native worktree setup action to run a confirmed local `git fetch` and `git worktree add` flow. After it runs, Nexus refreshes the workspace state, shows created/skipped/failed service results, and offers Finder, Codex, and local-check follow-ups.
 
 ## Local Audit Log
 
