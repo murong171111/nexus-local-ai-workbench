@@ -35,7 +35,7 @@ It is designed for teams that work across multiple local service repositories an
 - Native workspace Command Center that puts lifecycle progress, a primary-path recommendation, branch/service/risk/task signals, Codex continuation, local checks, Finder, and Terminal at the top of each detail view.
 - Native Codex handoff feedback that confirms when workspace, lifecycle, risk, task, automation, or agent-event context has been copied and explains the next paste step.
 - Native empty states for first-run or filtered-out workspace lists, showing configured paths, environment health, and direct Settings, New Workspace, Refresh, and Environment Check actions.
-- Native workflow summary in workspace detail for open tasks, blocked tasks, delivery status, delivery-readiness checks, lifecycle writeback recommendations, task documents, delivery records, local checks, and Codex handoff.
+- Native workflow summary in workspace detail for open tasks, blocked tasks, delivery status, delivery-readiness checks, lifecycle writeback recommendations, task documents, delivery records, local checks, and Codex handoff, with Chinese-first primary action labels.
 - Native risk review in workspace detail for active risks, blocker/warning readiness checks, status documents, worktree setup, local re-checks, and copyable Codex risk-review prompts.
 - Native workspace Documents Hub for opening and previewing the standard workspace files without leaving the detail view.
 - Branch alignment checks that flag worktrees whose actual branch does not match the workspace target branch.
