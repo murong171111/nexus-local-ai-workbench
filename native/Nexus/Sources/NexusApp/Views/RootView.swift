@@ -1461,6 +1461,9 @@ private struct WorktreeSetupMetaRow: View {
 
 private struct WorktreeSetupResultView: View {
     @EnvironmentObject private var appState: AppState
+    @State private var didRunFollowUpCheck = false
+    @State private var followUpCheck: LocalAutomationCheckResponse?
+    @State private var followUpCheckError: String?
     let response: SetupWorktreesResponse
     let workspace: WorkspaceSummary
     let closeAction: () -> Void
@@ -1514,8 +1517,15 @@ private struct WorktreeSetupResultView: View {
                 .help("复制 worktree 创建结果并打开 Codex / Copy setup result and open Codex")
 
                 Button {
-                    Task {
-                        await appState.runLocalAutomationCheck()
+                    didRunFollowUpCheck = true
+                    followUpCheck = nil
+                    followUpCheckError = nil
+                    Task { @MainActor in
+                        let response = await appState.runLocalAutomationCheck(actor: "Nexus Worktree Setup")
+                        followUpCheck = response
+                        if response == nil {
+                            followUpCheckError = appState.lastError ?? "检查失败，请稍后重试 / Check failed, please retry."
+                        }
                     }
                 } label: {
                     Label(appState.isRunningAutomationCheck ? "Checking" : "Check", systemImage: "checklist")
@@ -1531,6 +1541,20 @@ private struct WorktreeSetupResultView: View {
                 }
                 .buttonStyle(.borderless)
                 .controlSize(.small)
+            }
+
+            if didRunFollowUpCheck {
+                if appState.isRunningAutomationCheck {
+                    Label("正在运行本地检查 / Running local check", systemImage: "arrow.triangle.2.circlepath")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if let check = followUpCheck {
+                    WorktreeSetupFollowUpCheckView(check: check)
+                } else if let followUpCheckError {
+                    Label(followUpCheckError, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(NexusPalette.danger)
+                }
             }
         }
         .padding(12)
@@ -1550,6 +1574,99 @@ private struct WorktreeSetupResultView: View {
             return "没有新增 worktree。可以关闭弹窗，继续 Codex 交接或运行本地检查确认状态。"
         }
         return "worktree 已写入工作区。下一步建议运行本地检查，确认分支和未提交状态后再交接 Codex。"
+    }
+}
+
+private struct WorktreeSetupFollowUpCheckView: View {
+    let check: LocalAutomationCheckResponse
+
+    private var worktreeIssueCount: Int {
+        check.missingWorktreeCount + check.dirtyServiceCount
+    }
+
+    private var tone: Color {
+        switch check.status {
+        case "attention":
+            NexusPalette.danger
+        case "review":
+            NexusPalette.warning
+        default:
+            NexusPalette.success
+        }
+    }
+
+    private var symbol: String {
+        switch check.status {
+        case "attention":
+            "xmark.octagon"
+        case "review":
+            "exclamationmark.triangle"
+        default:
+            "checkmark.circle"
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: symbol)
+                    .foregroundStyle(tone)
+                    .frame(width: 15)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("检查结果 / Local check")
+                        .font(.caption.weight(.semibold))
+                    Text("\(check.summary) · \(check.generatedAt)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            HStack(spacing: 8) {
+                WorktreeSetupCheckMetric(
+                    label: "Risk",
+                    value: check.riskCount,
+                    tone: check.riskCount > 0 ? NexusPalette.warning : NexusPalette.success
+                )
+                WorktreeSetupCheckMetric(
+                    label: "Task",
+                    value: check.openTaskCount,
+                    tone: check.highPriorityTaskCount > 0 ? NexusPalette.warning : NexusPalette.accent
+                )
+                WorktreeSetupCheckMetric(
+                    label: "WT",
+                    value: worktreeIssueCount,
+                    tone: worktreeIssueCount > 0 ? NexusPalette.warning : NexusPalette.success
+                )
+                WorktreeSetupCheckMetric(
+                    label: "Dirty",
+                    value: check.dirtyServiceCount,
+                    tone: check.dirtyServiceCount > 0 ? NexusPalette.warning : NexusPalette.success
+                )
+            }
+        }
+        .padding(10)
+        .background(NexusPalette.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct WorktreeSetupCheckMetric: View {
+    let label: String
+    let value: Int
+    let tone: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.secondary)
+            Text("\(value)")
+                .font(.system(.caption, design: .monospaced).weight(.semibold))
+                .foregroundStyle(tone)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
