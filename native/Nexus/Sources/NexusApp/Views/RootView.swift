@@ -2495,6 +2495,34 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                Section("Environment Check") {
+                    HStack {
+                        if let health = appState.nativeEnvironmentHealth {
+                            EnvironmentStatusPill(status: health.ready ? "pass" : "blocker")
+                            Text(health.ready ? "Ready" : "Needs review")
+                        } else {
+                            EnvironmentStatusPill(status: "warning")
+                            Text("Not checked")
+                        }
+
+                        Spacer()
+
+                        Button(appState.isCheckingNativeEnvironment ? "Checking" : "Run Check") {
+                            Task {
+                                await appState.checkNativeEnvironment()
+                            }
+                        }
+                        .disabled(appState.isCheckingNativeEnvironment)
+                    }
+
+                    if let health = appState.nativeEnvironmentHealth {
+                        EnvironmentHealthSummary(health: health)
+                    } else {
+                        Text("Run this after importing a team profile or changing paths.")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 Section("Native Shell") {
                     Text("Bridge mode: \(appState.bridgeMode)")
                     Text("Search scope: \(appState.selectedSearchScope.label) / \(appState.selectedSearchScope.subtitle)")
@@ -2634,6 +2662,11 @@ struct SettingsView: View {
         .onDisappear {
             appState.persistLocalPaths()
         }
+        .task {
+            if appState.nativeEnvironmentHealth == nil {
+                await appState.checkNativeEnvironment()
+            }
+        }
         .padding(20)
         .frame(width: 660, height: 620)
     }
@@ -2662,6 +2695,135 @@ struct SettingsView: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         Task {
             await appState.exportSettingsProfile(to: url)
+        }
+    }
+}
+
+private struct EnvironmentHealthSummary: View {
+    let health: NativeEnvironmentHealth
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 14) {
+                EnvironmentMetric(label: "Workspaces", value: "\(health.workspaceCount)")
+                EnvironmentMetric(label: "Repos", value: "\(health.sourceRepoCount)")
+                EnvironmentMetric(label: "Warnings", value: "\(health.warnings.count)")
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(health.pathChecks) { check in
+                    EnvironmentPathCheckRow(check: check)
+                }
+                ForEach(health.toolChecks) { check in
+                    EnvironmentToolCheckRow(check: check)
+                }
+            }
+
+            if !health.blockers.isEmpty || !health.warnings.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(health.blockers, id: \.self) { blocker in
+                        Label(blocker, systemImage: "xmark.octagon")
+                            .font(.caption)
+                            .foregroundStyle(NexusPalette.danger)
+                    }
+                    ForEach(health.warnings, id: \.self) { warning in
+                        Label(warning, systemImage: "exclamationmark.triangle")
+                            .font(.caption)
+                            .foregroundStyle(NexusPalette.warning)
+                    }
+                }
+            }
+
+            Text("Checked at \(health.generatedAt)")
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct EnvironmentMetric: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(.caption, design: .monospaced))
+        }
+    }
+}
+
+private struct EnvironmentPathCheckRow: View {
+    let check: NativeEnvironmentPathCheck
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            EnvironmentStatusPill(status: check.status)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(check.label)
+                    .font(.caption.weight(.medium))
+                Text("\(check.path) · \(check.summary)")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+}
+
+private struct EnvironmentToolCheckRow: View {
+    let check: NativeEnvironmentToolCheck
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            EnvironmentStatusPill(status: check.status)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(check.label)
+                    .font(.caption.weight(.medium))
+                Text(check.summary.isEmpty ? "Unavailable" : check.summary)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+}
+
+private struct EnvironmentStatusPill: View {
+    let status: String
+
+    var body: some View {
+        Text(label)
+            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            .foregroundStyle(color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(color.opacity(0.09))
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+
+    private var label: String {
+        switch status {
+        case "pass":
+            "pass"
+        case "blocker":
+            "block"
+        default:
+            "warn"
+        }
+    }
+
+    private var color: Color {
+        switch status {
+        case "pass":
+            NexusPalette.success
+        case "blocker":
+            NexusPalette.danger
+        default:
+            NexusPalette.warning
         }
     }
 }
