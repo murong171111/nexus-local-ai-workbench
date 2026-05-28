@@ -1504,13 +1504,14 @@ private struct WorktreeSetupResultView: View {
 
                 Button {
                     Task {
-                        await appState.openWorkspaceInCodex(workspace)
+                        await appState.openWorktreeSetupResultInCodex(response, in: workspace)
                     }
                 } label: {
                     Label("Codex", systemImage: "point.3.connected.trianglepath.dotted")
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
+                .help("复制 worktree 创建结果并打开 Codex / Copy setup result and open Codex")
 
                 Button {
                     Task {
