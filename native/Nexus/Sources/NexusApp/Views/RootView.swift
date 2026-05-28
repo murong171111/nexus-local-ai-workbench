@@ -3341,6 +3341,187 @@ private struct WorkflowStatusView: View {
         workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md"
     }
 
+    private var missingWorktreeServices: [ServiceStatus] {
+        workspace.services.filter { !$0.worktreeExists }
+    }
+
+    private var dirtyServices: [ServiceStatus] {
+        workspace.services.filter { service in
+            let normalized = "\(service.gitSummary) \(service.worktree)".lowercased()
+            return normalized.contains("dirty")
+                || normalized.contains("modified")
+                || normalized.contains("uncommitted")
+                || normalized.contains("未提交")
+        }
+    }
+
+    private var readinessItems: [DeliveryReadinessItem] {
+        [
+            branchReadiness,
+            serviceReadiness,
+            taskReadiness,
+            riskReadiness,
+            deliveryRecordReadiness,
+            sqlReadiness,
+            dirtyServiceReadiness
+        ]
+    }
+
+    private var branchReadiness: DeliveryReadinessItem {
+        if Self.hasConfirmedTargetBranch(workspace.branch) {
+            return DeliveryReadinessItem(
+                id: "branch",
+                title: "目标分支 / Branch",
+                detail: workspace.branch,
+                status: .pass,
+                systemImage: "arrow.triangle.branch"
+            )
+        }
+
+        return DeliveryReadinessItem(
+            id: "branch",
+            title: "目标分支 / Branch",
+            detail: "目标分支仍待确认，交付前需要写入 branches.md 或 workspace.md。",
+            status: .blocker,
+            systemImage: "arrow.triangle.branch"
+        )
+    }
+
+    private var serviceReadiness: DeliveryReadinessItem {
+        if workspace.services.isEmpty {
+            return DeliveryReadinessItem(
+                id: "services",
+                title: "服务与 worktree / Services",
+                detail: "服务范围待确认，无法判断交付涉及的代码范围。",
+                status: .blocker,
+                systemImage: "square.stack.3d.up"
+            )
+        }
+
+        if missingWorktreeServices.isEmpty {
+            return DeliveryReadinessItem(
+                id: "services",
+                title: "服务与 worktree / Services",
+                detail: "\(workspace.services.count) 个服务均有 workspace-local worktree。",
+                status: .pass,
+                systemImage: "square.stack.3d.up"
+            )
+        }
+
+        let names = missingWorktreeServices.map(\.name).joined(separator: ", ")
+        return DeliveryReadinessItem(
+            id: "services",
+            title: "服务与 worktree / Services",
+            detail: "缺失 \(missingWorktreeServices.count) 个 worktree: \(names)",
+            status: .blocker,
+            systemImage: "square.stack.3d.up"
+        )
+    }
+
+    private var taskReadiness: DeliveryReadinessItem {
+        if !blockedTasks.isEmpty {
+            return DeliveryReadinessItem(
+                id: "tasks",
+                title: "任务状态 / Tasks",
+                detail: "\(blockedTasks.count) 个任务仍处于阻塞状态。",
+                status: .blocker,
+                systemImage: "checklist"
+            )
+        }
+
+        if !openTasks.isEmpty {
+            return DeliveryReadinessItem(
+                id: "tasks",
+                title: "任务状态 / Tasks",
+                detail: "\(openTasks.count) 个任务仍未关闭，交付前需要确认是否完成或延期。",
+                status: .warning,
+                systemImage: "checklist"
+            )
+        }
+
+        return DeliveryReadinessItem(
+            id: "tasks",
+            title: "任务状态 / Tasks",
+            detail: "当前没有开放任务。",
+            status: .pass,
+            systemImage: "checklist"
+        )
+    }
+
+    private var riskReadiness: DeliveryReadinessItem {
+        if workspace.risks.isEmpty {
+            return DeliveryReadinessItem(
+                id: "risks",
+                title: "风险复核 / Risks",
+                detail: "当前没有活动风险。",
+                status: .pass,
+                systemImage: "checkmark.shield"
+            )
+        }
+
+        return DeliveryReadinessItem(
+            id: "risks",
+            title: "风险复核 / Risks",
+            detail: "\(workspace.risks.count) 个风险信号需要复核。",
+            status: workspace.riskLevel == .high ? .blocker : .warning,
+            systemImage: "exclamationmark.triangle"
+        )
+    }
+
+    private var deliveryRecordReadiness: DeliveryReadinessItem {
+        DeliveryReadinessItem(
+            id: "delivery-record",
+            title: "交付记录 / Delivery",
+            detail: deliveryStatusText,
+            status: deliveryStatusLabel == "ready" ? .pass : deliveryStatusLabel == "review" ? .warning : .blocker,
+            systemImage: "doc.text"
+        )
+    }
+
+    private var sqlReadiness: DeliveryReadinessItem {
+        guard let sqlCheck = workspace.healthChecks.first(where: { check in
+            check.id == "sql-directory" || check.action == "sql"
+        }) else {
+            return DeliveryReadinessItem(
+                id: "sql",
+                title: "SQL 记录 / SQL",
+                detail: "暂未生成 SQL 目录检查，运行本地检查后可刷新。",
+                status: .warning,
+                systemImage: "cylinder.split.1x2"
+            )
+        }
+
+        let status: DeliveryReadinessStatus = sqlCheck.status == "pass" ? .pass : .warning
+        return DeliveryReadinessItem(
+            id: "sql",
+            title: "SQL 记录 / SQL",
+            detail: sqlCheck.detail,
+            status: status,
+            systemImage: "cylinder.split.1x2"
+        )
+    }
+
+    private var dirtyServiceReadiness: DeliveryReadinessItem {
+        if dirtyServices.isEmpty {
+            return DeliveryReadinessItem(
+                id: "dirty-services",
+                title: "服务 Git 状态 / Git",
+                detail: "当前没有检测到未提交服务。",
+                status: .pass,
+                systemImage: "arrow.triangle.branch"
+            )
+        }
+
+        let names = dirtyServices.map(\.name).joined(separator: ", ")
+        return DeliveryReadinessItem(
+            id: "dirty-services",
+            title: "服务 Git 状态 / Git",
+            detail: "\(dirtyServices.count) 个服务存在未提交状态: \(names)",
+            status: .warning,
+            systemImage: "arrow.triangle.branch"
+        )
+    }
+
     var body: some View {
         SectionBlock(title: "任务与交付 / Workflow") {
             VStack(alignment: .leading, spacing: 12) {
@@ -3419,6 +3600,8 @@ private struct WorkflowStatusView: View {
                     .controlSize(.small)
                 }
 
+                DeliveryReadinessChecklistView(items: readinessItems)
+
                 if openTasks.isEmpty {
                     Label("当前没有开放任务。可以继续查看交付记录或运行本地检查确认状态。", systemImage: "checkmark.circle")
                         .font(.caption)
@@ -3448,6 +3631,154 @@ private struct WorkflowStatusView: View {
                     }
                 }
             }
+        }
+    }
+
+    private static func hasConfirmedTargetBranch(_ branch: String) -> Bool {
+        let normalized = branch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return false }
+        return !normalized.contains("待确认")
+            && !normalized.contains("未确认")
+            && !normalized.contains("pending")
+            && !normalized.contains("tbd")
+            && !normalized.contains("todo")
+            && normalized != "-"
+    }
+}
+
+private enum DeliveryReadinessStatus {
+    case pass
+    case warning
+    case blocker
+
+    var label: String {
+        switch self {
+        case .pass:
+            "pass"
+        case .warning:
+            "review"
+        case .blocker:
+            "block"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .pass:
+            NexusPalette.success
+        case .warning:
+            NexusPalette.warning
+        case .blocker:
+            NexusPalette.danger
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .pass:
+            "checkmark.circle"
+        case .warning:
+            "exclamationmark.triangle"
+        case .blocker:
+            "xmark.octagon"
+        }
+    }
+}
+
+private struct DeliveryReadinessItem: Identifiable {
+    let id: String
+    let title: String
+    let detail: String
+    let status: DeliveryReadinessStatus
+    let systemImage: String
+}
+
+private struct DeliveryReadinessChecklistView: View {
+    let items: [DeliveryReadinessItem]
+
+    private var blockerCount: Int {
+        items.filter { $0.status == .blocker }.count
+    }
+
+    private var warningCount: Int {
+        items.filter { $0.status == .warning }.count
+    }
+
+    private var headline: String {
+        if blockerCount > 0 {
+            return "交付前还有 \(blockerCount) 个阻塞项。"
+        }
+        if warningCount > 0 {
+            return "交付前还有 \(warningCount) 个复核项。"
+        }
+        return "交付前检查未发现明显阻塞。"
+    }
+
+    private var headlineColor: Color {
+        if blockerCount > 0 {
+            return NexusPalette.danger
+        }
+        if warningCount > 0 {
+            return NexusPalette.warning
+        }
+        return NexusPalette.success
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 8) {
+                Image(systemName: blockerCount > 0 ? "xmark.octagon" : warningCount > 0 ? "exclamationmark.triangle" : "checkmark.circle")
+                    .foregroundStyle(headlineColor)
+                    .frame(width: 15)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("交付前检查 / Delivery readiness")
+                        .font(.subheadline.weight(.medium))
+                    Text(headline)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 7) {
+                ForEach(items) { item in
+                    DeliveryReadinessRow(item: item)
+                }
+            }
+        }
+        .padding(10)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct DeliveryReadinessRow: View {
+    let item: DeliveryReadinessItem
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: item.systemImage)
+                .font(.caption)
+                .foregroundStyle(item.status.color)
+                .frame(width: 15)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.title)
+                    .font(.caption.weight(.semibold))
+                Text(item.detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            Spacer()
+
+            Text(item.status.label)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(item.status.color)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(item.status.color.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
     }
 }

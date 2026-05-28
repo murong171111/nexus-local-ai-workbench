@@ -39,7 +39,7 @@ This roadmap describes the next product and engineering steps for Nexus. The cur
 - Add visible Codex handoff feedback for copied workspace, lifecycle, risk, task, automation, and agent-event context. `[started in native SwiftUI shell]`
 - Add workspace lifecycle stages that guide each demand from scoping through setup, development, delivery, done, blocked, and archived states. `[started in Rust Core and native SwiftUI shell]`
 - Add confirmed lifecycle status writebacks for entering development, delivery, done, blocked, and archived states. `[started in Rust Core, Swift/Rust bridge, and native SwiftUI shell]`
-- Add a native workflow summary for task and delivery status in the workspace detail. `[started in native SwiftUI shell]`
+- Add a native workflow summary for task and delivery status in the workspace detail. `[started in native SwiftUI shell with delivery-readiness checks]`
 - Add a native risk review summary for active risks, readiness blockers, local checks, worktree follow-up, and Codex risk handoff. `[started in native SwiftUI shell]`
 - Add a workspace detail Command Center so the native shell has one primary path before deeper Workflow, Risk Review, Documents, and Activity sections. `[started in native SwiftUI shell]`
 - Add actionable empty states for first-run setup, empty filters, and missing workspace selection. `[started in native SwiftUI shell]`
