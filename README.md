@@ -14,7 +14,7 @@ It is designed for teams that work across multiple local service repositories an
 - In-app Markdown document preview for status, service scope, branch notes, tasks, and delivery records.
 - Local path settings for workspaces, source repositories, and delivery document roots.
 - Exportable and importable team settings profiles for sharing local path conventions, including first-run onboarding import and native Settings import/export.
-- Native Settings environment checks for configured paths, Git availability, workspace counts, and source repository counts.
+- Native Settings local path rows with environment status, directory pickers, reveal actions, and checks for configured paths, Git availability, workspace counts, and source repository counts.
 - Local audit log for confirmed workspace creation and settings profile exports.
 - Local SQLite + FTS index foundation for workspace Markdown, service scope, tasks, decisions, delivery records, and SQL notes.
 - Native SwiftUI Markdown document preview with preview/source modes for workspace handoff documents and search result documents.
@@ -64,7 +64,7 @@ If no workspace appears, the native workspace list shows a setup state with the 
 
 To share Nexus setup with another teammate, open `Settings` and export a `nexus-settings-profile-*.json`. The generated JSON contains only path conventions, the Codex URL scheme, and refresh interval. Teammates can import the profile from first-run onboarding or native Settings, then adjust paths for their own machine if needed.
 
-After importing a profile, run `Environment Check` in native Settings to confirm the configured directories exist, are writable, Git is available, and source repositories are detected.
+After importing a profile, use the native Settings path rows to choose local directories, reveal existing folders, and run `Environment Check` to confirm the configured directories exist, are writable, Git is available, and source repositories are detected. Editing a path clears the previous health result so stale checks are not reused.
 
 From a workspace detail view, use `Finder`, `Terminal`, or `Codex` to hand the current workspace to local tools. The Codex action copies a workspace-specific prompt and opens the configured Codex URL from Settings.
 

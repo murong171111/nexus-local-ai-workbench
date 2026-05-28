@@ -56,6 +56,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Native SwiftUI Workflow now includes a delivery-readiness checklist for branch confirmation, service worktrees, task closure, risks, SQL readiness, delivery record status, and dirty services.
 - Native SwiftUI Command Center now surfaces a single primary path that explains the next best action before secondary tool actions.
 - Native create-workspace results now include an initialization receipt for generated standard files, directories, initial `STATUS.md`, service scope, target branch, and worktree readiness.
+- Native Settings local path configuration now shows per-path health, directory pickers, reveal actions, and clears stale environment results after edits.
 - Documentation now includes a Chinese complete product-shape blueprint for the Mac-first local AI development workbench target.
 - Rust Core and the Swift/Rust bridge now support local agent event append/read flows backed by `agent-events.jsonl`.
 - Native SwiftUI sidebar now shows recent agent events from the local bridge, with preview fallback data when Rust Core is not loaded.
