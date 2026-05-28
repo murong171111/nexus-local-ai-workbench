@@ -140,6 +140,10 @@ type NexusSettings = {
   refreshIntervalSeconds: number;
 };
 
+type ImportSettingsOptions = {
+  completeOnboarding?: boolean;
+};
+
 type SearchIndexState = {
   state: "idle" | "building" | "ready" | "preview" | "error";
   message: string;
@@ -1507,7 +1511,7 @@ function SettingsPanel({
   onClose: () => void;
   onSave: () => void;
   onExportSettings: () => void;
-  onImportSettings: (content: string) => void;
+  onImportSettings: (content: string, options?: ImportSettingsOptions) => void;
   onOpenPath: (path: string) => void;
   onScanSourceRepos: () => void;
   onCheckEnvironment: () => void;
@@ -1670,6 +1674,7 @@ function OnboardingPanel({
   onClose,
   onSave,
   onSkip,
+  onImportSettings,
   onOpenPath,
   onScanSourceRepos,
   onCheckEnvironment
@@ -1683,10 +1688,13 @@ function OnboardingPanel({
   onClose: () => void;
   onSave: () => void;
   onSkip: () => void;
+  onImportSettings: (content: string, options?: ImportSettingsOptions) => void;
   onOpenPath: (path: string) => void;
   onScanSourceRepos: () => void;
   onCheckEnvironment: () => void;
 }) {
+  const importInputRef = useRef<HTMLInputElement>(null);
+
   if (!open) return null;
 
   const update = (key: keyof NexusSettings, value: string) => {
@@ -1697,10 +1705,16 @@ function OnboardingPanel({
   };
 
   const steps = [
-    { label: "配置路径", done: Boolean(settings.workspacesRoot && settings.sourceReposRoot && settings.docsRoot) },
+    { label: "导入或确认配置", done: Boolean(settings.workspacesRoot && settings.sourceReposRoot && settings.docsRoot) },
     { label: "扫描服务", done: sourceRepos.length > 0 },
     { label: "创建工作区", done: false }
   ];
+
+  const importFile = async (file?: File) => {
+    if (!file) return;
+    onImportSettings(await file.text(), { completeOnboarding: false });
+    if (importInputRef.current) importInputRef.current.value = "";
+  };
 
   return (
     <div className="fixed inset-0 z-[1200] flex items-center justify-center overflow-hidden overscroll-contain bg-neutral-950/16 px-4 backdrop-blur-[2px]">
@@ -1735,6 +1749,31 @@ function OnboardingPanel({
 
         <div className="overflow-y-auto overscroll-contain px-5 py-5">
           <div className="grid gap-4">
+            <Card className="border-blue-100 bg-blue-50/50 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="flex items-center gap-2 text-sm font-medium text-neutral-950">
+                    <Upload className="h-4 w-4 text-blue-600" />
+                    导入团队 Profile
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-neutral-600">
+                    如果团队已经分享 `nexus-settings-profile-*.json`，可以先导入路径约定，再按本机目录微调。
+                  </p>
+                </div>
+                <Button variant="outline" onClick={() => importInputRef.current?.click()}>
+                  <Upload className="h-4 w-4" />
+                  选择 Profile
+                </Button>
+              </div>
+              <input
+                ref={importInputRef}
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={(event) => void importFile(event.currentTarget.files?.[0])}
+              />
+            </Card>
+
             <Card className="p-4">
               <div className="text-sm font-medium text-neutral-950">本地路径</div>
               <div className="mt-4 grid gap-4">
@@ -2646,15 +2685,21 @@ export function App() {
     }
   };
 
-  const handleImportSettings = (content: string) => {
+  const handleImportSettings = (content: string, options: ImportSettingsOptions = {}) => {
     try {
       const imported = parseSettingsProfile(content);
+      const shouldCompleteOnboarding = options.completeOnboarding ?? true;
       setSettings(imported);
       window.localStorage.setItem(settingsStorageKey, JSON.stringify(imported, null, 2));
-      window.localStorage.setItem(onboardingStorageKey, "true");
-      setOnboardingRequested(false);
-      setOnboardingOpen(false);
-      showToast("已导入并保存团队配置");
+      if (shouldCompleteOnboarding) {
+        window.localStorage.setItem(onboardingStorageKey, "true");
+        setOnboardingRequested(false);
+        setOnboardingOpen(false);
+        showToast("已导入并保存团队配置");
+      } else {
+        setOnboardingOpen(true);
+        showToast("已导入团队配置，请检查路径后保存");
+      }
     } catch (error) {
       showToast(error instanceof Error ? error.message : "导入配置失败");
     }
@@ -2980,6 +3025,7 @@ export function App() {
         onClose={dismissOnboarding}
         onSave={saveSettings}
         onSkip={dismissOnboarding}
+        onImportSettings={handleImportSettings}
         onOpenPath={openConfiguredPath}
         onScanSourceRepos={handleScanSourceRepos}
         onCheckEnvironment={handleCheckEnvironment}

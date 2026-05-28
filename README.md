@@ -13,7 +13,7 @@ It is designed for teams that work across multiple local service repositories an
 - In-app workspace creation using the `ks-project-demand-workspace` layout.
 - In-app Markdown document preview for status, service scope, branch notes, tasks, and delivery records.
 - Local path settings for workspaces, source repositories, and delivery document roots.
-- Exportable and importable team settings profile for sharing local path conventions.
+- Exportable and importable team settings profile for sharing local path conventions, including first-run onboarding import.
 - Local audit log for confirmed workspace creation and settings profile exports.
 - Local SQLite + FTS index foundation for workspace Markdown, service scope, tasks, decisions, delivery records, and SQL notes.
 - Native SwiftUI Task Center that surfaces open workspace tasks from `tasks.md`, including persisted filters, agent-sourced task writebacks, confirmed complete/defer actions, and task-level Codex handoff prompts.
@@ -40,7 +40,7 @@ Download the latest `Nexus_*.dmg` from GitHub Releases, open it, and drag `Nexus
 
 On first launch:
 
-1. Open `Settings` in the lower-left rail.
+1. Import a shared `nexus-settings-profile-*.json` if your team already has one, or set paths manually.
 2. Set your local paths:
    - Workspaces root, for example `~/ks_project/workspaces`
    - Source repositories root, for example `~/ks_project/source-repos`

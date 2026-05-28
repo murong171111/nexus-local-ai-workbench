@@ -13,7 +13,7 @@ Nexus 是一个面向 macOS 的本地 AI 开发工作台，用来管理需求工
 - 支持在应用内创建符合 `ks-project-demand-workspace` 约定的需求工作区。
 - 支持在应用内预览 Markdown 文档，包括状态、服务范围、分支说明、任务、决策和交付记录。
 - 支持配置本地工作区目录、源仓库目录和交付文档目录。
-- 支持导出和导入团队配置 Profile，便于分享路径约定和基础应用设置。
+- 支持导出和导入团队配置 Profile，便于分享路径约定和基础应用设置；首次启动向导也可以直接导入 Profile。
 - 支持本地审计日志，记录已确认的新建工作区和配置导出动作。
 - 支持本地 SQLite + FTS 索引基础能力，用于索引工作区 Markdown、服务范围、任务、决策、交付记录和 SQL 备注。
 - 原生 SwiftUI 壳支持本地任务中心，从 `tasks.md` 展示未完成任务，支持持久化筛选，也能显示 Agent 写回的任务，并支持确认后完成、延期任务和复制任务级 Codex 上下文。
@@ -40,7 +40,7 @@ Nexus 是一个面向 macOS 的本地 AI 开发工作台，用来管理需求工
 
 首次启动后：
 
-1. 点击左下角 `Settings`。
+1. 如果团队已经分享 `nexus-settings-profile-*.json`，可以在初始化向导中先导入；也可以手动配置。
 2. 配置本地路径：
    - Workspaces root，例如 `~/ks_project/workspaces`
    - Source repositories root，例如 `~/ks_project/source-repos`
