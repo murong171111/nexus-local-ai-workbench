@@ -85,6 +85,54 @@ enum SearchScope: String, CaseIterable, Identifiable {
     }
 }
 
+enum TaskCenterFilter: String, CaseIterable, Identifiable {
+    case all = "all"
+    case high = "high"
+    case agent = "agent"
+    case deferred = "deferred"
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .all:
+            "全部"
+        case .high:
+            "高优先"
+        case .agent:
+            "Agent"
+        case .deferred:
+            "延期"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .all:
+            "All"
+        case .high:
+            "P0"
+        case .agent:
+            "AI"
+        case .deferred:
+            "Later"
+        }
+    }
+
+    func matches(_ item: TaskCenterItem) -> Bool {
+        switch self {
+        case .all:
+            true
+        case .high:
+            item.task.priorityRank == 0
+        case .agent:
+            item.task.source == "agent"
+        case .deferred:
+            item.task.isDeferred
+        }
+    }
+}
+
 enum WorkspaceState: String, Hashable {
     case analyzing = "analyzing"
     case developing = "developing"
@@ -200,6 +248,11 @@ struct WorkspaceTask: Identifiable, Hashable {
     var isBlocked: Bool {
         let normalized = "\(status) \(detail)".lowercased()
         return normalized.contains("阻塞") || normalized.contains("blocked")
+    }
+
+    var isDeferred: Bool {
+        let normalized = "\(status) \(detail)".lowercased()
+        return normalized.contains("延期") || normalized.contains("deferred")
     }
 
     var priorityRank: Int {

@@ -534,34 +534,46 @@ private struct SidebarView: View {
                 }
             }
 
-            if !appState.taskCenterItems.isEmpty {
+            if appState.taskCenterTotalCount > 0 {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("任务中心 / Tasks")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
                         Spacer()
-                        Text("\(appState.taskCenterItems.count)")
+                        Text("\(appState.taskCenterItems.count)/\(appState.taskCenterTotalCount)")
                             .font(.system(size: 10, weight: .semibold, design: .monospaced))
                             .foregroundStyle(NexusPalette.accent)
                     }
 
-                    ForEach(Array(appState.taskCenterItems.prefix(4))) { item in
-                        TaskCenterSidebarRow(
-                            item: item,
-                            selectAction: {
-                                appState.selectTaskCenterItem(item)
-                            },
-                            completeAction: {
-                                appState.requestTaskStatusUpdate(item, status: "已完成")
-                            },
-                            deferAction: {
-                                appState.requestTaskStatusUpdate(item, status: "延期")
-                            },
-                            codexAction: {
-                                copyTaskHandoff(item)
-                            }
-                        )
+                    TaskCenterFilterBar()
+
+                    if appState.taskCenterItems.isEmpty {
+                        Text("当前筛选暂无任务")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(NexusPalette.panel)
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    } else {
+                        ForEach(Array(appState.taskCenterItems.prefix(4))) { item in
+                            TaskCenterSidebarRow(
+                                item: item,
+                                selectAction: {
+                                    appState.selectTaskCenterItem(item)
+                                },
+                                completeAction: {
+                                    appState.requestTaskStatusUpdate(item, status: "已完成")
+                                },
+                                deferAction: {
+                                    appState.requestTaskStatusUpdate(item, status: "延期")
+                                },
+                                codexAction: {
+                                    copyTaskHandoff(item)
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -1449,6 +1461,43 @@ private struct HealthCheckRow: View {
             NexusPalette.warning
         default:
             NexusPalette.danger
+        }
+    }
+}
+
+private struct TaskCenterFilterBar: View {
+    @EnvironmentObject private var appState: AppState
+
+    var body: some View {
+        HStack(spacing: 5) {
+            ForEach(TaskCenterFilter.allCases) { filter in
+                Button {
+                    appState.setTaskCenterFilter(filter)
+                } label: {
+                    VStack(spacing: 1) {
+                        Text(filter.label)
+                            .font(.system(size: 10, weight: .semibold))
+                            .lineLimit(1)
+                        Text("\(filter.subtitle) \(appState.taskCenterCount(for: filter))")
+                            .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 5)
+                    .background(filter == appState.selectedTaskCenterFilter ? NexusPalette.selected : NexusPalette.panel)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .stroke(
+                                filter == appState.selectedTaskCenterFilter ? NexusPalette.accent.opacity(0.34) : NexusPalette.border,
+                                lineWidth: 1
+                            )
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(appState.taskCenterCount(for: filter) == 0 && filter != appState.selectedTaskCenterFilter)
+            }
         }
     }
 }

@@ -10,6 +10,7 @@ final class AppState: ObservableObject {
     @Published var workspaces: [WorkspaceSummary]
     @Published var pinnedWorkspaceIDs: Set<WorkspaceSummary.ID>
     @Published var selectedSearchScope: SearchScope
+    @Published var selectedTaskCenterFilter: TaskCenterFilter
     @Published var workspaceRoot: String
     @Published var sourceReposRoot: String
     @Published var docsRoot: String
@@ -41,6 +42,7 @@ final class AppState: ObservableObject {
     private enum DefaultsKey {
         static let pinnedWorkspaceIDs = "nexus.native.pinnedWorkspaceIDs"
         static let selectedSearchScope = "nexus.native.selectedSearchScope"
+        static let selectedTaskCenterFilter = "nexus.native.selectedTaskCenterFilter"
         static let workspaceRoot = "nexus.native.workspaceRoot"
         static let sourceReposRoot = "nexus.native.sourceReposRoot"
         static let docsRoot = "nexus.native.docsRoot"
@@ -84,6 +86,9 @@ final class AppState: ObservableObject {
         self.selectedSearchScope = SearchScope(
             rawValue: defaults.string(forKey: DefaultsKey.selectedSearchScope) ?? ""
         ) ?? .all
+        self.selectedTaskCenterFilter = TaskCenterFilter(
+            rawValue: defaults.string(forKey: DefaultsKey.selectedTaskCenterFilter) ?? ""
+        ) ?? .all
         self.selectedWorkspaceID = workspaces.first?.id
     }
 
@@ -113,7 +118,7 @@ final class AppState: ObservableObject {
         return results[min(selectedSearchResultIndex, results.count - 1)]
     }
 
-    var taskCenterItems: [TaskCenterItem] {
+    var allTaskCenterItems: [TaskCenterItem] {
         workspaces
             .flatMap { workspace in
                 workspace.tasks.map { task in
@@ -135,6 +140,18 @@ final class AppState: ObservableObject {
                 }
                 return lhs.task.title < rhs.task.title
             }
+    }
+
+    var taskCenterItems: [TaskCenterItem] {
+        allTaskCenterItems.filter { selectedTaskCenterFilter.matches($0) }
+    }
+
+    var taskCenterTotalCount: Int {
+        allTaskCenterItems.count
+    }
+
+    func taskCenterCount(for filter: TaskCenterFilter) -> Int {
+        allTaskCenterItems.filter { filter.matches($0) }.count
     }
 
     var hasSearchQuery: Bool {
@@ -259,6 +276,11 @@ final class AppState: ObservableObject {
         selectedSearchScope = scope
         selectedSearchResultIndex = 0
         defaults.set(scope.rawValue, forKey: DefaultsKey.selectedSearchScope)
+    }
+
+    func setTaskCenterFilter(_ filter: TaskCenterFilter) {
+        selectedTaskCenterFilter = filter
+        defaults.set(filter.rawValue, forKey: DefaultsKey.selectedTaskCenterFilter)
     }
 
     func persistLocalPaths() {
