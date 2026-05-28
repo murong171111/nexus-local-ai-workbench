@@ -345,6 +345,16 @@ struct CodexHandoffFeedback: Identifiable, Hashable {
     let systemImage: String
 }
 
+struct LocalWriteFeedback: Identifiable, Hashable {
+    let id = UUID()
+    let title: String
+    let detail: String
+    let timestamp: String
+    let documentPath: String
+    let documentLabel: String
+    let systemImage: String
+}
+
 struct ActivityEvent: Identifiable, Hashable {
     let id = UUID()
     let time: String
