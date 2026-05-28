@@ -733,14 +733,38 @@ private struct CreateWorkspaceSheet: View {
     @State private var servicesText = ""
     @State private var targetBranch = ""
     @State private var confirmed = false
+    @State private var selectedServiceNames: Set<String> = []
+    @State private var didEditFolder = false
+    @State private var serviceQuery = ""
 
-    private var services: [String] {
+    private var manualServices: [String] {
         servicesText
             .split { character in
                 character.isWhitespace || [",", "，", "、", ";", "；"].contains(String(character))
             }
             .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
+    }
+
+    private var services: [String] {
+        Array(selectedServiceNames.union(Set(manualServices)))
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    private var availableSourceRepositories: [SourceRepositorySnapshot] {
+        appState.sourceRepositories.filter(\.isGit)
+    }
+
+    private var filteredSourceRepositories: [SourceRepositorySnapshot] {
+        let query = serviceQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+            return availableSourceRepositories
+        }
+        return availableSourceRepositories.filter { repository in
+            repository.name.localizedCaseInsensitiveContains(query)
+                || repository.branch.localizedCaseInsensitiveContains(query)
+                || repository.summary.localizedCaseInsensitiveContains(query)
+        }
     }
 
     private var canCreate: Bool {
@@ -761,26 +785,96 @@ private struct CreateWorkspaceSheet: View {
             }
 
             Form {
-                TextField("需求名称", text: $name)
-                    .onChange(of: name) { value in
-                        if folder.isEmpty || folder.hasSuffix("-workspace") {
-                            folder = defaultFolder(for: value)
+                Section("基本信息 / Basics") {
+                    TextField("需求名称", text: $name)
+                        .onChange(of: name) { value in
+                            if !didEditFolder {
+                                folder = defaultFolder(for: value)
+                            }
                         }
-                    }
-                TextField("工作区目录名", text: $folder)
-                TextField("涉及服务，逗号或空格分隔", text: $servicesText)
-                TextField("目标分支，留空则待确认", text: $targetBranch)
-                Toggle("确认创建目录和标准 Markdown 文档", isOn: $confirmed)
-            }
+                    TextField("工作区目录名", text: Binding(
+                        get: { folder },
+                        set: { value in
+                            didEditFolder = true
+                            folder = value
+                        }
+                    ))
+                    TextField("目标分支，留空则待确认", text: $targetBranch)
+                }
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Workspaces root")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Text(appState.workspaceRoot)
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                Section("服务范围 / Service scope") {
+                    HStack {
+                        Text("\(services.count) selected")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button(appState.isScanningSourceRepositories ? "Scanning" : "Scan repos") {
+                            Task {
+                                await appState.refreshSourceRepositories()
+                            }
+                        }
+                        .disabled(appState.isScanningSourceRepositories)
+                    }
+
+                    if !availableSourceRepositories.isEmpty {
+                        TextField("筛选源仓库 / Filter services", text: $serviceQuery)
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(filteredSourceRepositories.prefix(12), id: \.name) { repository in
+                                SourceRepositorySelectionRow(
+                                    repository: repository,
+                                    isSelected: Binding(
+                                        get: { selectedServiceNames.contains(repository.name) },
+                                        set: { isSelected in
+                                            if isSelected {
+                                                selectedServiceNames.insert(repository.name)
+                                            } else {
+                                                selectedServiceNames.remove(repository.name)
+                                            }
+                                        }
+                                    )
+                                )
+                            }
+
+                            if filteredSourceRepositories.isEmpty {
+                                Text("No services match this filter. Clear the filter or type the service manually.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            } else if filteredSourceRepositories.count > 12 {
+                                Text("Showing 12 of \(filteredSourceRepositories.count) matching repositories. Refine the filter to narrow the list.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    } else if appState.isScanningSourceRepositories {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Scanning configured source repository root...")
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Text("No source repositories detected yet. You can scan again, type services manually, or leave service scope pending.")
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if let error = appState.sourceRepositoryScanError {
+                        Text(error)
+                            .foregroundStyle(NexusPalette.danger)
+                    }
+
+                    TextField("手动补充服务，逗号或空格分隔", text: $servicesText)
+                }
+
+                Section("创建确认 / Confirmation") {
+                    WorkspaceCreationSummary(
+                        workspaceRoot: appState.workspaceRoot,
+                        folder: folder,
+                        targetBranch: targetBranch,
+                        services: services
+                    )
+                    Toggle("确认创建目录和标准 Markdown 文档", isOn: $confirmed)
+                }
             }
 
             HStack {
@@ -818,8 +912,11 @@ private struct CreateWorkspaceSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .task {
+            await appState.refreshSourceRepositories()
+        }
         .padding(22)
-        .frame(width: 560)
+        .frame(width: 620, height: 620)
     }
 
     private func defaultFolder(for value: String) -> String {
@@ -839,6 +936,76 @@ private struct CreateWorkspaceSheet: View {
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: Date())
+    }
+}
+
+private struct SourceRepositorySelectionRow: View {
+    let repository: SourceRepositorySnapshot
+    @Binding var isSelected: Bool
+
+    var body: some View {
+        Toggle(isOn: $isSelected) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(repository.name)
+                        .font(.caption.weight(.medium))
+                    if repository.dirty {
+                        Text("dirty")
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(NexusPalette.warning)
+                    }
+                }
+                Text("\(repository.branch) · \(repository.summary)")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+    }
+}
+
+private struct WorkspaceCreationSummary: View {
+    let workspaceRoot: String
+    let folder: String
+    let targetBranch: String
+    let services: [String]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            SummaryLine(label: "Path", value: "\(workspaceRoot)/\(folder.trimmingCharacters(in: .whitespacesAndNewlines))")
+            SummaryLine(
+                label: "Branch",
+                value: targetBranch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ? "待确认 / Pending"
+                    : targetBranch.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+            SummaryLine(
+                label: "Services",
+                value: services.isEmpty
+                    ? "服务范围待确认 / Scope pending"
+                    : services.joined(separator: ", ")
+            )
+            Text("Nexus will create the standard Markdown set and keep worktree creation as a separate confirmed step.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct SummaryLine: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(label)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .frame(width: 58, alignment: .leading)
+            Text(value)
+                .font(.system(.caption, design: .monospaced))
+                .textSelection(.enabled)
+        }
     }
 }
 

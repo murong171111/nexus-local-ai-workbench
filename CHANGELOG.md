@@ -24,6 +24,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - First-run onboarding for local path setup.
 - Native source repository scanning for service selection and git state awareness.
 - Service picker in the create-workspace flow, backed by scanned local repositories.
+- Native SwiftUI create-workspace flow now supports service filtering, selected scanned repositories, manual service fallback, pending service scope, and a creation summary before confirmed local writes.
 - Native environment health checks for configured paths and Git availability.
 - Workspace bootstrap reports and reviewable worktree command scripts.
 - Delivery-record completeness warnings when records still contain placeholder content.

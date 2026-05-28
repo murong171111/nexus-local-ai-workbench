@@ -46,6 +46,7 @@ src-tauri/target/release/bundle/dmg/Nexus_0.1.0_aarch64.dmg
   - Native workspace handoff buttons open Finder, Terminal, and the configured Codex URL after copying context.
   - Branch alignment filters and warnings appear when a worktree branch differs from the workspace target branch.
   - Source repository scanning populates the create-workspace service picker.
+  - Native create-workspace can filter scanned services, accept manual services, leave service scope pending, and show the final path/branch/service summary before writing files.
   - Settings export writes a Nexus team profile JSON, and importing that profile applies the same path conventions.
   - Creating a workspace writes `bootstrap-report.md` and `scripts/worktree-commands.sh`.
   - Markdown preview works.
