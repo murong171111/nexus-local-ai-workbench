@@ -34,7 +34,7 @@ It is designed for teams that work across multiple local service repositories an
 - Native workspace Command Center that puts lifecycle progress, next-step routing, branch/service/risk/task signals, Codex continuation, local checks, Finder, and Terminal at the top of each detail view.
 - Native Codex handoff feedback that confirms when workspace, lifecycle, risk, task, automation, or agent-event context has been copied and explains the next paste step.
 - Native empty states for first-run or filtered-out workspace lists, showing configured paths, environment health, and direct Settings, New Workspace, Refresh, and Environment Check actions.
-- Native workflow summary in workspace detail for open tasks, blocked tasks, delivery status, task documents, delivery records, local checks, and Codex handoff.
+- Native workflow summary in workspace detail for open tasks, blocked tasks, delivery status, delivery-readiness checks, task documents, delivery records, local checks, and Codex handoff.
 - Native risk review in workspace detail for active risks, blocker/warning readiness checks, status documents, worktree setup, local re-checks, and copyable Codex risk-review prompts.
 - Native workspace Documents Hub for opening and previewing the standard workspace files without leaving the detail view.
 - Branch alignment checks that flag worktrees whose actual branch does not match the workspace target branch.
@@ -116,7 +116,7 @@ The native right inspector also includes an Automation Action Center. After a ch
 
 Each workspace detail view starts with a `Command Center`. It summarizes lifecycle progress, branch readiness, service/worktree status, risk level, and open tasks, then exposes the main path: continue in Codex, open the lifecycle next step, run a local check, or hand off to Finder and Terminal.
 
-Each workspace detail view includes a `Workflow` section that keeps task and delivery state together. It summarizes open and blocked tasks, shows whether the delivery record is ready or needs review, opens `tasks.md` and `交付记录.md`, runs the local check, and hands the current context to Codex.
+Each workspace detail view includes a `Workflow` section that keeps task and delivery state together. It summarizes open and blocked tasks, shows whether the delivery record is ready or needs review, checks branch confirmation, service worktrees, task closure, risks, SQL readiness, dirty services, and delivery-record status before handoff, opens `tasks.md` and `交付记录.md`, runs the local check, and hands the current context to Codex.
 
 Each workspace detail view also includes a `Risk review` section. It consolidates active risk signals and non-delivery readiness checks into risk, blocker, and warning counts, then routes the next step to a fresh local check, `STATUS.md`, confirmed worktree setup when services are missing, or a copied Codex risk-review prompt.
 
