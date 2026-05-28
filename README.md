@@ -31,7 +31,7 @@ It is designed for teams that work across multiple local service repositories an
 - Native workspace scanning from the configured paths; no local Python script is required for the packaged app.
 - Native create-workspace flow that scans source repositories, filters service candidates, selects real local services, leaves service scope pending when needed, then focuses the new workspace with handoff, worktree, Codex, and check actions.
 - Native worktree setup includes a preflight review for target branch readiness, missing worktrees, source repositories, and workspace-local write locations, then refreshes the workspace state after running and routes the next step to Finder, Codex, or local checks.
-- Native workspace Command Center that puts lifecycle progress, next-step routing, branch/service/risk/task signals, Codex continuation, local checks, Finder, and Terminal at the top of each detail view.
+- Native workspace Command Center that puts lifecycle progress, a primary-path recommendation, branch/service/risk/task signals, Codex continuation, local checks, Finder, and Terminal at the top of each detail view.
 - Native Codex handoff feedback that confirms when workspace, lifecycle, risk, task, automation, or agent-event context has been copied and explains the next paste step.
 - Native empty states for first-run or filtered-out workspace lists, showing configured paths, environment health, and direct Settings, New Workspace, Refresh, and Environment Check actions.
 - Native workflow summary in workspace detail for open tasks, blocked tasks, delivery status, delivery-readiness checks, task documents, delivery records, local checks, and Codex handoff.
@@ -114,7 +114,7 @@ The native menu bar can run a local automation check manually or on a persisted 
 
 The native right inspector also includes an Automation Action Center. After a check runs, Nexus converts risk, delivery, task, and worktree signals into clickable actions such as focusing a risky workspace, opening delivery notes, selecting the Task Center, presenting the worktree setup confirmation, or copying a Codex prompt with the current local paths and workspace context.
 
-Each workspace detail view starts with a `Command Center`. It summarizes lifecycle progress, branch readiness, service/worktree status, risk level, and open tasks, then exposes the main path: continue in Codex, open the lifecycle next step, run a local check, or hand off to Finder and Terminal.
+Each workspace detail view starts with a `Command Center`. It summarizes lifecycle progress, branch readiness, service/worktree status, risk level, and open tasks, then shows a single primary path with the reason behind the next best action before exposing secondary tools such as Codex, local checks, Finder, and Terminal.
 
 Each workspace detail view includes a `Workflow` section that keeps task and delivery state together. It summarizes open and blocked tasks, shows whether the delivery record is ready or needs review, checks branch confirmation, service worktrees, task closure, risks, SQL readiness, dirty services, and delivery-record status before handoff, opens `tasks.md` and `交付记录.md`, runs the local check, and hands the current context to Codex.
 

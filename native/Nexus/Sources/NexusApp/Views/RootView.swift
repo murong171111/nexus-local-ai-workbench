@@ -2654,6 +2654,10 @@ private struct WorkspaceCommandCenterView: View {
         workspace.services.filter { !$0.worktreeExists }.count
     }
 
+    private var blockedTaskCount: Int {
+        workspace.tasks.filter { !$0.isDone && $0.isBlocked }.count
+    }
+
     private var serviceValue: String {
         if workspace.services.isEmpty {
             return "pending"
@@ -2692,6 +2696,123 @@ private struct WorkspaceCommandCenterView: View {
         }
     }
 
+    private var primaryStep: CommandCenterPrimaryStep {
+        if workspace.isArchived {
+            return CommandCenterPrimaryStep(
+                title: "已归档 / Archived",
+                detail: "这个工作区已退出活跃流。需要恢复时先查看 handoff 和交付记录，再决定是否重新进入开发。",
+                statusLabel: "archive",
+                systemImage: "archivebox",
+                actionLabel: "Open docs",
+                actionSystemImage: "doc.text",
+                tone: .secondary,
+                action: .document("handoff")
+            )
+        }
+
+        if !Self.hasConfirmedTargetBranch(workspace.branch) {
+            return CommandCenterPrimaryStep(
+                title: "确认目标分支 / Confirm branch",
+                detail: "分支仍是待确认状态。先补齐 branches.md 或 workspace.md，后续 worktree 和交付检查才有可靠基准。",
+                statusLabel: "block",
+                systemImage: "arrow.triangle.branch",
+                actionLabel: "Open branch",
+                actionSystemImage: "doc.text",
+                tone: NexusPalette.danger,
+                action: .document("branches")
+            )
+        }
+
+        if workspace.services.isEmpty {
+            return CommandCenterPrimaryStep(
+                title: "确认服务范围 / Confirm services",
+                detail: "服务范围为空。先确认涉及服务，Nexus 才能检查 worktree、风险和交付影响面。",
+                statusLabel: "block",
+                systemImage: "square.stack.3d.up",
+                actionLabel: "Open services",
+                actionSystemImage: "doc.text",
+                tone: NexusPalette.danger,
+                action: .document("services")
+            )
+        }
+
+        if missingWorktreeCount > 0 {
+            return CommandCenterPrimaryStep(
+                title: "创建缺失 worktree / Setup worktrees",
+                detail: "\(missingWorktreeCount) 个服务还没有 workspace-local worktree。先完成隔离工作副本，再进入代码修改。",
+                statusLabel: "next",
+                systemImage: "arrow.triangle.branch",
+                actionLabel: "Setup",
+                actionSystemImage: "wrench.and.screwdriver",
+                tone: NexusPalette.warning,
+                action: .worktree
+            )
+        }
+
+        if workspace.riskLevel == .high || !workspace.risks.isEmpty {
+            return CommandCenterPrimaryStep(
+                title: "复核风险 / Review risks",
+                detail: "当前存在 \(workspace.risks.count) 个风险信号。建议先复制风险复核上下文交给 Codex，再决定是否继续交付。",
+                statusLabel: workspace.riskLevel == .high ? "block" : "review",
+                systemImage: "exclamationmark.triangle",
+                actionLabel: "Risk prompt",
+                actionSystemImage: "point.3.connected.trianglepath.dotted",
+                tone: workspace.riskLevel == .high ? NexusPalette.danger : NexusPalette.warning,
+                action: .riskPrompt
+            )
+        }
+
+        if blockedTaskCount > 0 {
+            return CommandCenterPrimaryStep(
+                title: "处理阻塞任务 / Resolve blocked tasks",
+                detail: "\(blockedTaskCount) 个任务仍处于阻塞状态。先打开 tasks.md，确认完成、延期或继续拆解。",
+                statusLabel: "block",
+                systemImage: "checklist",
+                actionLabel: "Open tasks",
+                actionSystemImage: "checklist",
+                tone: NexusPalette.danger,
+                action: .document("tasks")
+            )
+        }
+
+        if openTaskCount > 0 {
+            return CommandCenterPrimaryStep(
+                title: "处理开放任务 / Review tasks",
+                detail: "\(openTaskCount) 个任务仍未关闭。开发前后都可以从这里确认任务状态和交付影响。",
+                statusLabel: "next",
+                systemImage: "checklist",
+                actionLabel: "Open tasks",
+                actionSystemImage: "checklist",
+                tone: NexusPalette.accent,
+                action: .document("tasks")
+            )
+        }
+
+        if workspace.lifecycle.stage == "delivery" {
+            return CommandCenterPrimaryStep(
+                title: "整理交付 / Prepare delivery",
+                detail: "任务和 worktree 已基本就绪。现在重点是交付记录、SQL、验证和风险说明。",
+                statusLabel: "next",
+                systemImage: "shippingbox",
+                actionLabel: "Delivery",
+                actionSystemImage: "doc.text",
+                tone: NexusPalette.warning,
+                action: .document("delivery")
+            )
+        }
+
+        return CommandCenterPrimaryStep(
+            title: "继续开发 / Continue with Codex",
+            detail: "当前主流程没有明显阻塞。可以把工作区上下文交给 Codex 继续开发或复核。",
+            statusLabel: "ready",
+            systemImage: "point.3.connected.trianglepath.dotted",
+            actionLabel: "Open Codex",
+            actionSystemImage: "point.3.connected.trianglepath.dotted",
+            tone: NexusPalette.success,
+            action: .codex
+        )
+    }
+
     var body: some View {
         SectionBlock(title: "工作台 / Command Center") {
             VStack(alignment: .leading, spacing: 12) {
@@ -2720,6 +2841,10 @@ private struct WorkspaceCommandCenterView: View {
                     .progressViewStyle(.linear)
                     .tint(lifecycleTone)
 
+                CommandCenterPrimaryStepView(step: primaryStep) {
+                    runPrimaryStep(primaryStep)
+                }
+
                 LazyVGrid(columns: metricColumns, alignment: .leading, spacing: 8) {
                     WorkflowMetric(label: "Branch", value: shortBranch, tone: branchTone)
                     WorkflowMetric(label: "Services", value: serviceValue, tone: worktreeTone)
@@ -2733,7 +2858,7 @@ private struct WorkspaceCommandCenterView: View {
                             await appState.openWorkspaceInCodex(workspace)
                         }
                     } label: {
-                        Label("Continue", systemImage: "point.3.connected.trianglepath.dotted")
+                        Label("Open Codex", systemImage: "point.3.connected.trianglepath.dotted")
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
@@ -2780,7 +2905,7 @@ private struct WorkspaceCommandCenterView: View {
                     .controlSize(.small)
                 }
 
-                Text("先按下一步推进当前阶段；需要接力时用 Continue 复制上下文并打开 Codex，需要手工处理时再进入 Finder 或 Terminal。")
+                Text("主路径用于决定下一步；下方工具入口保留 Codex、本地检查、Finder 和 Terminal，方便接力或手工处理。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -2794,6 +2919,29 @@ private struct WorkspaceCommandCenterView: View {
 
     private var metricColumns: [GridItem] {
         [GridItem(.adaptive(minimum: 96), spacing: 8, alignment: .leading)]
+    }
+
+    private func runPrimaryStep(_ step: CommandCenterPrimaryStep) {
+        switch step.action {
+        case .codex:
+            Task {
+                await appState.openWorkspaceInCodex(workspace)
+            }
+        case .document(let key):
+            let path = workspace.documentLinks[key]
+                ?? workspace.documentLinks["handoff"]
+                ?? "\(workspace.path)/handoff.md"
+            Task {
+                await appState.loadDocument(path: path)
+            }
+        case .riskPrompt:
+            copyToPasteboard(appState.riskReviewPrompt(for: workspace))
+            Task {
+                await appState.recordRiskReviewHandoffCopied(for: workspace)
+            }
+        case .worktree:
+            appState.presentWorktreeSetup(for: workspace)
+        }
     }
 
     private var shortBranch: String {
@@ -2829,17 +2977,17 @@ private struct WorkspaceCommandCenterView: View {
     private var nextActionLabel: String {
         switch workspace.lifecycle.documentKey {
         case "worktreeScript":
-            return "Worktree"
+            return "Open next"
         case "delivery":
-            return "Delivery"
+            return "Open next"
         case "tasks":
-            return "Tasks"
+            return "Open next"
         case "branches":
-            return "Branch"
+            return "Open next"
         case "services":
-            return "Services"
+            return "Open next"
         case "status":
-            return "Status"
+            return "Open next"
         default:
             return "Open next"
         }
@@ -2869,6 +3017,73 @@ private struct WorkspaceCommandCenterView: View {
             && !normalized.contains("pending")
             && !normalized.contains("todo")
             && normalized != "-"
+    }
+}
+
+private enum CommandCenterPrimaryAction {
+    case codex
+    case document(String)
+    case riskPrompt
+    case worktree
+}
+
+private struct CommandCenterPrimaryStep {
+    let title: String
+    let detail: String
+    let statusLabel: String
+    let systemImage: String
+    let actionLabel: String
+    let actionSystemImage: String
+    let tone: Color
+    let action: CommandCenterPrimaryAction
+}
+
+private struct CommandCenterPrimaryStepView: View {
+    let step: CommandCenterPrimaryStep
+    let action: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: step.systemImage)
+                .foregroundStyle(step.tone)
+                .frame(width: 16)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 7) {
+                    Text("主路径 / Primary path")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                    Text(step.statusLabel)
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(step.tone)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(step.tone.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                }
+
+                Text(step.title)
+                    .font(.subheadline.weight(.semibold))
+
+                Text(step.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer()
+
+            Button {
+                action()
+            } label: {
+                Label(step.actionLabel, systemImage: step.actionSystemImage)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+        .padding(10)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
