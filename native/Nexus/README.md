@@ -25,7 +25,7 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - Local Task Center that reads structured workspace task rows from Rust Core, lets the sidebar focus the owning workspace, and opens the owning `tasks.md` document directly when deeper review is needed.
 - Workspace detail task section for reviewing local workspace and agent-sourced tasks, with direct access back to the source `tasks.md` record.
 - Confirmed native task status updates for marking local tasks complete or deferred in `tasks.md`.
-- Task-level Codex handoff prompts that can be copied from the Task Center or workspace detail.
+- Task-level Codex handoff actions that copy task context and open the configured Codex URL from the Task Center or workspace detail.
 - Persisted Task Center filters for all, high-priority, agent-sourced, and deferred tasks.
 - Menu bar quick status with workspace, risk, task, worktree, refresh, settings, recent-workspace, and copy-summary actions.
 - Menu bar local automation checks backed by Rust Core for refresh, risk, delivery, task, worktree, and dirty-service signals.

@@ -40,6 +40,7 @@ Each line is a standalone JSON object:
 - `codex.opened`: written when Codex is opened from the active workspace context.
 - `codex_instruction.copied`: written when a workspace handoff, Git, delivery, risk, or worktree prompt is copied.
 - `codex_task_handoff.copied`: written when a workspace task Codex handoff prompt is copied.
+- `codex_task_handoff.opened`: written when Nexus copies a workspace task prompt and opens Codex in one action.
 - `codex_handoff.opened`: written when Nexus copies a workspace prompt and opens Codex in one action.
 - `risk_instruction.copied`: written when a risk-specific handling prompt is copied.
 - `worktree.command.copied`: written when a reviewable worktree command is copied.

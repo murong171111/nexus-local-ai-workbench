@@ -727,9 +727,7 @@ private struct SidebarView: View {
         }
         appState.selectTaskCenterItem(item)
         Task {
-            let payload = await appState.workspaceTaskHandoffPrompt(for: item.task, in: workspace)
-            copyToPasteboard(payload)
-            await appState.recordTaskHandoffCopied(task: item.task, in: workspace)
+            await appState.openTaskInCodex(item.task, in: workspace)
         }
     }
 
@@ -2451,9 +2449,7 @@ private struct WorkspaceDetailView: View {
 
     private func copyTaskHandoff(_ task: WorkspaceTask, in workspace: WorkspaceSummary) {
         Task {
-            let payload = await appState.workspaceTaskHandoffPrompt(for: task, in: workspace)
-            copyToPasteboard(payload)
-            await appState.recordTaskHandoffCopied(task: task, in: workspace)
+            await appState.openTaskInCodex(task, in: workspace)
         }
     }
 
@@ -4619,7 +4615,7 @@ private struct TaskCenterSidebarRow: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.mini)
-                .help("复制任务级 Codex 上下文 / Copy task handoff")
+                .help("复制任务上下文并打开 Codex / Copy task context and open Codex")
             }
         }
         .padding(10)
@@ -4716,7 +4712,7 @@ private struct WorkspaceTaskRow: View {
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
-                    .help("复制任务级 Codex 上下文 / Copy task handoff")
+                    .help("复制任务上下文并打开 Codex / Copy task context and open Codex")
                 }
             }
         }
