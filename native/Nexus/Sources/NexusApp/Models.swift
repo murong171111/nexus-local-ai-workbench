@@ -133,6 +133,63 @@ enum TaskCenterFilter: String, CaseIterable, Identifiable {
     }
 }
 
+enum AutomationNotificationMinimumStatus: String, CaseIterable, Identifiable {
+    case review = "review"
+    case attention = "attention"
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .review:
+            "Review+"
+        case .attention:
+            "Attention"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .review:
+            "提醒 review 和 attention 状态"
+        case .attention:
+            "只提醒最高优先级状态"
+        }
+    }
+
+    func allows(_ status: String) -> Bool {
+        let normalized = status.lowercased()
+        switch self {
+        case .review:
+            return normalized == "review" || normalized == "attention"
+        case .attention:
+            return normalized == "attention"
+        }
+    }
+}
+
+enum AutomationNotificationSignalKind: String, CaseIterable, Identifiable {
+    case risk = "risk"
+    case delivery = "delivery"
+    case task = "task"
+    case worktree = "worktree"
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .risk:
+            "风险 / Risk"
+        case .delivery:
+            "交付 / Delivery"
+        case .task:
+            "任务 / Task"
+        case .worktree:
+            "Worktree"
+        }
+    }
+}
+
 enum WorkspaceState: String, Hashable {
     case analyzing = "analyzing"
     case developing = "developing"
