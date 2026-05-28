@@ -154,6 +154,8 @@ type SearchIndexState = {
 
 const settingsStorageKey = "nexus-settings";
 const onboardingStorageKey = "nexus-onboarding-complete";
+const demoWorkspaceName = "Nexus 示例工作区";
+const demoWorkspaceBranch = "chen/nexus-demo-workspace";
 
 function settingsFromDashboard(dashboard: DashboardData): NexusSettings {
   return {
@@ -1670,11 +1672,15 @@ function OnboardingPanel({
   sourceRepos,
   environmentHealth,
   sourceScanning,
+  workspaceCount,
+  hasDemoWorkspace,
+  demoCreating,
   onChange,
   onClose,
   onSave,
   onSkip,
   onImportSettings,
+  onCreateDemoWorkspace,
   onOpenPath,
   onScanSourceRepos,
   onCheckEnvironment
@@ -1684,11 +1690,15 @@ function OnboardingPanel({
   sourceRepos: SourceRepo[];
   environmentHealth?: EnvironmentHealth;
   sourceScanning: boolean;
+  workspaceCount: number;
+  hasDemoWorkspace: boolean;
+  demoCreating: boolean;
   onChange: (settings: NexusSettings) => void;
   onClose: () => void;
   onSave: () => void;
   onSkip: () => void;
   onImportSettings: (content: string, options?: ImportSettingsOptions) => void;
+  onCreateDemoWorkspace: () => void;
   onOpenPath: (path: string) => void;
   onScanSourceRepos: () => void;
   onCheckEnvironment: () => void;
@@ -1707,7 +1717,7 @@ function OnboardingPanel({
   const steps = [
     { label: "导入或确认配置", done: Boolean(settings.workspacesRoot && settings.sourceReposRoot && settings.docsRoot) },
     { label: "扫描服务", done: sourceRepos.length > 0 },
-    { label: "创建工作区", done: false }
+    { label: "创建工作区", done: workspaceCount > 0 }
   ];
 
   const importFile = async (file?: File) => {
@@ -1822,6 +1832,31 @@ function OnboardingPanel({
                 <div className="rounded-md bg-neutral-50 px-3 py-2">
                   <div className="text-xs text-neutral-400">源仓库目录</div>
                   <div className="mono mt-1 truncate text-xs text-neutral-700">{settings.sourceReposRoot}</div>
+                </div>
+              </div>
+            </Card>
+
+            <Card className="p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="text-sm font-medium text-neutral-950">可选演示工作区</div>
+                  <p className="mt-1 text-sm leading-6 text-neutral-500">
+                    创建一个标准 Markdown 工作区，用来快速查看任务、分支、交付记录和 Codex handoff 的结构；不会自动创建 worktree。
+                  </p>
+                </div>
+                <Button variant="outline" onClick={onCreateDemoWorkspace} disabled={demoCreating || hasDemoWorkspace}>
+                  <Plus className="h-4 w-4" />
+                  {hasDemoWorkspace ? "已创建" : demoCreating ? "创建中" : "创建演示"}
+                </Button>
+              </div>
+              <div className="mt-3 grid gap-2 text-xs text-neutral-500 sm:grid-cols-2">
+                <div className="rounded-md bg-neutral-50 px-3 py-2">
+                  <div className="text-neutral-400">名称</div>
+                  <div className="mt-1 text-neutral-700">{demoWorkspaceName}</div>
+                </div>
+                <div className="rounded-md bg-neutral-50 px-3 py-2">
+                  <div className="text-neutral-400">目标分支</div>
+                  <div className="mono mt-1 truncate text-neutral-700">{demoWorkspaceBranch}</div>
                 </div>
               </div>
             </Card>
@@ -2265,6 +2300,7 @@ export function App() {
   const [toast, setToast] = useState("");
   const [sourceRepos, setSourceRepos] = useState<SourceRepo[]>([]);
   const [sourceScanning, setSourceScanning] = useState(false);
+  const [demoCreating, setDemoCreating] = useState(false);
   const [environmentHealth, setEnvironmentHealth] = useState<EnvironmentHealth>(() => browserEnvironmentFallback(settings, initialData, []));
   const [environmentChecking, setEnvironmentChecking] = useState(false);
   const [environmentChecked, setEnvironmentChecked] = useState(false);
@@ -2509,6 +2545,10 @@ export function App() {
   const risks = signalWorkspaces.reduce((sum, workspace) => sum + workspace.riskCount, 0);
   const branchMismatches = signalWorkspaces.reduce((sum, workspace) => sum + branchAlignmentRows(workspace).length, 0);
   const missing = signalWorkspaces.filter((workspace) => workspace.gitRows.some((row) => !row.worktree.exists)).length;
+  const demoWorkspaceFolder = workspaceFolderFromName("nexus-demo-workspace");
+  const hasDemoWorkspace = dashboard.workspaces.some((workspace) => {
+    return workspace.name === demoWorkspaceName || workspace.folder.includes("nexus-demo-workspace");
+  });
   const keyboardSearchResults = useMemo(() => orderedSearchResults(searchResults), [searchResults]);
 
   const workspaceForTarget = useCallback((target: string) => {
@@ -2870,6 +2910,36 @@ export function App() {
     }
   };
 
+  const handleCreateDemoWorkspace = async () => {
+    if (hasDemoWorkspace) {
+      showToast("演示工作区已存在");
+      return;
+    }
+    if (!isDesktopApp()) {
+      showToast("演示工作区需要在 Nexus Mac App 中创建");
+      return;
+    }
+
+    setDemoCreating(true);
+    try {
+      const services = normalizeServiceList(
+        sourceRepos
+          .filter((repo) => repo.isGit)
+          .slice(0, 2)
+          .map((repo) => repo.name)
+      );
+      await handleCreateWorkspace({
+        name: demoWorkspaceName,
+        folder: demoWorkspaceFolder,
+        services,
+        targetBranch: demoWorkspaceBranch,
+        confirmed: true
+      });
+    } finally {
+      setDemoCreating(false);
+    }
+  };
+
   const copyRiskInstruction = async (workspace: Workspace, risk: string) => {
     await navigator.clipboard.writeText(riskInstruction(workspace, risk));
     void recordWorkspaceAction(workspace, "risk_instruction.copied", `Copied risk instruction for ${risk}`, {
@@ -3021,11 +3091,15 @@ export function App() {
         sourceRepos={sourceRepos}
         environmentHealth={environmentHealth}
         sourceScanning={sourceScanning}
+        workspaceCount={dashboard.workspaces.length}
+        hasDemoWorkspace={hasDemoWorkspace}
+        demoCreating={demoCreating}
         onChange={setSettings}
         onClose={dismissOnboarding}
         onSave={saveSettings}
         onSkip={dismissOnboarding}
         onImportSettings={handleImportSettings}
+        onCreateDemoWorkspace={handleCreateDemoWorkspace}
         onOpenPath={openConfiguredPath}
         onScanSourceRepos={handleScanSourceRepos}
         onCheckEnvironment={handleCheckEnvironment}

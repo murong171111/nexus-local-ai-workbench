@@ -29,6 +29,7 @@ Open the built app and verify:
 
 - Settings can be saved.
 - First-run onboarding can import a shared Nexus settings profile and then save reviewed local paths.
+- First-run onboarding can create a demo workspace using the configured workspaces root.
 - Workspace scanning works with a custom workspaces root.
 - Markdown preview opens expected workspace documents.
 - Workspace creation writes the standard document set.

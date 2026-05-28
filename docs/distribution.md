@@ -38,6 +38,7 @@ src-tauri/target/release/bundle/dmg/Nexus_0.1.0_aarch64.dmg
   - First-run onboarding opens when no local settings exist.
   - Settings opens.
   - First-run onboarding can import a shared Nexus settings profile and lets the user review paths before saving.
+  - First-run onboarding can create an optional demo workspace without creating worktrees.
   - Environment health check reports configured path status and Git availability.
   - Workspace scanning works after setting local paths.
   - Branch alignment filters and warnings appear when a worktree branch differs from the workspace target branch.

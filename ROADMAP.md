@@ -63,7 +63,7 @@ This roadmap describes the next product and engineering steps for Nexus. The cur
 - Publish both `aarch64` and `x86_64` DMG assets, or ship a Universal Binary.
 - Add native updater support backed by signed GitHub Releases.
 - Add release notes automation using `CHANGELOG.md`.
-- Expand first-run onboarding with team profile import and optional demo workspace creation. `[profile import started in Tauri preview UI]`
+- Expand first-run onboarding with team profile import and optional demo workspace creation. `[started in Tauri preview UI]`
 - Add settings export/import for team sharing. `[done in 0.1.x preview]`
 
 ## 0.7.x: Agent Interaction Bridge

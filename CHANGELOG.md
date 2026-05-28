@@ -67,6 +67,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Confirmed worktree setup can now create missing workspace-local `repos/<service>` worktrees from selected source repositories, with audit logging and a browser-preview command-copy fallback.
 - Explicit local-write confirmation in the Tauri create-workspace flow.
 - First-run onboarding can now import a shared Nexus team settings profile before the user reviews and saves local paths.
+- First-run onboarding can now create an optional demo workspace using the standard local workspace skeleton.
 - Branch alignment checks, filters, prompts, and UI warnings for worktrees that do not match the workspace target branch.
 - Manual service input parsing for commas, spaces, new lines, semicolons, and Chinese separators when creating workspaces.
 - Markdown document rendering with a preview/source toggle inside the workspace document viewer.
