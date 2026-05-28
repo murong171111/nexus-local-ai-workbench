@@ -1807,6 +1807,47 @@ struct SettingsView: View {
                     Text("Notification status: \(appState.automationNotificationStatus)")
                     Text("Notifications are local macOS alerts and only fire when an automation result is not clean.")
                         .foregroundStyle(.secondary)
+
+                    Picker(
+                        "Minimum status",
+                        selection: Binding(
+                            get: { appState.automationNotificationMinimumStatus },
+                            set: { appState.setAutomationNotificationMinimumStatus($0) }
+                        )
+                    ) {
+                        ForEach(AutomationNotificationMinimumStatus.allCases) { status in
+                            Text(status.label).tag(status)
+                        }
+                    }
+                    .disabled(!appState.areAutomationNotificationsEnabled)
+
+                    Picker(
+                        "Notification cooldown",
+                        selection: Binding(
+                            get: { appState.automationNotificationCooldownMinutes },
+                            set: { appState.setAutomationNotificationCooldownMinutes($0) }
+                        )
+                    ) {
+                        ForEach(AppState.supportedNotificationCooldownMinutes, id: \.self) { minutes in
+                            Text("\(minutes) min").tag(minutes)
+                        }
+                    }
+                    .disabled(!appState.areAutomationNotificationsEnabled)
+
+                    Text("Notify for")
+                        .font(.caption.weight(.semibold))
+                    ForEach(AutomationNotificationSignalKind.allCases) { kind in
+                        Toggle(
+                            kind.label,
+                            isOn: Binding(
+                                get: { appState.isAutomationNotificationSignalEnabled(kind) },
+                                set: { appState.setAutomationNotificationSignal(kind, enabled: $0) }
+                            )
+                        )
+                        .disabled(!appState.areAutomationNotificationsEnabled)
+                    }
+
+                    Text("Last notification: \(appState.lastAutomationNotificationAt ?? "None")")
                 }
             }
 

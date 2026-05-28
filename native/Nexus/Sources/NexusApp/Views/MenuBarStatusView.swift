@@ -104,6 +104,8 @@ struct MenuBarStatusView: View {
             Text(appState.isAutomationScheduleEnabled ? "已启用 · \(appState.automationIntervalMinutes) min" : "未启用")
             Text("最近运行: \(appState.lastAutomationRunAt ?? "None")")
             Text("通知: \(appState.areAutomationNotificationsEnabled ? appState.automationNotificationStatus : "Disabled")")
+            Text("提醒级别: \(appState.automationNotificationMinimumStatus.label) · \(appState.automationNotificationCooldownMinutes) min")
+            Text("最近提醒: \(appState.lastAutomationNotificationAt ?? "None")")
         }
 
         if !appState.workspaces.isEmpty {

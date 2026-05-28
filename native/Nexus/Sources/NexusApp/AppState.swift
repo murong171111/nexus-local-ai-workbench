@@ -42,6 +42,10 @@ final class AppState: ObservableObject {
     @Published var lastAutomationRunAt: String?
     @Published var areAutomationNotificationsEnabled: Bool
     @Published var automationNotificationStatus: String
+    @Published var automationNotificationMinimumStatus: AutomationNotificationMinimumStatus
+    @Published var automationNotificationCooldownMinutes: Int
+    @Published var automationNotificationSignalKinds: Set<String>
+    @Published var lastAutomationNotificationAt: String?
 
     @Published var agentStatus: AgentStatus
     private let bridge: NexusBridge
@@ -58,6 +62,10 @@ final class AppState: ObservableObject {
         static let automationIntervalMinutes = "nexus.native.automationIntervalMinutes"
         static let lastAutomationRunAt = "nexus.native.lastAutomationRunAt"
         static let areAutomationNotificationsEnabled = "nexus.native.areAutomationNotificationsEnabled"
+        static let automationNotificationMinimumStatus = "nexus.native.automationNotificationMinimumStatus"
+        static let automationNotificationCooldownMinutes = "nexus.native.automationNotificationCooldownMinutes"
+        static let automationNotificationSignalKinds = "nexus.native.automationNotificationSignalKinds"
+        static let lastAutomationNotificationAt = "nexus.native.lastAutomationNotificationAt"
     }
 
     static let defaultWorkspaceRoot = "~/ks_project/workspaces"
@@ -65,6 +73,8 @@ final class AppState: ObservableObject {
     static let defaultDocsRoot = "~/ks_project/docs"
     static let supportedAutomationIntervals = [5, 15, 30, 60]
     static let defaultAutomationIntervalMinutes = 30
+    static let supportedNotificationCooldownMinutes = [15, 30, 60, 180]
+    static let defaultNotificationCooldownMinutes = 60
 
     init(
         workspaces: [WorkspaceSummary],
@@ -117,6 +127,17 @@ final class AppState: ObservableObject {
         self.automationNotificationStatus = storedNotificationsEnabled
             ? "Checking authorization"
             : "Disabled"
+        self.automationNotificationMinimumStatus = AutomationNotificationMinimumStatus(
+            rawValue: defaults.string(forKey: DefaultsKey.automationNotificationMinimumStatus) ?? ""
+        ) ?? .review
+        self.automationNotificationCooldownMinutes = Self.normalizedNotificationCooldown(
+            defaults.integer(forKey: DefaultsKey.automationNotificationCooldownMinutes)
+        )
+        let storedSignalKinds = defaults.stringArray(
+            forKey: DefaultsKey.automationNotificationSignalKinds
+        ) ?? Self.defaultAutomationNotificationSignalKinds
+        self.automationNotificationSignalKinds = Set(storedSignalKinds)
+        self.lastAutomationNotificationAt = defaults.string(forKey: DefaultsKey.lastAutomationNotificationAt)
         self.selectedWorkspaceID = workspaces.first?.id
     }
 
@@ -502,6 +523,39 @@ final class AppState: ObservableObject {
         areAutomationNotificationsEnabled = authorization.granted
         automationNotificationStatus = authorization.status
         defaults.set(authorization.granted, forKey: DefaultsKey.areAutomationNotificationsEnabled)
+    }
+
+    func setAutomationNotificationMinimumStatus(_ status: AutomationNotificationMinimumStatus) {
+        automationNotificationMinimumStatus = status
+        defaults.set(status.rawValue, forKey: DefaultsKey.automationNotificationMinimumStatus)
+    }
+
+    func setAutomationNotificationCooldownMinutes(_ minutes: Int) {
+        automationNotificationCooldownMinutes = Self.normalizedNotificationCooldown(minutes)
+        defaults.set(
+            automationNotificationCooldownMinutes,
+            forKey: DefaultsKey.automationNotificationCooldownMinutes
+        )
+    }
+
+    func isAutomationNotificationSignalEnabled(_ kind: AutomationNotificationSignalKind) -> Bool {
+        automationNotificationSignalKinds.contains(kind.rawValue)
+    }
+
+    func setAutomationNotificationSignal(_ kind: AutomationNotificationSignalKind, enabled: Bool) {
+        var updatedKinds = automationNotificationSignalKinds
+        if enabled {
+            updatedKinds.insert(kind.rawValue)
+        } else {
+            updatedKinds.remove(kind.rawValue)
+        }
+        automationNotificationSignalKinds = updatedKinds
+        defaults.set(
+            AutomationNotificationSignalKind.allCases
+                .map(\.rawValue)
+                .filter { updatedKinds.contains($0) },
+            forKey: DefaultsKey.automationNotificationSignalKinds
+        )
     }
 
     func refreshAutomationNotificationStatus() async {
@@ -981,7 +1035,14 @@ final class AppState: ObservableObject {
 
     private func sendAutomationNotificationIfNeeded(_ response: LocalAutomationCheckResponse) async {
         guard areAutomationNotificationsEnabled else { return }
-        guard response.status != "clean" else { return }
+        guard automationNotificationMinimumStatus.allows(response.status) else { return }
+        guard let notificationSignals = automationNotificationSignals(from: response), !notificationSignals.isEmpty else {
+            return
+        }
+        guard canSendAutomationNotification(now: Date()) else {
+            automationNotificationStatus = "Throttled"
+            return
+        }
 
         let settings = await notificationSettings()
         automationNotificationStatus = Self.notificationStatusLabel(settings.authorizationStatus)
@@ -995,7 +1056,10 @@ final class AppState: ObservableObject {
         content.title = response.status == "attention"
             ? "Nexus needs attention"
             : "Nexus review needed"
-        content.body = response.summary
+        content.body = notificationSignals
+            .prefix(3)
+            .map { "\($0.title): \($0.count)" }
+            .joined(separator: " · ")
         content.sound = .default
         content.userInfo = [
             "generatedAt": response.generatedAt,
@@ -1011,6 +1075,8 @@ final class AppState: ObservableObject {
         )
         do {
             try await UNUserNotificationCenter.current().add(request)
+            lastAutomationNotificationAt = response.generatedAt
+            defaults.set(response.generatedAt, forKey: DefaultsKey.lastAutomationNotificationAt)
         } catch {
             automationNotificationStatus = "Failed: \(error.localizedDescription)"
         }
@@ -1021,6 +1087,37 @@ final class AppState: ObservableObject {
         return supportedAutomationIntervals.min { left, right in
             abs(left - value) < abs(right - value)
         } ?? defaultAutomationIntervalMinutes
+    }
+
+    private func automationNotificationSignals(
+        from response: LocalAutomationCheckResponse
+    ) -> [LocalAutomationSignal]? {
+        let enabledKinds = automationNotificationSignalKinds
+        guard !enabledKinds.isEmpty else { return nil }
+        let signals = response.signals.filter { signal in
+            enabledKinds.contains(signal.kind)
+        }
+        return signals
+    }
+
+    private func canSendAutomationNotification(now: Date) -> Bool {
+        guard let lastAutomationNotificationAt,
+              let lastDate = ISO8601DateFormatter().date(from: lastAutomationNotificationAt) else {
+            return true
+        }
+        let cooldownSeconds = TimeInterval(max(1, automationNotificationCooldownMinutes) * 60)
+        return now.timeIntervalSince(lastDate) >= cooldownSeconds
+    }
+
+    private static var defaultAutomationNotificationSignalKinds: [String] {
+        AutomationNotificationSignalKind.allCases.map(\.rawValue)
+    }
+
+    private static func normalizedNotificationCooldown(_ value: Int) -> Int {
+        guard value > 0 else { return defaultNotificationCooldownMinutes }
+        return supportedNotificationCooldownMinutes.min { left, right in
+            abs(left - value) < abs(right - value)
+        } ?? defaultNotificationCooldownMinutes
     }
 
     private static func notificationStatusLabel(_ status: UNAuthorizationStatus) -> String {
