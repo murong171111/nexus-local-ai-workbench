@@ -56,6 +56,17 @@ struct MenuBarStatusView: View {
         }
 
         Button {
+            Task {
+                await appState.setAutomationNotificationsEnabled(!appState.areAutomationNotificationsEnabled)
+            }
+        } label: {
+            Label(
+                appState.areAutomationNotificationsEnabled ? "关闭检查通知 / Disable Alerts" : "开启检查通知 / Enable Alerts",
+                systemImage: appState.areAutomationNotificationsEnabled ? "bell.slash" : "bell.badge"
+            )
+        }
+
+        Button {
             copyToPasteboard(summary.clipboardText)
         } label: {
             Label("复制状态摘要 / Copy Summary", systemImage: "doc.on.doc")
@@ -92,6 +103,7 @@ struct MenuBarStatusView: View {
         Section("调度 / Schedule") {
             Text(appState.isAutomationScheduleEnabled ? "已启用 · \(appState.automationIntervalMinutes) min" : "未启用")
             Text("最近运行: \(appState.lastAutomationRunAt ?? "None")")
+            Text("通知: \(appState.areAutomationNotificationsEnabled ? appState.automationNotificationStatus : "Disabled")")
         }
 
         if !appState.workspaces.isEmpty {

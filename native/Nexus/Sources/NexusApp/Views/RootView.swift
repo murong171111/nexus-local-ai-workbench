@@ -38,6 +38,9 @@ struct RootView: View {
         .task {
             await appState.refreshFromBridge()
         }
+        .task {
+            await appState.refreshAutomationNotificationStatus()
+        }
         .task(id: appState.automationScheduleToken) {
             await appState.runAutomationScheduleLoop()
         }
@@ -1787,6 +1790,22 @@ struct SettingsView: View {
 
                     Text("Last run: \(appState.lastAutomationRunAt ?? "None")")
                     Text("Scheduled checks scan local workspace and git state, then write a fail-open audit event when the Rust Core bridge is available.")
+                        .foregroundStyle(.secondary)
+
+                    Toggle(
+                        "Notify when checks need review",
+                        isOn: Binding(
+                            get: { appState.areAutomationNotificationsEnabled },
+                            set: { enabled in
+                                Task {
+                                    await appState.setAutomationNotificationsEnabled(enabled)
+                                }
+                            }
+                        )
+                    )
+
+                    Text("Notification status: \(appState.automationNotificationStatus)")
+                    Text("Notifications are local macOS alerts and only fire when an automation result is not clean.")
                         .foregroundStyle(.secondary)
                 }
             }

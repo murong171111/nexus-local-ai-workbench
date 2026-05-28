@@ -62,6 +62,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added a native menu bar quick status item with workspace, risk, task, worktree, refresh, settings, recent-workspace, and copy-summary actions.
 - Added Rust Core, FFI, Swift bridge, and native menu bar support for local automation checks covering refresh, risk, delivery, task, worktree, and dirty-service signals with fail-open audit logging.
 - Added persisted native scheduled automation checks with 5/15/30/60 minute intervals while Nexus is running.
+- Added optional local macOS notifications for automation checks that return review or attention status.
 - Added a fail-open hook helper script that local agents can call to append events into Nexus before a local socket server is available.
 - Added an explicit local-write confirmation checkbox to the Tauri create-workspace flow.
 - Added frontend desktop bridge in `src/desktop.ts`.
