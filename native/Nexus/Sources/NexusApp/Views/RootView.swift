@@ -1674,14 +1674,7 @@ private struct WorkspaceDetailView: View {
                 .disabled(appState.isDocumentLoading)
 
                 if let document = appState.documentPreview {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(document.name)
-                            .font(.caption.weight(.semibold))
-                        Text(String(document.content.prefix(260)))
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(6)
-                    }
+                    NativeDocumentPreview(document: document)
                 }
             }
 
@@ -1708,6 +1701,96 @@ private struct WorkspaceDetailView: View {
             let payload = await appState.workspaceTaskHandoffPrompt(for: task, in: workspace)
             copyToPasteboard(payload)
             await appState.recordTaskHandoffCopied(task: task, in: workspace)
+        }
+    }
+}
+
+private enum NativeDocumentMode: String, CaseIterable, Identifiable {
+    case preview = "预览"
+    case source = "源码"
+
+    var id: String { rawValue }
+}
+
+private struct NativeDocumentPreview: View {
+    let document: DocumentSnapshot
+    @State private var mode: NativeDocumentMode = .preview
+
+    private var shouldRenderPreview: Bool {
+        document.isMarkdown && mode == .preview
+    }
+
+    private var markdownText: AttributedString? {
+        let options = AttributedString.MarkdownParsingOptions(
+            interpretedSyntax: .full,
+            failurePolicy: .returnPartiallyParsedIfPossible
+        )
+        return try? AttributedString(markdown: document.content, options: options)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: document.isMarkdown ? "doc.richtext" : "doc.plaintext")
+                    .foregroundStyle(NexusPalette.accent)
+                    .frame(width: 16)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(document.name)
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
+                    Text(document.path)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                if document.isMarkdown {
+                    Picker("Document mode", selection: $mode) {
+                        ForEach(NativeDocumentMode.allCases) { mode in
+                            Text(mode.rawValue).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .controlSize(.small)
+                    .frame(width: 112)
+                }
+            }
+
+            ScrollView {
+                if shouldRenderPreview, let markdownText {
+                    Text(markdownText)
+                        .font(.caption)
+                        .lineSpacing(3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                } else {
+                    Text(document.content.isEmpty ? "文档为空。" : document.content)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                }
+            }
+            .frame(maxHeight: 260)
+            .padding(10)
+            .background(NexusPalette.panel)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(NexusPalette.border)
+            }
+        }
+        .padding(10)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .onChange(of: document.path) { _ in
+            mode = document.isMarkdown ? .preview : .source
+        }
+        .onAppear {
+            mode = document.isMarkdown ? .preview : .source
         }
     }
 }

@@ -16,6 +16,7 @@ It is designed for teams that work across multiple local service repositories an
 - Exportable and importable team settings profile for sharing local path conventions, including first-run onboarding import.
 - Local audit log for confirmed workspace creation and settings profile exports.
 - Local SQLite + FTS index foundation for workspace Markdown, service scope, tasks, decisions, delivery records, and SQL notes.
+- Native SwiftUI Markdown document preview with preview/source modes for workspace handoff documents and search result documents.
 - Native SwiftUI Task Center that surfaces open workspace tasks from `tasks.md`, including persisted filters, agent-sourced task writebacks, confirmed complete/defer actions, and task-level Codex handoff prompts.
 - Native SwiftUI menu bar status for quick workspace, risk, task, worktree, refresh, settings, and copy-summary actions.
 - Local automation checks for refresh, risk, delivery, task, worktree, and dirty-service signals, exposed through Rust Core, the Swift/Rust bridge, the native menu bar, optional scheduled checks, and configurable macOS notifications.
