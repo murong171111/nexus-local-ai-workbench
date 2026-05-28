@@ -593,6 +593,9 @@ private struct SidebarView: View {
                                 selectAction: {
                                     appState.selectTaskCenterItem(item)
                                 },
+                                openDocumentAction: {
+                                    openTaskDocument(item)
+                                },
                                 completeAction: {
                                     appState.requestTaskStatusUpdate(item, status: "已完成")
                                 },
@@ -727,6 +730,17 @@ private struct SidebarView: View {
             let payload = await appState.workspaceTaskHandoffPrompt(for: item.task, in: workspace)
             copyToPasteboard(payload)
             await appState.recordTaskHandoffCopied(task: item.task, in: workspace)
+        }
+    }
+
+    private func openTaskDocument(_ item: TaskCenterItem) {
+        guard let workspace = appState.workspaces.first(where: { $0.id == item.workspaceID }) else {
+            return
+        }
+        appState.selectTaskCenterItem(item)
+        let path = workspace.documentLinks["tasks"] ?? "\(workspace.path)/tasks.md"
+        Task {
+            await appState.loadDocument(path: path)
         }
     }
 }
@@ -2357,6 +2371,12 @@ private struct WorkspaceDetailView: View {
                 deferTaskAction: { task in
                     appState.requestTaskStatusUpdate(task, in: workspace, status: "延期")
                 },
+                openTaskDocumentAction: { _ in
+                    Task {
+                        let path = workspace.documentLinks["tasks"] ?? "\(workspace.path)/tasks.md"
+                        await appState.loadDocument(path: path)
+                    }
+                },
                 taskCodexAction: { task in
                     copyTaskHandoff(task, in: workspace)
                 }
@@ -3680,6 +3700,7 @@ private struct WorkflowStatusView: View {
     let workspace: WorkspaceSummary
     let completeTaskAction: (WorkspaceTask) -> Void
     let deferTaskAction: (WorkspaceTask) -> Void
+    let openTaskDocumentAction: (WorkspaceTask) -> Void
     let taskCodexAction: (WorkspaceTask) -> Void
 
     private var openTasks: [WorkspaceTask] {
@@ -4016,6 +4037,9 @@ private struct WorkflowStatusView: View {
                         ForEach(Array(openTasks.prefix(4))) { task in
                             WorkspaceTaskRow(
                                 task: task,
+                                openDocumentAction: {
+                                    openTaskDocumentAction(task)
+                                },
                                 completeAction: {
                                     completeTaskAction(task)
                                 },
@@ -4533,6 +4557,7 @@ private struct TaskCenterFilterBar: View {
 private struct TaskCenterSidebarRow: View {
     let item: TaskCenterItem
     let selectAction: () -> Void
+    let openDocumentAction: () -> Void
     let completeAction: () -> Void
     let deferAction: () -> Void
     let codexAction: () -> Void
@@ -4566,6 +4591,12 @@ private struct TaskCenterSidebarRow: View {
             .buttonStyle(.plain)
 
             HStack(spacing: 6) {
+                Button("文档") {
+                    openDocumentAction()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+
                 Button("完成") {
                     completeAction()
                 }
@@ -4610,6 +4641,7 @@ private struct TaskCenterSidebarRow: View {
 
 private struct WorkspaceTaskRow: View {
     let task: WorkspaceTask
+    let openDocumentAction: () -> Void
     let completeAction: () -> Void
     let deferAction: () -> Void
     let codexAction: () -> Void
@@ -4665,11 +4697,19 @@ private struct WorkspaceTaskRow: View {
                         .disabled(task.status.contains("延期"))
                     }
                 }
-                Button("Codex") {
-                    codexAction()
+                HStack(spacing: 5) {
+                    Button("文档") {
+                        openDocumentAction()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+
+                    Button("Codex") {
+                        codexAction()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.mini)
             }
         }
     }

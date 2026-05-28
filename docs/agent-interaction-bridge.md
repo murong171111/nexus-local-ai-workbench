@@ -92,7 +92,7 @@ Workspace task rows are now scanned as structured task snapshots:
 - `priority=high|medium|normal|low` in the detail column controls priority when present.
 - `event=<agent-event-id>` marks the task as agent-sourced and lets Nexus deduplicate writebacks.
 
-The native SwiftUI sidebar shows open tasks across all workspaces in a local Task Center. Selecting a task moves focus to the owning workspace, and the workspace detail panel shows its task rows alongside readiness, session actions, risk, activity, and documents.
+The native SwiftUI sidebar shows open tasks across all workspaces in a local Task Center. Selecting a task moves focus to the owning workspace, and each task row can open the owning `tasks.md` document directly for source review. The workspace detail panel shows task rows alongside readiness, session actions, risk, activity, and documents, with the same direct path back to `tasks.md`.
 
 Task Center filters are local UI state. The native shell can persistently focus all open tasks, high-priority tasks, agent-sourced tasks, or deferred tasks without changing `tasks.md`.
 

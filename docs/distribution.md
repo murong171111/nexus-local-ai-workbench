@@ -54,6 +54,7 @@ src-tauri/target/release/bundle/dmg/Nexus_0.1.0_aarch64.dmg
   - Workspace detail starts with the Command Center and exposes lifecycle progress, primary-path guidance, branch/service/risk/task signals, Codex continuation, next-step routing, local check, Finder, and Terminal.
   - Codex handoff actions show the Handoff feedback panel after copying workspace, lifecycle, risk, task, automation, or agent-event context.
   - Workspace detail shows the Workflow summary with task counts, delivery status, delivery-readiness checks, task/delivery document opens, local check, and Codex handoff.
+  - Task Center and workspace task rows can open the owning `tasks.md` document for source review before status changes or Codex handoff.
   - Workspace detail shows the Risk Review summary with risk/blocker/warning counts, status document access, local check, worktree follow-up, and Codex risk prompt copy.
   - Workspace detail shows the Documents Hub and clears stale previews after switching workspaces.
   - Settings export writes a Nexus team profile JSON, and importing that profile applies the same path conventions.
