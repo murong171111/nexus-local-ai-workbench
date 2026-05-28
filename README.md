@@ -26,7 +26,7 @@ It is designed for teams that work across multiple local service repositories an
 - Native SwiftUI Automation Action Center that turns local check signals into risk focus, delivery document opens, task focus, worktree review, and Codex handoff prompts.
 - Workspace lifecycle stages derived from local workspace evidence, with native progress, next-action, document-open, worktree setup, and Codex handoff controls.
 - Confirmed lifecycle writeback from the native shell into `workspace.md` and `STATUS.md`, with local audit events for status transitions.
-- Native local-write feedback after task and lifecycle updates, with source-document review and follow-up local checks.
+- Native local-write feedback after task and lifecycle updates, with affected-workspace focus, source-document review, and follow-up local checks.
 - Global search popover for indexed workspace documents, SQL notes, and browser-preview metadata fallback, with grouped results and keyboard navigation.
 - First-run onboarding for importing team profiles, configuring local paths, scanning source repositories, and optionally creating a demo workspace.
 - Environment health checks for configured directories and Git availability.
@@ -134,7 +134,7 @@ The current stages are `scoping`, `setup`, `developing`, `delivery`, `done`, `bl
 
 When the Rust Core bridge is available, lifecycle transitions such as `developing`, `delivery`, `done`, `blocked`, and `archived` can be written back after explicit confirmation. The write updates `workspace.md` and `STATUS.md`, then appends a `workspace_lifecycle.updated` audit event. It does not move folders, delete worktrees, change git branches, or mark tasks complete.
 
-After task-status or lifecycle writebacks, the native inspector shows a local-write feedback card with the changed status, refresh confirmation, a source-document action, and a follow-up local-check action.
+After task-status or lifecycle writebacks, the native inspector shows a local-write feedback card with the changed status, refresh confirmation, affected-workspace focus, a source-document action, and a follow-up local-check action.
 
 ## Local Search Index
 

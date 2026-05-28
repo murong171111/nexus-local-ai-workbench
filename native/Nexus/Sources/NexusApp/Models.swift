@@ -350,6 +350,8 @@ struct LocalWriteFeedback: Identifiable, Hashable {
     let title: String
     let detail: String
     let timestamp: String
+    let workspaceID: WorkspaceSummary.ID
+    let workspaceName: String
     let documentPath: String
     let documentLabel: String
     let systemImage: String
