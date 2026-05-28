@@ -49,6 +49,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Native SwiftUI now includes a local Task Center in the sidebar and a per-workspace task section in the detail panel.
 - Native Task Center and workspace task rows can now mark tasks complete or deferred after explicit `tasks.md` write confirmation.
 - Rust Core, FFI, and native SwiftUI now generate copyable Codex handoff prompts from workspace tasks.
+- Native Task Center now has persisted filters for all open tasks, high-priority tasks, agent-sourced tasks, and deferred tasks.
 - Added a fail-open `nexus-agent-event` hook helper script for local agents to append events before the socket bridge exists.
 - Rust Core dashboard scans now enrich workspace activity timelines from the local JSONL audit log, with Tauri and native SwiftUI shells consuming the same activity field.
 - User-visible workspace actions now append audit events for document opens, Codex handoffs, copied prompts, copied risk instructions, and copied worktree commands.

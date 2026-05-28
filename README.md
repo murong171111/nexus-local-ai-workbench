@@ -16,7 +16,7 @@ It is designed for teams that work across multiple local service repositories an
 - Exportable and importable team settings profile for sharing local path conventions.
 - Local audit log for confirmed workspace creation and settings profile exports.
 - Local SQLite + FTS index foundation for workspace Markdown, service scope, tasks, decisions, delivery records, and SQL notes.
-- Native SwiftUI Task Center that surfaces open workspace tasks from `tasks.md`, including agent-sourced task writebacks, confirmed complete/defer actions, and task-level Codex handoff prompts.
+- Native SwiftUI Task Center that surfaces open workspace tasks from `tasks.md`, including persisted filters, agent-sourced task writebacks, confirmed complete/defer actions, and task-level Codex handoff prompts.
 - Global search popover for indexed workspace documents, SQL notes, and browser-preview metadata fallback, with grouped results and keyboard navigation.
 - First-run onboarding for configuring local workspace, source repository, and delivery document paths.
 - Environment health checks for configured directories and Git availability.

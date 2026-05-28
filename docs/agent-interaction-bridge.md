@@ -94,6 +94,8 @@ Workspace task rows are now scanned as structured task snapshots:
 
 The native SwiftUI sidebar shows open tasks across all workspaces in a local Task Center. Selecting a task moves focus to the owning workspace, and the workspace detail panel shows its task rows alongside readiness, session actions, risk, activity, and documents.
 
+Task Center filters are local UI state. The native shell can persistently focus all open tasks, high-priority tasks, agent-sourced tasks, or deferred tasks without changing `tasks.md`.
+
 ## Task Status Updates
 
 The native shell can update a scanned workspace task after explicit confirmation:
