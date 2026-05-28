@@ -7,6 +7,7 @@ This directory contains the production WidgetKit source for the Nexus macOS widg
 - `NexusWidget/NexusWidget.swift` defines a native SwiftUI WidgetKit widget.
 - The widget reads `widget-snapshot.json`.
 - The main Tauri app writes the snapshot through the native `write_widget_snapshot` command.
+- The native SwiftUI shell writes the snapshot to Application Support and mirrors it to the `group.com.ks.nexus` App Group container when the signed app has that entitlement.
 - The widget uses `nexus://workspace/<workspace-folder>` as its click target.
 
 ## Snapshot Contract
@@ -40,6 +41,8 @@ WidgetKit extensions require a real Xcode app target and signing setup. For a di
 6. Sign and notarize the final app bundle.
 
 The current machine only has Command Line Tools, so this repository can provide the widget source and main-app snapshot contract, but cannot compile the WidgetKit extension here.
+
+During unsigned local development, the widget source falls back to `~/Library/Application Support/com.ks.nexus/widget-snapshot.json`. In a signed build with App Group entitlements, the same file should also exist in the shared group container so WidgetKit can read it without relying on the app sandbox.
 
 The Swift source can still be type-checked without generating an extension bundle:
 

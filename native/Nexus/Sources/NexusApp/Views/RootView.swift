@@ -615,6 +615,10 @@ private struct SidebarView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
+                    Text(appState.widgetSnapshotStorageStatus)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
                 .padding(12)
                 .background(NexusPalette.panel)
@@ -2429,6 +2433,22 @@ struct SettingsView: View {
                     Text("Search scope: \(appState.selectedSearchScope.label) / \(appState.selectedSearchScope.subtitle)")
                     Text("Pinned workspaces: \(appState.pinnedWorkspaceIDs.count)")
                     Text("Set NEXUS_CORE_LIBRARY to a local libnexus_ffi.dylib to load real workspace data through Rust Core during development.")
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("Widget Snapshot") {
+                    Text("Storage: \(appState.widgetSnapshotStorageStatus)")
+                    if appState.widgetSnapshotStoragePaths.isEmpty {
+                        Text("Refresh Nexus to generate the local widget snapshot.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(appState.widgetSnapshotStoragePaths, id: \.self) { path in
+                            Text(path)
+                                .font(.system(.caption, design: .monospaced))
+                                .textSelection(.enabled)
+                        }
+                    }
+                    Text("The native app writes Application Support data now and automatically mirrors to group.com.ks.nexus when a signed App Group entitlement is available.")
                         .foregroundStyle(.secondary)
                 }
 
