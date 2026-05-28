@@ -42,6 +42,7 @@ src-tauri/target/release/bundle/dmg/Nexus_0.1.0_aarch64.dmg
   - First-run onboarding can create an optional demo workspace without creating worktrees.
   - Environment health check reports configured path status and Git availability.
   - Workspace scanning works after setting local paths.
+  - Native workspace handoff buttons open Finder, Terminal, and the configured Codex URL after copying context.
   - Branch alignment filters and warnings appear when a worktree branch differs from the workspace target branch.
   - Source repository scanning populates the create-workspace service picker.
   - Settings export writes a Nexus team profile JSON, and importing that profile applies the same path conventions.

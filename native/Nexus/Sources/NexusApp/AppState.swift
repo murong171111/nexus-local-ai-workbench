@@ -1,3 +1,4 @@
+import AppKit
 import Combine
 import Foundation
 import NexusBridge
@@ -919,6 +920,104 @@ final class AppState: ObservableObject {
         ].joined(separator: "\n")
     }
 
+    func workspaceHandoffPrompt(for workspace: WorkspaceSummary) -> String {
+        [
+            "继续处理这个 Nexus 本地工作区。",
+            "",
+            "## 工作区",
+            "- 名称: \(workspace.name)",
+            "- 目录: \(workspace.path)",
+            "- 文件夹: \(workspace.folder)",
+            "- 目标分支: \(workspace.branch)",
+            "- 涉及服务: \(workspace.serviceSummary.isEmpty ? "待确认" : workspace.serviceSummary)",
+            "- Worktree: \(workspace.worktreeState)",
+            "",
+            "## 当前状态",
+            "- 生命周期: \(workspace.lifecycle.label)",
+            "- 下一步: \(workspace.lifecycle.nextAction)",
+            "- 风险数: \(workspace.risks.count)",
+            "- 未完成任务: \(workspace.tasks.filter { !$0.isDone }.count)",
+            "",
+            "## 本地路径",
+            "- Workspaces root: \(workspaceRoot)",
+            "- Source repos root: \(sourceReposRoot)",
+            "- Docs root: \(docsRoot)",
+            "",
+            "## 处理要求",
+            "- 先读取工作区 Markdown，再决定是否修改代码或文档。",
+            "- 优先在 workspace-local repos/<service> worktree 中处理。",
+            "- 如果涉及代码、SQL、业务逻辑、接口、DTO、配置或验证变化，同步更新交付记录。",
+            "- 处理完成后回到 Nexus 刷新工作区状态。"
+        ].joined(separator: "\n")
+    }
+
+    func openWorkspaceInFinder(_ workspace: WorkspaceSummary) async {
+        let url = Self.localFileURL(for: workspace.path)
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+        await recordWorkspaceAction(
+            action: "workspace.finder.opened",
+            target: workspace.path,
+            summary: "Opened workspace in Finder",
+            metadata: ["tool": "Finder"],
+            workspaceOverride: workspace
+        )
+    }
+
+    func openWorkspaceInTerminal(_ workspace: WorkspaceSummary) async {
+        let url = Self.localFileURL(for: workspace.path)
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+
+        if let terminalURL = Self.terminalApplicationURL {
+            NSWorkspace.shared.open(
+                [url],
+                withApplicationAt: terminalURL,
+                configuration: configuration
+            ) { [weak self] _, error in
+                Task { @MainActor in
+                    if let error {
+                        self?.lastError = "Terminal open failed: \(error.localizedDescription)"
+                    }
+                }
+            }
+        } else {
+            NSWorkspace.shared.open(url)
+        }
+
+        await recordWorkspaceAction(
+            action: "workspace.terminal.opened",
+            target: workspace.path,
+            summary: "Opened workspace in Terminal",
+            metadata: ["tool": "Terminal"],
+            workspaceOverride: workspace
+        )
+    }
+
+    func openWorkspaceInCodex(_ workspace: WorkspaceSummary) async {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(workspaceHandoffPrompt(for: workspace), forType: .string)
+
+        let rawURL = codexURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? Self.defaultCodexURL
+            : codexURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let url = URL(string: rawURL) {
+            NSWorkspace.shared.open(url)
+        } else {
+            lastError = "Invalid Codex URL: \(rawURL)"
+        }
+
+        await recordWorkspaceAction(
+            action: "codex.opened",
+            target: workspace.path,
+            summary: "Copied workspace handoff and opened Codex",
+            metadata: [
+                "tool": "Codex",
+                "codexUrl": rawURL
+            ],
+            workspaceOverride: workspace
+        )
+    }
+
     func recordLifecycleHandoffCopied(for workspace: WorkspaceSummary) async {
         await recordWorkspaceAction(
             action: "lifecycle_handoff.copied",
@@ -1466,6 +1565,10 @@ final class AppState: ObservableObject {
             return "设置已导出 / Settings exported"
         case "settings_profile.imported":
             return "设置已导入 / Settings imported"
+        case "workspace.finder.opened":
+            return "Finder 已打开 / Finder opened"
+        case "workspace.terminal.opened":
+            return "Terminal 已打开 / Terminal opened"
         default:
             return action.replacingOccurrences(of: "_", with: " ")
                 .replacingOccurrences(of: ".", with: " ")
@@ -1529,6 +1632,31 @@ final class AppState: ObservableObject {
             throw SettingsProfileError.invalid("配置文件缺少 \(label)")
         }
         return trimmed
+    }
+
+    private static func localFileURL(for rawPath: String) -> URL {
+        let trimmed = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        let expanded: String
+        if trimmed == "~" {
+            expanded = FileManager.default.homeDirectoryForCurrentUser.path
+        } else if trimmed.hasPrefix("~/") {
+            expanded = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(String(trimmed.dropFirst(2)))
+                .path
+        } else {
+            expanded = trimmed
+        }
+        return URL(fileURLWithPath: expanded)
+    }
+
+    private static var terminalApplicationURL: URL? {
+        let candidates = [
+            "/System/Applications/Utilities/Terminal.app",
+            "/Applications/Utilities/Terminal.app"
+        ]
+        return candidates
+            .map { URL(fileURLWithPath: $0) }
+            .first { FileManager.default.fileExists(atPath: $0.path) }
     }
 
     private func requestAutomationNotificationAuthorization() async -> (granted: Bool, status: String) {
