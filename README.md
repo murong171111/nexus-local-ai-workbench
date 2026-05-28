@@ -15,6 +15,7 @@ It is designed for teams that work across multiple local service repositories an
 - Local path settings for workspaces, source repositories, and delivery document roots.
 - Exportable and importable team settings profiles for sharing local path conventions, including first-run onboarding import and native Settings import/export.
 - Native Settings local path rows with environment status, directory pickers, reveal actions, and checks for configured paths, Git availability, workspace counts, and source repository counts.
+- Native SwiftUI primary actions use concise Chinese-first labels with hover help for path recovery and task workflows.
 - Local audit log for confirmed workspace creation and settings profile exports.
 - Local SQLite + FTS index foundation for workspace Markdown, service scope, tasks, decisions, delivery records, and SQL notes.
 - Native SwiftUI Markdown document preview with preview/source modes for workspace handoff documents and search result documents.

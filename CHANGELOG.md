@@ -58,6 +58,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Native create-workspace results now include an initialization receipt for generated standard files, directories, initial `STATUS.md`, service scope, target branch, and worktree readiness.
 - Native Settings local path configuration now shows per-path health, directory pickers, reveal actions, and clears stale environment results after edits.
 - Native Task Center and workspace task rows now open the owning `tasks.md` document directly, keeping task review close to the source Markdown record.
+- Native SwiftUI action labels now use clearer Chinese-first wording and hover help for path recovery, task documents, task status updates, and task Codex handoff.
 - Documentation now includes a Chinese complete product-shape blueprint for the Mac-first local AI development workbench target.
 - Rust Core and the Swift/Rust bridge now support local agent event append/read flows backed by `agent-events.jsonl`.
 - Native SwiftUI sidebar now shows recent agent events from the local bridge, with preview fallback data when Rust Core is not loaded.
