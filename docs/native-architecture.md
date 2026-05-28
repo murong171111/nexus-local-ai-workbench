@@ -60,6 +60,7 @@ The first native shell scaffold is available at `native/Nexus`. It is a Swift Pa
 - Native search results surface selected-result context from the current workspace model, including branch, service count, risk, and recent activity.
 - The native shell stores lightweight personal UI preferences, such as local root paths, the selected search scope, and pinned workspace IDs, in `UserDefaults`. These preferences are local conveniences; Markdown workspace records and Rust Core scan output remain the product source of truth.
 - Native document reads render Markdown by default, keep a source toggle for raw content, append `document.opened` audit events when the Rust Core bridge is available, and update the visible timeline immediately.
+- Native widget snapshots are written by the SwiftUI shell to Application Support and mirrored to `group.com.ks.nexus` when an App Group container is available, keeping unsigned local development and signed WidgetKit packaging on the same data contract.
 - Native agent event reads load recent local agent hook events into the sidebar when the Rust Core bridge is available.
 - Native session actions can open follow-up documents and execute confirmed worktree setup through the Swift/Rust bridge. Worktree setup remains a confirmed local write and reports created, skipped, and failed services back to the user.
 - The native shell includes a menu bar status item for quick workspace, risk, task, worktree, refresh, settings, recent-workspace, and copy-summary actions without opening the full window first.
@@ -81,7 +82,7 @@ The first native shell scaffold is available at `native/Nexus`. It is a Swift Pa
 
 ### Widget And Companion Surfaces
 
-- WidgetKit reads a compact snapshot from an App Group container once signing and App Group setup are ready.
+- WidgetKit reads a compact snapshot from an App Group container once signing and App Group setup are ready, with Application Support as the local development fallback.
 - iPad and iPhone clients should be companion views: status, risks, documents, tasks, approvals, and remote/agent handoff.
 - Mac remains the authority for local filesystem and git/worktree operations.
 

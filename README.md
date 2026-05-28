@@ -32,7 +32,7 @@ It is designed for teams that work across multiple local service repositories an
 - Workspace bootstrap reports and reviewable `scripts/worktree-commands.sh` files for semi-automated worktree setup.
 - Delivery-record completeness warnings when `交付记录.md` still needs real change notes.
 - Codex launcher and copyable prompts for continuing a workspace, checking git state, updating delivery notes, and risk analysis.
-- Widget snapshot generation at `~/Library/Application Support/com.ks.nexus/widget-snapshot.json`.
+- Widget snapshot generation at `~/Library/Application Support/com.ks.nexus/widget-snapshot.json`, with App Group mirroring when `group.com.ks.nexus` is available.
 - `nexus://workspace/<workspace-folder>` URL scheme for deep links from widgets or other tools.
 
 ## Installation
@@ -179,7 +179,7 @@ npm run verify
 
 ## Widget Status
 
-The main app already writes the widget snapshot and registers the `nexus://` URL scheme. The WidgetKit source lives in:
+The main app already writes the widget snapshot and registers the `nexus://` URL scheme. The native shell writes the same snapshot to Application Support and mirrors it into `group.com.ks.nexus` once the app is packaged with App Group entitlements. The WidgetKit source lives in:
 
 ```text
 widget/NexusWidget/NexusWidget.swift

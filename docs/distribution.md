@@ -86,3 +86,5 @@ WidgetKit requires an Xcode Widget Extension target. The Swift source is provide
 - Widget extension target
 - `.appex` copied into `Nexus.app/Contents/PlugIns`
 - Signing and notarization of the final bundle
+
+The native SwiftUI shell writes `widget-snapshot.json` to Application Support during unsigned local development and mirrors the same payload into `group.com.ks.nexus` when the signed app has the App Group entitlement. This keeps small-team local builds usable before the final Widget Extension target is packaged.

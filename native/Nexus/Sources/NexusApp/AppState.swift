@@ -25,6 +25,8 @@ final class AppState: ObservableObject {
     @Published var bridgeMode: String
     @Published var documentPreview: DocumentSnapshot?
     @Published var widgetSnapshot: WidgetSnapshot?
+    @Published var widgetSnapshotStorageStatus = "Not written"
+    @Published var widgetSnapshotStoragePaths: [String] = []
     @Published var agentEvents: [AgentEvent] = []
     @Published var selectedAgentEvent: AgentEvent?
     @Published var pendingTaskStatusUpdate: TaskStatusUpdate?
@@ -73,6 +75,8 @@ final class AppState: ObservableObject {
     static let defaultWorkspaceRoot = "~/ks_project/workspaces"
     static let defaultSourceReposRoot = "~/ks_project/source-repos"
     static let defaultDocsRoot = "~/ks_project/docs"
+    static let widgetAppGroupIdentifier = "group.com.ks.nexus"
+    static let widgetSnapshotFileName = "widget-snapshot.json"
     static let supportedAutomationIntervals = [5, 15, 30, 60]
     static let defaultAutomationIntervalMinutes = 30
     static let supportedNotificationCooldownMinutes = [15, 30, 60, 180]
@@ -277,6 +281,64 @@ final class AppState: ObservableObject {
         "\(applicationSupportRootPath)/nexus-index.sqlite3"
     }
 
+    private func refreshWidgetSnapshot() async {
+        let nextWidgetSnapshot = try? await bridge.widgetSnapshot(
+            request: WidgetSnapshotRequest(
+                workspacesRoot: workspaceRoot,
+                sourceReposRoot: sourceReposRoot,
+                docsRoot: docsRoot,
+                activeFolder: selectedWorkspaceID ?? "",
+                generatedAt: ISO8601DateFormatter().string(from: Date())
+            )
+        )
+        widgetSnapshot = nextWidgetSnapshot
+        if let nextWidgetSnapshot {
+            persistWidgetSnapshot(nextWidgetSnapshot)
+        } else {
+            widgetSnapshotStorageStatus = "Snapshot unavailable"
+            widgetSnapshotStoragePaths = []
+        }
+    }
+
+    private func persistWidgetSnapshot(_ snapshot: WidgetSnapshot) {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+
+        do {
+            let payload = try encoder.encode(snapshot)
+            var writtenPaths: [String] = []
+
+            let appSupportURL = URL(fileURLWithPath: applicationSupportRootPath, isDirectory: true)
+            try FileManager.default.createDirectory(
+                at: appSupportURL,
+                withIntermediateDirectories: true
+            )
+            let appSupportSnapshotURL = appSupportURL.appendingPathComponent(Self.widgetSnapshotFileName)
+            try payload.write(to: appSupportSnapshotURL, options: .atomic)
+            writtenPaths.append(appSupportSnapshotURL.path)
+
+            if let appGroupURL = FileManager.default.containerURL(
+                forSecurityApplicationGroupIdentifier: Self.widgetAppGroupIdentifier
+            ) {
+                try FileManager.default.createDirectory(
+                    at: appGroupURL,
+                    withIntermediateDirectories: true
+                )
+                let appGroupSnapshotURL = appGroupURL.appendingPathComponent(Self.widgetSnapshotFileName)
+                try payload.write(to: appGroupSnapshotURL, options: .atomic)
+                writtenPaths.append(appGroupSnapshotURL.path)
+            }
+
+            widgetSnapshotStoragePaths = writtenPaths
+            widgetSnapshotStorageStatus = writtenPaths.count > 1
+                ? "Application Support + App Group"
+                : "Application Support"
+        } catch {
+            widgetSnapshotStoragePaths = []
+            widgetSnapshotStorageStatus = "Write failed: \(error.localizedDescription)"
+        }
+    }
+
     var filteredWorkspaces: [WorkspaceSummary] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
@@ -331,10 +393,16 @@ final class AppState: ObservableObject {
 
     func select(_ workspace: WorkspaceSummary) {
         selectedWorkspaceID = workspace.id
+        Task {
+            await refreshWidgetSnapshot()
+        }
     }
 
     func selectTaskCenterItem(_ item: TaskCenterItem) {
         selectedWorkspaceID = item.workspaceID
+        Task {
+            await refreshWidgetSnapshot()
+        }
     }
 
     func requestTaskStatusUpdate(_ item: TaskCenterItem, status: String) {
@@ -451,15 +519,7 @@ final class AppState: ObservableObject {
             if selectedWorkspaceID == nil || !mappedWorkspaces.contains(where: { $0.id == selectedWorkspaceID }) {
                 selectedWorkspaceID = mappedWorkspaces.first?.id
             }
-            widgetSnapshot = try? await bridge.widgetSnapshot(
-                request: WidgetSnapshotRequest(
-                    workspacesRoot: workspaceRoot,
-                    sourceReposRoot: sourceReposRoot,
-                    docsRoot: docsRoot,
-                    activeFolder: selectedWorkspaceID ?? "",
-                    generatedAt: ISO8601DateFormatter().string(from: Date())
-                )
-            )
+            await refreshWidgetSnapshot()
             agentEvents = (try? await bridge.readAgentEvents(
                 request: ReadAgentEventsRequest(eventsRoot: agentEventsRootPath, limit: 8)
             )) ?? []
