@@ -34,6 +34,7 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - Automation Action Center in the right inspector that converts local check signals into focus, delivery, task, worktree, and Codex handoff actions.
 - Workspace timelines populated from the Rust Core dashboard activity field, including local audit-log events when the bridge is available.
 - Native document opens append audit events and update the visible workspace timeline.
+- Native workspace detail starts with a Command Center for lifecycle progress, branch/service/risk/task signals, Codex continuation, local checks, next-step routing, and Finder/Terminal handoff.
 - Native workspace detail shows Rust Core readiness checks for local development and delivery gates.
 - Native workspace detail shows Rust Core session actions that prioritize the next Codex, worktree, and document follow-up steps.
 - Native workspace detail includes a Workflow summary for open tasks, blocked tasks, delivery status, task/delivery document opens, local checks, and Codex handoff.

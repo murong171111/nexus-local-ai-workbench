@@ -49,6 +49,7 @@ src-tauri/target/release/bundle/dmg/Nexus_0.1.0_aarch64.dmg
   - Native create-workspace can filter scanned services, accept manual services, leave service scope pending, and show the final path/branch/service summary before writing files.
   - After native workspace creation, the app focuses the new workspace and shows the post-create next-step panel.
   - Native worktree setup refreshes the active workspace state and shows created/skipped/failed results with Finder, Codex, and local-check follow-ups.
+  - Workspace detail starts with the Command Center and exposes lifecycle progress, branch/service/risk/task signals, Codex continuation, next-step routing, local check, Finder, and Terminal.
   - Workspace detail shows the Workflow summary with task counts, delivery status, task/delivery document opens, local check, and Codex handoff.
   - Workspace detail shows the Risk Review summary with risk/blocker/warning counts, status document access, local check, worktree follow-up, and Codex risk prompt copy.
   - Workspace detail shows the Documents Hub and clears stale previews after switching workspaces.
