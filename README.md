@@ -20,6 +20,7 @@ It is designed for teams that work across multiple local service repositories an
 - Native SwiftUI menu bar status for quick workspace, risk, task, worktree, refresh, settings, and copy-summary actions.
 - Local automation checks for refresh, risk, delivery, task, worktree, and dirty-service signals, exposed through Rust Core, the Swift/Rust bridge, the native menu bar, optional scheduled checks, and configurable macOS notifications.
 - Native SwiftUI Automation Action Center that turns local check signals into risk focus, delivery document opens, task focus, worktree review, and Codex handoff prompts.
+- Workspace lifecycle stages derived from local workspace evidence, with native progress, next-action, document-open, worktree setup, and Codex handoff controls.
 - Global search popover for indexed workspace documents, SQL notes, and browser-preview metadata fallback, with grouped results and keyboard navigation.
 - First-run onboarding for configuring local workspace, source repository, and delivery document paths.
 - Environment health checks for configured directories and Git availability.
@@ -90,6 +91,12 @@ Nexus writes JSONL audit events to `~/Library/Application Support/com.ks.nexus/a
 The native menu bar can run a local automation check manually or on a persisted schedule while Nexus is running. That check scans workspace Markdown and git state for refresh, risk, delivery, task, worktree, and dirty-service signals, then appends an `automation.check.completed` audit event when the Rust Core bridge is available. Optional macOS notifications are off by default, support cooldown and signal preferences, and only fire when a check result matches the selected minimum status.
 
 The native right inspector also includes an Automation Action Center. After a check runs, Nexus converts risk, delivery, task, and worktree signals into clickable actions such as focusing a risky workspace, opening delivery notes, selecting the Task Center, presenting the worktree setup confirmation, or copying a Codex prompt with the current local paths and workspace context.
+
+## Workspace Lifecycle
+
+Rust Core derives a lifecycle stage for every workspace from the current Markdown, task, risk, service, branch, delivery, and git worktree state. The native shell shows that lifecycle on each workspace card and in the detail inspector with progress, current reason, next action, and Codex handoff controls.
+
+The current stages are `scoping`, `setup`, `developing`, `delivery`, `done`, `blocked`, and `archived`. Nexus does not overwrite lifecycle files automatically; it reads local evidence and guides the next safe action.
 
 ## Local Search Index
 

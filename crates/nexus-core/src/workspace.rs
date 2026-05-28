@@ -34,6 +34,7 @@ pub struct WorkspaceData {
     pub git_rows: Vec<GitRow>,
     pub risks: Vec<String>,
     pub risk_count: usize,
+    pub lifecycle: WorkspaceLifecycle,
     pub updated: String,
     pub links: BTreeMap<String, String>,
     pub worktree_command: String,
@@ -49,6 +50,17 @@ pub struct TaskCounts {
     pub doing: usize,
     pub todo: usize,
     pub blocked: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceLifecycle {
+    pub stage: String,
+    pub label: String,
+    pub detail: String,
+    pub progress: usize,
+    pub next_action: String,
+    pub document_key: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
@@ -981,6 +993,18 @@ fn collect_workspace(
         delivery_stale,
         &task_counts,
     );
+    let lifecycle = workspace_lifecycle(
+        &state,
+        &target_branch,
+        &confirmed_services,
+        &missing_worktrees,
+        &dirty_worktrees,
+        &branch_mismatches,
+        delivery_exists,
+        delivery_stale,
+        &task_counts,
+        risk_count,
+    );
     WorkspaceData {
         name,
         folder,
@@ -995,6 +1019,7 @@ fn collect_workspace(
         git_rows,
         risks,
         risk_count,
+        lifecycle,
         updated: generated_date(),
         links,
         worktree_command,
@@ -1002,6 +1027,164 @@ fn collect_workspace(
         activities,
         health_checks,
         session_actions,
+    }
+}
+
+fn workspace_lifecycle(
+    state: &str,
+    target_branch: &str,
+    confirmed_services: &[String],
+    missing_worktrees: &[String],
+    dirty_worktrees: &[String],
+    branch_mismatches: &[String],
+    delivery_exists: bool,
+    delivery_stale: bool,
+    task_counts: &TaskCounts,
+    risk_count: usize,
+) -> WorkspaceLifecycle {
+    let normalized_state = state.to_lowercase();
+    let open_tasks = task_counts.doing + task_counts.todo + task_counts.blocked;
+
+    if normalized_state.contains("archived") || normalized_state.contains("归档") {
+        return lifecycle(
+            "archived",
+            "已归档 / Archived",
+            "工作区已标记归档，可作为交付后的历史上下文保留。".to_string(),
+            100,
+            "需要再次开发时，从归档文档恢复上下文。",
+            "handoff",
+        );
+    }
+
+    if normalized_state.contains("blocked")
+        || normalized_state.contains("阻塞")
+        || task_counts.blocked > 0
+        || !branch_mismatches.is_empty()
+    {
+        let detail = if !branch_mismatches.is_empty() {
+            format!("分支不一致阻塞继续开发: {}", branch_mismatches.join(", "))
+        } else if task_counts.blocked > 0 {
+            format!("存在 {} 个阻塞任务，需要先解除。", task_counts.blocked)
+        } else {
+            "工作区处于阻塞状态，需要先确认阻塞原因。".to_string()
+        };
+        return lifecycle(
+            "blocked",
+            "阻塞 / Blocked",
+            detail,
+            25,
+            "先处理阻塞项，再继续编码或交付。",
+            if !branch_mismatches.is_empty() {
+                "branches"
+            } else {
+                "tasks"
+            },
+        );
+    }
+
+    if confirmed_services.is_empty() || !target_branch_confirmed(target_branch) {
+        let detail = if confirmed_services.is_empty() && !target_branch_confirmed(target_branch) {
+            "服务范围和目标分支仍待确认。".to_string()
+        } else if confirmed_services.is_empty() {
+            "服务范围仍待确认。".to_string()
+        } else {
+            "目标分支仍待确认。".to_string()
+        };
+        return lifecycle(
+            "scoping",
+            "范围确认 / Scoping",
+            detail,
+            15,
+            "补齐服务范围和目标分支。",
+            if confirmed_services.is_empty() {
+                "services"
+            } else {
+                "branches"
+            },
+        );
+    }
+
+    if !missing_worktrees.is_empty() {
+        return lifecycle(
+            "setup",
+            "环境准备 / Setup",
+            format!("还有 {} 个服务缺少 workspace-local worktree。", missing_worktrees.len()),
+            35,
+            "创建缺失 worktree 后再进入开发。",
+            "worktreeScript",
+        );
+    }
+
+    if delivery_exists && !delivery_stale && open_tasks == 0 && risk_count == 0 {
+        return lifecycle(
+            "done",
+            "待归档 / Done",
+            "交付记录已补齐，暂无开放任务和风险，可以归档或保留观察。".to_string(),
+            95,
+            "确认 PR/发布状态后归档工作区。",
+            "delivery",
+        );
+    }
+
+    if !dirty_worktrees.is_empty()
+        || task_counts.doing > 0
+        || normalized_state.contains("develop")
+        || normalized_state.contains("开发")
+    {
+        return lifecycle(
+            "developing",
+            "开发中 / Developing",
+            format!(
+                "{} 个进行中任务，{} 个服务有未提交 worktree 改动。",
+                task_counts.doing,
+                dirty_worktrees.len()
+            ),
+            60,
+            "继续编码、验证，并保持交付记录同步。",
+            "tasks",
+        );
+    }
+
+    if delivery_stale || !delivery_exists {
+        return lifecycle(
+            "delivery",
+            "交付整理 / Delivery",
+            if delivery_exists {
+                "交付记录仍包含待补充内容。".to_string()
+            } else {
+                "工作区缺少交付记录。".to_string()
+            },
+            80,
+            "补齐交付记录、SQL、验证和风险说明。",
+            "delivery",
+        );
+    }
+
+    lifecycle(
+        "ready",
+        "就绪 / Ready",
+        "服务、分支和 worktree 已就绪，可以启动 Codex 开发会话。".to_string(),
+        45,
+        "复制 handoff 上下文并进入开发。",
+        "handoff",
+    )
+}
+
+fn lifecycle(
+    stage: &str,
+    label: &str,
+    detail: String,
+    progress: usize,
+    next_action: &str,
+    document_key: &str,
+) -> WorkspaceLifecycle {
+    WorkspaceLifecycle {
+        stage: stage.to_string(),
+        label: label.to_string(),
+        detail,
+        progress,
+        next_action: next_action.to_string(),
+        document_key: document_key.to_string(),
     }
 }
 
@@ -1852,6 +2035,8 @@ mod tests {
         assert_eq!(item.tasks[0].title, "确认需求范围");
         assert_eq!(item.tasks[1].priority, "medium");
         assert_eq!(item.tasks[2].id, "2026-01-01-demo:task-2");
+        assert_eq!(item.lifecycle.stage, "setup");
+        assert_eq!(item.lifecycle.document_key, "worktreeScript");
         assert!(item
             .risks
             .iter()
@@ -1881,6 +2066,87 @@ mod tests {
         }));
 
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn workspace_lifecycle_prioritizes_main_delivery_flow() {
+        let empty_tasks = TaskCounts::default();
+        let scoping = workspace_lifecycle(
+            "analyzing",
+            "待确认",
+            &[],
+            &[],
+            &[],
+            &[],
+            true,
+            true,
+            &empty_tasks,
+            2,
+        );
+        assert_eq!(scoping.stage, "scoping");
+        assert_eq!(scoping.progress, 15);
+
+        let setup = workspace_lifecycle(
+            "analyzing",
+            "chen/demo",
+            &["order".to_string()],
+            &["order".to_string()],
+            &[],
+            &[],
+            true,
+            true,
+            &empty_tasks,
+            2,
+        );
+        assert_eq!(setup.stage, "setup");
+        assert_eq!(setup.document_key, "worktreeScript");
+
+        let developing_tasks = TaskCounts {
+            doing: 1,
+            ..TaskCounts::default()
+        };
+        let developing = workspace_lifecycle(
+            "developing",
+            "chen/demo",
+            &["order".to_string()],
+            &[],
+            &["order".to_string()],
+            &[],
+            true,
+            true,
+            &developing_tasks,
+            1,
+        );
+        assert_eq!(developing.stage, "developing");
+
+        let delivery = workspace_lifecycle(
+            "ready",
+            "chen/demo",
+            &["order".to_string()],
+            &[],
+            &[],
+            &[],
+            true,
+            true,
+            &empty_tasks,
+            1,
+        );
+        assert_eq!(delivery.stage, "delivery");
+
+        let done = workspace_lifecycle(
+            "ready",
+            "chen/demo",
+            &["order".to_string()],
+            &[],
+            &[],
+            &[],
+            true,
+            false,
+            &empty_tasks,
+            0,
+        );
+        assert_eq!(done.stage, "done");
+        assert_eq!(done.progress, 95);
     }
 
     #[test]

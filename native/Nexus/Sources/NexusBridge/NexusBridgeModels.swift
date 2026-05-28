@@ -895,6 +895,7 @@ public struct WorkspaceSnapshot: Codable, Equatable, Sendable {
     public let gitRows: [GitRowSnapshot]
     public let risks: [String]
     public let riskCount: Int
+    public let lifecycle: WorkspaceLifecycleSnapshot?
     public let updated: String
     public let links: [String: String]
     public let worktreeCommand: String
@@ -917,6 +918,7 @@ public struct WorkspaceSnapshot: Codable, Equatable, Sendable {
         gitRows: [GitRowSnapshot],
         risks: [String],
         riskCount: Int,
+        lifecycle: WorkspaceLifecycleSnapshot? = nil,
         updated: String,
         links: [String: String],
         worktreeCommand: String,
@@ -938,6 +940,7 @@ public struct WorkspaceSnapshot: Codable, Equatable, Sendable {
         self.gitRows = gitRows
         self.risks = risks
         self.riskCount = riskCount
+        self.lifecycle = lifecycle
         self.updated = updated
         self.links = links
         self.worktreeCommand = worktreeCommand
@@ -945,6 +948,31 @@ public struct WorkspaceSnapshot: Codable, Equatable, Sendable {
         self.activities = activities
         self.healthChecks = healthChecks
         self.sessionActions = sessionActions
+    }
+}
+
+public struct WorkspaceLifecycleSnapshot: Codable, Equatable, Sendable {
+    public let stage: String
+    public let label: String
+    public let detail: String
+    public let progress: Int
+    public let nextAction: String
+    public let documentKey: String
+
+    public init(
+        stage: String,
+        label: String,
+        detail: String,
+        progress: Int,
+        nextAction: String,
+        documentKey: String
+    ) {
+        self.stage = stage
+        self.label = label
+        self.detail = detail
+        self.progress = progress
+        self.nextAction = nextAction
+        self.documentKey = documentKey
     }
 }
 
@@ -1201,6 +1229,14 @@ public extension DashboardSnapshot {
                     ],
                     risks: ["worktree 未创建: commodity", "交付记录待补充"],
                     riskCount: 2,
+                    lifecycle: WorkspaceLifecycleSnapshot(
+                        stage: "setup",
+                        label: "环境准备 / Setup",
+                        detail: "还有 1 个服务缺少 workspace-local worktree。",
+                        progress: 35,
+                        nextAction: "创建缺失 worktree 后再进入开发。",
+                        documentKey: "worktreeScript"
+                    ),
                     updated: "preview",
                     links: [:],
                     worktreeCommand: "git worktree add ...",
