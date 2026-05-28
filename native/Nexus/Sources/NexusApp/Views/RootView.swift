@@ -3375,6 +3375,13 @@ private struct WorkspaceCreationNextStepsView: View {
         appState.missingWorktreeServices(in: workspace)
     }
 
+    private var creationReceipt: CreateWorkspaceResponse? {
+        guard appState.lastCreatedWorkspace?.folder == workspace.folder else {
+            return nil
+        }
+        return appState.lastCreatedWorkspace
+    }
+
     private var worktreeHint: String {
         if workspace.services.isEmpty {
             return "先补齐服务范围，之后才能生成准确的 worktree。"
@@ -3438,6 +3445,10 @@ private struct WorkspaceCreationNextStepsView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
+                if let creationReceipt {
+                    InitializationReceiptView(receipt: creationReceipt)
+                }
+
                 VStack(alignment: .leading, spacing: 8) {
                     Button {
                         Task {
@@ -3481,6 +3492,185 @@ private struct WorkspaceCreationNextStepsView: View {
                     .disabled(appState.isRunningAutomationCheck)
                 }
             }
+        }
+    }
+}
+
+private struct InitializationReceiptView: View {
+    let receipt: CreateWorkspaceResponse
+
+    private var checks: [WorkspaceInitializationCheck] {
+        receipt.initializationChecks ?? []
+    }
+
+    private var files: [WorkspaceInitializationFile] {
+        receipt.generatedFiles ?? []
+    }
+
+    private var failedCheckCount: Int {
+        checks.filter { $0.status == "fail" || $0.status == "blocker" }.count
+    }
+
+    private var warningCheckCount: Int {
+        checks.filter { $0.status == "warning" || $0.status == "review" }.count
+    }
+
+    private var missingFileCount: Int {
+        files.filter { !$0.exists }.count
+    }
+
+    private var headline: String {
+        if failedCheckCount > 0 || missingFileCount > 0 {
+            return "初始化有缺失项，先处理后再交接 Codex。"
+        }
+        if warningCheckCount > 0 {
+            return "初始化已完成，但仍有待确认项。"
+        }
+        return "初始化文件和 STATUS 初始状态已确认。"
+    }
+
+    private var headlineColor: Color {
+        if failedCheckCount > 0 || missingFileCount > 0 {
+            return NexusPalette.danger
+        }
+        if warningCheckCount > 0 {
+            return NexusPalette.warning
+        }
+        return NexusPalette.success
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: failedCheckCount > 0 || missingFileCount > 0 ? "xmark.octagon" : warningCheckCount > 0 ? "exclamationmark.triangle" : "checkmark.circle")
+                    .foregroundStyle(headlineColor)
+                    .frame(width: 15)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("初始化回执 / Initialization receipt")
+                        .font(.subheadline.weight(.medium))
+                    Text(headline)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Text("\(files.filter(\.exists).count)/\(files.count)")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(headlineColor)
+            }
+
+            if checks.isEmpty && files.isEmpty {
+                Text("当前 bridge 未返回初始化回执。刷新工作区后仍可通过 Documents 和 Workflow 继续检查。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                VStack(alignment: .leading, spacing: 7) {
+                    ForEach(checks) { check in
+                        InitializationCheckRow(check: check)
+                    }
+                }
+
+                DisclosureGroup("生成文件 / Generated files") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(files) { file in
+                            InitializationFileRow(file: file)
+                        }
+                    }
+                    .padding(.top, 6)
+                }
+                .font(.caption)
+            }
+        }
+        .padding(10)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct InitializationCheckRow: View {
+    let check: WorkspaceInitializationCheck
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: icon)
+                .foregroundStyle(color)
+                .frame(width: 15)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(check.label)
+                    .font(.caption.weight(.semibold))
+                Text(check.detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Text(label)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(color)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(color.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+    }
+
+    private var normalizedStatus: String {
+        check.status.lowercased()
+    }
+
+    private var label: String {
+        switch normalizedStatus {
+        case "pass", "ok", "ready":
+            return "pass"
+        case "warning", "review":
+            return "review"
+        default:
+            return "fail"
+        }
+    }
+
+    private var icon: String {
+        switch label {
+        case "pass":
+            return "checkmark.circle"
+        case "review":
+            return "exclamationmark.triangle"
+        default:
+            return "xmark.octagon"
+        }
+    }
+
+    private var color: Color {
+        switch label {
+        case "pass":
+            return NexusPalette.success
+        case "review":
+            return NexusPalette.warning
+        default:
+            return NexusPalette.danger
+        }
+    }
+}
+
+private struct InitializationFileRow: View {
+    let file: WorkspaceInitializationFile
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: file.exists ? "checkmark.circle" : "xmark.octagon")
+                .foregroundStyle(file.exists ? NexusPalette.success : NexusPalette.danger)
+                .frame(width: 15)
+            Text(file.label)
+                .font(.caption)
+            Spacer()
+            Text(file.relativePath)
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
     }
 }

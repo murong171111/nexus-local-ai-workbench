@@ -126,9 +126,30 @@ pub struct CreateWorkspaceRequest {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceInitializationFile {
+    pub label: String,
+    pub relative_path: String,
+    pub kind: String,
+    pub exists: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceInitializationCheck {
+    pub id: String,
+    pub label: String,
+    pub detail: String,
+    pub status: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateWorkspaceResponse {
     pub path: String,
     pub folder: String,
+    pub generated_files: Vec<WorkspaceInitializationFile>,
+    pub initialization_checks: Vec<WorkspaceInitializationCheck>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
@@ -439,9 +460,15 @@ pub fn create_workspace(
         &services,
     )?;
 
+    let generated_files = initialization_file_receipt(&workspace);
+    let initialization_checks =
+        initialization_checks(&workspace, &generated_files, &services, target_branch);
+
     Ok(CreateWorkspaceResponse {
         path: workspace.to_string_lossy().to_string(),
         folder: request.folder,
+        generated_files,
+        initialization_checks,
     })
 }
 
@@ -2108,6 +2135,115 @@ fn write_file(path: &Path, content: &str) -> Result<(), String> {
     fs::write(path, content).map_err(|error| error.to_string())
 }
 
+fn initialization_file_receipt(workspace: &Path) -> Vec<WorkspaceInitializationFile> {
+    [
+        ("Agent guide", "AGENTS.md", "file"),
+        ("Workspace", "workspace.md", "file"),
+        ("Status", "STATUS.md", "file"),
+        ("Services", "services.md", "file"),
+        ("Branches", "branches.md", "file"),
+        ("Plan", "plan.md", "file"),
+        ("Tasks", "tasks.md", "file"),
+        ("Decisions", "decisions.md", "file"),
+        ("Handoff", "handoff.md", "file"),
+        ("Delivery notes", "delivery.md", "file"),
+        ("交付记录", "交付记录.md", "file"),
+        ("Bootstrap report", "bootstrap-report.md", "file"),
+        ("Logs directory", "logs", "directory"),
+        ("SQL directory", "sql", "directory"),
+        ("Repos directory", "repos", "directory"),
+        ("Scripts directory", "scripts", "directory"),
+        ("Worktree script", "scripts/worktree-commands.sh", "script"),
+    ]
+    .into_iter()
+    .map(|(label, relative_path, kind)| {
+        let path = workspace.join(relative_path);
+        let exists = if kind == "directory" {
+            path.is_dir()
+        } else {
+            path.is_file()
+        };
+        WorkspaceInitializationFile {
+            label: label.to_string(),
+            relative_path: relative_path.to_string(),
+            kind: kind.to_string(),
+            exists,
+        }
+    })
+    .collect()
+}
+
+fn initialization_checks(
+    workspace: &Path,
+    generated_files: &[WorkspaceInitializationFile],
+    services: &[String],
+    target_branch: &str,
+) -> Vec<WorkspaceInitializationCheck> {
+    let missing_files = generated_files
+        .iter()
+        .filter(|file| !file.exists)
+        .map(|file| file.relative_path.clone())
+        .collect::<Vec<_>>();
+
+    let status_content = fs::read_to_string(workspace.join("STATUS.md")).unwrap_or_default();
+    let status_is_analyzing = status_content.contains("状态: analyzing");
+    let repos_ready = workspace.join("repos").is_dir();
+    let script_ready = workspace.join("scripts/worktree-commands.sh").is_file();
+
+    vec![
+        WorkspaceInitializationCheck {
+            id: "standard-files".to_string(),
+            label: "标准文件 / Standard files".to_string(),
+            detail: if missing_files.is_empty() {
+                format!("已生成 {} 个标准文件和目录。", generated_files.len())
+            } else {
+                format!("缺失: {}", missing_files.join(", "))
+            },
+            status: if missing_files.is_empty() { "pass" } else { "fail" }.to_string(),
+        },
+        WorkspaceInitializationCheck {
+            id: "status-initial-state".to_string(),
+            label: "初始状态 / Initial status".to_string(),
+            detail: if status_is_analyzing {
+                "STATUS.md 已设置为 analyzing。".to_string()
+            } else {
+                "STATUS.md 未识别到 analyzing 初始状态。".to_string()
+            },
+            status: if status_is_analyzing { "pass" } else { "fail" }.to_string(),
+        },
+        WorkspaceInitializationCheck {
+            id: "service-scope".to_string(),
+            label: "服务范围 / Service scope".to_string(),
+            detail: if services.is_empty() {
+                "服务范围待确认，后续 worktree 创建会被阻止。".to_string()
+            } else {
+                format!("已记录 {} 个服务。", services.len())
+            },
+            status: if services.is_empty() { "warning" } else { "pass" }.to_string(),
+        },
+        WorkspaceInitializationCheck {
+            id: "target-branch".to_string(),
+            label: "目标分支 / Target branch".to_string(),
+            detail: if target_branch == "待确认" {
+                "目标分支待确认，后续 worktree 创建会被阻止。".to_string()
+            } else {
+                format!("目标分支已记录为 {}。", target_branch)
+            },
+            status: if target_branch == "待确认" { "warning" } else { "pass" }.to_string(),
+        },
+        WorkspaceInitializationCheck {
+            id: "worktree-readiness".to_string(),
+            label: "Worktree 准备 / Worktree readiness".to_string(),
+            detail: if repos_ready && script_ready {
+                "repos/ 目录和 scripts/worktree-commands.sh 已就绪。".to_string()
+            } else {
+                "repos/ 目录或 worktree 脚本缺失。".to_string()
+            },
+            status: if repos_ready && script_ready { "pass" } else { "fail" }.to_string(),
+        },
+    ]
+}
+
 fn services_markdown(services: &[String], source_root: &str) -> String {
     let rows = if services.is_empty() {
         "| 待确认 | 待确认 | 待补充 |\n".to_string()
@@ -2783,6 +2919,16 @@ mod tests {
         let created = create_workspace(request).unwrap();
         let workspace = Path::new(&created.path);
         assert_eq!(created.folder, "2026-05-27-demo-feature");
+        assert!(created
+            .generated_files
+            .iter()
+            .any(|file| file.relative_path == "STATUS.md" && file.exists));
+        assert!(created.initialization_checks.iter().any(|check| {
+            check.id == "status-initial-state" && check.status == "pass"
+        }));
+        assert!(created.initialization_checks.iter().any(|check| {
+            check.id == "service-scope" && check.status == "pass"
+        }));
         assert!(workspace.join("AGENTS.md").exists());
         assert!(workspace.join("repos").is_dir());
         assert!(workspace.join("sql").is_dir());
