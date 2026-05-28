@@ -40,6 +40,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added Rust Core workspace lifecycle derivation and native SwiftUI lifecycle displays with progress, next-action, document-open, worktree setup, and Codex handoff controls.
 - Added confirmed Rust Core, FFI, and native SwiftUI lifecycle writeback for `workspace.md` and `STATUS.md`, with local audit events for status transitions.
 - Added native Workflow lifecycle recommendations that turn delivery-readiness results into confirmed lifecycle writeback actions.
+- Added a native Workflow delivery focus card that turns task, delivery, risk, worktree, SQL, and lifecycle state into one recommended next action.
 - Added confirmed worktree setup through Rust Core, FFI, and the Tauri preview UI, with audit logging and command-copy fallback in browser preview mode.
 - Added result-aware native Codex handoff from worktree setup results, including created/skipped/failed service details.
 - Added in-card local-check feedback after running checks from native worktree setup results.

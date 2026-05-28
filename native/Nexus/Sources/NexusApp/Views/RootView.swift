@@ -3820,6 +3820,85 @@ private struct InitializationFileRow: View {
     }
 }
 
+private enum DeliveryFocusAction {
+    case openTasks
+    case openDelivery
+    case openBranches
+    case openServices
+    case setupWorktrees
+    case reviewRisks
+    case runCheck
+    case openCodex
+    case enterDelivery
+    case markDone
+}
+
+private struct DeliveryFocusStep {
+    let title: String
+    let detail: String
+    let statusLabel: String
+    let tone: Color
+    let systemImage: String
+    let actionLabel: String
+    let actionSystemImage: String
+    let action: DeliveryFocusAction
+}
+
+private struct DeliveryFocusCardView: View {
+    let step: DeliveryFocusStep
+    let action: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: step.systemImage)
+                    .foregroundStyle(step.tone)
+                    .frame(width: 16)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(step.title)
+                            .font(.subheadline.weight(.semibold))
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(step.statusLabel)
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(step.tone)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(step.tone.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    }
+
+                    Text(step.detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            HStack {
+                Button {
+                    action()
+                } label: {
+                    Label(step.actionLabel, systemImage: step.actionSystemImage)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .help("执行当前交付焦点建议 / Run the current delivery focus action")
+
+                Spacer()
+            }
+        }
+        .padding(10)
+        .background(step.tone.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(step.tone.opacity(0.18))
+        }
+    }
+}
+
 private struct WorkflowStatusView: View {
     @EnvironmentObject private var appState: AppState
     let workspace: WorkspaceSummary
@@ -3917,6 +3996,177 @@ private struct WorkflowStatusView: View {
             sqlReadiness,
             dirtyServiceReadiness
         ]
+    }
+
+    private var deliveryFocusStep: DeliveryFocusStep {
+        if workspace.isArchived {
+            return DeliveryFocusStep(
+                title: "工作区已归档 / Archived",
+                detail: "这个需求已退出活跃交付流。需要重新处理前，先复查交付记录和 handoff。",
+                statusLabel: "archive",
+                tone: .secondary,
+                systemImage: "archivebox",
+                actionLabel: "打开交付",
+                actionSystemImage: "doc.text",
+                action: .openDelivery
+            )
+        }
+
+        if workspace.lifecycle.stage == "done" {
+            return DeliveryFocusStep(
+                title: "交付已完成 / Done",
+                detail: "生命周期已标记完成。建议保留交付记录作为后续追溯入口。",
+                statusLabel: "done",
+                tone: NexusPalette.success,
+                systemImage: "checkmark.seal",
+                actionLabel: "查看交付",
+                actionSystemImage: "doc.text",
+                action: .openDelivery
+            )
+        }
+
+        if !Self.hasConfirmedTargetBranch(workspace.branch) {
+            return DeliveryFocusStep(
+                title: "先确认目标分支 / Confirm branch first",
+                detail: "分支仍待确认，交付检查无法判断代码是否在正确的开发线上。",
+                statusLabel: "block",
+                tone: NexusPalette.danger,
+                systemImage: "arrow.triangle.branch",
+                actionLabel: "打开分支",
+                actionSystemImage: "doc.text",
+                action: .openBranches
+            )
+        }
+
+        if workspace.services.isEmpty {
+            return DeliveryFocusStep(
+                title: "先确认服务范围 / Confirm services first",
+                detail: "服务范围为空，任务、worktree 和交付影响面都还没有可靠边界。",
+                statusLabel: "block",
+                tone: NexusPalette.danger,
+                systemImage: "square.stack.3d.up",
+                actionLabel: "打开服务",
+                actionSystemImage: "doc.text",
+                action: .openServices
+            )
+        }
+
+        if !missingWorktreeServices.isEmpty {
+            let names = missingWorktreeServices.map(\.name).joined(separator: ", ")
+            return DeliveryFocusStep(
+                title: "先补齐 worktree / Setup worktrees first",
+                detail: "缺失 \(missingWorktreeServices.count) 个 workspace-local worktree: \(names)",
+                statusLabel: "block",
+                tone: NexusPalette.warning,
+                systemImage: "arrow.triangle.branch",
+                actionLabel: "创建 worktree",
+                actionSystemImage: "wrench.and.screwdriver",
+                action: .setupWorktrees
+            )
+        }
+
+        if !blockedTasks.isEmpty {
+            return DeliveryFocusStep(
+                title: "先处理阻塞任务 / Resolve blockers",
+                detail: "\(blockedTasks.count) 个任务处于阻塞状态，交付前需要完成、延期或拆分处理。",
+                statusLabel: "block",
+                tone: NexusPalette.danger,
+                systemImage: "checklist",
+                actionLabel: "打开任务",
+                actionSystemImage: "checklist",
+                action: .openTasks
+            )
+        }
+
+        if workspace.riskLevel == .high || !workspace.risks.isEmpty {
+            return DeliveryFocusStep(
+                title: "先复核风险 / Review risks",
+                detail: "当前有 \(workspace.risks.count) 个风险信号。建议把风险上下文交给 Codex 复核，再进入交付确认。",
+                statusLabel: workspace.riskLevel == .high ? "block" : "review",
+                tone: workspace.riskLevel == .high ? NexusPalette.danger : NexusPalette.warning,
+                systemImage: "exclamationmark.triangle",
+                actionLabel: "风险交接",
+                actionSystemImage: "point.3.connected.trianglepath.dotted",
+                action: .reviewRisks
+            )
+        }
+
+        if !openTasks.isEmpty {
+            return DeliveryFocusStep(
+                title: "确认开放任务 / Review open tasks",
+                detail: "\(openTasks.count) 个任务仍未关闭。交付前需要判断它们是已完成、延期，还是还要继续开发。",
+                statusLabel: "review",
+                tone: NexusPalette.accent,
+                systemImage: "checklist",
+                actionLabel: "打开任务",
+                actionSystemImage: "checklist",
+                action: .openTasks
+            )
+        }
+
+        if deliveryStatusLabel != "ready" {
+            return DeliveryFocusStep(
+                title: "补齐交付记录 / Update delivery record",
+                detail: deliveryStatusText,
+                statusLabel: deliveryStatusLabel,
+                tone: deliveryColor,
+                systemImage: "doc.text",
+                actionLabel: "打开交付",
+                actionSystemImage: "doc.text",
+                action: .openDelivery
+            )
+        }
+
+        if let sqlItem = readinessItems.first(where: { $0.id == "sql" }), sqlItem.status != .pass {
+            return DeliveryFocusStep(
+                title: "复核 SQL 记录 / Review SQL notes",
+                detail: sqlItem.detail,
+                statusLabel: "review",
+                tone: NexusPalette.warning,
+                systemImage: "cylinder.split.1x2",
+                actionLabel: "运行检查",
+                actionSystemImage: "checklist.checked",
+                action: .runCheck
+            )
+        }
+
+        if !dirtyServices.isEmpty {
+            let names = dirtyServices.map(\.name).joined(separator: ", ")
+            return DeliveryFocusStep(
+                title: "复核未提交改动 / Review local changes",
+                detail: "还有 \(dirtyServices.count) 个服务存在未提交状态: \(names)",
+                statusLabel: "review",
+                tone: NexusPalette.warning,
+                systemImage: "arrow.triangle.branch",
+                actionLabel: "交接 Codex",
+                actionSystemImage: "point.3.connected.trianglepath.dotted",
+                action: .openCodex
+            )
+        }
+
+        if workspace.lifecycle.stage == "delivery" {
+            return DeliveryFocusStep(
+                title: "可以完成交付 / Ready to finish",
+                detail: "关键检查项已通过。可以进入完成确认，或先再运行一次本地检查。",
+                statusLabel: "ready",
+                tone: NexusPalette.success,
+                systemImage: "checkmark.seal",
+                actionLabel: "标记完成",
+                actionSystemImage: "checkmark.seal",
+                action: .markDone
+            )
+        }
+
+        return DeliveryFocusStep(
+            title: "进入交付整理 / Enter delivery",
+            detail: "任务、风险、worktree 和交付记录暂无明显阻塞。下一步把生命周期切到交付整理。",
+            statusLabel: "ready",
+            tone: NexusPalette.success,
+            systemImage: "shippingbox",
+            actionLabel: "进入交付",
+            actionSystemImage: "shippingbox",
+            action: .enterDelivery
+        )
     }
 
     private var nonPassingReadinessItems: [DeliveryReadinessItem] {
@@ -4124,6 +4374,10 @@ private struct WorkflowStatusView: View {
     var body: some View {
         SectionBlock(title: "任务与交付 / Workflow") {
             VStack(alignment: .leading, spacing: 12) {
+                DeliveryFocusCardView(step: deliveryFocusStep) {
+                    runDeliveryFocusAction(deliveryFocusStep.action)
+                }
+
                 HStack(spacing: 8) {
                     WorkflowMetric(
                         label: "Open tasks",
@@ -4244,6 +4498,50 @@ private struct WorkflowStatusView: View {
                 }
             }
         }
+    }
+
+    private func runDeliveryFocusAction(_ action: DeliveryFocusAction) {
+        switch action {
+        case .openTasks:
+            Task {
+                await appState.loadDocument(path: tasksPath)
+            }
+        case .openDelivery:
+            Task {
+                await appState.loadDocument(path: deliveryPath)
+            }
+        case .openBranches:
+            Task {
+                await appState.loadDocument(path: documentPath(for: "branches", fallback: "branches.md"))
+            }
+        case .openServices:
+            Task {
+                await appState.loadDocument(path: documentPath(for: "services", fallback: "services.md"))
+            }
+        case .setupWorktrees:
+            appState.presentWorktreeSetup(for: workspace)
+        case .reviewRisks:
+            copyToPasteboard(appState.riskReviewPrompt(for: workspace))
+            Task {
+                await appState.recordRiskReviewHandoffCopied(for: workspace)
+            }
+        case .runCheck:
+            Task {
+                await appState.runLocalAutomationCheck(actor: "Nexus Workflow")
+            }
+        case .openCodex:
+            Task {
+                await appState.openWorkspaceInCodex(workspace)
+            }
+        case .enterDelivery:
+            lifecycleAction(.delivery)
+        case .markDone:
+            lifecycleAction(.done)
+        }
+    }
+
+    private func documentPath(for key: String, fallback: String) -> String {
+        workspace.documentLinks[key] ?? "\(workspace.path)/\(fallback)"
     }
 
     private static func hasConfirmedTargetBranch(_ branch: String) -> Bool {
