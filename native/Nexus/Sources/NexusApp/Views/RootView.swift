@@ -1912,6 +1912,12 @@ private struct InspectorView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                if let feedback = appState.codexHandoffFeedback {
+                    CodexHandoffFeedbackView(feedback: feedback) {
+                        appState.clearCodexHandoffFeedback()
+                    }
+                }
+
                 AutomationActionCenterView()
 
                 if let workspace = appState.selectedWorkspace {
@@ -1990,6 +1996,50 @@ private struct InspectorEmptyStateView: View {
 
     private var actionColumns: [GridItem] {
         [GridItem(.adaptive(minimum: 92), spacing: 8, alignment: .leading)]
+    }
+}
+
+private struct CodexHandoffFeedbackView: View {
+    let feedback: CodexHandoffFeedback
+    let dismissAction: () -> Void
+
+    var body: some View {
+        SectionBlock(title: "交接状态 / Handoff") {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 9) {
+                    Image(systemName: feedback.systemImage)
+                        .foregroundStyle(NexusPalette.accent)
+                        .frame(width: 16)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(feedback.title)
+                            .font(.subheadline.weight(.semibold))
+                        Text(feedback.detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text("\(feedback.timestamp) · Prompt is on the clipboard")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Button {
+                        dismissAction()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(.plain)
+                    .help("关闭交接提示 / Dismiss")
+                }
+
+                Label("如果 Codex 没有自动带入内容，直接粘贴剪贴板里的上下文。", systemImage: "doc.on.clipboard")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 }
 
@@ -4760,6 +4810,7 @@ private struct AgentEventDetailSheet: View {
         Task {
             let payload = await appState.agentEventHandoffPrompt(for: event)
             copyToPasteboard(payload)
+            appState.markAgentEventHandoffCopied(event)
         }
     }
 

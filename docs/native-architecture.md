@@ -1,6 +1,6 @@
 # Native Architecture Target
 
-Nexus is moving toward a Mac-first native architecture while preserving the current Tauri app as the preview implementation.
+Nexus is moving toward a Mac-first native architecture while preserving the current Tauri app as the preview implementation. The Chinese product shape in `docs/product-shape.zh-CN.md` defines the target user experience that this architecture supports.
 
 ## Target Shape
 
@@ -66,6 +66,7 @@ The first native shell scaffold is available at `native/Nexus`. It is a Swift Pa
 - The native Settings surface can run local environment checks for configured directories, write access, Git availability, workspace counts, and source repository counts after a profile is imported.
 - The native workspace list owns first-run and empty-filter guidance: it surfaces configured local paths, the latest environment-health summary, and the primary recovery actions before users reach a workspace detail.
 - The native workspace detail surface owns Mac handoff actions for Finder, Terminal, and Codex URL launches. Codex handoff copies a workspace prompt first, then opens the configured local URL.
+- The native inspector owns transient Codex handoff feedback so clipboard-based context transfers have visible confirmation without writing additional workspace files.
 - The native workspace detail surface now starts with a `Command Center` for the primary path, then separates product workflow concerns: `Workflow` owns tasks and delivery state, `Risk Review` owns active risks and non-delivery readiness checks, `Documents` owns standard Markdown/script entry points, and `Activity` remains historical context.
 - The native worktree setup surface treats Git worktree creation as a preflighted local-write operation: target branch, missing services, source repositories, and workspace-local write paths must be visible before confirmation.
 - Native document reads render Markdown by default, keep a source toggle for raw content, append `document.opened` audit events when the Rust Core bridge is available, and update the visible timeline immediately.

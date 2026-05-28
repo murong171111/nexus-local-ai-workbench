@@ -1,6 +1,6 @@
 # Roadmap
 
-This roadmap describes the next product and engineering steps for Nexus. The current Tauri app remains the preview app, but future roadmap work should move toward the native architecture documented in `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md`.
+This roadmap describes the next product and engineering steps for Nexus. The current Tauri app remains the preview app, but future roadmap work should move toward the native architecture documented in `docs/adr/0001-native-swiftui-rust-core.md`, `docs/native-architecture.md`, and the product shape in `docs/product-shape.zh-CN.md`.
 
 ## Architecture Direction
 
@@ -36,6 +36,7 @@ This roadmap describes the next product and engineering steps for Nexus. The cur
 - Add branch alignment checks across services. `[done in 0.1.x preview]`
 - Add workspace health checks before a development session starts. `[started in Rust Core, Tauri preview UI, and native SwiftUI shell]`
 - Add a session startup flow that converts readiness results into prioritized Codex/worktree/document actions. `[started in Rust Core, Tauri preview UI, and native SwiftUI shell]`
+- Add visible Codex handoff feedback for copied workspace, lifecycle, risk, task, automation, and agent-event context. `[started in native SwiftUI shell]`
 - Add workspace lifecycle stages that guide each demand from scoping through setup, development, delivery, done, blocked, and archived states. `[started in Rust Core and native SwiftUI shell]`
 - Add confirmed lifecycle status writebacks for entering development, delivery, done, blocked, and archived states. `[started in Rust Core, Swift/Rust bridge, and native SwiftUI shell]`
 - Add a native workflow summary for task and delivery status in the workspace detail. `[started in native SwiftUI shell]`

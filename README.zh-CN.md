@@ -32,6 +32,7 @@ Nexus 是一个面向 macOS 的本地 AI 开发工作台，用来管理需求工
 - 原生新建工作区流程支持扫描源仓库目录、筛选服务候选、勾选真实本地服务，并允许在需求早期把服务范围标记为待确认；创建后会聚焦新工作区，并给出 handoff、worktree、Codex 和本地检查入口。
 - 原生 worktree 创建前会进行预检，确认目标分支、缺失 worktree、源仓库和 workspace-local 写入位置；执行后会刷新工作区状态，解释 created/skipped/failed 服务，并把下一步引导到 Finder、Codex 或本地检查。
 - 原生工作区详情顶部提供 Command Center，把生命周期进度、下一步、分支/服务/风险/任务信号、Codex 继续、本地检查、Finder 和 Terminal 放到同一个固定入口。
+- 原生 Codex 交接会显示可关闭反馈面板，明确 workspace、生命周期、风险、任务、自动化或 Agent 事件上下文已经复制，并提示下一步可直接粘贴。
 - 原生工作区列表提供空状态和 setup 引导，能展示当前配置路径、环境检查结果，并直接进入 Settings、新建工作区、刷新和环境检查。
 - 原生工作区详情提供 Workflow 汇总，集中展示开放任务、阻塞任务、交付状态、任务文档、交付记录、本地检查和 Codex 交接。
 - 原生工作区详情提供 Risk review 风险复核，把活动风险、非交付类就绪检查、阻塞项、警告项、状态文档、worktree 创建、本地复查和 Codex 风险复核 Prompt 放在同一个固定区块。
@@ -66,6 +67,8 @@ Nexus 是一个面向 macOS 的本地 AI 开发工作台，用来管理需求工
 导入 Profile 后，可以在原生 Settings 中运行 `Environment Check`，确认目录是否存在、是否可写、Git 是否可用，以及是否识别到了工作区和源仓库。
 
 在工作区详情中，可以使用 `Finder`、`Terminal` 或 `Codex` 将当前工作区交给本地工具。`Codex` 动作会复制一段带工作区、分支、服务、风险和路径的上下文，并打开 Settings 中配置的 Codex URL。
+
+每次交接 Codex 或复制上下文后，原生右侧检查器会显示 `Handoff` 状态面板，包含上下文类型、时间和“Prompt 已在剪贴板”的提示；如果 Codex 没有自动带入内容，直接粘贴即可。
 
 > 当前预发布包尚未接入 Apple Developer 签名和 notarization。首次打开时，macOS 可能会显示安全提示，需要在系统设置中手动允许。
 
@@ -215,6 +218,7 @@ widget/NexusWidget/NexusWidget.swift
 
 ## 文档
 
+- [完整产品形态](docs/product-shape.zh-CN.md)
 - [架构说明](docs/architecture.md)
 - [原生架构目标](docs/native-architecture.md)
 - [原生迁移计划](docs/plans/2026-05-27-native-mac-migration.md)

@@ -109,6 +109,7 @@ final class AppState: ObservableObject {
     @Published var lastCreatedWorkspace: CreateWorkspaceResponse?
     @Published var pendingWorktreeSetupWorkspace: WorkspaceSummary?
     @Published var lastWorktreeSetupResponse: SetupWorktreesResponse?
+    @Published var codexHandoffFeedback: CodexHandoffFeedback?
     @Published var searchResults: [SearchResult] = []
     @Published var selectedSearchResultIndex = 0
     @Published var isSearching = false
@@ -1131,8 +1132,18 @@ final class AppState: ObservableObject {
             : codexURL.trimmingCharacters(in: .whitespacesAndNewlines)
         if let url = URL(string: rawURL) {
             NSWorkspace.shared.open(url)
+            markCodexHandoff(
+                title: "Codex 已打开 / Context copied",
+                detail: "\(workspace.name) · 工作区上下文已复制到剪贴板。",
+                systemImage: "point.3.connected.trianglepath.dotted"
+            )
         } else {
             lastError = "Invalid Codex URL: \(rawURL)"
+            markCodexHandoff(
+                title: "上下文已复制 / URL needs review",
+                detail: "\(workspace.name) · Codex URL 无效，请在 Settings 中修正。",
+                systemImage: "exclamationmark.triangle"
+            )
         }
 
         await recordWorkspaceAction(
@@ -1148,6 +1159,11 @@ final class AppState: ObservableObject {
     }
 
     func recordLifecycleHandoffCopied(for workspace: WorkspaceSummary) async {
+        markCodexHandoff(
+            title: "生命周期上下文已复制 / Lifecycle copied",
+            detail: "\(workspace.name) · \(workspace.lifecycle.label) · 下一步已放入剪贴板。",
+            systemImage: "doc.on.clipboard"
+        )
         await recordWorkspaceAction(
             action: "lifecycle_handoff.copied",
             target: workspace.path,
@@ -1162,6 +1178,11 @@ final class AppState: ObservableObject {
     }
 
     func recordRiskReviewHandoffCopied(for workspace: WorkspaceSummary) async {
+        markCodexHandoff(
+            title: "风险复核上下文已复制 / Risk copied",
+            detail: "\(workspace.name) · \(workspace.risks.count) risks · 用于 Codex 继续复核。",
+            systemImage: "exclamationmark.triangle"
+        )
         await recordWorkspaceAction(
             action: "risk_review_handoff.copied",
             target: workspace.path,
@@ -1218,6 +1239,11 @@ final class AppState: ObservableObject {
     }
 
     func recordAutomationSignalHandoffCopied(_ signal: LocalAutomationSignal) async {
+        markCodexHandoff(
+            title: "自动化信号已复制 / Signal copied",
+            detail: "\(signal.title) · \(signal.count) item(s) · 可交给 Codex 继续处理。",
+            systemImage: "bolt.badge.clock"
+        )
         _ = try? await bridge.appendAuditEvent(
             request: AppendAuditEventRequest(
                 auditRoot: auditRootPath,
@@ -1346,6 +1372,11 @@ final class AppState: ObservableObject {
     }
 
     func recordTaskHandoffCopied(task: WorkspaceTask, in workspace: WorkspaceSummary) async {
+        markCodexHandoff(
+            title: "任务上下文已复制 / Task copied",
+            detail: "\(workspace.name) · \(task.title)",
+            systemImage: "checklist"
+        )
         await recordWorkspaceAction(
             action: "codex_task_handoff.copied",
             target: "\(workspace.path)/tasks.md",
@@ -1357,6 +1388,28 @@ final class AppState: ObservableObject {
                 "taskSource": task.source
             ],
             workspaceOverride: workspace
+        )
+    }
+
+    func markAgentEventHandoffCopied(_ event: AgentEvent) {
+        let target = event.workspaceFolder ?? event.id
+        markCodexHandoff(
+            title: "Agent 事件上下文已复制 / Event copied",
+            detail: "\(event.title) · \(target)",
+            systemImage: "doc.on.clipboard"
+        )
+    }
+
+    func clearCodexHandoffFeedback() {
+        codexHandoffFeedback = nil
+    }
+
+    private func markCodexHandoff(title: String, detail: String, systemImage: String) {
+        codexHandoffFeedback = CodexHandoffFeedback(
+            title: title,
+            detail: detail,
+            timestamp: Self.activityTimestamp(),
+            systemImage: systemImage
         )
     }
 
