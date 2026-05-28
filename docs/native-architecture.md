@@ -33,6 +33,7 @@ The first native shell scaffold is available at `native/Nexus`. It is a Swift Pa
 - AppKit adapters for menu bar, file panels, keyboard shortcuts, Finder/Terminal/IDE launch, and any behavior where AppKit is more reliable than SwiftUI alone.
 - Explicit confirmation flows for operations that create files, create worktrees, or change local state.
 - Create-workspace UX for scanning source repositories, filtering service candidates, accepting manual fallback services, showing pending scope, summarizing the local write before confirmation, and guiding the user to the next safe step after creation.
+- Workspace workflow summary that keeps task status, delivery-record status, document opens, local checks, and Codex handoff together instead of scattering them across unrelated sections.
 
 ### Rust Core
 

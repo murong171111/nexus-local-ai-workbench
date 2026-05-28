@@ -46,6 +46,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Native Settings now includes an environment check for configured paths, Git availability, workspace counts, and source repository counts.
 - Native SwiftUI session actions are now actionable for document follow-ups and confirmed worktree setup, with visible created/skipped/failed results.
 - Native SwiftUI worktree setup now refreshes the active workspace result state, explains blocked/empty states, and provides Finder, Codex, local-check, and close follow-up actions after setup.
+- Native SwiftUI workspace details now include a Workflow summary that keeps task counts, blocked tasks, delivery-record status, task/delivery document opens, local checks, and Codex handoff in one section.
 - Rust Core and the Swift/Rust bridge now support local agent event append/read flows backed by `agent-events.jsonl`.
 - Native SwiftUI sidebar now shows recent agent events from the local bridge, with preview fallback data when Rust Core is not loaded.
 - Native SwiftUI agent events can now be opened for full context, metadata inspection, and JSON copy.
