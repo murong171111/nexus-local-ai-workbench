@@ -1568,6 +1568,46 @@ private struct WorkspaceDetailView: View {
                     .lineLimit(2)
             }
 
+            SectionBlock(title: "本地入口 / Local handoff") {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Button {
+                            Task {
+                                await appState.openWorkspaceInFinder(workspace)
+                            }
+                        } label: {
+                            Label("Finder", systemImage: "folder")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+
+                        Button {
+                            Task {
+                                await appState.openWorkspaceInTerminal(workspace)
+                            }
+                        } label: {
+                            Label("Terminal", systemImage: "terminal")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+
+                        Button {
+                            Task {
+                                await appState.openWorkspaceInCodex(workspace)
+                            }
+                        } label: {
+                            Label("Codex", systemImage: "point.3.connected.trianglepath.dotted")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                    }
+
+                    Text("Codex 会复制当前工作区上下文，并打开 Settings 中配置的 URL。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             LifecycleDetailView(
                 workspace: workspace,
                 openAction: {

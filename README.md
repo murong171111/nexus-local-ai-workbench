@@ -17,6 +17,7 @@ It is designed for teams that work across multiple local service repositories an
 - Local audit log for confirmed workspace creation and settings profile exports.
 - Local SQLite + FTS index foundation for workspace Markdown, service scope, tasks, decisions, delivery records, and SQL notes.
 - Native SwiftUI Markdown document preview with preview/source modes for workspace handoff documents and search result documents.
+- Native workspace handoff actions for opening the active workspace in Finder, Terminal, or Codex with copied context.
 - Native SwiftUI Task Center that surfaces open workspace tasks from `tasks.md`, including persisted filters, agent-sourced task writebacks, confirmed complete/defer actions, and task-level Codex handoff prompts.
 - Native SwiftUI menu bar status for quick workspace, risk, task, worktree, refresh, settings, and copy-summary actions.
 - Local automation checks for refresh, risk, delivery, task, worktree, and dirty-service signals, exposed through Rust Core, the Swift/Rust bridge, the native menu bar, optional scheduled checks, and configurable macOS notifications.
@@ -52,6 +53,8 @@ On first launch:
 6. Click the refresh button in the top bar.
 
 To share Nexus setup with another teammate, open `Settings` and export a `nexus-settings-profile-*.json`. The generated JSON contains only path conventions, the Codex URL scheme, and refresh interval. Teammates can import the profile from first-run onboarding or native Settings, then adjust paths for their own machine if needed.
+
+From a workspace detail view, use `Finder`, `Terminal`, or `Codex` to hand the current workspace to local tools. The Codex action copies a workspace-specific prompt and opens the configured Codex URL from Settings.
 
 ## Workspace Layout
 
