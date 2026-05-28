@@ -31,6 +31,7 @@ It is designed for teams that work across multiple local service repositories an
 - Native workspace scanning from the configured paths; no local Python script is required for the packaged app.
 - Native create-workspace flow that scans source repositories, filters service candidates, selects real local services, leaves service scope pending when needed, then focuses the new workspace with handoff, worktree, Codex, and check actions.
 - Native worktree setup refreshes the workspace state after running, explains created/skipped/failed services, and routes the next step to Finder, Codex, or local checks.
+- Native workflow summary in workspace detail for open tasks, blocked tasks, delivery status, task documents, delivery records, local checks, and Codex handoff.
 - Branch alignment checks that flag worktrees whose actual branch does not match the workspace target branch.
 - Workspace bootstrap reports and reviewable `scripts/worktree-commands.sh` files for semi-automated worktree setup.
 - Delivery-record completeness warnings when `交付记录.md` still needs real change notes.
@@ -103,6 +104,8 @@ Nexus writes JSONL audit events to `~/Library/Application Support/com.ks.nexus/a
 The native menu bar can run a local automation check manually or on a persisted schedule while Nexus is running. That check scans workspace Markdown and git state for refresh, risk, delivery, task, worktree, and dirty-service signals, then appends an `automation.check.completed` audit event when the Rust Core bridge is available. Optional macOS notifications are off by default, support cooldown and signal preferences, and only fire when a check result matches the selected minimum status.
 
 The native right inspector also includes an Automation Action Center. After a check runs, Nexus converts risk, delivery, task, and worktree signals into clickable actions such as focusing a risky workspace, opening delivery notes, selecting the Task Center, presenting the worktree setup confirmation, or copying a Codex prompt with the current local paths and workspace context.
+
+Each workspace detail view includes a `Workflow` section that keeps task and delivery state together. It summarizes open and blocked tasks, shows whether the delivery record is ready or needs review, opens `tasks.md` and `交付记录.md`, runs the local check, and hands the current context to Codex.
 
 Archived workspaces remain visible in the workspace list and Archive filter, but they are excluded from active menu-bar counts, Task Center totals, and automation attention signals.
 

@@ -1891,6 +1891,20 @@ private struct WorkspaceDetailView: View {
                 }
             )
 
+            WorkflowStatusView(
+                workspace: workspace,
+                completeTaskAction: { task in
+                    appState.requestTaskStatusUpdate(task, in: workspace, status: "已完成")
+                },
+                deferTaskAction: { task in
+                    appState.requestTaskStatusUpdate(task, in: workspace, status: "延期")
+                },
+                taskCodexAction: { task in
+                    copyTaskHandoff(task, in: workspace)
+                }
+            )
+            .environmentObject(appState)
+
             SectionBlock(title: "服务 Git 状态 / Services") {
                 ForEach(workspace.services) { service in
                     VStack(alignment: .leading, spacing: 3) {
@@ -1910,28 +1924,9 @@ private struct WorkspaceDetailView: View {
                 }
             }
 
-            if !workspace.tasks.isEmpty {
-                SectionBlock(title: "本地任务 / Tasks") {
-                    ForEach(Array(workspace.tasks.prefix(6))) { task in
-                        WorkspaceTaskRow(
-                            task: task,
-                            completeAction: {
-                                appState.requestTaskStatusUpdate(task, in: workspace, status: "已完成")
-                            },
-                            deferAction: {
-                                appState.requestTaskStatusUpdate(task, in: workspace, status: "延期")
-                            },
-                            codexAction: {
-                                copyTaskHandoff(task, in: workspace)
-                            }
-                        )
-                    }
-                }
-            }
-
-            if !workspace.healthChecks.isEmpty {
+            if !readinessChecks.isEmpty {
                 SectionBlock(title: "就绪检查 / Readiness") {
-                    ForEach(workspace.healthChecks) { check in
+                    ForEach(readinessChecks) { check in
                         HealthCheckRow(check: check)
                     }
                 }
@@ -2011,6 +2006,12 @@ private struct WorkspaceDetailView: View {
             let payload = await appState.workspaceTaskHandoffPrompt(for: task, in: workspace)
             copyToPasteboard(payload)
             await appState.recordTaskHandoffCopied(task: task, in: workspace)
+        }
+    }
+
+    private var readinessChecks: [WorkspaceHealthCheck] {
+        workspace.healthChecks.filter { check in
+            check.id != "delivery-record" && check.action != "delivery"
         }
     }
 }
@@ -2500,6 +2501,210 @@ private struct WorkspaceCreationNextStepsView: View {
                 }
             }
         }
+    }
+}
+
+private struct WorkflowStatusView: View {
+    @EnvironmentObject private var appState: AppState
+    let workspace: WorkspaceSummary
+    let completeTaskAction: (WorkspaceTask) -> Void
+    let deferTaskAction: (WorkspaceTask) -> Void
+    let taskCodexAction: (WorkspaceTask) -> Void
+
+    private var openTasks: [WorkspaceTask] {
+        workspace.tasks.filter { !$0.isDone }
+    }
+
+    private var blockedTasks: [WorkspaceTask] {
+        openTasks.filter(\.isBlocked)
+    }
+
+    private var deliveryCheck: WorkspaceHealthCheck? {
+        workspace.healthChecks.first { check in
+            check.id == "delivery-record" || check.action == "delivery"
+        }
+    }
+
+    private var deliveryRisk: RiskAlert? {
+        workspace.risks.first { risk in
+            let normalized = "\(risk.title) \(risk.detail)".lowercased()
+            return normalized.contains("交付") || normalized.contains("delivery")
+        }
+    }
+
+    private var deliveryStatusText: String {
+        if let deliveryCheck {
+            return deliveryCheck.detail
+        }
+        if let deliveryRisk {
+            return deliveryRisk.detail
+        }
+        return "交付记录暂无明显占位内容。"
+    }
+
+    private var deliveryStatusLabel: String {
+        guard let deliveryCheck else {
+            return deliveryRisk == nil ? "ready" : "review"
+        }
+        switch deliveryCheck.status {
+        case "pass":
+            return "ready"
+        case "warning":
+            return "review"
+        default:
+            return "blocked"
+        }
+    }
+
+    private var deliveryColor: Color {
+        switch deliveryStatusLabel {
+        case "ready":
+            return NexusPalette.success
+        case "review":
+            return NexusPalette.warning
+        default:
+            return NexusPalette.danger
+        }
+    }
+
+    private var tasksPath: String {
+        workspace.documentLinks["tasks"] ?? "\(workspace.path)/tasks.md"
+    }
+
+    private var deliveryPath: String {
+        workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md"
+    }
+
+    var body: some View {
+        SectionBlock(title: "任务与交付 / Workflow") {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    WorkflowMetric(
+                        label: "Open tasks",
+                        value: "\(openTasks.count)",
+                        tone: openTasks.isEmpty ? NexusPalette.success : NexusPalette.accent
+                    )
+                    WorkflowMetric(
+                        label: "Blocked",
+                        value: "\(blockedTasks.count)",
+                        tone: blockedTasks.isEmpty ? NexusPalette.success : NexusPalette.danger
+                    )
+                    WorkflowMetric(
+                        label: "Delivery",
+                        value: deliveryStatusLabel,
+                        tone: deliveryColor
+                    )
+                }
+
+                HStack(alignment: .top, spacing: 9) {
+                    Image(systemName: deliveryStatusLabel == "ready" ? "doc.text.magnifyingglass" : "exclamationmark.triangle")
+                        .foregroundStyle(deliveryColor)
+                        .frame(width: 15)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("交付记录 / Delivery record")
+                            .font(.subheadline.weight(.medium))
+                        Text(deliveryStatusText)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    Button {
+                        Task {
+                            await appState.loadDocument(path: tasksPath)
+                        }
+                    } label: {
+                        Label("Tasks", systemImage: "checklist")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    Button {
+                        Task {
+                            await appState.loadDocument(path: deliveryPath)
+                        }
+                    } label: {
+                        Label("Delivery", systemImage: "doc.text")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    Button {
+                        Task {
+                            await appState.runLocalAutomationCheck()
+                        }
+                    } label: {
+                        Label(appState.isRunningAutomationCheck ? "Checking" : "Check", systemImage: "checklist.checked")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(appState.isRunningAutomationCheck)
+
+                    Button {
+                        Task {
+                            await appState.openWorkspaceInCodex(workspace)
+                        }
+                    } label: {
+                        Label("Codex", systemImage: "point.3.connected.trianglepath.dotted")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+
+                if openTasks.isEmpty {
+                    Label("当前没有开放任务。可以继续查看交付记录或运行本地检查确认状态。", systemImage: "checkmark.circle")
+                        .font(.caption)
+                        .foregroundStyle(NexusPalette.success)
+                } else {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(Array(openTasks.prefix(4))) { task in
+                            WorkspaceTaskRow(
+                                task: task,
+                                completeAction: {
+                                    completeTaskAction(task)
+                                },
+                                deferAction: {
+                                    deferTaskAction(task)
+                                },
+                                codexAction: {
+                                    taskCodexAction(task)
+                                }
+                            )
+                        }
+
+                        if openTasks.count > 4 {
+                            Text("Showing 4 of \(openTasks.count) open tasks. Open tasks.md for the full list.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct WorkflowMetric: View {
+    let label: String
+    let value: String
+    let tone: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                .foregroundStyle(tone)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(tone.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 }
 
