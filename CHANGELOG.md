@@ -35,6 +35,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Native SwiftUI search popover backed by the Swift/Rust search bridge, with grouped results, keyboard navigation, and workspace metadata fallback.
 - Native search-result context preview with workspace risk, branch/service summary, and compact activity timeline.
 - Native search scope controls for workspace/state/workflow/SQL/document-focused search in the SwiftUI shell.
+- Native SwiftUI document previews now render Markdown by default and keep a source-mode toggle for raw content.
 - Native pinned workspaces with local persistence so important requirement workspaces stay at the top of the Mac shell.
 - Native Settings can now be opened from the sidebar, persists configured local roots, and can save/reload or reset default paths.
 - Native SwiftUI session actions are now actionable for document follow-ups and confirmed worktree setup, with visible created/skipped/failed results.

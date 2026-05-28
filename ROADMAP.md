@@ -31,7 +31,7 @@ This roadmap describes the next product and engineering steps for Nexus. The cur
 ## 0.3.x: Native Workspace Operations
 
 - Make the SwiftUI shell read real workspace data from Rust Core. `[started with optional dynamic bridge]`
-- Add native Markdown document rendering in the SwiftUI shell. `[started with document bridge and text preview]`
+- Add native Markdown document rendering in the SwiftUI shell. `[started with document bridge and preview/source modes]`
 - Add safer worktree creation from selected source repositories. `[started in Rust Core, FFI, and Tauri preview UI with explicit confirmation]`
 - Add branch alignment checks across services. `[done in 0.1.x preview]`
 - Add workspace health checks before a development session starts. `[started in Rust Core, Tauri preview UI, and native SwiftUI shell]`
