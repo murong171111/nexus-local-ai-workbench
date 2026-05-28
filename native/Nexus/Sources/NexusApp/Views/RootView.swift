@@ -1222,6 +1222,9 @@ private struct WorkspaceCard: View {
                 }
                 .buttonStyle(.plain)
                 .help(isPinned ? "取消置顶 / Unpin workspace" : "置顶工作区 / Pin workspace")
+                if workspace.isArchived {
+                    ArchivedBadge()
+                }
                 RiskBadge(level: workspace.riskLevel)
             }
 
@@ -1241,12 +1244,19 @@ private struct WorkspaceCard: View {
             }
         }
         .padding(16)
-        .background(NexusPalette.panel)
+        .background(workspace.isArchived ? NexusPalette.preview : NexusPalette.panel)
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(isSelected ? NexusPalette.accent : NexusPalette.border, lineWidth: isSelected ? 1.4 : 1)
+                .stroke(cardBorder, lineWidth: isSelected ? 1.4 : 1)
         }
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var cardBorder: Color {
+        if isSelected {
+            return workspace.isArchived ? NexusPalette.accent.opacity(0.65) : NexusPalette.accent
+        }
+        return workspace.isArchived ? NexusPalette.border.opacity(0.65) : NexusPalette.border
     }
 }
 
@@ -1403,6 +1413,11 @@ private struct AutomationCheckMetrics: View {
                 label: "WT",
                 value: worktreeIssueCount,
                 tone: worktreeIssueCount > 0 ? NexusPalette.warning : NexusPalette.success
+            )
+            AutomationMetric(
+                label: "Archive",
+                value: check.archivedWorkspaceCount,
+                tone: .secondary
             )
         }
     }
@@ -2482,6 +2497,18 @@ private struct RiskBadge: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
             .background(NexusPalette.badge)
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+}
+
+private struct ArchivedBadge: View {
+    var body: some View {
+        Label("已归档 / Archived", systemImage: "archivebox")
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(NexusPalette.badge.opacity(0.72))
             .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 }

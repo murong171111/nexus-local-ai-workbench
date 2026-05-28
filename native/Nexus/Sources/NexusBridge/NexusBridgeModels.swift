@@ -849,6 +849,7 @@ public struct LocalAutomationCheckResponse: Codable, Equatable, Sendable {
     public let status: String
     public let summary: String
     public let workspaceCount: Int
+    public let archivedWorkspaceCount: Int
     public let riskCount: Int
     public let deliveryIssueCount: Int
     public let openTaskCount: Int
@@ -864,6 +865,7 @@ public struct LocalAutomationCheckResponse: Codable, Equatable, Sendable {
         status: String,
         summary: String,
         workspaceCount: Int,
+        archivedWorkspaceCount: Int = 0,
         riskCount: Int,
         deliveryIssueCount: Int,
         openTaskCount: Int,
@@ -878,6 +880,7 @@ public struct LocalAutomationCheckResponse: Codable, Equatable, Sendable {
         self.status = status
         self.summary = summary
         self.workspaceCount = workspaceCount
+        self.archivedWorkspaceCount = archivedWorkspaceCount
         self.riskCount = riskCount
         self.deliveryIssueCount = deliveryIssueCount
         self.openTaskCount = openTaskCount
@@ -1406,6 +1409,7 @@ public extension LocalAutomationCheckResponse {
             status: "review",
             summary: "Preview automation check found 2 risks, 1 delivery issue, and 2 open tasks.",
             workspaceCount: 1,
+            archivedWorkspaceCount: 0,
             riskCount: 2,
             deliveryIssueCount: 1,
             openTaskCount: 2,

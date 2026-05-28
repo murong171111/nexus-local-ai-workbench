@@ -23,6 +23,7 @@ pub struct LocalAutomationCheckResponse {
     pub status: String,
     pub summary: String,
     pub workspace_count: usize,
+    pub archived_workspace_count: usize,
     pub risk_count: usize,
     pub delivery_issue_count: usize,
     pub open_task_count: usize,
@@ -90,30 +91,36 @@ fn automation_response_from_workspaces(
     generated_at: &str,
 ) -> LocalAutomationCheckResponse {
     let workspace_count = workspaces.len();
-    let risk_count = workspaces
+    let active_workspaces = workspaces
+        .iter()
+        .filter(|workspace| !workspace_is_archived(workspace))
+        .collect::<Vec<_>>();
+    let archived_workspace_count = workspace_count.saturating_sub(active_workspaces.len());
+    let active_workspace_count = active_workspaces.len();
+    let risk_count = active_workspaces
         .iter()
         .map(|workspace| workspace.risk_count)
         .sum();
-    let delivery_issue_count = workspaces
+    let delivery_issue_count = active_workspaces
         .iter()
         .filter(|workspace| workspace_has_delivery_issue(workspace))
         .count();
-    let open_task_count = workspaces
+    let open_task_count = active_workspaces
         .iter()
         .flat_map(|workspace| workspace.tasks.iter())
         .filter(|task| !task_is_done(task))
         .count();
-    let high_priority_task_count = workspaces
+    let high_priority_task_count = active_workspaces
         .iter()
         .flat_map(|workspace| workspace.tasks.iter())
         .filter(|task| !task_is_done(task) && task_is_high_priority(task))
         .count();
-    let missing_worktree_count = workspaces
+    let missing_worktree_count = active_workspaces
         .iter()
         .flat_map(|workspace| workspace.git_rows.iter())
         .filter(|row| !row.worktree.exists)
         .count();
-    let dirty_service_count = workspaces
+    let dirty_service_count = active_workspaces
         .iter()
         .flat_map(|workspace| workspace.git_rows.iter())
         .filter(|row| row.worktree.dirty || row.source.dirty)
@@ -124,7 +131,9 @@ fn automation_response_from_workspaces(
         kind: "refresh".to_string(),
         severity: "info".to_string(),
         title: "刷新完成 / Refresh completed".to_string(),
-        detail: format!("Scanned {workspace_count} workspaces from local Markdown and git state."),
+        detail: format!(
+            "Scanned {workspace_count} workspaces ({archived_workspace_count} archived)."
+        ),
         count: workspace_count,
         action: "refresh".to_string(),
     }];
@@ -193,7 +202,7 @@ fn automation_response_from_workspaces(
             severity: "info".to_string(),
             title: "状态清洁 / Clean state".to_string(),
             detail: "No active risk, delivery, worktree, or task attention signals.".to_string(),
-            count: workspace_count,
+            count: active_workspace_count,
             action: "none".to_string(),
         });
     }
@@ -214,7 +223,7 @@ fn automation_response_from_workspaces(
         "review" => format!(
             "Automation check found {risk_count} risks, {delivery_issue_count} delivery issues, and {open_task_count} open tasks."
         ),
-        _ => format!("Automation check passed for {workspace_count} workspaces."),
+        _ => format!("Automation check passed for {active_workspace_count} active workspaces."),
     };
 
     LocalAutomationCheckResponse {
@@ -222,6 +231,7 @@ fn automation_response_from_workspaces(
         status,
         summary,
         workspace_count,
+        archived_workspace_count,
         risk_count,
         delivery_issue_count,
         open_task_count,
@@ -241,6 +251,10 @@ fn automation_metadata(response: &LocalAutomationCheckResponse) -> BTreeMap<Stri
         (
             "workspaceCount".to_string(),
             response.workspace_count.to_string(),
+        ),
+        (
+            "archivedWorkspaceCount".to_string(),
+            response.archived_workspace_count.to_string(),
         ),
         ("riskCount".to_string(), response.risk_count.to_string()),
         (
@@ -275,6 +289,14 @@ fn automation_metadata(response: &LocalAutomationCheckResponse) -> BTreeMap<Stri
     ]
     .into_iter()
     .collect()
+}
+
+fn workspace_is_archived(workspace: &WorkspaceData) -> bool {
+    let normalized = format!("{} {}", workspace.state, workspace.lifecycle.stage).to_lowercase();
+    normalized.contains("archived")
+        || normalized.contains("archive")
+        || normalized.contains("归档")
+        || normalized.contains("已归档")
 }
 
 fn workspace_has_delivery_issue(workspace: &WorkspaceData) -> bool {
@@ -348,6 +370,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(response.workspace_count, 1);
+        assert_eq!(response.archived_workspace_count, 0);
         assert!(response.risk_count > 0);
         assert_eq!(response.delivery_issue_count, 1);
         assert_eq!(response.open_task_count, 1);
@@ -372,6 +395,64 @@ mod tests {
         let audit_log = fs::read_to_string(audit_root.join("audit-log.jsonl")).unwrap();
         assert!(audit_log.contains("automation.check.completed"));
         assert!(audit_log.contains("Nexus Test"));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn local_automation_check_excludes_archived_workspaces_from_attention_signals() {
+        let root = std::env::temp_dir().join(format!(
+            "nexus-core-automation-archived-{}",
+            std::process::id()
+        ));
+        let workspace = root.join("2026-05-28-archived-demo");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&workspace).unwrap();
+        fs::write(
+            workspace.join("workspace.md"),
+            "# Archived Demo\n\n- 需求名称: Archived Demo\n- 当前状态: archived\n- 目标分支: chen/archived-demo\n- 源仓库集合: ~/source-repos\n",
+        )
+        .unwrap();
+        fs::write(
+            workspace.join("STATUS.md"),
+            "# STATUS\n\n- 状态: archived\n",
+        )
+        .unwrap();
+        fs::write(
+            workspace.join("services.md"),
+            "# Services\n\n## 已确认相关\n\n| 服务 | 源仓库 | 说明 |\n| --- | --- | --- |\n| order | ~/source-repos/order | archived |\n",
+        )
+        .unwrap();
+        fs::write(
+            workspace.join("tasks.md"),
+            "# Tasks\n\n| 任务 | 状态 | 说明 |\n| --- | --- | --- |\n| 历史高优先任务 | 待办 | priority=high |\n",
+        )
+        .unwrap();
+        fs::write(workspace.join("交付记录.md"), "# 交付记录\n\n暂无。\n").unwrap();
+
+        let response = local_automation_check(LocalAutomationCheckRequest {
+            workspaces_root: root.to_string_lossy().to_string(),
+            source_repos_root: "~/source-repos".to_string(),
+            docs_root: "~/docs".to_string(),
+            audit_root: None,
+            actor: Some("Nexus Test".to_string()),
+            generated_at: "2026-05-28T10:00:00Z".to_string(),
+        })
+        .unwrap();
+
+        assert_eq!(response.workspace_count, 1);
+        assert_eq!(response.archived_workspace_count, 1);
+        assert_eq!(response.risk_count, 0);
+        assert_eq!(response.delivery_issue_count, 0);
+        assert_eq!(response.open_task_count, 0);
+        assert_eq!(response.high_priority_task_count, 0);
+        assert_eq!(response.missing_worktree_count, 0);
+        assert_eq!(response.dirty_service_count, 0);
+        assert_eq!(response.status, "clean");
+        assert!(!response.signals.iter().any(|signal| matches!(
+            signal.id.as_str(),
+            "risk.scan" | "delivery.check" | "task.check" | "worktree.check"
+        )));
 
         fs::remove_dir_all(root).unwrap();
     }

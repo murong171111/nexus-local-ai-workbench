@@ -16,8 +16,11 @@ It checks:
 - open and high-priority tasks
 - missing worktrees
 - dirty source or worktree services
+- archived workspace count
 
 The native Mac menu bar can run this check from `Run Checks`. The result appears in the same menu as a compact automation summary.
+
+Archived workspaces are counted separately and are intentionally excluded from risk, delivery, task, worktree, and dirty-service attention totals. They stay searchable and recoverable, but they do not create active reminders.
 
 The native right inspector also exposes an Automation Action Center. It keeps the hook read-mostly, but turns emitted signals into local UI actions:
 
@@ -47,7 +50,7 @@ When an audit root is provided, successful checks append:
 automation.check.completed
 ```
 
-The event metadata includes generated time, overall status, workspace count, risk count, delivery issue count, task counts, worktree counts, dirty service count, and emitted signal IDs.
+The event metadata includes generated time, overall status, workspace count, archived workspace count, risk count, delivery issue count, task counts, worktree counts, dirty service count, and emitted signal IDs.
 
 Audit writes are fail-open. If the scan succeeds but audit logging fails, Nexus returns the automation summary with an `auditError` field instead of blocking the local workflow.
 
@@ -58,6 +61,7 @@ The hook is read-mostly:
 - It reads workspace Markdown files.
 - It inspects git status through the existing Rust Core workspace scan.
 - It can append one audit JSONL event.
+- It ignores archived workspaces for active attention signals.
 - It can run periodically only while the native app process is alive.
 - It can send local macOS notifications only after explicit user authorization.
 - It throttles notifications through local cooldown and signal preferences.

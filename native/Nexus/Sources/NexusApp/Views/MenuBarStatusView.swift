@@ -82,6 +82,7 @@ struct MenuBarStatusView: View {
 
         Section("工作台 / Workbench") {
             Text("工作区 \(summary.workspaceCount) · 进行中 \(summary.activeWorkspaceCount)")
+            Text("归档 \(summary.archivedWorkspaceCount) · 活跃统计已排除")
             Text("风险 \(summary.riskyWorkspaceCount) · 阻塞 \(summary.blockedWorkspaceCount)")
             Text("任务 \(summary.openTaskCount) · 高优先 \(summary.highPriorityTaskCount)")
             Text("Agent \(summary.agentTaskCount) · 缺失 worktree \(summary.missingWorktreeCount)")
