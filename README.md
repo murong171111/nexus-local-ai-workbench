@@ -105,7 +105,7 @@ Before writing files, Nexus shows a summary of the target path, branch, and serv
 
 After creation, Nexus selects the new workspace, clears stale document previews, and shows a short next-step panel with the initialization receipt, opening `handoff.md`, creating confirmed worktrees when the branch and services are ready, handing off to Codex, or running the local check.
 
-Nexus does not automatically create worktrees during workspace creation. When the branch and service scope are confirmed, use the native worktree setup action to run a confirmed local `git fetch` and `git worktree add` flow. Before the action is enabled, Nexus shows a preflight review for target branch readiness, missing worktrees, source repositories, and the workspace-local `repos/<service>` write location. After it runs, Nexus refreshes the workspace state, shows created/skipped/failed service results, and offers Finder, result-aware Codex handoff, and local-check follow-ups.
+Nexus does not automatically create worktrees during workspace creation. When the branch and service scope are confirmed, use the native worktree setup action to run a confirmed local `git fetch` and `git worktree add` flow. Before the action is enabled, Nexus shows a preflight review for target branch readiness, missing worktrees, source repositories, and the workspace-local `repos/<service>` write location. After it runs, Nexus refreshes the workspace state, shows created/skipped/failed service results, and offers Finder, result-aware Codex handoff, and local-check follow-ups. Running the follow-up check from the result card shows the local check summary in place.
 
 ## Local Audit Log
 

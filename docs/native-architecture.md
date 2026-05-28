@@ -74,6 +74,7 @@ The first native shell scaffold is available at `native/Nexus`. It is a Swift Pa
 - Native agent event reads load recent local agent hook events into the sidebar when the Rust Core bridge is available.
 - Native session actions can open follow-up documents and execute confirmed worktree setup through the Swift/Rust bridge. Worktree setup remains a confirmed local write and reports created, skipped, and failed services back to the user.
 - Worktree setup result handoff copies created/skipped/failed details before opening Codex, so the follow-up session receives the exact local Git outcome instead of only the general workspace context.
+- The worktree setup result surface can run a local automation check and display the resulting risk/task/worktree summary in place before the user closes the sheet.
 - The native shell includes a menu bar status item for quick workspace, risk, task, worktree, refresh, settings, recent-workspace, and copy-summary actions without opening the full window first.
 - Rust Core and the Swift/Rust bridge expose a local automation check that emits refresh, risk, delivery, task, worktree, and dirty-service signals for native menu bar and future background hooks.
 - The native shell can schedule those local automation checks with persisted UserDefaults while the app process is running; this remains separate from LaunchAgents or system notification permissions.

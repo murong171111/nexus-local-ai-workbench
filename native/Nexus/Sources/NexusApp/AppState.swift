@@ -887,8 +887,9 @@ final class AppState: ObservableObject {
         }
     }
 
-    func runLocalAutomationCheck(actor: String = "Nexus Native") async {
-        guard !isRunningAutomationCheck else { return }
+    @discardableResult
+    func runLocalAutomationCheck(actor: String = "Nexus Native") async -> LocalAutomationCheckResponse? {
+        guard !isRunningAutomationCheck else { return nil }
         isRunningAutomationCheck = true
         lastError = nil
         defer {
@@ -916,8 +917,10 @@ final class AppState: ObservableObject {
             await sendAutomationNotificationIfNeeded(response)
             await refreshFromBridge()
             lastAutomationCheck = response
+            return response
         } catch {
             lastError = error.localizedDescription
+            return nil
         }
     }
 
