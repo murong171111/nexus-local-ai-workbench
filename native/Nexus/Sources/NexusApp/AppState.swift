@@ -31,6 +31,49 @@ private enum SettingsProfileError: LocalizedError {
     }
 }
 
+struct NativeEnvironmentPathCheck: Identifiable, Hashable {
+    let key: String
+    let label: String
+    let path: String
+    let exists: Bool
+    let isDirectory: Bool
+    let writable: Bool
+    let summary: String
+
+    var id: String { key }
+
+    var status: String {
+        if !exists || !isDirectory {
+            return "blocker"
+        }
+        if !writable {
+            return "warning"
+        }
+        return "pass"
+    }
+}
+
+struct NativeEnvironmentToolCheck: Identifiable, Hashable {
+    let key: String
+    let label: String
+    let available: Bool
+    let summary: String
+
+    var id: String { key }
+    var status: String { available ? "pass" : "blocker" }
+}
+
+struct NativeEnvironmentHealth: Hashable {
+    let generatedAt: String
+    let ready: Bool
+    let pathChecks: [NativeEnvironmentPathCheck]
+    let toolChecks: [NativeEnvironmentToolCheck]
+    let workspaceCount: Int
+    let sourceRepoCount: Int
+    let blockers: [String]
+    let warnings: [String]
+}
+
 @MainActor
 final class AppState: ObservableObject {
     @Published var query = ""
@@ -71,6 +114,8 @@ final class AppState: ObservableObject {
     @Published var isSearching = false
     @Published var searchIndexSummary: RebuildSearchIndexResponse?
     @Published var searchError: String?
+    @Published var nativeEnvironmentHealth: NativeEnvironmentHealth?
+    @Published var isCheckingNativeEnvironment = false
     @Published var isRunningAutomationCheck = false
     @Published var lastAutomationCheck: LocalAutomationCheckResponse?
     @Published var isAutomationScheduleEnabled: Bool
@@ -547,7 +592,21 @@ final class AppState: ObservableObject {
         clearSearch()
         selectedWorkspaceID = nil
         documentPreview = nil
+        await checkNativeEnvironment()
         await refreshFromBridge()
+    }
+
+    func checkNativeEnvironment() async {
+        isCheckingNativeEnvironment = true
+        defer {
+            isCheckingNativeEnvironment = false
+        }
+
+        nativeEnvironmentHealth = Self.buildNativeEnvironmentHealth(
+            workspacesRoot: workspaceRoot,
+            sourceReposRoot: sourceReposRoot,
+            docsRoot: docsRoot
+        )
     }
 
     var settingsProfileDefaultFilename: String {
@@ -1632,6 +1691,177 @@ final class AppState: ObservableObject {
             throw SettingsProfileError.invalid("配置文件缺少 \(label)")
         }
         return trimmed
+    }
+
+    private static func buildNativeEnvironmentHealth(
+        workspacesRoot: String,
+        sourceReposRoot: String,
+        docsRoot: String
+    ) -> NativeEnvironmentHealth {
+        let pathChecks = [
+            environmentPathCheck(key: "workspacesRoot", label: "工作区目录", rawPath: workspacesRoot),
+            environmentPathCheck(key: "sourceReposRoot", label: "源仓库目录", rawPath: sourceReposRoot),
+            environmentPathCheck(key: "docsRoot", label: "交付文档目录", rawPath: docsRoot)
+        ]
+        let toolChecks = [
+            environmentToolCheck(key: "git", label: "Git", command: "git", arguments: ["--version"])
+        ]
+        let workspaceCount = countChildDirectories(
+            at: localFileURL(for: workspacesRoot),
+            ignoredName: "dashboard"
+        )
+        let sourceRepoCount = countGitRepositories(at: localFileURL(for: sourceReposRoot))
+
+        var blockers: [String] = []
+        var warnings: [String] = []
+
+        for check in pathChecks {
+            if !check.exists {
+                blockers.append("\(check.label)不存在: \(check.path)")
+            } else if !check.isDirectory {
+                blockers.append("\(check.label)不是目录: \(check.path)")
+            } else if !check.writable {
+                warnings.append("\(check.label)可能不可写: \(check.path)")
+            }
+        }
+
+        for check in toolChecks where !check.available {
+            blockers.append("\(check.label)不可用: \(check.summary)")
+        }
+
+        if sourceRepoCount == 0 {
+            warnings.append("源仓库目录下暂未识别到 git 服务仓库")
+        }
+
+        return NativeEnvironmentHealth(
+            generatedAt: ISO8601DateFormatter().string(from: Date()),
+            ready: blockers.isEmpty,
+            pathChecks: pathChecks,
+            toolChecks: toolChecks,
+            workspaceCount: workspaceCount,
+            sourceRepoCount: sourceRepoCount,
+            blockers: blockers,
+            warnings: warnings
+        )
+    }
+
+    private static func environmentPathCheck(
+        key: String,
+        label: String,
+        rawPath: String
+    ) -> NativeEnvironmentPathCheck {
+        let url = localFileURL(for: rawPath)
+        var isDirectory: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+        let writable = exists && isDirectory.boolValue && canWriteMarker(in: url)
+        let summary: String
+        if !exists {
+            summary = "目录不存在"
+        } else if !isDirectory.boolValue {
+            summary = "路径存在但不是目录"
+        } else if writable {
+            summary = "目录可用"
+        } else {
+            summary = "目录存在但写入检查未通过"
+        }
+
+        return NativeEnvironmentPathCheck(
+            key: key,
+            label: label,
+            path: rawPath,
+            exists: exists,
+            isDirectory: isDirectory.boolValue,
+            writable: writable,
+            summary: summary
+        )
+    }
+
+    private static func canWriteMarker(in directoryURL: URL) -> Bool {
+        let markerURL = directoryURL.appendingPathComponent(".nexus-write-check")
+        do {
+            try "ok".write(to: markerURL, atomically: true, encoding: .utf8)
+            try? FileManager.default.removeItem(at: markerURL)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private static func environmentToolCheck(
+        key: String,
+        label: String,
+        command: String,
+        arguments: [String]
+    ) -> NativeEnvironmentToolCheck {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = [command] + arguments
+
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+
+            let output = String(
+                data: outputPipe.fileHandleForReading.readDataToEndOfFile(),
+                encoding: .utf8
+            )?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let error = String(
+                data: errorPipe.fileHandleForReading.readDataToEndOfFile(),
+                encoding: .utf8
+            )?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return NativeEnvironmentToolCheck(
+                key: key,
+                label: label,
+                available: process.terminationStatus == 0,
+                summary: output.isEmpty ? error : output
+            )
+        } catch {
+            return NativeEnvironmentToolCheck(
+                key: key,
+                label: label,
+                available: false,
+                summary: error.localizedDescription
+            )
+        }
+    }
+
+    private static func countChildDirectories(at rootURL: URL, ignoredName: String?) -> Int {
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: rootURL,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return 0
+        }
+
+        return entries.filter { entry in
+            guard entry.lastPathComponent != ignoredName else { return false }
+            let values = try? entry.resourceValues(forKeys: [.isDirectoryKey])
+            return values?.isDirectory == true
+        }.count
+    }
+
+    private static func countGitRepositories(at rootURL: URL) -> Int {
+        guard let entries = try? FileManager.default.contentsOfDirectory(
+            at: rootURL,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return 0
+        }
+
+        return entries.filter { entry in
+            let values = try? entry.resourceValues(forKeys: [.isDirectoryKey])
+            return values?.isDirectory == true
+                && FileManager.default.fileExists(
+                    atPath: entry.appendingPathComponent(".git").path
+                )
+        }.count
     }
 
     private static func localFileURL(for rawPath: String) -> URL {

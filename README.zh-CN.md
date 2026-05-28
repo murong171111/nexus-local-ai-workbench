@@ -14,6 +14,7 @@ Nexus 是一个面向 macOS 的本地 AI 开发工作台，用来管理需求工
 - 支持在应用内预览 Markdown 文档，包括状态、服务范围、分支说明、任务、决策和交付记录。
 - 支持配置本地工作区目录、源仓库目录和交付文档目录。
 - 支持导出和导入团队配置 Profile，便于分享路径约定和基础应用设置；首次启动向导和原生 Settings 都可以直接导入 Profile。
+- 原生 Settings 支持环境检查，可确认配置路径、Git 可用性、工作区数量和源仓库数量。
 - 支持本地审计日志，记录已确认的新建工作区和配置导出动作。
 - 支持本地 SQLite + FTS 索引基础能力，用于索引工作区 Markdown、服务范围、任务、决策、交付记录和 SQL 备注。
 - 原生 SwiftUI 壳支持 Markdown 文档预览/源码切换，用于查看 handoff 和搜索命中的工作区文档。
@@ -53,6 +54,8 @@ Nexus 是一个面向 macOS 的本地 AI 开发工作台，用来管理需求工
 6. 点击顶部刷新按钮，扫描当前工作区。
 
 如果要把配置分享给其他人，打开 `Settings` 后导出 `nexus-settings-profile-*.json`。导出的 JSON 只包含路径约定、Codex URL 和刷新间隔，不包含工作区内容和代码。对方可以在首次启动向导或原生 Settings 中导入 Profile，再按自己的机器目录微调。
+
+导入 Profile 后，可以在原生 Settings 中运行 `Environment Check`，确认目录是否存在、是否可写、Git 是否可用，以及是否识别到了工作区和源仓库。
 
 在工作区详情中，可以使用 `Finder`、`Terminal` 或 `Codex` 将当前工作区交给本地工具。`Codex` 动作会复制一段带工作区、分支、服务、风险和路径的上下文，并打开 Settings 中配置的 Codex URL。
 
