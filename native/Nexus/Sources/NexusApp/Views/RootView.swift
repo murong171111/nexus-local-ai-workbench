@@ -27,12 +27,18 @@ struct RootView: View {
                 TopCommandBar()
                 Divider()
 
-                WorkspaceListView()
+                WorkspaceListView(
+                    isCreateWorkspacePresented: $isCreateWorkspacePresented,
+                    isSettingsPresented: $isSettingsPresented
+                )
             }
 
             Divider()
 
-            InspectorView()
+            InspectorView(
+                isCreateWorkspacePresented: $isCreateWorkspacePresented,
+                isSettingsPresented: $isSettingsPresented
+            )
                 .frame(width: 328)
         }
         .background(NexusPalette.background)
@@ -1439,25 +1445,228 @@ private struct FlowTagsButtonRow: View {
 
 private struct WorkspaceListView: View {
     @EnvironmentObject private var appState: AppState
+    @Binding var isCreateWorkspacePresented: Bool
+    @Binding var isSettingsPresented: Bool
 
     var body: some View {
         ScrollView {
-            LazyVStack(spacing: 12) {
-                ForEach(appState.filteredWorkspaces) { workspace in
-                    WorkspaceCard(
-                        workspace: workspace,
-                        isSelected: workspace.id == appState.selectedWorkspace?.id,
-                        isPinned: appState.isPinned(workspace)
-                    ) {
-                        appState.togglePinned(workspace)
-                    }
-                    .onTapGesture {
-                        appState.select(workspace)
+            if appState.filteredWorkspaces.isEmpty {
+                WorkspaceListEmptyStateView(
+                    isCreateWorkspacePresented: $isCreateWorkspacePresented,
+                    isSettingsPresented: $isSettingsPresented
+                )
+                .padding(18)
+            } else {
+                LazyVStack(spacing: 12) {
+                    ForEach(appState.filteredWorkspaces) { workspace in
+                        WorkspaceCard(
+                            workspace: workspace,
+                            isSelected: workspace.id == appState.selectedWorkspace?.id,
+                            isPinned: appState.isPinned(workspace)
+                        ) {
+                            appState.togglePinned(workspace)
+                        }
+                        .onTapGesture {
+                            appState.select(workspace)
+                        }
                     }
                 }
+                .padding(18)
             }
-            .padding(18)
         }
+    }
+}
+
+private struct WorkspaceListEmptyStateView: View {
+    @EnvironmentObject private var appState: AppState
+    @Binding var isCreateWorkspacePresented: Bool
+    @Binding var isSettingsPresented: Bool
+
+    private var hasWorkspaces: Bool {
+        !appState.workspaces.isEmpty
+    }
+
+    private var hasSearchOrFilter: Bool {
+        appState.selectedFilter != .all
+            || !appState.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var title: String {
+        if appState.isLoading {
+            return "正在加载工作区 / Loading workspaces"
+        }
+        if hasWorkspaces && hasSearchOrFilter {
+            return "当前筛选没有结果 / No matching workspaces"
+        }
+        return "还没有可用工作区 / No workspaces yet"
+    }
+
+    private var detail: String {
+        if appState.isLoading {
+            return "Nexus 正在读取配置路径、工作区 Markdown 和本地索引。"
+        }
+        if hasWorkspaces && hasSearchOrFilter {
+            return "清空搜索或切回全部工作区后，可以继续从现有 workspace 进入详情。"
+        }
+        return "先确认本地路径，再创建第一个需求工作区；如果团队已经有工作区目录，可以保存路径后刷新。"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 8) {
+                Label(title, systemImage: appState.isLoading ? "arrow.triangle.2.circlepath" : "tray")
+                    .font(.title3.weight(.semibold))
+                Text(detail)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            WorkspaceSetupPathSummary()
+
+            if let health = appState.nativeEnvironmentHealth {
+                WorkspaceSetupHealthSummary(health: health)
+            } else {
+                Label("尚未运行环境检查。检查后会显示路径、Git、工作区和源仓库状态。", systemImage: "info.circle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            LazyVGrid(columns: actionColumns, alignment: .leading, spacing: 8) {
+                if hasWorkspaces && hasSearchOrFilter {
+                    Button {
+                        appState.selectedFilter = .all
+                        appState.clearSearch()
+                    } label: {
+                        Label("Show all", systemImage: "square.grid.2x2")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+
+                Button {
+                    isCreateWorkspacePresented = true
+                } label: {
+                    Label("New Workspace", systemImage: "plus")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+
+                Button {
+                    isSettingsPresented = true
+                } label: {
+                    Label("Settings", systemImage: "gearshape")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Button {
+                    Task {
+                        await appState.checkNativeEnvironment()
+                    }
+                } label: {
+                    Label(appState.isCheckingNativeEnvironment ? "Checking" : "Environment", systemImage: "checkmark.seal")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(appState.isCheckingNativeEnvironment)
+
+                Button {
+                    Task {
+                        await appState.refreshFromBridge()
+                    }
+                } label: {
+                    Label(appState.isLoading ? "Refreshing" : "Refresh", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(appState.isLoading)
+            }
+        }
+        .frame(maxWidth: 720, alignment: .leading)
+        .padding(18)
+        .background(NexusPalette.panel)
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(NexusPalette.border, lineWidth: 1)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var actionColumns: [GridItem] {
+        [GridItem(.adaptive(minimum: 126), spacing: 8, alignment: .leading)]
+    }
+}
+
+private struct WorkspaceSetupPathSummary: View {
+    @EnvironmentObject private var appState: AppState
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            WorkspaceSetupPathRow(label: "Workspaces", value: appState.workspaceRoot, systemImage: "folder")
+            WorkspaceSetupPathRow(label: "Source repos", value: appState.sourceReposRoot, systemImage: "shippingbox")
+            WorkspaceSetupPathRow(label: "Docs", value: appState.docsRoot, systemImage: "doc.text")
+        }
+        .padding(12)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct WorkspaceSetupPathRow: View {
+    let label: String
+    let value: String
+    let systemImage: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: systemImage)
+                .foregroundStyle(NexusPalette.accent)
+                .frame(width: 16)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.caption.weight(.semibold))
+                Text(value)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        }
+    }
+}
+
+private struct WorkspaceSetupHealthSummary: View {
+    let health: NativeEnvironmentHealth
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Label(health.ready ? "环境可用 / Ready" : "需要配置 / Needs setup", systemImage: health.ready ? "checkmark.circle" : "exclamationmark.triangle")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(health.ready ? NexusPalette.success : NexusPalette.warning)
+                Spacer()
+                Text("\(health.workspaceCount) ws / \(health.sourceRepoCount) repos")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+
+            if health.blockers.isEmpty && health.warnings.isEmpty {
+                Text("路径和基础工具检查通过，可以创建或刷新工作区。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(Array((health.blockers + health.warnings).prefix(3).enumerated()), id: \.offset) { _, issue in
+                    Text(issue)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+        }
+        .padding(12)
+        .background((health.ready ? NexusPalette.success : NexusPalette.warning).opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
@@ -1528,6 +1737,8 @@ private struct WorkspaceCard: View {
 
 private struct InspectorView: View {
     @EnvironmentObject private var appState: AppState
+    @Binding var isCreateWorkspacePresented: Bool
+    @Binding var isSettingsPresented: Bool
 
     var body: some View {
         ScrollView {
@@ -1538,13 +1749,78 @@ private struct InspectorView: View {
                     WorkspaceDetailView(workspace: workspace)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
-                    Text("选择一个工作区")
-                        .foregroundStyle(.secondary)
+                    InspectorEmptyStateView(
+                        isCreateWorkspacePresented: $isCreateWorkspacePresented,
+                        isSettingsPresented: $isSettingsPresented
+                    )
                 }
             }
         }
         .padding(18)
         .background(NexusPalette.inspector)
+    }
+}
+
+private struct InspectorEmptyStateView: View {
+    @EnvironmentObject private var appState: AppState
+    @Binding var isCreateWorkspacePresented: Bool
+    @Binding var isSettingsPresented: Bool
+
+    var body: some View {
+        SectionBlock(title: "工作区详情 / Detail") {
+            VStack(alignment: .leading, spacing: 12) {
+                Label(title, systemImage: appState.workspaces.isEmpty ? "tray" : "sidebar.leading")
+                    .font(.subheadline.weight(.semibold))
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                LazyVGrid(columns: actionColumns, alignment: .leading, spacing: 8) {
+                    Button {
+                        isCreateWorkspacePresented = true
+                    } label: {
+                        Label("New", systemImage: "plus")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+
+                    Button {
+                        isSettingsPresented = true
+                    } label: {
+                        Label("Settings", systemImage: "gearshape")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    Button {
+                        Task {
+                            await appState.refreshFromBridge()
+                        }
+                    } label: {
+                        Label(appState.isLoading ? "Refreshing" : "Refresh", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(appState.isLoading)
+                }
+            }
+        }
+    }
+
+    private var title: String {
+        appState.workspaces.isEmpty ? "还没有工作区 / No workspace" : "选择一个工作区 / Select a workspace"
+    }
+
+    private var detail: String {
+        if appState.workspaces.isEmpty {
+            return "创建工作区后，这里会展示 Command Center、Workflow、Risk Review、Documents 和 Activity。"
+        }
+        return "从中间列表选择工作区，或者清空筛选后进入详情。"
+    }
+
+    private var actionColumns: [GridItem] {
+        [GridItem(.adaptive(minimum: 92), spacing: 8, alignment: .leading)]
     }
 }
 

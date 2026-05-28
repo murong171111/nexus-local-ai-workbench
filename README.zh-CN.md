@@ -32,6 +32,7 @@ Nexus 是一个面向 macOS 的本地 AI 开发工作台，用来管理需求工
 - 原生新建工作区流程支持扫描源仓库目录、筛选服务候选、勾选真实本地服务，并允许在需求早期把服务范围标记为待确认；创建后会聚焦新工作区，并给出 handoff、worktree、Codex 和本地检查入口。
 - 原生 worktree 创建完成后会刷新工作区状态，解释 created/skipped/failed 服务，并把下一步引导到 Finder、Codex 或本地检查。
 - 原生工作区详情顶部提供 Command Center，把生命周期进度、下一步、分支/服务/风险/任务信号、Codex 继续、本地检查、Finder 和 Terminal 放到同一个固定入口。
+- 原生工作区列表提供空状态和 setup 引导，能展示当前配置路径、环境检查结果，并直接进入 Settings、新建工作区、刷新和环境检查。
 - 原生工作区详情提供 Workflow 汇总，集中展示开放任务、阻塞任务、交付状态、任务文档、交付记录、本地检查和 Codex 交接。
 - 原生工作区详情提供 Risk review 风险复核，把活动风险、非交付类就绪检查、阻塞项、警告项、状态文档、worktree 创建、本地复查和 Codex 风险复核 Prompt 放在同一个固定区块。
 - 原生工作区详情提供 Documents Hub，可以直接打开并预览标准工作区文件。
@@ -57,6 +58,8 @@ Nexus 是一个面向 macOS 的本地 AI 开发工作台，用来管理需求工
 4. 点击源仓库扫描按钮，生成服务选择列表。
 5. 可以在初始化向导中创建演示工作区，用来查看标准 Markdown 结构。
 6. 点击顶部刷新按钮，扫描当前工作区。
+
+如果没有显示任何工作区，原生工作区列表会展示 setup 空状态：当前 workspace/source/docs 路径、最近一次环境检查结果，以及 Settings、New Workspace、Refresh、Environment Check 入口。如果是搜索或筛选导致列表为空，可以点击 `Show all` 清空筛选和搜索。
 
 如果要把配置分享给其他人，打开 `Settings` 后导出 `nexus-settings-profile-*.json`。导出的 JSON 只包含路径约定、Codex URL 和刷新间隔，不包含工作区内容和代码。对方可以在首次启动向导或原生 Settings 中导入 Profile，再按自己的机器目录微调。
 
