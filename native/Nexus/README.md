@@ -21,6 +21,7 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - Task-level Codex handoff prompts that can be copied from the Task Center or workspace detail.
 - Persisted Task Center filters for all, high-priority, agent-sourced, and deferred tasks.
 - Menu bar quick status with workspace, risk, task, worktree, refresh, settings, recent-workspace, and copy-summary actions.
+- Menu bar local automation checks backed by Rust Core for refresh, risk, delivery, task, worktree, and dirty-service signals.
 - Workspace timelines populated from the Rust Core dashboard activity field, including local audit-log events when the bridge is available.
 - Native document opens append audit events and update the visible workspace timeline.
 - Native workspace detail shows Rust Core readiness checks for local development and delivery gates.

@@ -1,12 +1,13 @@
 use nexus_core::{
     agent_event_handoff_prompt, agent_event_task_draft, append_agent_event_from_root,
     append_agent_task_draft, append_audit_event_from_root, create_workspace,
-    read_agent_events_from_root, read_document, rebuild_search_index, scan_source_repos,
-    scan_workspaces, scan_workspaces_with_audit, search_index, setup_worktrees,
+    local_automation_check, read_agent_events_from_root, read_document, rebuild_search_index,
+    scan_source_repos, scan_workspaces, scan_workspaces_with_audit, search_index, setup_worktrees,
     update_workspace_task, widget_snapshot_from_dashboard, workspace_task_handoff_prompt,
     AgentEvent, AgentEventInput, AgentEventTaskDraftResponse,
     AppendAgentTaskDraftRequest as CoreAppendAgentTaskDraftRequest, AuditEventInput,
     CreateWorkspaceRequest as CoreCreateWorkspaceRequest,
+    LocalAutomationCheckRequest as CoreLocalAutomationCheckRequest,
     SetupWorktreesRequest as CoreSetupWorktreesRequest,
     UpdateWorkspaceTaskRequest as CoreUpdateWorkspaceTaskRequest, WorkspaceTask,
     WorkspaceTaskHandoffPromptRequest,
@@ -154,6 +155,17 @@ struct SearchIndexBridgeRequest {
     index_path: String,
     query: String,
     limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LocalAutomationCheckBridgeRequest {
+    workspaces_root: String,
+    source_repos_root: String,
+    docs_root: String,
+    audit_root: Option<String>,
+    actor: Option<String>,
+    generated_at: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -382,6 +394,22 @@ pub unsafe extern "C" fn nexus_search_index_json(input_json: *const c_char) -> *
             &request.query,
             request.limit.unwrap_or(20),
         )
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn nexus_local_automation_check_json(
+    input_json: *const c_char,
+) -> *mut c_char {
+    bridge_call(input_json, |request: LocalAutomationCheckBridgeRequest| {
+        local_automation_check(CoreLocalAutomationCheckRequest {
+            workspaces_root: request.workspaces_root,
+            source_repos_root: request.source_repos_root,
+            docs_root: request.docs_root,
+            audit_root: request.audit_root,
+            actor: request.actor,
+            generated_at: request.generated_at,
+        })
     })
 }
 
@@ -698,6 +726,59 @@ mod tests {
             value["data"]["deepLink"],
             "nexus://workspace/2026-05-27-widget-demo"
         );
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn local_automation_check_bridge_returns_signals_and_audit() {
+        let root =
+            std::env::temp_dir().join(format!("nexus-ffi-automation-{}", std::process::id()));
+        let audit_root = root.join("audit");
+        let workspace = root.join("2026-05-28-automation-demo");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(workspace.join("sql")).unwrap();
+        fs::create_dir_all(&audit_root).unwrap();
+        fs::write(
+            workspace.join("workspace.md"),
+            "# Automation Demo\n\n- 需求名称: Automation Demo\n- 当前状态: developing\n- 目标分支: chen/automation\n- 源仓库集合: ~/source-repos\n",
+        )
+        .unwrap();
+        fs::write(
+            workspace.join("services.md"),
+            "# Services\n\n## 已确认相关\n\n| 服务 | 源仓库 | 说明 |\n| --- | --- | --- |\n| order | ~/source-repos/order | core |\n",
+        )
+        .unwrap();
+        fs::write(
+            workspace.join("tasks.md"),
+            "# Tasks\n\n| 任务 | 状态 | 说明 |\n| --- | --- | --- |\n| 核对风险 | 待办 | priority=high |\n",
+        )
+        .unwrap();
+        fs::write(workspace.join("decisions.md"), "# Decisions\n").unwrap();
+        fs::write(workspace.join("交付记录.md"), "# 交付记录\n\n暂无。\n").unwrap();
+
+        let request = format!(
+            r#"{{"workspacesRoot":"{}","sourceReposRoot":"~/source-repos","docsRoot":"~/docs","auditRoot":"{}","actor":"Nexus FFI Test","generatedAt":"2026-05-28T10:30:00Z"}}"#,
+            root.to_string_lossy(),
+            audit_root.to_string_lossy()
+        );
+        let input = CString::new(request).unwrap();
+        let output = unsafe { nexus_local_automation_check_json(input.as_ptr()) };
+        let response = unsafe { CStr::from_ptr(output).to_string_lossy().to_string() };
+        unsafe { nexus_string_free(output) };
+
+        let value = serde_json::from_str::<Value>(&response).unwrap();
+        assert_eq!(value["ok"], true);
+        assert_eq!(value["data"]["workspaceCount"], 1);
+        assert_eq!(value["data"]["deliveryIssueCount"], 1);
+        assert_eq!(value["data"]["openTaskCount"], 1);
+        assert_eq!(value["data"]["signals"][0]["id"], "refresh.completed");
+        assert_eq!(value["data"]["auditError"], Value::Null);
+        assert!(value["data"]["auditEventId"].as_str().is_some());
+
+        let audit_log = fs::read_to_string(audit_root.join("audit-log.jsonl")).unwrap();
+        assert!(audit_log.contains("automation.check.completed"));
+        assert!(audit_log.contains("Nexus FFI Test"));
 
         fs::remove_dir_all(root).unwrap();
     }

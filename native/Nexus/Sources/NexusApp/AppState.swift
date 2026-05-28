@@ -34,6 +34,8 @@ final class AppState: ObservableObject {
     @Published var isSearching = false
     @Published var searchIndexSummary: RebuildSearchIndexResponse?
     @Published var searchError: String?
+    @Published var isRunningAutomationCheck = false
+    @Published var lastAutomationCheck: LocalAutomationCheckResponse?
 
     @Published var agentStatus: AgentStatus
     private let bridge: NexusBridge
@@ -445,6 +447,35 @@ final class AppState: ObservableObject {
             searchResults = fallbackSearchResults(matching: trimmedQuery)
             selectedSearchResultIndex = 0
             searchError = error.localizedDescription
+        }
+    }
+
+    func runLocalAutomationCheck() async {
+        isRunningAutomationCheck = true
+        lastError = nil
+        defer {
+            isRunningAutomationCheck = false
+        }
+
+        do {
+            let response = try await bridge.localAutomationCheck(
+                request: LocalAutomationCheckRequest(
+                    workspacesRoot: workspaceRoot,
+                    sourceReposRoot: sourceReposRoot,
+                    docsRoot: docsRoot,
+                    auditRoot: auditRootPath,
+                    actor: "Nexus Native",
+                    generatedAt: ISO8601DateFormatter().string(from: Date())
+                )
+            )
+            lastAutomationCheck = response
+            if let auditError = response.auditError {
+                lastError = "Automation audit failed: \(auditError)"
+            }
+            await refreshFromBridge()
+            lastAutomationCheck = response
+        } catch {
+            lastError = error.localizedDescription
         }
     }
 

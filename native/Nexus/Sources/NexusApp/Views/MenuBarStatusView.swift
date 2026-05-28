@@ -35,6 +35,18 @@ struct MenuBarStatusView: View {
         .disabled(appState.isLoading)
 
         Button {
+            Task {
+                await appState.runLocalAutomationCheck()
+            }
+        } label: {
+            Label(
+                appState.isRunningAutomationCheck ? "检查中 / Checking" : "运行自动化检查 / Run Checks",
+                systemImage: "checklist.checked"
+            )
+        }
+        .disabled(appState.isRunningAutomationCheck)
+
+        Button {
             copyToPasteboard(summary.clipboardText)
         } label: {
             Label("复制状态摘要 / Copy Summary", systemImage: "doc.on.doc")
@@ -54,6 +66,18 @@ struct MenuBarStatusView: View {
             Text("任务 \(summary.openTaskCount) · 高优先 \(summary.highPriorityTaskCount)")
             Text("Agent \(summary.agentTaskCount) · 缺失 worktree \(summary.missingWorktreeCount)")
             Text("未提交服务 \(summary.dirtyServiceCount)")
+        }
+
+        if let automation = appState.lastAutomationCheck {
+            Divider()
+
+            Section("自动化 / Automation") {
+                Text(automation.summary)
+                Text("状态 \(automation.status) · \(automation.generatedAt)")
+                ForEach(automation.signals.prefix(4)) { signal in
+                    Text("\(signal.title): \(signal.count)")
+                }
+            }
         }
 
         if !appState.workspaces.isEmpty {
