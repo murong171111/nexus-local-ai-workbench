@@ -29,17 +29,17 @@ It is designed for teams that work across multiple local service repositories an
 - Confirmed lifecycle writeback from the native shell into `workspace.md` and `STATUS.md`, with local audit events for status transitions.
 - Native local-write feedback after task and lifecycle updates, with affected-workspace focus, source-document review, and follow-up local checks.
 - Global search popover for indexed workspace documents, SQL notes, and browser-preview metadata fallback, with grouped results and keyboard navigation.
-- First-run onboarding for importing team profiles, configuring local paths, scanning source repositories, and optionally creating a demo workspace.
+- First-run onboarding for importing team profiles, configuring local paths, scanning source repositories, and optionally creating a demo workspace, with native empty-state setup guidance and a demo template inside the create-workspace sheet.
 - Environment health checks for configured directories and Git availability.
 - Native workspace scanning from the configured paths; no local Python script is required for the packaged app.
-- Native create-workspace flow that scans source repositories, filters service candidates, selects real local services, leaves service scope pending when needed, checks root/folder/destination/environment/scope readiness before writing, then focuses the new workspace with an initialization receipt, handoff, worktree, Codex, and check actions.
+- Native create-workspace flow that scans source repositories, filters service candidates, selects real local services, leaves service scope pending when needed, offers a first-run demo template when no workspaces exist, checks root/folder/destination/environment/scope readiness before writing, then focuses the new workspace with an initialization receipt, handoff, worktree, Codex, and check actions.
 - Native worktree setup includes a preflight review for target branch readiness, missing worktrees, source repositories, and workspace-local write locations, then refreshes the workspace state after running and routes the next step to Finder, result-aware Codex handoff, or local checks.
 - Native workspace Command Center that puts lifecycle progress, a primary-path recommendation, a compact scope -> worktree -> risk -> task -> delivery -> Codex sessions -> handoff session path, Codex continuation, local-check results, Finder, IDE, Terminal, and workspace-link copy at the top of each detail view, with quick actions grouped into handoff, execution, and local tool lanes.
 - Native workspace detail overview that keeps lifecycle, branch, services, risk, tasks, delivery, Codex session count, and latest local-check state visible before deeper workflow sections.
 - Native clipboard feedback that confirms workspace, lifecycle, risk, task, automation, agent-event, session-link, or task-locator context has been copied, with context-aware next-step guidance.
 - Native Agent Event detail actions for copying a Codex continuation pack or copying it and opening Codex in one step, with local audit records for both paths.
 - Native inspector operation feedback for local errors, with dismiss, copy-error, refresh, environment-check, and Settings recovery actions.
-- Native empty states for first-run or filtered-out workspace lists, showing configured paths, environment health, and direct Settings, New Workspace, Refresh, and Environment Check actions.
+- Native empty states for first-run or filtered-out workspace lists, showing configured paths, environment health, a first-run setup path for team profile -> environment check -> workspace creation, and direct Settings, New Workspace, Refresh, and Environment Check actions.
 - Native workflow summary in workspace detail for open tasks, blocked tasks, delivery status, a delivery focus card, grouped document/check/Agent action lanes, delivery-readiness checks, inline local-check receipts, lifecycle writeback recommendations, task documents, delivery records, workspace Codex handoff, delivery-update Codex handoff, and validation/PR handoff, with Chinese-first primary action labels.
 - Native risk review in workspace detail for active risks, blocker/warning readiness checks, status documents, worktree setup, local re-check receipts, and copyable Codex risk-review prompts.
 - Native workspace Documents Hub for opening and previewing the standard workspace files without leaving the detail view, including retry, copy-path, Finder recovery, and confirmed creation of missing standard documents when a file is absent.
@@ -64,10 +64,10 @@ On first launch:
    - Delivery documents root, for example `~/ks_project/docs`
 3. Click `Save`.
 4. Click `Scan source repositories` to populate the service picker.
-5. Optionally create the demo workspace from onboarding to inspect the standard Markdown structure.
+5. Optionally use the demo template in `New Workspace` to inspect the standard Markdown structure; it still requires the normal preflight and confirmation toggle before writing files.
 6. Click the refresh button in the top bar.
 
-If no workspace appears, the native workspace list shows a setup state with the configured workspace/source/docs paths, the latest environment-health result, and direct actions for Settings, New Workspace, Refresh, and Environment Check. If a search or filter hides every workspace, use `Show all` from that empty state to clear the filter and search query.
+If no workspace appears, the native workspace list shows a setup state with the configured workspace/source/docs paths, the latest environment-health result, a first-run path for team profile -> environment check -> workspace creation, and direct actions for Settings, New Workspace, Refresh, and Environment Check. If a search or filter hides every workspace, use `Show all` from that empty state to clear the filter and search query.
 
 To share Nexus setup with another teammate, open `Settings` and export a `nexus-settings-profile-*.json`. The generated JSON contains only path conventions, the Codex URL scheme, the IDE URL template, and refresh interval. Teammates can import the profile from first-run onboarding or native Settings, then adjust paths for their own machine if needed.
 

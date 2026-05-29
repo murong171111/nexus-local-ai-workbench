@@ -1064,6 +1064,14 @@ private struct CreateWorkspaceSheet: View {
             }
 
             Form {
+                if appState.workspaces.isEmpty {
+                    Section("首次使用 / First run") {
+                        CreateWorkspaceFirstRunTemplateCard {
+                            applyDemoTemplate()
+                        }
+                    }
+                }
+
                 Section("基本信息 / Basics") {
                     TextField("需求名称", text: $name)
                         .onChange(of: name) { value in
@@ -1219,12 +1227,45 @@ private struct CreateWorkspaceSheet: View {
         return "\(Self.todayString())-\(suffix)"
     }
 
+    private func applyDemoTemplate() {
+        name = "Nexus 示例工作区"
+        folder = "\(Self.todayString())-nexus-demo-workspace"
+        targetBranch = "chen/nexus-demo"
+        servicesText = ""
+        selectedServiceNames = []
+        serviceQuery = ""
+        confirmed = false
+        didEditFolder = true
+    }
+
     private static func todayString() -> String {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: Date())
+    }
+}
+
+private struct CreateWorkspaceFirstRunTemplateCard: View {
+    let applyDemoAction: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("示例模板 / Demo template", systemImage: "sparkles")
+                .font(.caption.weight(.semibold))
+            Text("用于第一次熟悉 Nexus 工作区结构。点击后只会预填名称、目录和分支，真正写入前仍需要通过预检并勾选确认。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                applyDemoAction()
+            } label: {
+                Label("套用示例 / Use demo", systemImage: "wand.and.stars")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
     }
 }
 
@@ -2188,6 +2229,13 @@ private struct WorkspaceListEmptyStateView: View {
                     .foregroundStyle(.secondary)
             }
 
+            if !hasWorkspaces {
+                WorkspaceFirstRunGuide(
+                    health: appState.nativeEnvironmentHealth,
+                    profileImported: appState.lastSettingsProfilePath != nil
+                )
+            }
+
             LazyVGrid(columns: actionColumns, alignment: .leading, spacing: 8) {
                 if hasWorkspaces && hasSearchOrFilter {
                     Button {
@@ -2211,7 +2259,7 @@ private struct WorkspaceListEmptyStateView: View {
                 Button {
                     isSettingsPresented = true
                 } label: {
-                    Label("Settings", systemImage: "gearshape")
+                    Label(hasWorkspaces ? "Settings" : "Team Profile", systemImage: "gearshape")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -2251,6 +2299,83 @@ private struct WorkspaceListEmptyStateView: View {
 
     private var actionColumns: [GridItem] {
         [GridItem(.adaptive(minimum: 126), spacing: 8, alignment: .leading)]
+    }
+}
+
+private struct WorkspaceFirstRunGuide: View {
+    let health: NativeEnvironmentHealth?
+    let profileImported: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text("首次使用路径 / First-run path")
+                .font(.caption.weight(.semibold))
+            FirstRunStepRow(
+                title: "1. 导入团队配置 / Import profile",
+                detail: profileDetail,
+                status: profileStatus
+            )
+            FirstRunStepRow(
+                title: "2. 环境检查 / Check environment",
+                detail: environmentDetail,
+                status: environmentStatus
+            )
+            FirstRunStepRow(
+                title: "3. 创建工作区 / Create workspace",
+                detail: "可以创建真实需求，也可以在新建弹窗里套用示例模板熟悉流程。",
+                status: .review
+            )
+        }
+    }
+
+    private var profileStatus: WorktreePreflightStatus {
+        profileImported ? .pass : .review
+    }
+
+    private var profileDetail: String {
+        if profileImported {
+            return "已导入团队 Profile；仍可在 Settings 调整本机路径。"
+        }
+        return "如果同事已经分享 Profile，先在 Settings 导入；否则保留本机路径也可以继续。"
+    }
+
+    private var environmentStatus: WorktreePreflightStatus {
+        guard let health else {
+            return .review
+        }
+        return health.ready ? .pass : .blocker
+    }
+
+    private var environmentDetail: String {
+        guard let health else {
+            return "运行 Environment 后会确认路径、Git、工作区数量和源仓库数量。"
+        }
+        if health.ready {
+            return "\(health.workspaceCount) workspaces · \(health.sourceRepoCount) repos，环境已可用。"
+        }
+        return "\(health.blockers.count) blockers · \(health.warnings.count) warnings，优先回到 Settings 调整路径。"
+    }
+}
+
+private struct FirstRunStepRow: View {
+    let title: String
+    let detail: String
+    let status: WorktreePreflightStatus
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: status.symbol)
+                .foregroundStyle(status.color)
+                .frame(width: 14)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption.weight(.medium))
+                Text(detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 }
 
