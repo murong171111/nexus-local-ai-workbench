@@ -60,6 +60,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Native Agent Event detail now supports copying event context and opening Codex in one action, with handoff feedback and audit records for copied/opened event handoffs.
 - Native SwiftUI Workflow now includes a delivery-readiness checklist for branch confirmation, service worktrees, task closure, risks, SQL readiness, delivery record status, and dirty services.
 - Rust Core SQL readiness now enforces that any `交付记录.md` declaring SQL changes also has both formal SQL and rollback SQL files under `sql/`, and surfaces missing artifacts as delivery blockers.
+- Rust Core SQL readiness now treats change metadata inside the `SQL 变更` section, such as `变更类型：DDL/DML`, affected tables, new fields, backfill scripts, and data-fix notes, as an actual SQL change that requires paired formal and rollback SQL files.
 - Native SwiftUI Command Center now surfaces a single primary path that explains the next best action before secondary tool actions.
 - Native create-workspace results now include an initialization receipt for generated standard files, directories, initial `STATUS.md`, service scope, target branch, and worktree readiness.
 - Native Settings local path configuration now shows per-path health, directory pickers, reveal actions, and clears stale environment results after edits.
