@@ -53,7 +53,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Native SwiftUI workspace details now include a Documents Hub for standard workspace files, with stale previews cleared when switching workspaces.
 - Native SwiftUI workspace details now include a Risk Review section that consolidates non-delivery readiness checks, active risk signals, local re-checks, status document access, worktree setup, and a copyable Codex risk-review prompt.
 - Native SwiftUI workspace details now start with a Command Center that consolidates lifecycle progress, branch/service/risk/task signals, Codex continuation, local checks, next-step routing, and Finder/Terminal handoff.
-- Native SwiftUI now shows actionable empty states for missing workspaces, empty filters, and unselected details, with first-run setup guidance plus direct Settings, New Workspace, Refresh, and Environment Check actions.
+- Native SwiftUI now shows actionable empty states for missing workspaces, empty filters, and unselected details, with first-run setup guidance and one shared setup action group for New Workspace, Settings/Profile, Environment Check, Refresh, and Show All recovery.
 - Native inspector clipboard feedback now uses context-aware section titles, clipboard labels, and guidance so non-Codex actions such as task locators no longer read like Codex prompts.
 - Native SwiftUI worktree setup now includes a preflight review for target branch readiness, missing worktrees, source repositories, and workspace-local write locations before local Git commands can run.
 - Native SwiftUI now shows a dismissible Codex handoff feedback panel after workspace, lifecycle, risk, task, automation, or agent-event context is copied.
