@@ -20,7 +20,7 @@ It is designed for teams that work across multiple local service repositories an
 - Local SQLite + FTS index foundation for workspace Markdown, service scope, tasks, decisions, delivery records, and SQL notes.
 - Native SwiftUI Markdown document preview with preview/source modes for workspace handoff documents and search result documents.
 - Native workspace handoff actions for opening the active workspace in Finder, Terminal, or Codex with copied context.
-- Native SwiftUI Task Center that surfaces open workspace tasks from `tasks.md`, including direct task-document opens, persisted filters, agent-sourced task writebacks, confirmed complete/defer actions, and task-level Codex copy-and-open handoff.
+- Native SwiftUI Task Center that surfaces open workspace tasks from `tasks.md`, including direct task-document opens, persisted filters, latest task writeback feedback, agent-sourced task writebacks, confirmed complete/defer actions, and task-level Codex copy-and-open handoff.
 - Native SwiftUI menu bar status for quick workspace, risk, task, worktree, refresh, settings, and copy-summary actions.
 - Local automation checks for refresh, risk, delivery, task, worktree, and dirty-service signals, exposed through Rust Core, the Swift/Rust bridge, the native menu bar, optional scheduled checks, and configurable macOS notifications.
 - Native SwiftUI Automation Action Center that turns local check signals into risk focus, delivery document opens, task focus, worktree review, and Codex handoff prompts.
@@ -119,6 +119,8 @@ The native right inspector also includes an Automation Action Center. After a ch
 Each workspace detail view starts with a `Command Center`. It summarizes lifecycle progress, branch readiness, service/worktree status, risk level, and open tasks, then shows a single primary path with the reason behind the next best action before exposing secondary tools such as Codex, local checks, Finder, and Terminal.
 
 Each workspace detail view includes a `Workflow` section that keeps task and delivery state together. It starts with a delivery focus card that chooses one next action from branch confirmation, service scope, worktree setup, blocked/open tasks, risks, delivery records, SQL notes, dirty services, lifecycle delivery, and done confirmation. It also summarizes open and blocked tasks, shows whether the delivery record is ready or needs review, checks branch confirmation, service worktrees, task closure, risks, SQL readiness, dirty services, and delivery-record status before handoff, opens `tasks.md` and `交付记录.md`, runs the local check, and hands the current context to Codex.
+
+When a task status writeback updates `tasks.md`, the native Task Center keeps a compact recent-writeback card with affected-workspace focus and source-document actions, even if the task list changes after the refresh.
 
 Each workspace detail view also includes a `Risk review` section. It consolidates active risk signals and non-delivery readiness checks into risk, blocker, and warning counts, then routes the next step to a fresh local check, `STATUS.md`, confirmed worktree setup when services are missing, or a copied Codex risk-review prompt.
 

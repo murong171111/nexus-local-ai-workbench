@@ -564,7 +564,7 @@ private struct SidebarView: View {
                 }
             }
 
-            if appState.taskCenterTotalCount > 0 {
+            if appState.taskCenterTotalCount > 0 || recentTaskWriteback != nil {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("任务中心 / Tasks")
@@ -576,9 +576,24 @@ private struct SidebarView: View {
                             .foregroundStyle(NexusPalette.accent)
                     }
 
-                    TaskCenterFilterBar()
+                    if let recentTaskWriteback {
+                        TaskCenterWritebackHintView(feedback: recentTaskWriteback)
+                            .environmentObject(appState)
+                    }
 
-                    if appState.taskCenterItems.isEmpty {
+                    if appState.taskCenterTotalCount > 0 {
+                        TaskCenterFilterBar()
+                    }
+
+                    if appState.taskCenterTotalCount == 0 {
+                        Text("当前没有开放任务，最近写回结果会保留在上方，方便复查。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(NexusPalette.panel)
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    } else if appState.taskCenterItems.isEmpty {
                         Text("当前筛选暂无任务")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -740,6 +755,13 @@ private struct SidebarView: View {
         Task {
             await appState.loadDocument(path: path)
         }
+    }
+
+    private var recentTaskWriteback: LocalWriteFeedback? {
+        guard let feedback = appState.localWriteFeedback else {
+            return nil
+        }
+        return feedback.documentPath.hasSuffix("/tasks.md") ? feedback : nil
     }
 }
 
@@ -5166,6 +5188,60 @@ private struct TaskCenterFilterBar: View {
                 .disabled(appState.taskCenterCount(for: filter) == 0 && filter != appState.selectedTaskCenterFilter)
             }
         }
+    }
+}
+
+private struct TaskCenterWritebackHintView: View {
+    @EnvironmentObject private var appState: AppState
+    let feedback: LocalWriteFeedback
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "checkmark.circle")
+                    .foregroundStyle(NexusPalette.success)
+                    .frame(width: 15)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("最近写回 / Recent writeback")
+                        .font(.caption.weight(.semibold))
+                    Text(feedback.detail)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                    Text("\(feedback.timestamp) · \(feedback.workspaceName)")
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            HStack(spacing: 6) {
+                Button {
+                    appState.focusWorkspace(id: feedback.workspaceID)
+                } label: {
+                    Label("聚焦", systemImage: "scope")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.mini)
+                .help("聚焦刚刚写回的工作区 / Focus the updated workspace")
+
+                Button {
+                    appState.focusWorkspace(id: feedback.workspaceID)
+                    Task {
+                        await appState.loadDocument(path: feedback.documentPath)
+                    }
+                } label: {
+                    Label("tasks.md", systemImage: "doc.text")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+                .help("打开刚刚写回的 tasks.md / Open the updated tasks.md")
+            }
+        }
+        .padding(10)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 

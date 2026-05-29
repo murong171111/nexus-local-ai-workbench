@@ -71,6 +71,7 @@ The first native shell scaffold is available at `native/Nexus`. It is a Swift Pa
 - The `Workflow` section starts with a delivery focus card so task and delivery state resolves to one primary next action before users inspect the full readiness checklist.
 - Confirmed task-status and lifecycle writebacks surface a local-write feedback card in the inspector, keeping affected-workspace focus, source-document review, and follow-up checks close to the write that changed local Markdown.
 - Local-write feedback actions share the same affected-workspace focus behavior so users do not review updated files or checks against a stale selected workspace.
+- The native Task Center mirrors recent `tasks.md` writeback feedback so task status changes remain visible near the task list after a refresh changes the open-task set.
 - The native worktree setup surface treats Git worktree creation as a preflighted local-write operation: target branch, missing services, source repositories, and workspace-local write paths must be visible before confirmation.
 - Native document reads render Markdown by default, keep a source toggle for raw content, append `document.opened` audit events when the Rust Core bridge is available, and update the visible timeline immediately.
 - Native widget snapshots are written by the SwiftUI shell to Application Support and mirrored to `group.com.ks.nexus` when an App Group container is available, keeping unsigned local development and signed WidgetKit packaging on the same data contract.
