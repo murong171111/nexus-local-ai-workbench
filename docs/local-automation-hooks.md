@@ -12,7 +12,7 @@ It checks:
 
 - workspace refresh status
 - risk signal count
-- delivery-record issues
+- delivery-record issues, including missing SQL artifacts when a delivery record declares SQL changes
 - open and high-priority tasks
 - missing worktrees
 - dirty source or worktree services

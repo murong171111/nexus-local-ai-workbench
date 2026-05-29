@@ -56,6 +56,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Native SwiftUI worktree setup now includes a preflight review for target branch readiness, missing worktrees, source repositories, and workspace-local write locations before local Git commands can run.
 - Native SwiftUI now shows a dismissible Codex handoff feedback panel after workspace, lifecycle, risk, task, automation, or agent-event context is copied.
 - Native SwiftUI Workflow now includes a delivery-readiness checklist for branch confirmation, service worktrees, task closure, risks, SQL readiness, delivery record status, and dirty services.
+- Rust Core SQL readiness now enforces that any `交付记录.md` declaring SQL changes also has both formal SQL and rollback SQL files under `sql/`, and surfaces missing artifacts as delivery blockers.
 - Native SwiftUI Command Center now surfaces a single primary path that explains the next best action before secondary tool actions.
 - Native create-workspace results now include an initialization receipt for generated standard files, directories, initial `STATUS.md`, service scope, target branch, and worktree readiness.
 - Native Settings local path configuration now shows per-path health, directory pickers, reveal actions, and clears stale environment results after edits.

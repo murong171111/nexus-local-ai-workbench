@@ -6601,7 +6601,15 @@ private struct WorkflowStatusView: View {
             )
         }
 
-        let status: DeliveryReadinessStatus = sqlCheck.status == "pass" ? .pass : .warning
+        let status: DeliveryReadinessStatus
+        switch sqlCheck.status.lowercased() {
+        case "pass", "ok":
+            status = .pass
+        case "fail", "blocked", "blocker":
+            status = .blocker
+        default:
+            status = .warning
+        }
         return DeliveryReadinessItem(
             id: "sql",
             title: "SQL 记录 / SQL",

@@ -300,13 +300,16 @@ fn workspace_is_archived(workspace: &WorkspaceData) -> bool {
 }
 
 fn workspace_has_delivery_issue(workspace: &WorkspaceData) -> bool {
-    workspace
-        .risks
-        .iter()
-        .any(|risk| risk.contains("交付记录") || risk.to_lowercase().contains("delivery"))
-        || workspace.health_checks.iter().any(|check| {
-            check.id == "delivery-record" && !matches!(check.status.as_str(), "pass" | "ok")
-        })
+    workspace.risks.iter().any(|risk| {
+        let normalized = risk.to_lowercase();
+        risk.contains("交付记录")
+            || risk.contains("SQL 变更")
+            || normalized.contains("delivery")
+            || normalized.contains("sql")
+    }) || workspace.health_checks.iter().any(|check| {
+        matches!(check.id.as_str(), "delivery-record" | "sql-directory")
+            && !matches!(check.status.as_str(), "pass" | "ok")
+    })
 }
 
 fn task_is_done(task: &WorkspaceTask) -> bool {
