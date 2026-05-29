@@ -78,6 +78,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Native workspace Codex handoff now copies a richer handoff pack with latest local-check status, service/worktree summaries, open tasks, delivery checks, and recommended actions.
 - Native Workflow now includes a validation/PR handoff panel and audited Codex handoff that carries local checks, delivery, SQL, tasks, services, and PR summary requirements into the final review flow.
 - Native workspace detail can now bind, view, open, copy, and delete multiple Codex session deep links stored in workspace-local `codex-sessions.json`.
+- Native workspace creation templates now repeat the SQL artifact guard in `AGENTS.md`, `handoff.md`, and `交付记录.md`, making formal SQL plus rollback SQL a required delivery artifact whenever the delivery record declares an actual SQL change.
 - Native workspace detail now suggests Codex session links from recent matching Agent Events, so event metadata with Codex deep links can be bound into `codex-sessions.json` without retyping.
 - Native Command Center now includes Codex session links in the status overview, session path, metrics, and primary next action when a workspace already has saved Codex conversations.
 - Native Command Center quick actions are now grouped into handoff, execution, and local tool lanes so Codex continuation, checks, lifecycle actions, Finder, and Terminal are no longer presented as one flat button cluster.

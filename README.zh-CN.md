@@ -46,7 +46,7 @@ Nexus 是一个面向 macOS 的本地 AI 开发工作台，用来管理需求工
 - 支持分支一致性检查，当 worktree 实际分支和工作区目标分支不一致时会标记风险。
 - 新建工作区时生成 `bootstrap-report.md` 和 `scripts/worktree-commands.sh`，用于半自动创建 worktree。
 - 当 `交付记录.md` 仍是占位内容时，会提示交付记录待补充。
-- 支持 SQL 产物完整性检查：只要 `交付记录.md` 任意位置记录了实际 SQL 变更，`sql/` 下必须同时存在正式 SQL 文件和回滚 SQL 文件，否则交付检查会阻塞。
+- 支持 SQL 产物完整性检查：只要 `交付记录.md` 任意位置记录了实际 SQL 变更，`sql/` 下必须同时存在正式 SQL 文件和回滚 SQL 文件，否则交付检查会阻塞。新建工作区模板也会在 `AGENTS.md`、`handoff.md` 和 `交付记录.md` 中重复这条守门规则，避免 SQL 只写在交付文档里就被误认为完成。
 - 提供 Codex 启动入口和可复制 Prompt，用于继续工作区、检查 git 状态、更新交付文档和分析风险。
 - 生成小组件快照文件：`~/Library/Application Support/com.ks.nexus/widget-snapshot.json`，并在存在 `group.com.ks.nexus` App Group 时同步写入共享容器。
 - 支持 `nexus://workspace/<workspace-folder>` 深链，可用于从小组件或其他工具跳转并聚焦指定工作区；Command Center 也可以复制当前工作区链接，并在右侧检查器展示可关闭的反馈卡。
