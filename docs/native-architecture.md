@@ -77,6 +77,7 @@ The first native shell scaffold is available at `native/Nexus`. It is a Swift Pa
 - Command Center and Risk Review both render the latest local-check receipt inline so a manual check has immediate visible feedback near the workflow that triggered it, while the right inspector remains the place for actionable automation signals.
 - The native `Documents` hub owns local document-open feedback: it highlights the active standard document, keeps loading state close to the clicked entry, and shows retry, copy-path, and Finder recovery when the bridge reports a missing or unreadable file.
 - The `Workflow` section starts with a delivery focus card so task and delivery state resolves to one primary next action before users inspect the full readiness checklist.
+- Workflow owns delivery-update handoff as a distinct action from the general workspace handoff. It copies a focused prompt with delivery record, tasks, SQL checks, risks, services/worktrees, and latest local-check context before opening Codex.
 - Confirmed task-status and lifecycle writebacks surface a local-write feedback card in the inspector, keeping affected-workspace focus, source-document review, and follow-up checks close to the write that changed local Markdown.
 - Local-write feedback actions share the same affected-workspace focus behavior so users do not review updated files or checks against a stale selected workspace.
 - The native Task Center mirrors recent `tasks.md` writeback feedback so task status changes remain visible near the task list after a refresh changes the open-task set.

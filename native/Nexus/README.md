@@ -26,6 +26,7 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - Native workspace Codex handoff copies a richer handoff pack with latest local-check status, service/worktree summaries, open tasks, delivery checks, document paths, and Nexus recommended actions.
 - Native workspace detail can bind, view, open, copy, and delete multiple Codex session deep links from workspace-local `codex-sessions.json`.
 - Native Workflow delivery focus card that turns task, delivery, risk, worktree, SQL, and lifecycle state into one next action.
+- Native Workflow delivery-update Codex handoff that copies delivery record, tasks, SQL, risks, services/worktrees, and latest local-check context before opening Codex.
 - Native Task Center recent-writeback card for task status updates that changed `tasks.md`.
 - Native local-write feedback after task and lifecycle writebacks, with affected-workspace focus, source-document review, follow-up check actions, and compact inspector action layout.
 - Unified inspector operation feedback for local errors, with copy-error, refresh, environment-check, Settings, and dismiss actions.

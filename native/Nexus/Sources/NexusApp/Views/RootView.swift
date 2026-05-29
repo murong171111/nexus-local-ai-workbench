@@ -5797,6 +5797,7 @@ private enum DeliveryFocusAction {
     case reviewRisks
     case runCheck
     case openCodex
+    case deliveryHandoff
     case enterDelivery
     case markDone
 }
@@ -6079,9 +6080,9 @@ private struct WorkflowStatusView: View {
                 statusLabel: deliveryStatusLabel,
                 tone: deliveryColor,
                 systemImage: "doc.text",
-                actionLabel: "打开交付",
-                actionSystemImage: "doc.text",
-                action: .openDelivery
+                actionLabel: "交付交接",
+                actionSystemImage: "point.3.connected.trianglepath.dotted",
+                action: .deliveryHandoff
             )
         }
 
@@ -6415,6 +6416,17 @@ private struct WorkflowStatusView: View {
 
                     Button {
                         Task {
+                            await appState.openDeliveryUpdateInCodex(workspace)
+                        }
+                    } label: {
+                        Label("补交付", systemImage: "doc.badge.arrow.up")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .help("复制交付补充上下文并打开 Codex / Copy delivery update context and open Codex")
+
+                    Button {
+                        Task {
                             await appState.openWorkspaceInCodex(workspace)
                         }
                     } label: {
@@ -6500,6 +6512,10 @@ private struct WorkflowStatusView: View {
         case .openCodex:
             Task {
                 await appState.openWorkspaceInCodex(workspace)
+            }
+        case .deliveryHandoff:
+            Task {
+                await appState.openDeliveryUpdateInCodex(workspace)
             }
         case .enterDelivery:
             lifecycleAction(.delivery)

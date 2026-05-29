@@ -1151,6 +1151,101 @@ final class AppState: ObservableObject {
         ]
     }
 
+    func deliveryUpdatePrompt(for workspace: WorkspaceSummary) -> String {
+        let openTasks = workspace.tasks.filter { !$0.isDone }
+        let blockedTasks = openTasks.filter(\.isBlocked)
+        let riskLines = workspace.risks.isEmpty
+            ? ["- 暂无显式风险。"]
+            : workspace.risks.map { "- \($0.title): \($0.detail)" }
+        let sqlLines = workspace.healthChecks
+            .filter { check in check.id == "sql-directory" || check.action == "sql" }
+            .map { "- \($0.label) [\($0.status)]: \($0.detail)" }
+        let deliveryPath = workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md"
+
+        return [
+            "请帮我复核并补充这个 Nexus 工作区的交付记录。",
+            "",
+            "## 工作区",
+            "- 名称: \(workspace.name)",
+            "- 目录: \(workspace.path)",
+            "- 文件夹: \(workspace.folder)",
+            "- 目标分支: \(workspace.branch)",
+            "- 涉及服务: \(workspace.serviceSummary.isEmpty ? "待确认" : workspace.serviceSummary)",
+            "- Worktree: \(workspace.worktreeState)",
+            "",
+            "## 交付文档",
+            "- 交付记录: \(deliveryPath)",
+            "- tasks.md: \(workspace.documentLinks["tasks"] ?? "\(workspace.path)/tasks.md")",
+            "- STATUS.md: \(workspace.documentLinks["status"] ?? "\(workspace.path)/STATUS.md")",
+            "- services.md: \(workspace.documentLinks["services"] ?? "\(workspace.path)/services.md")",
+            "- branches.md: \(workspace.documentLinks["branches"] ?? "\(workspace.path)/branches.md")",
+            "",
+            "## 最近本地检查",
+            localCheckHandoffLines().joined(separator: "\n"),
+            "",
+            "## 服务与 worktree",
+            serviceHandoffLines(for: workspace).joined(separator: "\n"),
+            "",
+            "## 任务",
+            "- 未完成任务: \(openTasks.count)",
+            "- 阻塞任务: \(blockedTasks.count)",
+            taskHandoffLines(for: workspace).joined(separator: "\n"),
+            "",
+            "## 交付与 SQL",
+            deliveryHandoffLines(for: workspace).joined(separator: "\n"),
+            sqlLines.isEmpty ? "- SQL 检查: 暂无检查结果。请查看 sql/ 目录和交付记录是否需要补 SQL。" : sqlLines.joined(separator: "\n"),
+            "",
+            "## 风险",
+            riskLines.joined(separator: "\n"),
+            "",
+            "## 处理要求",
+            "- 先读取工作区 Markdown 和现有交付记录，不要凭空补内容。",
+            "- 如果本轮有代码、SQL、业务逻辑、接口、DTO、配置或验证变化，必须补到交付记录。",
+            "- 交付记录至少覆盖：涉及服务、分支/worktree 状态、改动范围、SQL/配置、验证记录、风险和后续事项。",
+            "- 如果发现交付记录缺少事实，请列出需要我确认的问题，不要编造验证结果。",
+            "- 完成后提示我回到 Nexus 刷新并重新运行本地检查。"
+        ].joined(separator: "\n")
+    }
+
+    func openDeliveryUpdateInCodex(_ workspace: WorkspaceSummary) async {
+        let prompt = deliveryUpdatePrompt(for: workspace)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(prompt, forType: .string)
+
+        let rawURL = codexURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? Self.defaultCodexURL
+            : codexURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let url = URL(string: rawURL) {
+            NSWorkspace.shared.open(url)
+            markCodexHandoff(
+                title: "交付上下文已复制 / Delivery copied",
+                detail: "\(workspace.name) · 交付记录、任务、SQL、风险和服务状态已复制到剪贴板。",
+                systemImage: "doc.text"
+            )
+        } else {
+            lastError = "Invalid Codex URL: \(rawURL)"
+            markCodexHandoff(
+                title: "交付上下文已复制 / URL needs review",
+                detail: "\(workspace.name) · Codex URL 无效，请在 Settings 中修正。",
+                systemImage: "exclamationmark.triangle"
+            )
+        }
+
+        await recordWorkspaceAction(
+            action: "codex_delivery_handoff.opened",
+            target: workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md",
+            summary: "Copied delivery update handoff and opened Codex",
+            metadata: [
+                "tool": "Codex",
+                "codexUrl": rawURL,
+                "openTasks": "\(workspace.tasks.filter { !$0.isDone }.count)",
+                "riskCount": "\(workspace.risks.count)",
+                "serviceCount": "\(workspace.services.count)"
+            ],
+            workspaceOverride: workspace
+        )
+    }
+
     private func sessionActionHandoffLines(for workspace: WorkspaceSummary) -> [String] {
         guard !workspace.sessionActions.isEmpty else {
             return ["- Nexus 当前没有返回推荐动作。可从状态概览、Workflow 和 Risk Review 继续判断。"]
