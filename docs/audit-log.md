@@ -42,6 +42,7 @@ Each line is a standalone JSON object:
 - `codex_instruction.copied`: written when a workspace handoff, Git, delivery, risk, or worktree prompt is copied.
 - `codex_task_handoff.copied`: written when a workspace task Codex handoff prompt is copied.
 - `codex_task_handoff.opened`: written when Nexus copies a workspace task prompt and opens Codex in one action.
+- `workspace_task.source_located`: written when Nexus opens `tasks.md` for a specific task and copies its source locator.
 - `codex_worktree_setup.opened`: written when Nexus copies a worktree setup result prompt and opens Codex in one action.
 - `codex_agent_event.copied`: written when an Agent Event Codex continuation prompt is copied from native event detail.
 - `codex_agent_event.opened`: written when Nexus copies an Agent Event continuation prompt and opens Codex in one action.

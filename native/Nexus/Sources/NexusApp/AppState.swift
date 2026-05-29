@@ -37,6 +37,17 @@ struct DocumentLoadError: Equatable {
     let message: String
 }
 
+struct DocumentFocusHint: Equatable {
+    let path: String
+    let line: Int?
+    let title: String
+    let detail: String
+
+    var lineLabel: String {
+        line.map { "L\($0)" } ?? "Line unknown"
+    }
+}
+
 struct NativeEnvironmentPathCheck: Identifiable, Hashable {
     let key: String
     let label: String
@@ -107,6 +118,7 @@ final class AppState: ObservableObject {
     @Published var documentPreview: DocumentSnapshot?
     @Published var documentLoadingPath: String?
     @Published var documentLoadError: DocumentLoadError?
+    @Published var documentFocusHint: DocumentFocusHint?
     @Published var widgetSnapshot: WidgetSnapshot?
     @Published var widgetSnapshotStorageStatus = "Not written"
     @Published var widgetSnapshotStoragePaths: [String] = []
@@ -514,6 +526,7 @@ final class AppState: ObservableObject {
     func select(_ workspace: WorkspaceSummary) {
         if selectedWorkspaceID != workspace.id {
             documentPreview = nil
+            documentFocusHint = nil
         }
         selectedWorkspaceID = workspace.id
         Task {
@@ -524,6 +537,7 @@ final class AppState: ObservableObject {
     func selectTaskCenterItem(_ item: TaskCenterItem) {
         if selectedWorkspaceID != item.workspaceID {
             documentPreview = nil
+            documentFocusHint = nil
         }
         selectedWorkspaceID = item.workspaceID
         Task {
@@ -534,6 +548,7 @@ final class AppState: ObservableObject {
     func focusWorkspace(id: WorkspaceSummary.ID) {
         if selectedWorkspaceID != id {
             documentPreview = nil
+            documentFocusHint = nil
         }
         selectedFilter = .all
         clearSearch()
@@ -718,6 +733,7 @@ final class AppState: ObservableObject {
         clearSearch()
         selectedWorkspaceID = nil
         documentPreview = nil
+        documentFocusHint = nil
         await checkNativeEnvironment()
         await refreshFromBridge()
     }
@@ -1826,10 +1842,11 @@ final class AppState: ObservableObject {
         await loadDocument(path: path)
     }
 
-    func loadDocument(path: String) async {
+    func loadDocument(path: String, focusHint: DocumentFocusHint? = nil) async {
         isDocumentLoading = true
         documentLoadingPath = path
         documentLoadError = nil
+        documentFocusHint = focusHint
         lastError = nil
         defer {
             isDocumentLoading = false
@@ -1849,6 +1866,7 @@ final class AppState: ObservableObject {
             )
         } catch {
             documentPreview = nil
+            documentFocusHint = nil
             documentLoadError = DocumentLoadError(path: path, message: error.localizedDescription)
             lastError = error.localizedDescription
         }
@@ -1937,7 +1955,8 @@ final class AppState: ObservableObject {
                 detail: task.detail,
                 priority: task.priority,
                 source: task.source,
-                sourceEventId: task.sourceEventID
+                sourceEventId: task.sourceEventID,
+                sourceLine: task.sourceLine
             )
         )
         do {
@@ -1946,6 +1965,41 @@ final class AppState: ObservableObject {
         } catch {
             return request.fallbackPrompt
         }
+    }
+
+    func openTaskSource(_ task: WorkspaceTask, in workspace: WorkspaceSummary) async {
+        let path = workspace.documentLinks["tasks"] ?? "\(workspace.path)/tasks.md"
+        let payload = taskSourceLocatorPayload(for: task, in: workspace, path: path)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(payload, forType: .string)
+
+        await loadDocument(
+            path: path,
+            focusHint: DocumentFocusHint(
+                path: path,
+                line: task.sourceLine,
+                title: task.title,
+                detail: "tasks.md · \(task.status) · \(task.priorityLabel)"
+            )
+        )
+        markCodexHandoff(
+            title: "任务定位已复制 / Task locator copied",
+            detail: "\(workspace.name) · \(task.title) · \(task.sourceLineLabel)",
+            systemImage: "text.line.first.and.arrowtriangle.forward"
+        )
+        await recordWorkspaceAction(
+            action: "workspace_task.source_located",
+            target: path,
+            summary: "Opened tasks.md and copied task source locator",
+            metadata: [
+                "taskId": task.id,
+                "taskTitle": task.title,
+                "taskStatus": task.status,
+                "taskSource": task.source,
+                "sourceLine": task.sourceLine.map(String.init) ?? "unknown"
+            ],
+            workspaceOverride: workspace
+        )
     }
 
     func openTaskInCodex(_ task: WorkspaceTask, in workspace: WorkspaceSummary) async {
@@ -1986,6 +2040,23 @@ final class AppState: ObservableObject {
             ],
             workspaceOverride: workspace
         )
+    }
+
+    private func taskSourceLocatorPayload(for task: WorkspaceTask, in workspace: WorkspaceSummary, path: String) -> String {
+        [
+            "Nexus task source locator",
+            "- Workspace: \(workspace.name)",
+            "- Folder: \(workspace.folder)",
+            "- tasks.md: \(path)",
+            "- Line: \(task.sourceLine.map(String.init) ?? "unknown")",
+            "- Task ID: \(task.id)",
+            "- Title: \(task.title)",
+            "- Status: \(task.status)",
+            "- Priority: \(task.priority)",
+            "- Source: \(task.source)",
+            "- Source event: \(task.sourceEventID ?? "none")",
+            "- Detail: \(task.detail.isEmpty ? "none" : task.detail)"
+        ].joined(separator: "\n")
     }
 
     func openWorktreeSetupResultInCodex(_ response: SetupWorktreesResponse, in workspace: WorkspaceSummary) async {
@@ -2340,6 +2411,7 @@ final class AppState: ObservableObject {
             selectedFilter = .all
             selectedWorkspaceID = response.folder
             documentPreview = nil
+            documentFocusHint = nil
             await refreshFromBridge()
             selectedWorkspaceID = response.folder
         } catch {
@@ -2667,6 +2739,8 @@ final class AppState: ObservableObject {
             return "任务上下文已复制 / Task handoff copied"
         case "codex_worktree_setup.opened":
             return "worktree 结果已交接 / Worktree result opened"
+        case "workspace_task.source_located":
+            return "任务来源已定位 / Task source located"
         case "codex_agent_event.copied":
             return "Agent 事件已复制 / Agent event copied"
         case "codex_agent_event.opened":

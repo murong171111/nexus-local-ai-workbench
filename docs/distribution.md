@@ -62,7 +62,7 @@ src-tauri/target/release/bundle/dmg/Nexus_0.1.0_aarch64.dmg
   - Workflow starts with a delivery focus card that routes the next action to branch/service documents, worktree setup, task review, risk handoff, delivery records, local checks, Codex, or lifecycle confirmation.
   - Task status and lifecycle writebacks show a dismissible local-write feedback card with affected-workspace focus, source-document review, and follow-up check actions; the compact action layout wraps cleanly in the inspector.
   - Task Center shows the latest `tasks.md` writeback result with affected-workspace focus and source-document actions after task status changes.
-  - Task Center and workspace task rows can open the owning `tasks.md` document for source review before status changes or Codex handoff.
+  - Task Center and workspace task rows show task source lines and can locate the owning `tasks.md` row before status changes or Codex handoff.
   - Task-level Codex actions copy task context, open the configured Codex URL, and write task handoff audit events.
   - Workflow delivery readiness can route into the confirmed lifecycle writeback sheet for entering delivery or marking the workspace done.
   - Workflow action labels are Chinese-first and include hover help for documents, checks, and Codex handoff.
