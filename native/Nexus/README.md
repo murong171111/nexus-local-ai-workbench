@@ -49,7 +49,7 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - Native shell handles `nexus://workspace/<workspace-folder>` by clearing filters/search, focusing the target workspace, refreshing widget state, and writing a matching audit event; the Command Center can copy that link for the selected workspace.
 - Native Command Center includes Codex session links in the status overview, metrics, session path, bind fallback, and latest-session resume action.
 - Native workspace detail starts with a compact status overview for lifecycle, branch, services, risk, tasks, delivery, Codex session count, and latest local-check state before deeper sections.
-- Native workspace detail shows a dismissible Codex handoff feedback panel after workspace, lifecycle, risk, task, automation, or agent-event context is copied.
+- Native workspace detail shows dismissible, context-aware clipboard feedback after workspace, lifecycle, risk, task, automation, agent-event, session-link, or task-locator context is copied.
 - Native workspace list and detail panes now include actionable empty states for first-run setup, empty filters, and missing selection.
 - Native workspace detail shows Rust Core readiness checks for local development and delivery gates.
 - Native SQL readiness blocks delivery when `交付记录.md` declares SQL changes but `sql/` lacks either formal SQL or rollback SQL files.
