@@ -47,7 +47,7 @@ Nexus 是一个面向 macOS 的本地 AI 开发工作台，用来管理需求工
 - 当 `交付记录.md` 仍是占位内容时，会提示交付记录待补充。
 - 提供 Codex 启动入口和可复制 Prompt，用于继续工作区、检查 git 状态、更新交付文档和分析风险。
 - 生成小组件快照文件：`~/Library/Application Support/com.ks.nexus/widget-snapshot.json`，并在存在 `group.com.ks.nexus` App Group 时同步写入共享容器。
-- 注册 `nexus://workspace/<workspace-folder>` URL Scheme，可用于从小组件或其他工具跳转到指定工作区。
+- 支持 `nexus://workspace/<workspace-folder>` 深链，可用于从小组件或其他工具跳转并聚焦指定工作区。
 
 ## 安装
 
@@ -222,7 +222,7 @@ npm run verify
 
 ## 小组件状态
 
-主应用已经实现小组件快照写入，并注册了 `nexus://` URL Scheme。原生壳会写入 Application Support，并在应用配置了 App Group entitlement 后同步写入 `group.com.ks.nexus`。WidgetKit 源码位于：
+主应用已经实现小组件快照写入，并注册了 `nexus://` URL Scheme。原生壳会写入 Application Support，处理 `nexus://workspace/<folder>` 聚焦跳转，并在应用配置了 App Group entitlement 后同步写入 `group.com.ks.nexus`。WidgetKit 源码位于：
 
 ```text
 widget/NexusWidget/NexusWidget.swift

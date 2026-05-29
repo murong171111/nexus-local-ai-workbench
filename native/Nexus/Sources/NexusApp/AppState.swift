@@ -541,6 +541,52 @@ final class AppState: ObservableObject {
         }
     }
 
+    func handleDeepLink(_ url: URL) async {
+        lastError = nil
+        guard url.scheme?.lowercased() == "nexus" else {
+            lastError = "Unsupported Nexus deep link: \(url.absoluteString)"
+            return
+        }
+
+        guard let workspaceFolder = Self.workspaceFolder(fromDeepLink: url) else {
+            lastError = "Unsupported Nexus deep link. Expected nexus://workspace/<workspace-folder>."
+            return
+        }
+
+        if let workspace = workspaceForDeepLink(folder: workspaceFolder) {
+            await focusWorkspaceFromDeepLink(workspace, url: url)
+            return
+        }
+
+        await refreshFromBridge()
+        if let workspace = workspaceForDeepLink(folder: workspaceFolder) {
+            await focusWorkspaceFromDeepLink(workspace, url: url)
+            return
+        }
+
+        lastError = "Workspace not found for deep link: \(workspaceFolder)"
+    }
+
+    private func workspaceForDeepLink(folder: String) -> WorkspaceSummary? {
+        workspaces.first { workspace in
+            workspace.folder == folder || workspace.id == folder
+        }
+    }
+
+    private func focusWorkspaceFromDeepLink(_ workspace: WorkspaceSummary, url: URL) async {
+        focusWorkspace(id: workspace.id)
+        await recordWorkspaceAction(
+            action: "workspace.deeplink.opened",
+            target: url.absoluteString,
+            summary: "Focused workspace from Nexus deep link",
+            metadata: [
+                "tool": "Nexus URL Scheme",
+                "deepLink": url.absoluteString
+            ],
+            workspaceOverride: workspace
+        )
+    }
+
     func requestTaskStatusUpdate(_ item: TaskCenterItem, status: String) {
         guard let workspace = workspaces.first(where: { $0.id == item.workspaceID }) else {
             return
@@ -2408,6 +2454,8 @@ final class AppState: ObservableObject {
             return "Terminal 已打开 / Terminal opened"
         case "workspace.ide.opened":
             return "IDE 已打开 / IDE opened"
+        case "workspace.deeplink.opened":
+            return "工作区深链已打开 / Deep link opened"
         default:
             return action.replacingOccurrences(of: "_", with: " ")
                 .replacingOccurrences(of: ".", with: " ")
@@ -2473,6 +2521,30 @@ final class AppState: ObservableObject {
             throw SettingsProfileError.invalid("配置文件缺少 \(label)")
         }
         return trimmed
+    }
+
+    private static func workspaceFolder(fromDeepLink url: URL) -> String? {
+        guard url.scheme?.lowercased() == "nexus" else { return nil }
+
+        if url.host?.lowercased() == "workspace" {
+            let pathFolder = url.path
+                .split(separator: "/")
+                .first
+                .map(String.init)?
+                .removingPercentEncoding
+            if let pathFolder, !pathFolder.isEmpty {
+                return pathFolder
+            }
+        }
+
+        if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+           let queryFolder = components.queryItems?.first(where: { $0.name == "workspace" || $0.name == "folder" })?.value?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !queryFolder.isEmpty {
+            return queryFolder
+        }
+
+        return nil
     }
 
     private static func buildNativeEnvironmentHealth(

@@ -103,7 +103,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added in-app Markdown document preview for workspace documents.
 - Moved Settings to the lower-left app rail and kept it focused on local path customization for sharing.
 - Added widget snapshot generation through the native `write_widget_snapshot` command.
-- Added `nexus://workspace/<workspace-folder>` URL scheme registration.
+- Added `nexus://workspace/<workspace-folder>` URL scheme registration and native deep-link handling that focuses the target workspace, clears filters/search, refreshes widget state, and records an audit event.
 - Added WidgetKit Swift source under `widget/NexusWidget`.
 - Added Tauri npm scripts:
   - `npm run tauri:dev`
@@ -184,7 +184,7 @@ Suggested snapshot:
 }
 ```
 
-Widget click targets use the app URL scheme:
+Widget click targets use the app URL scheme and native shell handler:
 
 ```text
 nexus://workspace/<workspace-folder>
