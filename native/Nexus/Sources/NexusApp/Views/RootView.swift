@@ -2457,6 +2457,165 @@ private struct AutomationMetric: View {
     }
 }
 
+private struct LocalCheckReceiptView: View {
+    let check: LocalAutomationCheckResponse?
+    let actor: String?
+    let isRunning: Bool
+    let contextLabel: String
+    let copyAction: (LocalAutomationCheckResponse) -> Void
+
+    private var worktreeIssueCount: Int {
+        guard let check else { return 0 }
+        return check.missingWorktreeCount + check.dirtyServiceCount
+    }
+
+    private var statusColor: Color {
+        guard let check else {
+            return NexusPalette.accent
+        }
+        switch check.status {
+        case "attention":
+            return NexusPalette.danger
+        case "review":
+            return NexusPalette.warning
+        default:
+            return NexusPalette.success
+        }
+    }
+
+    private var statusIcon: String {
+        if isRunning {
+            return "arrow.triangle.2.circlepath"
+        }
+        guard let check else {
+            return "checklist"
+        }
+        switch check.status {
+        case "attention":
+            return "xmark.octagon"
+        case "review":
+            return "exclamationmark.triangle"
+        default:
+            return "checkmark.circle"
+        }
+    }
+
+    private var statusTitle: String {
+        if isRunning {
+            return "正在运行本地检查 / Running local check"
+        }
+        guard let check else {
+            return "等待本地检查 / Awaiting local check"
+        }
+        switch check.status {
+        case "attention":
+            return "检查发现阻塞 / Attention"
+        case "review":
+            return "检查需要复核 / Review needed"
+        default:
+            return "检查通过 / Clean"
+        }
+    }
+
+    private var statusDetail: String {
+        if isRunning {
+            return "Nexus 正在扫描 workspace、任务、风险、交付记录、git 和 worktree 状态。"
+        }
+        guard let check else {
+            return "运行本地检查后，这里会保留最近一次结果，方便继续交给 Codex 或回到文档复核。"
+        }
+        let actorText = actor ?? "Nexus"
+        return "\(check.summary) · \(actorText) · \(check.generatedAt)"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 9) {
+                Image(systemName: statusIcon)
+                    .foregroundStyle(statusColor)
+                    .frame(width: 15)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(statusTitle)
+                        .font(.caption.weight(.semibold))
+                    Text(statusDetail)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer()
+
+                Text(contextLabel)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            if isRunning {
+                ProgressView()
+                    .progressViewStyle(.linear)
+                    .tint(NexusPalette.accent)
+            } else if let check {
+                LazyVGrid(columns: metricColumns, alignment: .leading, spacing: 8) {
+                    AutomationMetric(
+                        label: "Risk",
+                        value: check.riskCount,
+                        tone: check.riskCount > 0 ? NexusPalette.warning : NexusPalette.success
+                    )
+                    AutomationMetric(
+                        label: "Delivery",
+                        value: check.deliveryIssueCount,
+                        tone: check.deliveryIssueCount > 0 ? NexusPalette.warning : NexusPalette.success
+                    )
+                    AutomationMetric(
+                        label: "Tasks",
+                        value: check.openTaskCount,
+                        tone: check.highPriorityTaskCount > 0 ? NexusPalette.warning : NexusPalette.accent
+                    )
+                    AutomationMetric(
+                        label: "WT",
+                        value: worktreeIssueCount,
+                        tone: worktreeIssueCount > 0 ? NexusPalette.warning : NexusPalette.success
+                    )
+                }
+
+                HStack(spacing: 8) {
+                    Button {
+                        copyAction(check)
+                    } label: {
+                        Label("复制检查摘要", systemImage: "doc.on.doc")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    if let auditError = check.auditError {
+                        Text("审计写入失败: \(auditError)")
+                            .font(.caption2)
+                            .foregroundStyle(NexusPalette.warning)
+                            .lineLimit(2)
+                    } else if check.auditEventId != nil {
+                        Label("已写入审计 / Audited", systemImage: "checkmark.circle")
+                            .font(.caption2)
+                            .foregroundStyle(NexusPalette.success)
+                    }
+                }
+            }
+        }
+        .padding(10)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(statusColor.opacity(0.18))
+        }
+    }
+
+    private var metricColumns: [GridItem] {
+        [GridItem(.adaptive(minimum: 72), spacing: 8, alignment: .leading)]
+    }
+}
+
 private struct AutomationSignalRow: View {
     @EnvironmentObject private var appState: AppState
     let signal: LocalAutomationSignal
@@ -3539,6 +3698,16 @@ private struct WorkspaceCommandCenterView: View {
                     .controlSize(.small)
                 }
 
+                if appState.isRunningAutomationCheck || appState.lastAutomationCheck != nil {
+                    LocalCheckReceiptView(
+                        check: appState.lastAutomationCheck,
+                        actor: appState.lastAutomationCheckActor,
+                        isRunning: appState.isRunningAutomationCheck,
+                        contextLabel: "工作台 / Command Center",
+                        copyAction: copyLocalCheckSummary
+                    )
+                }
+
                 Text("主路径用于决定下一步；下方工具入口保留 Codex、本地检查、Finder 和 Terminal，方便接力或手工处理。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -3580,6 +3749,22 @@ private struct WorkspaceCommandCenterView: View {
         case .worktree:
             appState.presentWorktreeSetup(for: workspace)
         }
+    }
+
+    private func copyLocalCheckSummary(_ check: LocalAutomationCheckResponse) {
+        let payload = [
+            "Nexus local check",
+            "- Actor: \(appState.lastAutomationCheckActor ?? "Nexus")",
+            "- Status: \(check.status)",
+            "- Summary: \(check.summary)",
+            "- Generated at: \(check.generatedAt)",
+            "- Workspaces: \(check.workspaceCount) total, \(check.archivedWorkspaceCount) archived",
+            "- Risks: \(check.riskCount)",
+            "- Delivery issues: \(check.deliveryIssueCount)",
+            "- Open tasks: \(check.openTaskCount) (\(check.highPriorityTaskCount) high priority)",
+            "- Worktree issues: \(check.missingWorktreeCount) missing, \(check.dirtyServiceCount) dirty"
+        ].joined(separator: "\n")
+        copyToPasteboard(payload)
     }
 
     private var shortBranch: String {
@@ -5453,7 +5638,7 @@ private struct RiskReviewView: View {
                             await appState.runLocalAutomationCheck(actor: "Nexus Risk Review")
                         }
                     } label: {
-                        Label(appState.isRunningAutomationCheck ? "Checking" : "Run check", systemImage: "checklist.checked")
+                        Label(appState.isRunningAutomationCheck ? "检查中" : "本地检查", systemImage: "checklist.checked")
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
@@ -5464,7 +5649,7 @@ private struct RiskReviewView: View {
                             await appState.loadDocument(path: statusPath)
                         }
                     } label: {
-                        Label("Status", systemImage: "doc.text")
+                        Label("状态", systemImage: "doc.text")
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
@@ -5473,7 +5658,7 @@ private struct RiskReviewView: View {
                         Button {
                             appState.presentWorktreeSetup(for: workspace)
                         } label: {
-                            Label("Worktree", systemImage: "arrow.triangle.branch")
+                            Label("创建 worktree", systemImage: "arrow.triangle.branch")
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
@@ -5483,10 +5668,20 @@ private struct RiskReviewView: View {
                     Button {
                         codexAction()
                     } label: {
-                        Label("Copy prompt", systemImage: "point.3.connected.trianglepath.dotted")
+                        Label("风险交接", systemImage: "point.3.connected.trianglepath.dotted")
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
+                }
+
+                if appState.isRunningAutomationCheck || appState.lastAutomationCheck != nil {
+                    LocalCheckReceiptView(
+                        check: appState.lastAutomationCheck,
+                        actor: appState.lastAutomationCheckActor,
+                        isRunning: appState.isRunningAutomationCheck,
+                        contextLabel: "风险复核 / Risk review",
+                        copyAction: copyLocalCheckSummary
+                    )
                 }
 
                 if hasSignals {
@@ -5521,6 +5716,23 @@ private struct RiskReviewView: View {
                 }
             }
         }
+    }
+
+    private func copyLocalCheckSummary(_ check: LocalAutomationCheckResponse) {
+        let payload = [
+            "Nexus risk review local check",
+            "- Actor: \(appState.lastAutomationCheckActor ?? "Nexus")",
+            "- Status: \(check.status)",
+            "- Summary: \(check.summary)",
+            "- Generated at: \(check.generatedAt)",
+            "- Risks: \(check.riskCount)",
+            "- Delivery issues: \(check.deliveryIssueCount)",
+            "- Open tasks: \(check.openTaskCount) (\(check.highPriorityTaskCount) high priority)",
+            "- Worktree issues: \(check.missingWorktreeCount) missing, \(check.dirtyServiceCount) dirty",
+            "- Workspace: \(workspace.name)",
+            "- Path: \(workspace.path)"
+        ].joined(separator: "\n")
+        copyToPasteboard(payload)
     }
 
     private static func statusKind(_ status: String) -> String {

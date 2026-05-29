@@ -130,6 +130,7 @@ final class AppState: ObservableObject {
     @Published var isCheckingNativeEnvironment = false
     @Published var isRunningAutomationCheck = false
     @Published var lastAutomationCheck: LocalAutomationCheckResponse?
+    @Published var lastAutomationCheckActor: String?
     @Published var isAutomationScheduleEnabled: Bool
     @Published var automationIntervalMinutes: Int
     @Published var lastAutomationRunAt: String?
@@ -929,6 +930,7 @@ final class AppState: ObservableObject {
                 )
             )
             lastAutomationRunAt = generatedAt
+            lastAutomationCheckActor = actor
             defaults.set(generatedAt, forKey: DefaultsKey.lastAutomationRunAt)
             lastAutomationCheck = response
             if let auditError = response.auditError {
