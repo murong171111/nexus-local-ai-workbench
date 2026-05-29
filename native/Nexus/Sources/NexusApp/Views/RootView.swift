@@ -4800,18 +4800,18 @@ private struct WorkspaceCommandCenterView: View {
                     WorkflowMetric(label: "会话", value: codexSessionValue, tone: codexSessionTone)
                 }
 
-                LazyVGrid(columns: actionColumns, alignment: .leading, spacing: 8) {
-                    Button {
+                CommandCenterQuickActionsView(
+                    sessionLabel: latestCodexSessionLink == nil ? "绑定会话" : "最近会话",
+                    sessionSystemImage: latestCodexSessionLink == nil ? "link.badge.plus" : "arrow.up.forward.app",
+                    nextActionLabel: nextActionLabel,
+                    nextActionSystemImage: nextActionSymbol,
+                    isChecking: appState.isRunningAutomationCheck,
+                    codexAction: {
                         Task {
                             await appState.openWorkspaceInCodex(workspace)
                         }
-                    } label: {
-                        Label("交接 Codex", systemImage: "point.3.connected.trianglepath.dotted")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-
-                    Button {
+                    },
+                    sessionAction: {
                         if let latestCodexSessionLink {
                             Task {
                                 await appState.openCodexSessionLink(latestCodexSessionLink, in: workspace)
@@ -4819,56 +4819,28 @@ private struct WorkspaceCommandCenterView: View {
                         } else {
                             isCodexSessionBindPresented = true
                         }
-                    } label: {
-                        Label(
-                            latestCodexSessionLink == nil ? "绑定会话" : "最近会话",
-                            systemImage: latestCodexSessionLink == nil ? "link.badge.plus" : "arrow.up.forward.app"
-                        )
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-
-                    Button {
+                    },
+                    lifecycleAction: {
                         Task {
                             await appState.runLifecycleAction(for: workspace)
                         }
-                    } label: {
-                        Label(nextActionLabel, systemImage: nextActionSymbol)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-
-                    Button {
+                    },
+                    checkAction: {
                         Task {
                             await appState.runLocalAutomationCheck(actor: "Nexus Command Center")
                         }
-                    } label: {
-                        Label(appState.isRunningAutomationCheck ? "检查中" : "本地检查", systemImage: "checklist.checked")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(appState.isRunningAutomationCheck)
-
-                    Button {
+                    },
+                    finderAction: {
                         Task {
                             await appState.openWorkspaceInFinder(workspace)
                         }
-                    } label: {
-                        Label("Finder", systemImage: "folder")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-
-                    Button {
+                    },
+                    terminalAction: {
                         Task {
                             await appState.openWorkspaceInTerminal(workspace)
                         }
-                    } label: {
-                        Label("Terminal", systemImage: "terminal")
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
+                )
 
                 if appState.isRunningAutomationCheck || appState.lastAutomationCheck != nil {
                     LocalCheckReceiptView(
@@ -4890,10 +4862,6 @@ private struct WorkspaceCommandCenterView: View {
             CodexSessionBindSheet(workspace: workspace)
                 .environmentObject(appState)
         }
-    }
-
-    private var actionColumns: [GridItem] {
-        [GridItem(.adaptive(minimum: 112), spacing: 8, alignment: .leading)]
     }
 
     private var metricColumns: [GridItem] {
@@ -5197,6 +5165,104 @@ private struct CommandCenterSessionPathView: View {
         .padding(10)
         .background(NexusPalette.badge)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct CommandCenterQuickActionsView: View {
+    let sessionLabel: String
+    let sessionSystemImage: String
+    let nextActionLabel: String
+    let nextActionSystemImage: String
+    let isChecking: Bool
+    let codexAction: () -> Void
+    let sessionAction: () -> Void
+    let lifecycleAction: () -> Void
+    let checkAction: () -> Void
+    let finderAction: () -> Void
+    let terminalAction: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("快捷动作 / Quick actions")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            CommandCenterActionGroup(title: "交接 / Handoff") {
+                Button {
+                    codexAction()
+                } label: {
+                    Label("交接 Codex", systemImage: "point.3.connected.trianglepath.dotted")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+
+                Button {
+                    sessionAction()
+                } label: {
+                    Label(sessionLabel, systemImage: sessionSystemImage)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+
+            CommandCenterActionGroup(title: "执行 / Execute") {
+                Button {
+                    lifecycleAction()
+                } label: {
+                    Label(nextActionLabel, systemImage: nextActionSystemImage)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Button {
+                    checkAction()
+                } label: {
+                    Label(isChecking ? "检查中" : "本地检查", systemImage: "checklist.checked")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(isChecking)
+            }
+
+            CommandCenterActionGroup(title: "本地 / Local") {
+                Button {
+                    finderAction()
+                } label: {
+                    Label("Finder", systemImage: "folder")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Button {
+                    terminalAction()
+                } label: {
+                    Label("Terminal", systemImage: "terminal")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+    }
+}
+
+private struct CommandCenterActionGroup<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.secondary)
+
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
+                content
+            }
+        }
+    }
+
+    private var columns: [GridItem] {
+        [GridItem(.adaptive(minimum: 112), spacing: 8, alignment: .leading)]
     }
 }
 
