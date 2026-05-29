@@ -44,7 +44,7 @@ The configured workspaces root contains one folder per requirement. Each workspa
 - Service scope
 - Branch and worktree notes
 - Delivery records
-- SQL and investigation logs, including paired formal and rollback SQL files when a delivery record declares SQL changes
+- SQL and investigation logs, including paired formal and rollback SQL files when a delivery record declares SQL changes or records SQL-section change metadata
 - `repos/<service>` git worktrees
 
 Source repositories are read from a separate configured root. Nexus treats source repositories as worktree sources, not as the default edit targets.

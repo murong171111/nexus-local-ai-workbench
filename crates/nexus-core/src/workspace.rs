@@ -2220,9 +2220,9 @@ fn delivery_declares_sql_change(text: &str) -> bool {
     };
 
     contains_actual_sql_statement(text)
-        || contains_explicit_sql_change_line(text)
+        || contains_explicit_sql_change_line(text, false)
         || contains_actual_sql_statement(sql_target)
-        || contains_explicit_sql_change_line(sql_target)
+        || contains_explicit_sql_change_line(sql_target, true)
 }
 
 fn markdown_section_containing(text: &str, keyword: &str) -> String {
@@ -2236,7 +2236,7 @@ fn markdown_section_containing(text: &str, keyword: &str) -> String {
             if capture && level <= capture_level {
                 break;
             }
-            if heading.to_lowercase().contains(&keyword) {
+            if level > 1 && heading.to_lowercase().contains(&keyword) {
                 capture = true;
                 capture_level = level;
                 continue;
@@ -2295,7 +2295,7 @@ fn contains_actual_sql_statement(text: &str) -> bool {
     })
 }
 
-fn contains_explicit_sql_change_line(text: &str) -> bool {
+fn contains_explicit_sql_change_line(text: &str, in_sql_context: bool) -> bool {
     text.lines().any(|line| {
         let trimmed = line.trim();
         if trimmed.is_empty() {
@@ -2326,11 +2326,27 @@ fn contains_explicit_sql_change_line(text: &str) -> bool {
                 || compact.contains("补充")
                 || compact.contains("正式sql")
                 || compact.contains("回滚sql"));
+        let sql_context_change = in_sql_context
+            && (compact.contains("新增")
+                || compact.contains("变更")
+                || compact.contains("调整")
+                || compact.contains("修改")
+                || compact.contains("创建")
+                || compact.contains("删除")
+                || compact.contains("回填")
+                || compact.contains("脚本")
+                || compact.contains("ddl")
+                || compact.contains("dml")
+                || compact.contains("索引")
+                || compact.contains("字段")
+                || compact.contains("表结构")
+                || compact.contains("初始化数据")
+                || compact.contains("数据修复"));
         let concrete_table = (compact.contains("影响表:") || compact.contains("影响表："))
             && !compact.contains("无")
             && !compact.contains("待确认");
 
-        explicit_yes || change_language || concrete_table
+        explicit_yes || change_language || sql_context_change || concrete_table
     })
 }
 
@@ -2383,10 +2399,17 @@ fn contains_placeholder_sql_language(value: &str) -> bool {
         || value.contains("无sql")
         || value.contains("无变更")
         || value.contains("无变动")
+        || value.contains("无数据库变更")
+        || value.contains("无数据库变动")
+        || value.contains("不涉及数据库变更")
+        || value.contains("不涉及数据库变动")
+        || value.contains("不涉及sql")
         || value.ends_with(":无")
         || value.ends_with("：无")
         || value.contains("文件规范")
         || value.contains("文件规则")
+        || value.contains("段落判定")
+        || value.contains("校验命令")
 }
 
 fn compact_lowercase(value: &str) -> String {
@@ -2967,6 +2990,34 @@ mod tests {
     }
 
     #[test]
+    fn scan_workspaces_requires_sql_artifacts_when_sql_section_has_change_metadata() {
+        let root = std::env::temp_dir().join(format!(
+            "nexus-core-sql-artifact-section-metadata-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        write_sql_rule_workspace(
+            &root,
+            "2026-05-29-sql-artifact-section-metadata",
+            "# 交付记录\n\n## SQL 变更\n\n- 变更类型：DDL\n- 说明：新增 pay_log.demo_flag 字段。\n",
+        );
+
+        let dashboard =
+            scan_workspaces(&root.to_string_lossy(), "~/source-repos", "~/docs").unwrap();
+        let item = &dashboard.workspaces[0];
+        let sql_check = item
+            .health_checks
+            .iter()
+            .find(|check| check.id == "sql-directory")
+            .unwrap();
+
+        assert_eq!(sql_check.status, "fail");
+        assert!(sql_check.detail.contains("缺少正式 SQL 与回滚 SQL"));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn scan_workspaces_accepts_formal_and_rollback_sql_artifacts() {
         let root = std::env::temp_dir().join(format!(
             "nexus-core-sql-artifact-ready-{}",
@@ -3031,6 +3082,34 @@ mod tests {
         assert_eq!(sql_check.status, "pass");
         assert!(sql_check.detail.contains("未声明 SQL 变更"));
         assert!(!item.risks.iter().any(|risk| risk.contains("SQL 变更")));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn scan_workspaces_ignores_sql_in_delivery_title_without_actual_change() {
+        let root = std::env::temp_dir().join(format!(
+            "nexus-core-sql-artifact-title-only-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        write_sql_rule_workspace(
+            &root,
+            "2026-05-29-sql-artifact-title-only",
+            "# SQL Guard Demo 交付记录\n\n## 代码变更说明\n\n当前尚未修改代码。\n\n## 6. SQL 变更\n\n- 是否有 SQL 变更：否\n- 说明：本次无数据库变更。\n",
+        );
+
+        let dashboard =
+            scan_workspaces(&root.to_string_lossy(), "~/source-repos", "~/docs").unwrap();
+        let item = &dashboard.workspaces[0];
+        let sql_check = item
+            .health_checks
+            .iter()
+            .find(|check| check.id == "sql-directory")
+            .unwrap();
+
+        assert_eq!(sql_check.status, "pass");
+        assert!(sql_check.detail.contains("未声明 SQL 变更"));
 
         fs::remove_dir_all(root).unwrap();
     }

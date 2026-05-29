@@ -54,7 +54,7 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - Native workspace detail shows dismissible, context-aware clipboard feedback after workspace, lifecycle, risk, task, automation, agent-event, session-link, or task-locator context is copied.
 - Native workspace list and detail panes now include actionable empty states for first-run setup, empty filters, and missing selection.
 - Native workspace detail shows Rust Core readiness checks for local development and delivery gates.
-- Native SQL readiness blocks delivery when `交付记录.md` declares SQL changes anywhere in the document but `sql/` lacks either formal SQL or rollback SQL files.
+- Native SQL readiness blocks delivery when `交付记录.md` declares SQL changes anywhere in the document, including SQL-section metadata such as `变更类型：DDL/DML`, affected tables, new fields, or backfill scripts, but `sql/` lacks either formal SQL or rollback SQL files.
 - Native Workflow delivery summary recommends confirmed lifecycle writebacks for entering delivery or marking the workspace done based on delivery readiness.
 - Native workspace detail shows Rust Core session actions that prioritize the next Codex, worktree, and document follow-up steps.
 - Native workspace detail includes a Workflow summary for open tasks, blocked tasks, delivery status, grouped document/check/Agent actions, delivery-readiness checks, inline local-check receipts, Codex handoff, and validation/PR handoff.
