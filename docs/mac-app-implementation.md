@@ -44,6 +44,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added native local-write feedback after task and lifecycle writebacks, including source-document review and follow-up check actions.
 - Added affected-workspace focus from native local-write feedback so task-center writebacks can return users to the refreshed workspace detail.
 - Converged native local-write feedback actions so source-document and follow-up check actions focus the affected workspace first and wrap cleanly in the inspector.
+- Added unified native operation feedback for local errors, with copy-error, refresh, environment-check, Settings, and dismiss actions in the inspector.
 - Added a compact recent-writeback card to the native Task Center for task status updates that changed `tasks.md`.
 - Added confirmed worktree setup through Rust Core, FFI, and the Tauri preview UI, with audit logging and command-copy fallback in browser preview mode.
 - Added result-aware native Codex handoff from worktree setup results, including created/skipped/failed service details.

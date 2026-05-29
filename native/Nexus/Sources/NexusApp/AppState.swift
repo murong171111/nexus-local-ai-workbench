@@ -1791,6 +1791,10 @@ final class AppState: ObservableObject {
         localWriteFeedback = nil
     }
 
+    func clearLastError() {
+        lastError = nil
+    }
+
     private func markCodexHandoff(title: String, detail: String, systemImage: String) {
         codexHandoffFeedback = CodexHandoffFeedback(
             title: title,
