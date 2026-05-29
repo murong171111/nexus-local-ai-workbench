@@ -41,14 +41,14 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - Automation Action Center in the right inspector that converts local check signals into focus, delivery, task, worktree, and Codex handoff actions.
 - Workspace timelines populated from the Rust Core dashboard activity field, including local audit-log events when the bridge is available.
 - Native document opens append audit events and update the visible workspace timeline.
-- Native workspace detail starts with a Command Center for lifecycle progress, primary-path guidance, a compact scope/worktree/risk/task/delivery/handoff session path, Codex continuation, local checks, next-step routing, and Finder/Terminal handoff.
+- Native workspace detail starts with a Command Center for lifecycle progress, primary-path guidance, a compact scope/worktree/risk/task/delivery/handoff session path, Codex continuation, local-check receipts, next-step routing, and Finder/Terminal handoff.
 - Native workspace detail shows a dismissible Codex handoff feedback panel after workspace, lifecycle, risk, task, automation, or agent-event context is copied.
 - Native workspace list and detail panes now include actionable empty states for first-run setup, empty filters, and missing selection.
 - Native workspace detail shows Rust Core readiness checks for local development and delivery gates.
 - Native Workflow delivery summary recommends confirmed lifecycle writebacks for entering delivery or marking the workspace done based on delivery readiness.
 - Native workspace detail shows Rust Core session actions that prioritize the next Codex, worktree, and document follow-up steps.
 - Native workspace detail includes a Workflow summary for open tasks, blocked tasks, delivery status, delivery-readiness checks, task/delivery document opens, local checks, and Codex handoff.
-- Native workspace detail includes a Risk Review section for active risks, blocker/warning readiness checks, status document access, confirmed worktree setup, local re-checks, and Codex risk-review prompts.
+- Native workspace detail includes a Risk Review section for active risks, blocker/warning readiness checks, status document access, confirmed worktree setup, local re-check receipts, and Codex risk-review prompts.
 - Native workspace detail includes a Documents Hub for standard workspace Markdown/script files, rendered through the preview/source document viewer with active-document highlighting and local missing-file recovery actions.
 - Native workspace cards and details show Rust Core lifecycle stages with progress, next action, and Codex handoff controls.
 - Native lifecycle transitions can be confirmed and written back to `workspace.md` and `STATUS.md` through Rust Core and FFI, with local audit logging.
