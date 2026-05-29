@@ -31,6 +31,11 @@ private enum SettingsProfileError: LocalizedError {
     }
 }
 
+struct DocumentLoadError: Equatable {
+    let path: String
+    let message: String
+}
+
 struct NativeEnvironmentPathCheck: Identifiable, Hashable {
     let key: String
     let label: String
@@ -97,6 +102,8 @@ final class AppState: ObservableObject {
     @Published var lastError: String?
     @Published var bridgeMode: String
     @Published var documentPreview: DocumentSnapshot?
+    @Published var documentLoadingPath: String?
+    @Published var documentLoadError: DocumentLoadError?
     @Published var widgetSnapshot: WidgetSnapshot?
     @Published var widgetSnapshotStorageStatus = "Not written"
     @Published var widgetSnapshotStoragePaths: [String] = []
@@ -1322,9 +1329,14 @@ final class AppState: ObservableObject {
 
     func loadDocument(path: String) async {
         isDocumentLoading = true
+        documentLoadingPath = path
+        documentLoadError = nil
         lastError = nil
         defer {
             isDocumentLoading = false
+            if documentLoadingPath == path {
+                documentLoadingPath = nil
+            }
         }
 
         do {
@@ -1337,6 +1349,8 @@ final class AppState: ObservableObject {
                 metadata: ["documentPath": path, "documentName": document.name]
             )
         } catch {
+            documentPreview = nil
+            documentLoadError = DocumentLoadError(path: path, message: error.localizedDescription)
             lastError = error.localizedDescription
         }
     }

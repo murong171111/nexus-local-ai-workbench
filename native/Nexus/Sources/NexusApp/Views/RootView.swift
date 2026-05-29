@@ -2743,6 +2743,41 @@ private struct WorkspaceDocumentsHubView: View {
         return nil
     }
 
+    private var activeDocumentError: DocumentLoadError? {
+        guard let error = appState.documentLoadError else {
+            return nil
+        }
+        let knownPaths = Set(documentEntries.map(\.path))
+        if knownPaths.contains(error.path) || error.path.hasPrefix(workspace.path) {
+            return error
+        }
+        return nil
+    }
+
+    private var activeLoadingPath: String? {
+        guard let path = appState.documentLoadingPath else {
+            return nil
+        }
+        let knownPaths = Set(documentEntries.map(\.path))
+        if knownPaths.contains(path) || path.hasPrefix(workspace.path) {
+            return path
+        }
+        return nil
+    }
+
+    private var activeDocumentPath: String? {
+        if let activeLoadingPath {
+            return activeLoadingPath
+        }
+        if let error = activeDocumentError {
+            return error.path
+        }
+        if let document = activePreview {
+            return document.path
+        }
+        return nil
+    }
+
     private var documentEntries: [ResolvedWorkspaceDocumentEntry] {
         standardEntries.map { entry in
             ResolvedWorkspaceDocumentEntry(
@@ -2762,19 +2797,11 @@ private struct WorkspaceDocumentsHubView: View {
                                 await appState.loadDocument(path: entry.path)
                             }
                         } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Label(entry.label, systemImage: entry.systemImage)
-                                    .font(.caption.weight(.semibold))
-                                    .lineLimit(1)
-                                Text(entry.description)
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(8)
-                            .background(NexusPalette.badge)
-                            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                            WorkspaceDocumentEntryTile(
+                                entry: entry,
+                                isActive: entry.path == activeDocumentPath,
+                                isLoading: entry.path == activeLoadingPath
+                            )
                         }
                         .buttonStyle(.plain)
                         .disabled(appState.isDocumentLoading)
@@ -2782,22 +2809,29 @@ private struct WorkspaceDocumentsHubView: View {
                     }
                 }
 
-                if appState.isDocumentLoading {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Loading document...")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                if let document = activePreview {
+                if let loadingPath = activeLoadingPath {
+                    NativeDocumentLoadingView(path: loadingPath)
+                } else if let error = activeDocumentError {
+                    NativeDocumentErrorView(
+                        error: error,
+                        retryAction: {
+                            Task {
+                                await appState.loadDocument(path: error.path)
+                            }
+                        },
+                        copyPathAction: {
+                            copyToPasteboard(error.path)
+                        },
+                        finderAction: {
+                            Task {
+                                await appState.openWorkspaceInFinder(workspace)
+                            }
+                        }
+                    )
+                } else if let document = activePreview {
                     NativeDocumentPreview(document: document)
                 } else {
-                    Label("选择一个文档后在这里预览。", systemImage: "doc.text.magnifyingglass")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    NativeDocumentEmptyState()
                 }
             }
         }
@@ -2812,6 +2846,156 @@ private struct ResolvedWorkspaceDocumentEntry: Identifiable {
     var label: String { entry.label }
     var description: String { entry.description }
     var systemImage: String { entry.systemImage }
+}
+
+private struct WorkspaceDocumentEntryTile: View {
+    let entry: ResolvedWorkspaceDocumentEntry
+    let isActive: Bool
+    let isLoading: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 6) {
+                if isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(width: 14, height: 14)
+                } else {
+                    Image(systemName: entry.systemImage)
+                        .font(.caption)
+                        .foregroundStyle(isActive ? NexusPalette.accent : .secondary)
+                        .frame(width: 14)
+                }
+
+                Text(entry.label)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+            }
+
+            Text(entry.description)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(isActive ? NexusPalette.selected : NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .stroke(isActive ? NexusPalette.accent.opacity(0.34) : Color.clear)
+        }
+    }
+}
+
+private struct NativeDocumentLoadingView: View {
+    let path: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 9) {
+            ProgressView()
+                .controlSize(.small)
+                .padding(.top, 1)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("正在打开文档 / Opening document")
+                    .font(.caption.weight(.semibold))
+                Text(URL(fileURLWithPath: path).lastPathComponent)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct NativeDocumentErrorView: View {
+    let error: DocumentLoadError
+    let retryAction: () -> Void
+    let copyPathAction: () -> Void
+    let finderAction: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 9) {
+                Image(systemName: "exclamationmark.triangle")
+                    .foregroundStyle(NexusPalette.warning)
+                    .frame(width: 15)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("文档打开失败 / Document unavailable")
+                        .font(.subheadline.weight(.medium))
+                    Text(error.message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(error.path)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    retryAction()
+                } label: {
+                    Label("重试", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Button {
+                    copyPathAction()
+                } label: {
+                    Label("复制路径", systemImage: "doc.on.doc")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Button {
+                    finderAction()
+                } label: {
+                    Label("Finder", systemImage: "folder")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+        .padding(10)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(NexusPalette.warning.opacity(0.24))
+        }
+    }
+}
+
+private struct NativeDocumentEmptyState: View {
+    var body: some View {
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: "doc.text.magnifyingglass")
+                .foregroundStyle(.secondary)
+                .frame(width: 15)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("选择一个文档后在这里预览。")
+                    .font(.caption.weight(.semibold))
+                Text("如果标准文档缺失，Nexus 会在这里显示可重试的路径错误，便于回到 workspace 目录修复。")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(10)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
 }
 
 private struct NativeDocumentPreview: View {

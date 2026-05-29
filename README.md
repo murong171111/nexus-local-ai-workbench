@@ -18,7 +18,7 @@ It is designed for teams that work across multiple local service repositories an
 - Native SwiftUI primary actions use concise Chinese-first labels with hover help for path recovery and task workflows.
 - Local audit log for confirmed workspace creation and settings profile exports.
 - Local SQLite + FTS index foundation for workspace Markdown, service scope, tasks, decisions, delivery records, and SQL notes.
-- Native SwiftUI Markdown document preview with preview/source modes for workspace handoff documents and search result documents.
+- Native SwiftUI Markdown document preview with preview/source modes, active-document highlighting, and local loading/error recovery for workspace handoff documents, standard workspace docs, and search result documents.
 - Native workspace handoff actions for opening the active workspace in Finder, Terminal, or Codex with copied context.
 - Native SwiftUI Task Center that surfaces open workspace tasks from `tasks.md`, including direct task-document opens, persisted filters, latest task writeback feedback, agent-sourced task writebacks, confirmed complete/defer actions, and task-level Codex copy-and-open handoff.
 - Native SwiftUI menu bar status for quick workspace, risk, task, worktree, refresh, settings, and copy-summary actions.
@@ -38,7 +38,7 @@ It is designed for teams that work across multiple local service repositories an
 - Native empty states for first-run or filtered-out workspace lists, showing configured paths, environment health, and direct Settings, New Workspace, Refresh, and Environment Check actions.
 - Native workflow summary in workspace detail for open tasks, blocked tasks, delivery status, a delivery focus card, delivery-readiness checks, lifecycle writeback recommendations, task documents, delivery records, local checks, and Codex handoff, with Chinese-first primary action labels.
 - Native risk review in workspace detail for active risks, blocker/warning readiness checks, status documents, worktree setup, local re-checks, and copyable Codex risk-review prompts.
-- Native workspace Documents Hub for opening and previewing the standard workspace files without leaving the detail view.
+- Native workspace Documents Hub for opening and previewing the standard workspace files without leaving the detail view, including retry, copy-path, and Finder recovery when a document is missing or unreadable.
 - Branch alignment checks that flag worktrees whose actual branch does not match the workspace target branch.
 - Workspace bootstrap reports and reviewable `scripts/worktree-commands.sh` files for semi-automated worktree setup.
 - Delivery-record completeness warnings when `交付记录.md` still needs real change notes.
@@ -124,7 +124,7 @@ When a task status writeback updates `tasks.md`, the native Task Center keeps a 
 
 Each workspace detail view also includes a `Risk review` section. It consolidates active risk signals and non-delivery readiness checks into risk, blocker, and warning counts, then routes the next step to a fresh local check, `STATUS.md`, confirmed worktree setup when services are missing, or a copied Codex risk-review prompt.
 
-The workspace detail view also includes a `Documents` hub for the standard workspace files: `workspace.md`, `STATUS.md`, `services.md`, `branches.md`, `tasks.md`, `交付记录.md`, `handoff.md`, `bootstrap-report.md`, and `scripts/worktree-commands.sh`. Selecting a document opens it in the native preview/source viewer and clears stale previews when switching workspaces.
+The workspace detail view also includes a `Documents` hub for the standard workspace files: `workspace.md`, `STATUS.md`, `services.md`, `branches.md`, `tasks.md`, `交付记录.md`, `handoff.md`, `bootstrap-report.md`, and `scripts/worktree-commands.sh`. Selecting a document highlights the active entry, opens it in the native preview/source viewer, and shows retry, copy-path, and Finder recovery if the file is missing or unreadable.
 
 Archived workspaces remain visible in the workspace list and Archive filter, but they are excluded from active menu-bar counts, Task Center totals, and automation attention signals.
 
