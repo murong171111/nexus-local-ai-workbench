@@ -22,7 +22,7 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - In-card local-check feedback after running checks from native worktree setup results.
 - Chinese-first result labels and action help in the native worktree setup result card.
 - Native document preview renders Markdown by default and keeps a source-mode toggle for raw workspace files.
-- Native workspace detail handoff actions open the workspace in Finder, IDE, Terminal, or Codex, copying workspace context for Codex first.
+- Native workspace detail handoff actions open the workspace in Finder, IDE, Terminal, or Codex, copy a workspace `nexus://workspace/<folder>` link, and copy workspace context before opening Codex.
 - Native workspace Codex handoff copies a richer handoff pack with latest local-check status, service/worktree summaries, open tasks, delivery checks, document paths, and Nexus recommended actions.
 - Native workspace detail can bind, view, open, copy, and delete multiple Codex session deep links from workspace-local `codex-sessions.json`, and can suggest new bindings from matching recent Agent Event deep-link metadata.
 - Native Workflow delivery focus card that turns task, delivery, risk, worktree, SQL, and lifecycle state into one next action.
@@ -45,8 +45,8 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - Automation Action Center in the right inspector that converts local check signals into focus, delivery, task, worktree, and Codex handoff actions.
 - Workspace timelines populated from the Rust Core dashboard activity field, including local audit-log events when the bridge is available.
 - Native document opens append audit events and update the visible workspace timeline.
-- Native workspace detail starts with a Command Center for lifecycle progress, primary-path guidance, a compact scope/worktree/risk/task/delivery/Codex-sessions/handoff session path, Codex continuation, local-check receipts, next-step routing, and Finder/IDE/Terminal handoff, with quick actions grouped into handoff, execution, and local tool lanes.
-- Native shell handles `nexus://workspace/<workspace-folder>` by clearing filters/search, focusing the target workspace, refreshing widget state, and writing a matching audit event.
+- Native workspace detail starts with a Command Center for lifecycle progress, primary-path guidance, a compact scope/worktree/risk/task/delivery/Codex-sessions/handoff session path, Codex continuation, local-check receipts, next-step routing, Finder/IDE/Terminal handoff, and workspace-link copy, with quick actions grouped into handoff, execution, and local tool lanes.
+- Native shell handles `nexus://workspace/<workspace-folder>` by clearing filters/search, focusing the target workspace, refreshing widget state, and writing a matching audit event; the Command Center can copy that link for the selected workspace.
 - Native Command Center includes Codex session links in the status overview, metrics, session path, bind fallback, and latest-session resume action.
 - Native workspace detail starts with a compact status overview for lifecycle, branch, services, risk, tasks, delivery, Codex session count, and latest local-check state before deeper sections.
 - Native workspace detail shows a dismissible Codex handoff feedback panel after workspace, lifecycle, risk, task, automation, or agent-event context is copied.

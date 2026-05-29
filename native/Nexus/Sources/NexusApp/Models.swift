@@ -357,6 +357,17 @@ struct LocalWriteFeedback: Identifiable, Hashable {
     let systemImage: String
 }
 
+struct WorkspaceLinkFeedback: Identifiable, Hashable {
+    let id = UUID()
+    let title: String
+    let detail: String
+    let timestamp: String
+    let workspaceID: WorkspaceSummary.ID
+    let workspaceName: String
+    let link: String
+    let systemImage: String
+}
+
 struct CodexSessionLink: Codable, Identifiable, Hashable {
     let id: String
     var title: String

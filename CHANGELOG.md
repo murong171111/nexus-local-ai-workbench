@@ -73,6 +73,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Native workspace detail now suggests Codex session links from recent matching Agent Events, so event metadata with Codex deep links can be bound into `codex-sessions.json` without retyping.
 - Native Command Center now includes Codex session links in the status overview, session path, metrics, and primary next action when a workspace already has saved Codex conversations.
 - Native Command Center quick actions are now grouped into handoff, execution, and local tool lanes so Codex continuation, checks, lifecycle actions, Finder, and Terminal are no longer presented as one flat button cluster.
+- Native Command Center local tools can now copy the current workspace `nexus://workspace/<folder>` link and show a dismissible inspector feedback card for sharing or widget/script handoff.
 - Native local-write feedback can now focus the affected workspace, clearing search and filters before the user reviews the refreshed Workflow state.
 - Native local-write feedback actions now use a compact wrapping layout, and document/check actions also focus the affected workspace first.
 - Native inspector now surfaces a unified operation feedback card for local errors, with dismiss, copy-error, refresh, environment-check, and Settings recovery actions.

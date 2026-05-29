@@ -47,6 +47,7 @@ Each line is a standalone JSON object:
 - `codex_session_link.opened`: written when Nexus opens a saved workspace Codex session link.
 - `codex_session_link.copied`: written when a saved workspace Codex session link is copied.
 - `codex_session_link.deleted`: written when a saved workspace Codex session binding is deleted locally.
+- `workspace.deeplink.copied`: written when Nexus copies a `nexus://workspace/<folder>` link for the selected workspace.
 - `workspace.deeplink.opened`: written when a `nexus://workspace/<folder>` deep link focuses a workspace.
 - `codex_handoff.opened`: written when Nexus copies a workspace prompt and opens Codex in one action.
 - `risk_instruction.copied`: written when a risk-specific handling prompt is copied.

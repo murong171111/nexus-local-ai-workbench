@@ -92,6 +92,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added workspace-level Codex session deep-link bindings in the native detail surface, stored in `codex-sessions.json` with bind, view, open, copy, and confirmed delete actions.
 - Folded Codex session links into the native Command Center overview, metrics, session path, and clean primary action so saved sessions are part of the core workspace flow.
 - Added configurable native IDE handoff from the Command Center local tool lane, backed by a Settings URL template that defaults to IntelliJ IDEA and is included in exported team profiles.
+- Added workspace-link copy to the Command Center local tool lane, using the registered `nexus://workspace/<folder>` format and a right-inspector feedback card.
 - Added native workspace creation based on the `ks-project-demand-workspace` standard layout.
 - Added create-workspace preflight in the native sheet for workspaces root readiness, folder validity, destination collisions, environment health, and scope review before confirmed local writes.
 - Added native source repository scanning for service selection.
@@ -103,7 +104,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added in-app Markdown document preview for workspace documents.
 - Moved Settings to the lower-left app rail and kept it focused on local path customization for sharing.
 - Added widget snapshot generation through the native `write_widget_snapshot` command.
-- Added `nexus://workspace/<workspace-folder>` URL scheme registration and native deep-link handling that focuses the target workspace, clears filters/search, refreshes widget state, and records an audit event.
+- Added `nexus://workspace/<workspace-folder>` URL scheme registration and native deep-link handling that focuses the target workspace, clears filters/search, refreshes widget state, and records an audit event. The native Command Center can copy the same link for sharing with widgets, scripts, or another teammate's Nexus setup.
 - Added WidgetKit Swift source under `widget/NexusWidget`.
 - Added Tauri npm scripts:
   - `npm run tauri:dev`
