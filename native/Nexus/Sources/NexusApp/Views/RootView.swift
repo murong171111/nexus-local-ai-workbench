@@ -2392,6 +2392,13 @@ private struct InspectorView: View {
                     }
                 }
 
+                if let feedback = appState.workspaceLinkFeedback {
+                    WorkspaceLinkFeedbackView(feedback: feedback) {
+                        appState.clearWorkspaceLinkFeedback()
+                    }
+                    .environmentObject(appState)
+                }
+
                 if let feedback = appState.localWriteFeedback {
                     LocalWriteFeedbackView(feedback: feedback) {
                         appState.clearLocalWriteFeedback()
@@ -2614,6 +2621,76 @@ private struct CodexHandoffFeedbackView: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+private struct WorkspaceLinkFeedbackView: View {
+    @EnvironmentObject private var appState: AppState
+    let feedback: WorkspaceLinkFeedback
+    let dismissAction: () -> Void
+
+    var body: some View {
+        SectionBlock(title: "工作区链接 / Link") {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 9) {
+                    Image(systemName: feedback.systemImage)
+                        .foregroundStyle(NexusPalette.accent)
+                        .frame(width: 16)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(feedback.title)
+                            .font(.subheadline.weight(.semibold))
+                        Text(feedback.detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text("\(feedback.timestamp) · \(feedback.workspaceName)")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Button {
+                        dismissAction()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(.plain)
+                    .help("关闭链接提示 / Dismiss")
+                }
+
+                Text(feedback.link)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+
+                LazyVGrid(columns: actionColumns, alignment: .leading, spacing: 8) {
+                    Button {
+                        copyToPasteboard(feedback.link)
+                    } label: {
+                        Label("复制链接", systemImage: "doc.on.doc")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+
+                    Button {
+                        appState.focusWorkspace(id: feedback.workspaceID)
+                    } label: {
+                        Label("聚焦工作区", systemImage: "scope")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+        }
+    }
+
+    private var actionColumns: [GridItem] {
+        [GridItem(.adaptive(minimum: 104), spacing: 8, alignment: .leading)]
     }
 }
 
@@ -4956,6 +5033,11 @@ private struct WorkspaceCommandCenterView: View {
                             await appState.openWorkspaceInFinder(workspace)
                         }
                     },
+                    copyLinkAction: {
+                        Task {
+                            await appState.copyWorkspaceDeepLink(workspace)
+                        }
+                    },
                     ideAction: {
                         Task {
                             await appState.openWorkspaceInIDE(workspace)
@@ -5305,6 +5387,7 @@ private struct CommandCenterQuickActionsView: View {
     let lifecycleAction: () -> Void
     let checkAction: () -> Void
     let finderAction: () -> Void
+    let copyLinkAction: () -> Void
     let ideAction: () -> Void
     let terminalAction: () -> Void
 
@@ -5356,6 +5439,14 @@ private struct CommandCenterQuickActionsView: View {
                     finderAction()
                 } label: {
                     Label("Finder", systemImage: "folder")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Button {
+                    copyLinkAction()
+                } label: {
+                    Label("复制链接", systemImage: "link")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)

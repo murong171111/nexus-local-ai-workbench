@@ -27,7 +27,7 @@ Nexus is currently split into four layers.
 
 - Tauri v2 packages the macOS app.
 - Rust commands provide native file, path, environment health, and widget snapshot capabilities. Reusable workspace scanning, source repository scanning, git status, workspace creation, and settings profile export rules live in `crates/nexus-core` and are called by the Tauri command layer.
-- The app registers the `nexus://` URL scheme for deep links, and the native shell handles `nexus://workspace/<folder>` by focusing the matching workspace.
+- The app registers the `nexus://` URL scheme for deep links. The native shell handles `nexus://workspace/<folder>` by focusing the matching workspace and can copy the same workspace link from the Command Center local tools.
 
 ## Frontend
 

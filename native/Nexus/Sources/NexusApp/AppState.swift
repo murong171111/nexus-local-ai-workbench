@@ -120,6 +120,7 @@ final class AppState: ObservableObject {
     @Published var lastWorktreeSetupResponse: SetupWorktreesResponse?
     @Published var codexHandoffFeedback: CodexHandoffFeedback?
     @Published var localWriteFeedback: LocalWriteFeedback?
+    @Published var workspaceLinkFeedback: WorkspaceLinkFeedback?
     @Published var codexSessionLinksByWorkspace: [WorkspaceSummary.ID: [CodexSessionLink]] = [:]
     @Published var searchResults: [SearchResult] = []
     @Published var selectedSearchResultIndex = 0
@@ -582,6 +583,36 @@ final class AppState: ObservableObject {
             metadata: [
                 "tool": "Nexus URL Scheme",
                 "deepLink": url.absoluteString
+            ],
+            workspaceOverride: workspace
+        )
+    }
+
+    func workspaceDeepLink(for workspace: WorkspaceSummary) -> String {
+        let encodedFolder = workspace.folder.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
+            ?? workspace.folder
+        return "nexus://workspace/\(encodedFolder)"
+    }
+
+    func copyWorkspaceDeepLink(_ workspace: WorkspaceSummary) async {
+        lastError = nil
+        let link = workspaceDeepLink(for: workspace)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(link, forType: .string)
+        markWorkspaceLinkFeedback(
+            title: "工作区链接已复制 / Workspace link copied",
+            detail: "\(workspace.name) · 可从小组件、脚本或其他工具回到这个工作区。",
+            workspace: workspace,
+            link: link,
+            systemImage: "link"
+        )
+        await recordWorkspaceAction(
+            action: "workspace.deeplink.copied",
+            target: link,
+            summary: "Copied workspace Nexus deep link",
+            metadata: [
+                "tool": "Nexus URL Scheme",
+                "deepLink": link
             ],
             workspaceOverride: workspace
         )
@@ -2021,6 +2052,10 @@ final class AppState: ObservableObject {
         localWriteFeedback = nil
     }
 
+    func clearWorkspaceLinkFeedback() {
+        workspaceLinkFeedback = nil
+    }
+
     func clearLastError() {
         lastError = nil
     }
@@ -2051,6 +2086,24 @@ final class AppState: ObservableObject {
             workspaceName: workspaceName,
             documentPath: documentPath,
             documentLabel: documentLabel,
+            systemImage: systemImage
+        )
+    }
+
+    private func markWorkspaceLinkFeedback(
+        title: String,
+        detail: String,
+        workspace: WorkspaceSummary,
+        link: String,
+        systemImage: String
+    ) {
+        workspaceLinkFeedback = WorkspaceLinkFeedback(
+            title: title,
+            detail: detail,
+            timestamp: Self.activityTimestamp(),
+            workspaceID: workspace.id,
+            workspaceName: workspace.name,
+            link: link,
             systemImage: systemImage
         )
     }
@@ -2495,6 +2548,8 @@ final class AppState: ObservableObject {
             return "IDE 已打开 / IDE opened"
         case "workspace.deeplink.opened":
             return "工作区深链已打开 / Deep link opened"
+        case "workspace.deeplink.copied":
+            return "工作区链接已复制 / Deep link copied"
         default:
             return action.replacingOccurrences(of: "_", with: " ")
                 .replacingOccurrences(of: ".", with: " ")
