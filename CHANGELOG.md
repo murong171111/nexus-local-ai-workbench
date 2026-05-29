@@ -62,6 +62,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Native Task Center and workspace task rows now copy task context and open Codex in one action, with task-specific handoff feedback and audit records.
 - Native task and lifecycle writebacks now show a dismissible local-write feedback card with updated source-document and follow-up check actions.
 - Native local-write feedback can now focus the affected workspace, clearing search and filters before the user reviews the refreshed Workflow state.
+- Native local-write feedback actions now use a compact wrapping layout, and document/check actions also focus the affected workspace first.
 - Native Workflow delivery summary now recommends lifecycle writebacks from delivery readiness, routing users into the existing confirmation flow for entering delivery or marking done.
 - Native Workflow action labels now use Chinese-first wording and hover help for task documents, delivery records, local checks, and workspace Codex handoff.
 - Native Workflow now starts with a delivery focus card that turns branch, service, worktree, task, risk, SQL, dirty-service, and delivery-record state into one recommended next action.
