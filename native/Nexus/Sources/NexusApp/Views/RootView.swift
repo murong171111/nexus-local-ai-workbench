@@ -8,6 +8,33 @@ private func copyToPasteboard(_ payload: String) {
     NSPasteboard.general.setString(payload, forType: .string)
 }
 
+private func localCheckSummaryPayload(
+    title: String,
+    actor: String?,
+    check: LocalAutomationCheckResponse,
+    workspace: WorkspaceSummary? = nil
+) -> String {
+    var lines = [
+        title,
+        "- Actor: \(actor ?? "Nexus")",
+        "- Status: \(check.status)",
+        "- Summary: \(check.summary)",
+        "- Generated at: \(check.generatedAt)",
+        "- Workspaces: \(check.workspaceCount) total, \(check.archivedWorkspaceCount) archived",
+        "- Risks: \(check.riskCount)",
+        "- Delivery issues: \(check.deliveryIssueCount)",
+        "- Open tasks: \(check.openTaskCount) (\(check.highPriorityTaskCount) high priority)",
+        "- Worktree issues: \(check.missingWorktreeCount) missing, \(check.dirtyServiceCount) dirty"
+    ]
+
+    if let workspace {
+        lines.append("- Workspace: \(workspace.name)")
+        lines.append("- Path: \(workspace.path)")
+    }
+
+    return lines.joined(separator: "\n")
+}
+
 struct RootView: View {
     @EnvironmentObject private var appState: AppState
     @State private var isCreateWorkspacePresented = false
@@ -5218,19 +5245,13 @@ private struct WorkspaceCommandCenterView: View {
     }
 
     private func copyLocalCheckSummary(_ check: LocalAutomationCheckResponse) {
-        let payload = [
-            "Nexus local check",
-            "- Actor: \(appState.lastAutomationCheckActor ?? "Nexus")",
-            "- Status: \(check.status)",
-            "- Summary: \(check.summary)",
-            "- Generated at: \(check.generatedAt)",
-            "- Workspaces: \(check.workspaceCount) total, \(check.archivedWorkspaceCount) archived",
-            "- Risks: \(check.riskCount)",
-            "- Delivery issues: \(check.deliveryIssueCount)",
-            "- Open tasks: \(check.openTaskCount) (\(check.highPriorityTaskCount) high priority)",
-            "- Worktree issues: \(check.missingWorktreeCount) missing, \(check.dirtyServiceCount) dirty"
-        ].joined(separator: "\n")
-        copyToPasteboard(payload)
+        copyToPasteboard(
+            localCheckSummaryPayload(
+                title: "Nexus local check",
+                actor: appState.lastAutomationCheckActor,
+                check: check
+            )
+        )
     }
 
     private var shortBranch: String {
@@ -6812,10 +6833,10 @@ private struct WorkflowStatusView: View {
 
                     Button {
                         Task {
-                            await appState.runLocalAutomationCheck()
+                            await appState.runLocalAutomationCheck(actor: "Nexus Workflow")
                         }
                     } label: {
-                        Label(appState.isRunningAutomationCheck ? "检查中" : "检查", systemImage: "checklist.checked")
+                        Label(appState.isRunningAutomationCheck ? "检查中" : "本地检查", systemImage: "checklist.checked")
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
@@ -6843,6 +6864,16 @@ private struct WorkflowStatusView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                     .help("复制工作区上下文并打开 Codex / Copy workspace context and open Codex")
+                }
+
+                if appState.isRunningAutomationCheck || appState.lastAutomationCheck != nil {
+                    LocalCheckReceiptView(
+                        check: appState.lastAutomationCheck,
+                        actor: appState.lastAutomationCheckActor,
+                        isRunning: appState.isRunningAutomationCheck,
+                        contextLabel: "任务与交付 / Workflow",
+                        copyAction: copyLocalCheckSummary
+                    )
                 }
 
                 DeliveryReadinessChecklistView(items: readinessItems)
@@ -6934,6 +6965,17 @@ private struct WorkflowStatusView: View {
 
     private func documentPath(for key: String, fallback: String) -> String {
         workspace.documentLinks[key] ?? "\(workspace.path)/\(fallback)"
+    }
+
+    private func copyLocalCheckSummary(_ check: LocalAutomationCheckResponse) {
+        copyToPasteboard(
+            localCheckSummaryPayload(
+                title: "Nexus workflow local check",
+                actor: appState.lastAutomationCheckActor,
+                check: check,
+                workspace: workspace
+            )
+        )
     }
 
     private static func hasConfirmedTargetBranch(_ branch: String) -> Bool {
@@ -7327,20 +7369,14 @@ private struct RiskReviewView: View {
     }
 
     private func copyLocalCheckSummary(_ check: LocalAutomationCheckResponse) {
-        let payload = [
-            "Nexus risk review local check",
-            "- Actor: \(appState.lastAutomationCheckActor ?? "Nexus")",
-            "- Status: \(check.status)",
-            "- Summary: \(check.summary)",
-            "- Generated at: \(check.generatedAt)",
-            "- Risks: \(check.riskCount)",
-            "- Delivery issues: \(check.deliveryIssueCount)",
-            "- Open tasks: \(check.openTaskCount) (\(check.highPriorityTaskCount) high priority)",
-            "- Worktree issues: \(check.missingWorktreeCount) missing, \(check.dirtyServiceCount) dirty",
-            "- Workspace: \(workspace.name)",
-            "- Path: \(workspace.path)"
-        ].joined(separator: "\n")
-        copyToPasteboard(payload)
+        copyToPasteboard(
+            localCheckSummaryPayload(
+                title: "Nexus risk review local check",
+                actor: appState.lastAutomationCheckActor,
+                check: check,
+                workspace: workspace
+            )
+        )
     }
 
     private static func statusKind(_ status: String) -> String {

@@ -57,7 +57,7 @@ src-tauri/target/release/bundle/dmg/Nexus_0.1.0_aarch64.dmg
   - Workspace detail status overview and Command Center include Codex session-link count, a session path step, latest-session open action, and bind-session fallback when no link exists.
   - Codex handoff actions show the Handoff feedback panel after copying workspace, lifecycle, risk, task, automation, or agent-event context.
   - Failed local operations show a unified Operation feedback card with copy-error, refresh, environment-check, Settings, and dismiss actions.
-  - Workspace detail shows the Workflow summary with task counts, delivery status, delivery-readiness checks, task/delivery document opens, local check, workspace Codex handoff, and delivery-update Codex handoff.
+  - Workspace detail shows the Workflow summary with task counts, delivery status, delivery-readiness checks, task/delivery document opens, inline local-check receipts, workspace Codex handoff, and delivery-update Codex handoff.
   - SQL readiness blocks delivery when `交付记录.md` declares SQL changes but `sql/` does not contain both formal SQL and rollback SQL files.
   - Workflow starts with a delivery focus card that routes the next action to branch/service documents, worktree setup, task review, risk handoff, delivery records, local checks, Codex, or lifecycle confirmation.
   - Task status and lifecycle writebacks show a dismissible local-write feedback card with affected-workspace focus, source-document review, and follow-up check actions; the compact action layout wraps cleanly in the inspector.
