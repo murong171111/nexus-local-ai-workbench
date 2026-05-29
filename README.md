@@ -46,7 +46,7 @@ It is designed for teams that work across multiple local service repositories an
 - Branch alignment checks that flag worktrees whose actual branch does not match the workspace target branch.
 - Workspace bootstrap reports and reviewable `scripts/worktree-commands.sh` files for semi-automated worktree setup.
 - Delivery-record completeness warnings when `交付记录.md` still needs real change notes.
-- SQL artifact readiness checks: if `交付记录.md` declares an actual SQL change anywhere in the document, `sql/` must include both a formal SQL file and a rollback SQL file before delivery is considered ready.
+- SQL artifact readiness checks: if `交付记录.md` declares an actual SQL change anywhere in the document, `sql/` must include both a formal SQL file and a rollback SQL file before delivery is considered ready. New workspace templates also repeat this guard in `AGENTS.md`, `handoff.md`, and `交付记录.md` so SQL pasted only into the delivery record is never treated as complete.
 - Codex launcher and copyable prompts for continuing a workspace, checking git state, updating delivery notes, and risk analysis.
 - Widget snapshot generation at `~/Library/Application Support/com.ks.nexus/widget-snapshot.json`, with App Group mirroring when `group.com.ks.nexus` is available.
 - `nexus://workspace/<workspace-folder>` deep links from widgets or other tools focus the target workspace in the native shell, and the Command Center can copy the current workspace link with visible inspector feedback.

@@ -415,7 +415,7 @@ pub fn create_workspace(
     write_file(
         &workspace.join("AGENTS.md"),
         &format!(
-            "# Workspace Agent Guide\n\n- 需求名称: {}\n- 工作区: {}\n- 开发目录: `repos/<service>`\n- 源仓库目录: `{}`\n\n## Rules\n\n- 代码改动优先发生在 `repos/<service>` worktree 中。\n- 每次代码、SQL、业务逻辑、接口、DTO、配置或验证变化后，检查并更新 `交付记录.md`。\n- 凡是 `交付记录.md` 任意位置声明 SQL 变更，必须在 `sql/` 下同步正式 SQL 文件和回滚 SQL 文件。\n- 不直接切换源仓库分支，源仓库只作为 worktree 来源。\n",
+            "# Workspace Agent Guide\n\n- 需求名称: {}\n- 工作区: {}\n- 开发目录: `repos/<service>`\n- 源仓库目录: `{}`\n\n## Rules\n\n- 代码改动优先发生在 `repos/<service>` worktree 中。\n- 每次代码、SQL、业务逻辑、接口、DTO、配置或验证变化后，检查并更新 `交付记录.md`。\n- 凡是 `交付记录.md` 任意位置声明实际 SQL 变更，必须在 `sql/` 下同步正式 SQL 文件和回滚 SQL 文件。\n- 交付收尾前必须复核 `交付记录.md` 和 `sql/`：不能只把 SQL 写在交付文档里。\n- 不直接切换源仓库分支，源仓库只作为 worktree 来源。\n",
             request.name,
             workspace.display(),
             request.source_repos_root
@@ -468,7 +468,7 @@ pub fn create_workspace(
     )?;
     write_file(
         &workspace.join("handoff.md"),
-        "# Handoff\n\n## 当前状态\n\n待补充。\n\n## 后续继续方式\n\n请先读取 `AGENTS.md`、`STATUS.md`、`services.md`、`branches.md`、`tasks.md` 和 `交付记录.md`。\n",
+        "# Handoff\n\n## 当前状态\n\n待补充。\n\n## 后续继续方式\n\n请先读取 `AGENTS.md`、`STATUS.md`、`services.md`、`branches.md`、`tasks.md` 和 `交付记录.md`。\n\n## 收尾守门\n\n如果 `交付记录.md` 任意位置记录实际 SQL 变更，必须同步检查 `sql/` 下是否已有正式 SQL 文件和回滚 SQL 文件；缺一项都不能视为交付完成。\n",
     )?;
     write_file(
         &workspace.join("delivery.md"),
@@ -477,7 +477,7 @@ pub fn create_workspace(
     write_file(
         &workspace.join("交付记录.md"),
         &format!(
-            "# 交付记录\n\n## 需求信息\n\n- 需求名称: {}\n- 工作区: {}\n- 分支: {}\n\n## 涉及服务\n\n{}\n\n## 代码变更\n\n暂无。\n\n## SQL 变更\n\n- 是否有 SQL 变动：暂无。\n- 正式 SQL 文件：无\n- 回滚 SQL 文件：无\n- 文件规则：一旦本文档任意位置记录有 SQL 变动，必须同步 `sql/` 下正式 SQL 与回滚 SQL 文件。\n\n## 新增逻辑\n\n暂无。\n\n## 验证结果\n\n暂无。\n\n## 遗留风险\n\n- 创建后需要确认服务范围、分支和 worktree 状态。\n",
+            "# 交付记录\n\n## 需求信息\n\n- 需求名称: {}\n- 工作区: {}\n- 分支: {}\n\n## 涉及服务\n\n{}\n\n## 代码变更\n\n暂无。\n\n## SQL 变更\n\n- 是否有 SQL 变更：暂无。\n- 正式 SQL 文件：无\n- 回滚 SQL 文件：无\n- 文件规则：一旦本文档任意位置记录实际 SQL 变更，必须同步 `sql/` 下正式 SQL 与回滚 SQL 文件；不能只把 SQL 留在本文档中。\n\n## 新增逻辑\n\n暂无。\n\n## 验证结果\n\n暂无。\n\n## 遗留风险\n\n- 创建后需要确认服务范围、分支和 worktree 状态。\n",
             request.name,
             request.folder,
             target_branch,
@@ -3590,6 +3590,12 @@ mod tests {
         let delivery = fs::read_to_string(workspace.join("交付记录.md")).unwrap();
         assert!(delivery.contains("- 分支: chen/demo-feature"));
         assert!(delivery.contains("- order"));
+        assert!(delivery.contains("正式 SQL 与回滚 SQL 文件"));
+        assert!(delivery.contains("不能只把 SQL 留在本文档中"));
+        let agents = fs::read_to_string(workspace.join("AGENTS.md")).unwrap();
+        assert!(agents.contains("交付收尾前必须复核 `交付记录.md` 和 `sql/`"));
+        let handoff = fs::read_to_string(workspace.join("handoff.md")).unwrap();
+        assert!(handoff.contains("缺一项都不能视为交付完成"));
         let script = fs::read_to_string(workspace.join("scripts/worktree-commands.sh")).unwrap();
         assert!(script.contains("worktree add"));
         assert!(script.contains("'chen/demo-feature'"));
