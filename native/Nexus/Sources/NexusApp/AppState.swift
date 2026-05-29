@@ -118,6 +118,7 @@ final class AppState: ObservableObject {
     @Published var lastWorktreeSetupResponse: SetupWorktreesResponse?
     @Published var codexHandoffFeedback: CodexHandoffFeedback?
     @Published var localWriteFeedback: LocalWriteFeedback?
+    @Published var codexSessionLinksByWorkspace: [WorkspaceSummary.ID: [CodexSessionLink]] = [:]
     @Published var searchResults: [SearchResult] = []
     @Published var selectedSearchResultIndex = 0
     @Published var isSearching = false
@@ -171,6 +172,7 @@ final class AppState: ObservableObject {
     static let defaultRefreshIntervalSeconds = 10
     static let widgetAppGroupIdentifier = "group.com.ks.nexus"
     static let widgetSnapshotFileName = "widget-snapshot.json"
+    static let codexSessionLinksFileName = "codex-sessions.json"
     static let supportedAutomationIntervals = [5, 15, 30, 60]
     static let defaultAutomationIntervalMinutes = 30
     static let supportedNotificationCooldownMinutes = [15, 30, 60, 180]
@@ -753,6 +755,7 @@ final class AppState: ObservableObject {
             )
             let mappedWorkspaces = dashboard.workspaces.map(WorkspaceSummary.init(snapshot:))
             workspaces = mappedWorkspaces
+            codexSessionLinksByWorkspace = Self.loadCodexSessionLinks(for: mappedWorkspaces)
             if selectedWorkspaceID == nil || !mappedWorkspaces.contains(where: { $0.id == selectedWorkspaceID }) {
                 selectedWorkspaceID = mappedWorkspaces.first?.id
             }
@@ -1278,6 +1281,140 @@ final class AppState: ObservableObject {
                 "lastCheckStatus": lastAutomationCheck?.status ?? "none"
             ],
             workspaceOverride: workspace
+        )
+    }
+
+    func codexSessionLinks(for workspace: WorkspaceSummary) -> [CodexSessionLink] {
+        codexSessionLinksByWorkspace[workspace.id] ?? []
+    }
+
+    func codexSessionLinksPath(for workspace: WorkspaceSummary) -> String {
+        Self.codexSessionLinksURL(for: workspace).path
+    }
+
+    @discardableResult
+    func bindCodexSessionLink(
+        to workspace: WorkspaceSummary,
+        title: String,
+        url rawURL: String,
+        notes: String
+    ) async -> Bool {
+        lastError = nil
+        guard let sessionURL = Self.normalizedCodexSessionURL(rawURL) else {
+            lastError = "Codex session URL requires a valid scheme, for example codex:// or https://."
+            return false
+        }
+
+        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        var links = codexSessionLinks(for: workspace)
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let displayTitle = cleanTitle.isEmpty ? "Codex session \(links.count + 1)" : cleanTitle
+        let isUpdate: Bool
+
+        if let existingIndex = links.firstIndex(where: { $0.url == sessionURL }) {
+            links[existingIndex].title = displayTitle
+            links[existingIndex].notes = cleanNotes
+            isUpdate = true
+        } else {
+            links.insert(
+                CodexSessionLink(
+                    id: UUID().uuidString,
+                    title: displayTitle,
+                    url: sessionURL,
+                    notes: cleanNotes,
+                    createdAt: timestamp,
+                    lastOpenedAt: nil
+                ),
+                at: 0
+            )
+            isUpdate = false
+        }
+
+        return await persistCodexSessionLinks(
+            links,
+            for: workspace,
+            action: isUpdate ? "codex_session_link.updated" : "codex_session_link.bound",
+            summary: isUpdate ? "Updated Codex session link" : "Bound Codex session link",
+            feedbackTitle: isUpdate ? "Codex 会话已更新 / Session updated" : "Codex 会话已绑定 / Session bound",
+            feedbackDetail: "\(workspace.name) · \(displayTitle)",
+            metadata: [
+                "sessionTitle": displayTitle,
+                "sessionUrl": sessionURL,
+                "sessionCount": "\(links.count)"
+            ]
+        )
+    }
+
+    func openCodexSessionLink(_ link: CodexSessionLink, in workspace: WorkspaceSummary) async {
+        lastError = nil
+        guard let url = URL(string: link.url) else {
+            lastError = "Invalid Codex session URL: \(link.url)"
+            return
+        }
+
+        NSWorkspace.shared.open(url)
+        var links = codexSessionLinks(for: workspace)
+        if let existingIndex = links.firstIndex(where: { $0.id == link.id }) {
+            links[existingIndex].lastOpenedAt = ISO8601DateFormatter().string(from: Date())
+            _ = await persistCodexSessionLinks(
+                links,
+                for: workspace,
+                action: "codex_session_link.opened",
+                summary: "Opened Codex session link",
+                feedbackTitle: nil,
+                feedbackDetail: nil,
+                metadata: [
+                    "sessionTitle": link.title,
+                    "sessionUrl": link.url
+                ]
+            )
+        }
+
+        markCodexHandoff(
+            title: "Codex 会话已打开 / Session opened",
+            detail: "\(workspace.name) · \(link.title)",
+            systemImage: "link"
+        )
+    }
+
+    func copyCodexSessionLink(_ link: CodexSessionLink, in workspace: WorkspaceSummary) async {
+        lastError = nil
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(link.url, forType: .string)
+        markCodexHandoff(
+            title: "Codex 会话链接已复制 / Session copied",
+            detail: "\(workspace.name) · \(link.title)",
+            systemImage: "doc.on.clipboard"
+        )
+        await recordWorkspaceAction(
+            action: "codex_session_link.copied",
+            target: link.url,
+            summary: "Copied Codex session link",
+            metadata: [
+                "sessionTitle": link.title,
+                "sessionUrl": link.url
+            ],
+            workspaceOverride: workspace
+        )
+    }
+
+    @discardableResult
+    func deleteCodexSessionLink(_ link: CodexSessionLink, from workspace: WorkspaceSummary) async -> Bool {
+        lastError = nil
+        let links = codexSessionLinks(for: workspace).filter { $0.id != link.id }
+        return await persistCodexSessionLinks(
+            links,
+            for: workspace,
+            action: "codex_session_link.deleted",
+            summary: "Deleted Codex session link",
+            feedbackTitle: "Codex 会话已删除 / Session deleted",
+            feedbackDetail: "\(workspace.name) · \(link.title)",
+            metadata: [
+                "sessionTitle": link.title,
+                "sessionUrl": link.url,
+                "sessionCount": "\(links.count)"
+            ]
         )
     }
 
@@ -2009,6 +2146,46 @@ final class AppState: ObservableObject {
         )
     }
 
+    @discardableResult
+    private func persistCodexSessionLinks(
+        _ links: [CodexSessionLink],
+        for workspace: WorkspaceSummary,
+        action: String,
+        summary: String,
+        feedbackTitle: String?,
+        feedbackDetail: String?,
+        metadata: [String: String]
+    ) async -> Bool {
+        do {
+            try Self.writeCodexSessionLinks(links, for: workspace)
+            codexSessionLinksByWorkspace[workspace.id] = links
+
+            if let feedbackTitle, let feedbackDetail {
+                markLocalWriteFeedback(
+                    title: feedbackTitle,
+                    detail: feedbackDetail,
+                    workspaceID: workspace.id,
+                    workspaceName: workspace.name,
+                    documentPath: codexSessionLinksPath(for: workspace),
+                    documentLabel: "Codex sessions",
+                    systemImage: "link.badge.plus"
+                )
+            }
+
+            await recordWorkspaceAction(
+                action: action,
+                target: codexSessionLinksPath(for: workspace),
+                summary: summary,
+                metadata: metadata,
+                workspaceOverride: workspace
+            )
+            return true
+        } catch {
+            lastError = error.localizedDescription
+            return false
+        }
+    }
+
     private func recordWorkspaceAction(
         action: String,
         target: String,
@@ -2060,6 +2237,16 @@ final class AppState: ObservableObject {
             return "任务上下文已复制 / Task handoff copied"
         case "codex_worktree_setup.opened":
             return "worktree 结果已交接 / Worktree result opened"
+        case "codex_session_link.bound":
+            return "Codex 会话已绑定 / Session bound"
+        case "codex_session_link.updated":
+            return "Codex 会话已更新 / Session updated"
+        case "codex_session_link.opened":
+            return "Codex 会话已打开 / Session opened"
+        case "codex_session_link.copied":
+            return "Codex 会话已复制 / Session copied"
+        case "codex_session_link.deleted":
+            return "Codex 会话已删除 / Session deleted"
         case "risk_review_handoff.copied":
             return "风险复核已复制 / Risk review copied"
         case "settings_profile.exported":
@@ -2304,6 +2491,73 @@ final class AppState: ObservableObject {
                     atPath: entry.appendingPathComponent(".git").path
                 )
         }.count
+    }
+
+    private static func loadCodexSessionLinks(
+        for workspaces: [WorkspaceSummary]
+    ) -> [WorkspaceSummary.ID: [CodexSessionLink]] {
+        Dictionary(uniqueKeysWithValues: workspaces.map { workspace in
+            (workspace.id, readCodexSessionLinks(for: workspace))
+        })
+    }
+
+    private static func readCodexSessionLinks(for workspace: WorkspaceSummary) -> [CodexSessionLink] {
+        let url = codexSessionLinksURL(for: workspace)
+        guard let data = try? Data(contentsOf: url) else {
+            return []
+        }
+
+        let decoder = JSONDecoder()
+        if let store = try? decoder.decode(CodexSessionLinkStore.self, from: data) {
+            return store.sessions
+        }
+
+        if let legacySessions = try? decoder.decode([CodexSessionLink].self, from: data) {
+            return legacySessions
+        }
+
+        return []
+    }
+
+    private static func writeCodexSessionLinks(
+        _ links: [CodexSessionLink],
+        for workspace: WorkspaceSummary
+    ) throws {
+        let workspaceURL = localFileURL(for: workspace.path)
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: workspaceURL.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            throw NSError(
+                domain: "NexusCodexSessionLinks",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Workspace folder does not exist: \(workspaceURL.path)"]
+            )
+        }
+
+        let store = CodexSessionLinkStore(
+            schemaVersion: CodexSessionLinkStore.currentSchemaVersion,
+            sessions: links
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(store)
+        try data.write(to: codexSessionLinksURL(for: workspace), options: .atomic)
+    }
+
+    private static func codexSessionLinksURL(for workspace: WorkspaceSummary) -> URL {
+        localFileURL(for: workspace.path)
+            .appendingPathComponent(codexSessionLinksFileName)
+    }
+
+    private static func normalizedCodexSessionURL(_ rawURL: String) -> String? {
+        let trimmed = rawURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let components = URLComponents(string: trimmed),
+              let scheme = components.scheme,
+              !scheme.isEmpty
+        else {
+            return nil
+        }
+        return trimmed
     }
 
     private static func localFileURL(for rawPath: String) -> URL {

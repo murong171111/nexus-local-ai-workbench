@@ -67,6 +67,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Native Command Center and Risk Review now show a compact local-check receipt with status, metrics, audit feedback, and a copyable summary after running checks.
 - Native workspace detail now starts with a compact status overview for lifecycle, branch, services, risk, tasks, delivery, and latest local check state.
 - Native workspace Codex handoff now copies a richer handoff pack with latest local-check status, service/worktree summaries, open tasks, delivery checks, and recommended actions.
+- Native workspace detail can now bind, view, open, copy, and delete multiple Codex session deep links stored in workspace-local `codex-sessions.json`.
 - Native local-write feedback can now focus the affected workspace, clearing search and filters before the user reviews the refreshed Workflow state.
 - Native local-write feedback actions now use a compact wrapping layout, and document/check actions also focus the affected workspace first.
 - Native Workflow delivery summary now recommends lifecycle writebacks from delivery readiness, routing users into the existing confirmation flow for entering delivery or marking done.

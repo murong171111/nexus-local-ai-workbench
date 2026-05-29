@@ -20,6 +20,7 @@ Nexus 是一个面向 macOS 的本地 AI 开发工作台，用来管理需求工
 - 支持本地 SQLite + FTS 索引基础能力，用于索引工作区 Markdown、服务范围、任务、决策、交付记录和 SQL 备注。
 - 原生 SwiftUI 壳支持 Markdown 文档预览/源码切换，用于查看 handoff、标准工作区文档和搜索命中的文档，并在 Documents Hub 中展示当前文档、高亮、加载和错误恢复。
 - 原生工作区详情支持一键用 Finder、Terminal 或 Codex 打开当前工作区，其中 Codex 会先复制包含本地检查、服务/worktree、任务、交付和推荐动作的工作区接力包。
+- 原生工作区详情支持绑定多个 Codex 会话深度链接，可查看、打开、复制和删除，并把绑定保存到工作区内的 `codex-sessions.json`。
 - 原生 SwiftUI 壳支持本地任务中心，从 `tasks.md` 展示未完成任务，可直接打开任务源文档，支持持久化筛选、最近任务写回反馈，也能显示 Agent 写回的任务，并支持确认后完成、延期任务，以及复制任务级上下文并打开 Codex。
 - 原生 SwiftUI 壳支持 macOS 菜单栏状态入口，可快速查看工作区、风险、任务、worktree 状态，并执行刷新、设置和复制摘要动作。
 - 支持本地自动化检查，可从 Rust Core、Swift/Rust 桥接、原生菜单栏、可配置周期调度、可见检查回执和可配置 macOS 本地通知生成刷新、风险、交付、任务、worktree、未提交服务信号。
@@ -71,6 +72,8 @@ Nexus 是一个面向 macOS 的本地 AI 开发工作台，用来管理需求工
 
 在工作区详情中，可以使用 `Finder`、`Terminal` 或 `Codex` 将当前工作区交给本地工具。`Codex` 动作会复制一段工作区接力包，并打开 Settings 中配置的 Codex URL。接力包会包含最近本地检查、服务/worktree 摘要、开放任务、交付检查、标准文档路径和 Nexus 推荐动作。
 
+工作区详情中的 `Codex 会话 / Sessions` 区块可以绑定多个 Codex 深度链接。绑定、打开、复制和删除都会在应用内给出反馈；删除只移除 Nexus 本地绑定，不会删除 Codex 里的会话。
+
 每次交接 Codex 或复制上下文后，原生右侧检查器会显示 `Handoff` 状态面板，包含上下文类型、时间和“Prompt 已在剪贴板”的提示；如果 Codex 没有自动带入内容，直接粘贴即可。
 
 > 当前预发布包尚未接入 Apple Developer 签名和 notarization。首次打开时，macOS 可能会显示安全提示，需要在系统设置中手动允许。
@@ -92,6 +95,7 @@ Nexus 默认识别每个需求工作区下的 Markdown 文档和本地 worktree 
   handoff.md
   delivery.md
   交付记录.md
+  codex-sessions.json
   bootstrap-report.md
   logs/
   sql/
