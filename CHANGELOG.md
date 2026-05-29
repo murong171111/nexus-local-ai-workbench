@@ -76,6 +76,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Native Workflow delivery summary now recommends lifecycle writebacks from delivery readiness, routing users into the existing confirmation flow for entering delivery or marking done.
 - Native Workflow action labels now use Chinese-first wording and hover help for task documents, delivery records, local checks, and workspace Codex handoff.
 - Native Workflow now starts with a delivery focus card that turns branch, service, worktree, task, risk, SQL, dirty-service, and delivery-record state into one recommended next action.
+- Native Workflow can now copy a delivery-update handoff pack and open Codex, including delivery record, tasks, SQL, risks, services, worktrees, and latest local-check context.
 - Native worktree setup results now copy created/skipped/failed details into the Codex handoff before opening Codex.
 - Native worktree setup results now show the follow-up local-check summary inside the result card after running checks.
 - Native worktree setup result actions now use Chinese-first labels, clearer result group names, and hover help for compact metrics.
