@@ -41,6 +41,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added confirmed Rust Core, FFI, and native SwiftUI lifecycle writeback for `workspace.md` and `STATUS.md`, with local audit events for status transitions.
 - Added native Workflow lifecycle recommendations that turn delivery-readiness results into confirmed lifecycle writeback actions.
 - Added a native Workflow delivery focus card that turns task, delivery, risk, worktree, SQL, and lifecycle state into one recommended next action.
+- Converged native Workflow secondary actions into document, local-check, and Agent handoff lanes so delivery controls are grouped by intent.
 - Added native Workflow delivery-update Codex handoff with delivery record, tasks, SQL, risks, services/worktrees, and latest local-check context.
 - Added native Workflow validation/PR handoff with local checks, delivery, SQL, tasks, services/worktrees, PR summary requirements, clipboard feedback, and local audit logging.
 - Added SQL artifact enforcement so delivery records that declare SQL changes anywhere in the Markdown require both formal SQL and rollback SQL files under `sql/`.

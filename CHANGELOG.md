@@ -72,6 +72,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Native Documents Hub now highlights the active document and shows local loading/error feedback with retry, copy-path, and Finder recovery actions.
 - Native Documents Hub can now create a missing standard workspace document after explicit confirmation, using Rust Core/FFI writeback, audit logging, refreshed state, and local-write feedback.
 - Native Workflow now keeps the local-check receipt inline next to task and delivery actions, sharing the same compact receipt and copy-summary pattern as Command Center and Risk Review.
+- Native Workflow actions are now grouped into document, local-check, and Agent handoff lanes so task, delivery, check, workspace handoff, delivery handoff, and validation/PR handoff no longer appear as one flat button row.
 - Native Command Center and Risk Review now show a compact local-check receipt with status, metrics, audit feedback, and a copyable summary after running checks.
 - Native workspace detail now starts with a compact status overview for lifecycle, branch, services, risk, tasks, delivery, and latest local check state.
 - Native workspace Codex handoff now copies a richer handoff pack with latest local-check status, service/worktree summaries, open tasks, delivery checks, and recommended actions.

@@ -6318,6 +6318,132 @@ private struct DeliveryFocusCardView: View {
     }
 }
 
+private struct WorkflowActionTrayView: View {
+    let isRunningCheck: Bool
+    let openTasksAction: () -> Void
+    let openDeliveryAction: () -> Void
+    let runCheckAction: () -> Void
+    let workspaceHandoffAction: () -> Void
+    let deliveryHandoffAction: () -> Void
+    let validationPrHandoffAction: () -> Void
+
+    private var columns: [GridItem] {
+        [GridItem(.adaptive(minimum: 112), spacing: 8, alignment: .leading)]
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 9) {
+                Image(systemName: "slider.horizontal.3")
+                    .foregroundStyle(NexusPalette.accent)
+                    .frame(width: 15)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("工作流动作 / Actions")
+                        .font(.subheadline.weight(.medium))
+                    Text("按事实来源、检查和 Agent 交接分组处理，避免交付动作散落。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 9) {
+                actionLane(title: "文档 / Docs", detail: "回到 Markdown 来源") {
+                    Button {
+                        openTasksAction()
+                    } label: {
+                        Label("任务", systemImage: "checklist")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("打开 tasks.md / Open tasks document")
+
+                    Button {
+                        openDeliveryAction()
+                    } label: {
+                        Label("交付", systemImage: "doc.text")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("打开交付记录 / Open delivery record")
+                }
+
+                actionLane(title: "检查 / Check", detail: "刷新风险、任务和 worktree 信号") {
+                    Button {
+                        runCheckAction()
+                    } label: {
+                        Label(isRunningCheck ? "检查中" : "本地检查", systemImage: "checklist.checked")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(isRunningCheck)
+                    .help("运行本地自动化检查 / Run local checks")
+                }
+
+                actionLane(title: "Agent 交接 / Handoff", detail: "把不同阶段的上下文交给 Codex") {
+                    Button {
+                        workspaceHandoffAction()
+                    } label: {
+                        Label("工作区", systemImage: "point.3.connected.trianglepath.dotted")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .help("复制工作区上下文并打开 Codex / Copy workspace context and open Codex")
+
+                    Button {
+                        deliveryHandoffAction()
+                    } label: {
+                        Label("补交付", systemImage: "doc.badge.arrow.up")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .help("复制交付补充上下文并打开 Codex / Copy delivery update context and open Codex")
+
+                    Button {
+                        validationPrHandoffAction()
+                    } label: {
+                        Label("PR 交接", systemImage: "checkmark.seal")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("复制验证与 PR 交接上下文并打开 Codex / Copy validation and PR handoff context and open Codex")
+                }
+            }
+        }
+        .padding(10)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func actionLane<Content: View>(
+        title: String,
+        detail: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                Text(detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
+                content()
+            }
+        }
+    }
+}
+
 private struct WorkflowStatusView: View {
     @EnvironmentObject private var appState: AppState
     let workspace: WorkspaceSummary
@@ -6837,63 +6963,39 @@ private struct WorkflowStatusView: View {
                     }
                 }
 
-                HStack(spacing: 8) {
-                    Button {
+                WorkflowActionTrayView(
+                    isRunningCheck: appState.isRunningAutomationCheck,
+                    openTasksAction: {
                         Task {
                             await appState.loadDocument(path: tasksPath)
                         }
-                    } label: {
-                        Label("任务", systemImage: "checklist")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .help("打开 tasks.md / Open tasks document")
-
-                    Button {
+                    },
+                    openDeliveryAction: {
                         Task {
                             await appState.loadDocument(path: deliveryPath)
                         }
-                    } label: {
-                        Label("交付", systemImage: "doc.text")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .help("打开交付记录 / Open delivery record")
-
-                    Button {
+                    },
+                    runCheckAction: {
                         Task {
                             await appState.runLocalAutomationCheck(actor: "Nexus Workflow")
                         }
-                    } label: {
-                        Label(appState.isRunningAutomationCheck ? "检查中" : "本地检查", systemImage: "checklist.checked")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(appState.isRunningAutomationCheck)
-                    .help("运行本地自动化检查 / Run local checks")
-
-                    Button {
-                        Task {
-                            await appState.openDeliveryUpdateInCodex(workspace)
-                        }
-                    } label: {
-                        Label("补交付", systemImage: "doc.badge.arrow.up")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .help("复制交付补充上下文并打开 Codex / Copy delivery update context and open Codex")
-
-                    Button {
+                    },
+                    workspaceHandoffAction: {
                         Task {
                             await appState.openWorkspaceInCodex(workspace)
                         }
-                    } label: {
-                        Label("Codex", systemImage: "point.3.connected.trianglepath.dotted")
+                    },
+                    deliveryHandoffAction: {
+                        Task {
+                            await appState.openDeliveryUpdateInCodex(workspace)
+                        }
+                    },
+                    validationPrHandoffAction: {
+                        Task {
+                            await appState.openValidationPrHandoffInCodex(workspace)
+                        }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .help("复制工作区上下文并打开 Codex / Copy workspace context and open Codex")
-                }
+                )
 
                 if appState.isRunningAutomationCheck || appState.lastAutomationCheck != nil {
                     LocalCheckReceiptView(
@@ -6912,11 +7014,7 @@ private struct WorkflowStatusView: View {
                     lifecycleStage: workspace.lifecycle.label,
                     hasOpenTasks: !openTasks.isEmpty,
                     hasRisks: !workspace.risks.isEmpty
-                ) {
-                    Task {
-                        await appState.openValidationPrHandoffInCodex(workspace)
-                    }
-                }
+                )
 
                 if let lifecycleRecommendation {
                     DeliveryLifecycleRecommendationView(recommendation: lifecycleRecommendation) { transition in
@@ -7190,7 +7288,6 @@ private struct ValidationPrHandoffView: View {
     let lifecycleStage: String
     let hasOpenTasks: Bool
     let hasRisks: Bool
-    let action: () -> Void
 
     private var statusTone: Color {
         guard let status = localCheckStatus?.lowercased() else {
@@ -7233,19 +7330,6 @@ private struct ValidationPrHandoffView: View {
                 WorkflowMetric(label: "Local check", value: checkValue, tone: statusTone)
                 WorkflowMetric(label: "Lifecycle", value: lifecycleStage, tone: NexusPalette.accent)
                 WorkflowMetric(label: "PR/CI", value: "handoff", tone: NexusPalette.warning)
-            }
-
-            HStack {
-                Button {
-                    action()
-                } label: {
-                    Label("PR 交接", systemImage: "point.3.connected.trianglepath.dotted")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .help("复制验证与 PR 交接上下文并打开 Codex / Copy validation and PR handoff context and open Codex")
-
-                Spacer()
             }
         }
         .padding(10)
