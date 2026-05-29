@@ -446,6 +446,7 @@ struct WorkspaceTask: Identifiable, Hashable {
     let priority: String
     let source: String
     let sourceEventID: String?
+    let sourceLine: Int?
 
     var isDone: Bool {
         let normalized = status.lowercased()
@@ -490,6 +491,10 @@ struct WorkspaceTask: Identifiable, Hashable {
         default:
             "P2"
         }
+    }
+
+    var sourceLineLabel: String {
+        sourceLine.map { "L\($0)" } ?? "L?"
     }
 }
 
@@ -806,7 +811,8 @@ struct WorkspaceSummary: Identifiable, Hashable {
                 detail: task.detail,
                 priority: task.priority,
                 source: task.source,
-                sourceEventID: task.sourceEventId
+                sourceEventID: task.sourceEventId,
+                sourceLine: task.sourceLine
             )
         }
         let lifecycle = WorkspaceLifecycle(
@@ -881,9 +887,9 @@ struct WorkspaceSummary: Identifiable, Hashable {
                 documentKey: "worktreeScript"
             ),
             tasks: [
-                WorkspaceTask(id: "task-pay-log-chain", title: "核对 pay_log 回填链路", status: "进行中", detail: "确认 order 与 store-cashier 的写入路径", priority: "high", source: "workspace", sourceEventID: nil),
-                WorkspaceTask(id: "task-delivery-doc", title: "补齐交付记录", status: "待办", detail: "新增 SQL 或逻辑后补齐验证说明", priority: "medium", source: "workspace", sourceEventID: nil),
-                WorkspaceTask(id: "task-agent-review", title: "Review permission request: Git push", status: "待确认", detail: "来自 Agent 事件 preview-agent-event", priority: "medium", source: "agent", sourceEventID: "preview-agent-event")
+                WorkspaceTask(id: "task-pay-log-chain", title: "核对 pay_log 回填链路", status: "进行中", detail: "确认 order 与 store-cashier 的写入路径", priority: "high", source: "workspace", sourceEventID: nil, sourceLine: 5),
+                WorkspaceTask(id: "task-delivery-doc", title: "补齐交付记录", status: "待办", detail: "新增 SQL 或逻辑后补齐验证说明", priority: "medium", source: "workspace", sourceEventID: nil, sourceLine: 6),
+                WorkspaceTask(id: "task-agent-review", title: "Review permission request: Git push", status: "待确认", detail: "来自 Agent 事件 preview-agent-event", priority: "medium", source: "agent", sourceEventID: "preview-agent-event", sourceLine: 7)
             ]
         ),
         WorkspaceSummary(
@@ -921,7 +927,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
                 documentKey: "handoff"
             ),
             tasks: [
-                WorkspaceTask(id: "task-snapshot-plan", title: "确认价格快照方案", status: "已完成", detail: "方案已归档到工作区文档", priority: "normal", source: "workspace", sourceEventID: nil)
+                WorkspaceTask(id: "task-snapshot-plan", title: "确认价格快照方案", status: "已完成", detail: "方案已归档到工作区文档", priority: "normal", source: "workspace", sourceEventID: nil, sourceLine: 5)
             ]
         )
     ]

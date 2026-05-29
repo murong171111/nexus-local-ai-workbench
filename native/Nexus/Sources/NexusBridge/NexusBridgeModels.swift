@@ -693,6 +693,7 @@ public extension WorkspaceTaskHandoffPromptRequest {
         - Priority: \(task.priority)
         - Source: \(task.source)
         - Source event: \(task.sourceEventId ?? "No source event")
+        - Source line: \(task.sourceLine.map(String.init) ?? "Unknown")
 
         Detail:
         \(task.detail.isEmpty ? "No detail provided" : task.detail)
@@ -1118,6 +1119,7 @@ public struct WorkspaceTaskSnapshot: Codable, Equatable, Identifiable, Sendable 
     public let priority: String
     public let source: String
     public let sourceEventId: String?
+    public let sourceLine: Int?
 
     public init(
         id: String,
@@ -1126,7 +1128,8 @@ public struct WorkspaceTaskSnapshot: Codable, Equatable, Identifiable, Sendable 
         detail: String,
         priority: String,
         source: String,
-        sourceEventId: String? = nil
+        sourceEventId: String? = nil,
+        sourceLine: Int? = nil
     ) {
         self.id = id
         self.title = title
@@ -1135,6 +1138,7 @@ public struct WorkspaceTaskSnapshot: Codable, Equatable, Identifiable, Sendable 
         self.priority = priority
         self.source = source
         self.sourceEventId = sourceEventId
+        self.sourceLine = sourceLine
     }
 }
 
@@ -1381,7 +1385,8 @@ public extension DashboardSnapshot {
                             status: "进行中",
                             detail: "确认 order 与 store-cashier 的写入路径",
                             priority: "high",
-                            source: "workspace"
+                            source: "workspace",
+                            sourceLine: 5
                         ),
                         WorkspaceTaskSnapshot(
                             id: "preview:agent-task",
@@ -1390,7 +1395,8 @@ public extension DashboardSnapshot {
                             detail: "来自 Agent 事件的任务草稿",
                             priority: "medium",
                             source: "agent",
-                            sourceEventId: "preview-agent-event"
+                            sourceEventId: "preview-agent-event",
+                            sourceLine: 6
                         )
                     ],
                     activities: [

@@ -99,10 +99,11 @@ Workspace task rows are now scanned as structured task snapshots:
 - The first table column becomes the task title.
 - The second table column becomes the task status.
 - The third table column remains the task detail.
+- The Markdown table row line number is exposed as `sourceLine` so native task surfaces can return to the exact `tasks.md` source context.
 - `priority=high|medium|normal|low` in the detail column controls priority when present.
 - `event=<agent-event-id>` marks the task as agent-sourced and lets Nexus deduplicate writebacks.
 
-The native SwiftUI sidebar shows open tasks across all workspaces in a local Task Center. Selecting a task moves focus to the owning workspace, and each task row can open the owning `tasks.md` document directly for source review. The workspace detail panel shows task rows alongside readiness, session actions, risk, activity, and documents, with the same direct path back to `tasks.md`.
+The native SwiftUI sidebar shows open tasks across all workspaces in a local Task Center. Selecting a task moves focus to the owning workspace, and each task row can locate the owning `tasks.md` row for source review by opening the document, copying a task-source locator, and showing the focused line context in Documents Hub. The workspace detail panel shows task rows alongside readiness, session actions, risk, activity, and documents, with the same direct path back to `tasks.md`.
 
 Task Center filters are local UI state. The native shell can persistently focus all open tasks, high-priority tasks, agent-sourced tasks, or deferred tasks without changing `tasks.md`.
 
@@ -125,6 +126,7 @@ Workspace tasks can also produce a copyable Codex handoff prompt through Rust Co
 
 - Workspace name, folder, path, target branch, source repository root, and `tasks.md` path.
 - Task ID, title, status, priority, source, and source event ID when present.
+- Task source line when available.
 - The task detail text.
 - A workflow reminder to read workspace documents, inspect `repos/<service>` worktrees, keep SQL and delivery docs aligned, and report touched services, branches, verification, and risks.
 

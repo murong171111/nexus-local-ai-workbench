@@ -62,6 +62,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Native create-workspace results now include an initialization receipt for generated standard files, directories, initial `STATUS.md`, service scope, target branch, and worktree readiness.
 - Native Settings local path configuration now shows per-path health, directory pickers, reveal actions, and clears stale environment results after edits.
 - Native Task Center and workspace task rows now open the owning `tasks.md` document directly, keeping task review close to the source Markdown record.
+- Native Task Center and workspace task rows now show task source line numbers, copy a task-source locator, and highlight the selected line context in Documents Hub when locating a task.
 - Native SwiftUI action labels now use clearer Chinese-first wording and hover help for path recovery, task documents, task status updates, and task Codex handoff.
 - Native Task Center and workspace task rows now copy task context and open Codex in one action, with task-specific handoff feedback and audit records.
 - Native task and lifecycle writebacks now show a dismissible local-write feedback card with updated source-document and follow-up check actions.

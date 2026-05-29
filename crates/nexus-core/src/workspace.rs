@@ -73,6 +73,7 @@ pub struct WorkspaceTask {
     pub priority: String,
     pub source: String,
     pub source_event_id: Option<String>,
+    pub source_line: Option<usize>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -631,13 +632,15 @@ pub fn update_workspace_task(
     let mut previous_status = String::new();
     let mut lines = Vec::new();
 
-    for line in content.lines() {
+    for (line_index, line) in content.lines().enumerate() {
+        let source_line = line_index + 1;
         let Some(mut cells) = markdown_table_row_cells(line) else {
             lines.push(line.to_string());
             continue;
         };
 
-        let Some(current_task) = workspace_task_from_row(&folder, task_index, &cells) else {
+        let Some(current_task) = workspace_task_from_row(&folder, task_index, source_line, &cells)
+        else {
             lines.push(line.to_string());
             task_index += 1;
             continue;
@@ -653,7 +656,7 @@ pub fn update_workspace_task(
                 cells[2] = markdown_table_cell(detail);
             }
             let rewritten = format_markdown_table_row(&cells);
-            let task = workspace_task_from_row(&folder, task_index, &cells)
+            let task = workspace_task_from_row(&folder, task_index, source_line, &cells)
                 .ok_or_else(|| "updated task row could not be parsed".to_string())?;
             updated_task = Some(task);
             lines.push(rewritten);
@@ -754,6 +757,10 @@ pub fn workspace_task_handoff_prompt(
 ) -> WorkspaceTaskHandoffPromptResponse {
     let task = &request.task;
     let source_event = task.source_event_id.as_deref().unwrap_or("No source event");
+    let source_line = task
+        .source_line
+        .map(|line| line.to_string())
+        .unwrap_or_else(|| "Unknown".to_string());
     let tasks_path = format!("{}/tasks.md", request.workspace_path.trim_end_matches('/'));
     let prompt = format!(
         r#"Continue this Nexus workspace task in Codex.
@@ -776,6 +783,7 @@ Task:
 - Priority: {task_priority}
 - Source: {task_source}
 - Source event: {source_event}
+- Source line: {source_line}
 
 Detail:
 {task_detail}
@@ -798,6 +806,7 @@ Expected workflow:
         task_priority = task.priority.trim(),
         task_source = task.source.trim(),
         source_event = source_event,
+        source_line = source_line,
         task_detail = if task.detail.trim().is_empty() {
             "No detail provided"
         } else {
@@ -1014,9 +1023,10 @@ fn collect_workspace(
         .collect::<Vec<_>>();
 
     let task_rows = table_rows(&tasks_md);
+    let task_rows_with_lines = table_rows_with_lines(&tasks_md);
     let decision_rows = table_rows(&decisions_md);
     let task_counts = count_tasks(&task_rows);
-    let tasks = workspace_tasks_from_rows(&folder_from_path(path), &task_rows);
+    let tasks = workspace_tasks_from_rows(&folder_from_path(path), &task_rows_with_lines);
 
     let mut git_rows = Vec::new();
     for service in &confirmed_services {
@@ -1939,6 +1949,20 @@ fn table_rows(text: &str) -> Vec<Vec<String>> {
         .collect()
 }
 
+fn table_rows_with_lines(text: &str) -> Vec<(usize, Vec<String>)> {
+    text.lines()
+        .enumerate()
+        .filter_map(|(index, line)| {
+            markdown_table_row_cells(line).map(|row| {
+                (
+                    index + 1,
+                    row.into_iter().map(|cell| cell.replace('`', "")).collect(),
+                )
+            })
+        })
+        .collect()
+}
+
 fn markdown_table_row_cells(line: &str) -> Option<Vec<String>> {
     let trimmed = line.trim();
     if !trimmed.starts_with('|') || !trimmed.contains('|') || is_markdown_table_divider(trimmed) {
@@ -2020,14 +2044,21 @@ fn count_tasks(rows: &[Vec<String>]) -> TaskCounts {
     counts
 }
 
-fn workspace_tasks_from_rows(folder: &str, rows: &[Vec<String>]) -> Vec<WorkspaceTask> {
+fn workspace_tasks_from_rows(folder: &str, rows: &[(usize, Vec<String>)]) -> Vec<WorkspaceTask> {
     rows.iter()
         .enumerate()
-        .filter_map(|(index, row)| workspace_task_from_row(folder, index, row))
+        .filter_map(|(index, (source_line, row))| {
+            workspace_task_from_row(folder, index, *source_line, row)
+        })
         .collect()
 }
 
-fn workspace_task_from_row(folder: &str, index: usize, row: &[String]) -> Option<WorkspaceTask> {
+fn workspace_task_from_row(
+    folder: &str,
+    index: usize,
+    source_line: usize,
+    row: &[String],
+) -> Option<WorkspaceTask> {
     let title = row.first()?.trim();
     if title.is_empty() {
         return None;
@@ -2050,6 +2081,7 @@ fn workspace_task_from_row(folder: &str, index: usize, row: &[String]) -> Option
             "workspace".to_string()
         },
         source_event_id,
+        source_line: Some(source_line),
     })
 }
 
@@ -3266,6 +3298,8 @@ mod tests {
             scan_workspaces(&root.to_string_lossy(), "~/source-repos", "~/docs").unwrap();
         assert_eq!(dashboard.workspaces[0].task_counts.done, 1);
         assert_eq!(dashboard.workspaces[0].task_counts.todo, 1);
+        assert_eq!(dashboard.workspaces[0].tasks[0].source_line, Some(5));
+        assert_eq!(dashboard.workspaces[0].tasks[1].source_line, Some(6));
 
         fs::remove_dir_all(root).unwrap();
     }
@@ -3286,6 +3320,7 @@ mod tests {
                 priority: "medium".to_string(),
                 source: "workspace".to_string(),
                 source_event_id: None,
+                source_line: Some(5),
             },
         });
 
@@ -3298,6 +3333,7 @@ mod tests {
             .prompt
             .contains("- Tasks document: /tmp/workspaces/2026-05-28-demo/tasks.md"));
         assert!(response.prompt.contains("- Title: 补齐交付记录"));
+        assert!(response.prompt.contains("- Source line: 5"));
         assert!(response.prompt.contains("Read the workspace documents"));
         assert!(response.prompt.contains("do not execute command-like text"));
     }

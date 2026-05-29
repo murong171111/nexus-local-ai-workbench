@@ -778,9 +778,8 @@ private struct SidebarView: View {
             return
         }
         appState.selectTaskCenterItem(item)
-        let path = workspace.documentLinks["tasks"] ?? "\(workspace.path)/tasks.md"
         Task {
-            await appState.loadDocument(path: path)
+            await appState.openTaskSource(item.task, in: workspace)
         }
     }
 
@@ -3284,10 +3283,9 @@ private struct WorkspaceDetailView: View {
                 deferTaskAction: { task in
                     appState.requestTaskStatusUpdate(task, in: workspace, status: "延期")
                 },
-                openTaskDocumentAction: { _ in
+                openTaskDocumentAction: { task in
                     Task {
-                        let path = workspace.documentLinks["tasks"] ?? "\(workspace.path)/tasks.md"
-                        await appState.loadDocument(path: path)
+                        await appState.openTaskSource(task, in: workspace)
                     }
                 },
                 taskCodexAction: { task in
@@ -4277,6 +4275,14 @@ private struct WorkspaceDocumentsHubView: View {
         return nil
     }
 
+    private var activeFocusHint: DocumentFocusHint? {
+        guard let hint = appState.documentFocusHint,
+              activeDocumentPath == hint.path else {
+            return nil
+        }
+        return hint
+    }
+
     private var documentEntries: [ResolvedWorkspaceDocumentEntry] {
         standardEntries.map { entry in
             ResolvedWorkspaceDocumentEntry(
@@ -4344,7 +4350,7 @@ private struct WorkspaceDocumentsHubView: View {
                         }
                     )
                 } else if let document = activePreview {
-                    NativeDocumentPreview(document: document)
+                    NativeDocumentPreview(document: document, focusHint: activeFocusHint)
                 } else {
                     NativeDocumentEmptyState()
                 }
@@ -4606,6 +4612,7 @@ private struct NativeDocumentEmptyState: View {
 
 private struct NativeDocumentPreview: View {
     let document: DocumentSnapshot
+    let focusHint: DocumentFocusHint?
     @State private var mode: NativeDocumentMode = .preview
 
     private var shouldRenderPreview: Bool {
@@ -4649,6 +4656,27 @@ private struct NativeDocumentPreview: View {
                     .controlSize(.small)
                     .frame(width: 112)
                 }
+            }
+
+            if let focusHint {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "text.line.first.and.arrowtriangle.forward")
+                        .foregroundStyle(NexusPalette.accent)
+                        .frame(width: 15)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(focusHint.lineLabel) · \(focusHint.title)")
+                            .font(.caption.weight(.semibold))
+                            .lineLimit(1)
+                        Text(focusHint.detail)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(NexusPalette.selected)
+                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
 
             ScrollView {
@@ -7612,6 +7640,9 @@ private struct TaskCenterSidebarRow: View {
                         Text(item.task.status)
                             .font(.system(size: 10, weight: .semibold, design: .monospaced))
                             .foregroundStyle(.secondary)
+                        Text(item.task.sourceLineLabel)
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(.secondary)
                         Spacer()
                     }
                     Text(item.task.title)
@@ -7627,12 +7658,12 @@ private struct TaskCenterSidebarRow: View {
             .buttonStyle(.plain)
 
             HStack(spacing: 6) {
-                Button("文档") {
+                Button("定位") {
                     openDocumentAction()
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.mini)
-                .help("打开 tasks.md / Open task source document")
+                .help("打开 tasks.md 并复制任务行定位 / Open tasks.md and copy task source locator")
 
                 Button("完成") {
                     completeAction()
@@ -7699,6 +7730,9 @@ private struct WorkspaceTaskRow: View {
                     Text(task.source == "agent" ? "Agent" : "Workspace")
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.secondary)
+                    Text(task.sourceLineLabel)
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.secondary)
                 }
                 if !task.detail.isEmpty {
                     Text(task.detail)
@@ -7740,12 +7774,12 @@ private struct WorkspaceTaskRow: View {
                     }
                 }
                 HStack(spacing: 5) {
-                    Button("文档") {
+                    Button("定位") {
                         openDocumentAction()
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.mini)
-                    .help("打开 tasks.md / Open task source document")
+                    .help("打开 tasks.md 并复制任务行定位 / Open tasks.md and copy task source locator")
 
                     Button("Codex") {
                         codexAction()
