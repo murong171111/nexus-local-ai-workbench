@@ -24,6 +24,7 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - Native document preview renders Markdown by default and keeps a source-mode toggle for raw workspace files.
 - Native workspace detail handoff actions open the workspace in Finder, Terminal, or Codex, copying workspace context for Codex first.
 - Native Workflow delivery focus card that turns task, delivery, risk, worktree, SQL, and lifecycle state into one next action.
+- Native Task Center recent-writeback card for task status updates that changed `tasks.md`.
 - Native local-write feedback after task and lifecycle writebacks, with affected-workspace focus, source-document review, follow-up check actions, and compact inspector action layout.
 - Native widget snapshot writing to Application Support, with automatic `group.com.ks.nexus` App Group mirroring when the signed app has that entitlement.
 - Recent agent event sidebar feed backed by the Swift/Rust agent event bridge, with detail inspection, safe metadata actions, shared task drafts, confirmed `tasks.md` writeback, Codex handoff prompts, and JSON copy support.
