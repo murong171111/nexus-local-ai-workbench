@@ -2743,6 +2743,9 @@ private struct WorkspaceDetailView: View {
             WorkspaceCommandCenterView(workspace: workspace)
                 .environmentObject(appState)
 
+            CodexSessionLinksView(workspace: workspace)
+                .environmentObject(appState)
+
             LifecycleDetailView(
                 workspace: workspace,
                 openAction: {
@@ -3202,6 +3205,340 @@ private struct DetailOverviewTile: View {
         .padding(8)
         .background(NexusPalette.panel)
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+}
+
+private struct CodexSessionLinksView: View {
+    @EnvironmentObject private var appState: AppState
+    @State private var isBindSheetPresented = false
+    @State private var pendingDelete: CodexSessionLink?
+    let workspace: WorkspaceSummary
+
+    private var links: [CodexSessionLink] {
+        appState.codexSessionLinks(for: workspace)
+    }
+
+    var body: some View {
+        SectionBlock(title: "Codex 会话 / Sessions") {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 9) {
+                    Image(systemName: "link")
+                        .foregroundStyle(NexusPalette.accent)
+                        .frame(width: 15)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("绑定当前需求相关的 Codex 深度链接")
+                            .font(.subheadline.weight(.medium))
+                        Text("保存到工作区内的 codex-sessions.json；用于回到指定 Codex 会话，而不是重新拼接上下文。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer()
+
+                    Text("\(links.count)")
+                        .font(.system(.caption, design: .monospaced).weight(.semibold))
+                        .foregroundStyle(links.isEmpty ? .secondary : NexusPalette.accent)
+                }
+
+                HStack(spacing: 8) {
+                    Button {
+                        isBindSheetPresented = true
+                    } label: {
+                        Label("绑定会话", systemImage: "plus")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+
+                    Button {
+                        copyToPasteboard(appState.codexSessionLinksPath(for: workspace))
+                    } label: {
+                        Label("复制文件路径", systemImage: "doc.on.doc")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("复制 codex-sessions.json 路径 / Copy local session-link file path")
+                }
+
+                if links.isEmpty {
+                    CodexSessionEmptyState()
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(links) { link in
+                            CodexSessionLinkRow(
+                                link: link,
+                                openAction: {
+                                    Task {
+                                        await appState.openCodexSessionLink(link, in: workspace)
+                                    }
+                                },
+                                copyAction: {
+                                    Task {
+                                        await appState.copyCodexSessionLink(link, in: workspace)
+                                    }
+                                },
+                                deleteAction: {
+                                    pendingDelete = link
+                                }
+                            )
+                        }
+                    }
+                }
+
+                Text(appState.codexSessionLinksPath(for: workspace))
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        }
+        .sheet(isPresented: $isBindSheetPresented) {
+            CodexSessionBindSheet(workspace: workspace)
+                .environmentObject(appState)
+        }
+        .sheet(item: $pendingDelete) { link in
+            CodexSessionDeleteSheet(workspace: workspace, link: link)
+                .environmentObject(appState)
+        }
+    }
+}
+
+private struct CodexSessionEmptyState: View {
+    var body: some View {
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: "link.badge.plus")
+                .foregroundStyle(.secondary)
+                .frame(width: 15)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("还没有绑定会话链接")
+                    .font(.caption.weight(.semibold))
+                Text("打开 Codex 后，把该会话的深度链接粘贴进来；后续可以从这个工作区直接回到对应会话。")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(10)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct CodexSessionLinkRow: View {
+    let link: CodexSessionLink
+    let openAction: () -> Void
+    let copyAction: () -> Void
+    let deleteAction: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 9) {
+                Image(systemName: "link.circle")
+                    .foregroundStyle(NexusPalette.accent)
+                    .frame(width: 15)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(link.title)
+                        .font(.subheadline.weight(.medium))
+                        .lineLimit(1)
+                    Text(link.url)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    if !link.notes.isEmpty {
+                        Text(link.notes)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    openAction()
+                } label: {
+                    Label("打开", systemImage: "arrow.up.forward.app")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+
+                Button {
+                    copyAction()
+                } label: {
+                    Label("复制", systemImage: "doc.on.doc")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Button(role: .destructive) {
+                    deleteAction()
+                } label: {
+                    Label("删除", systemImage: "trash")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+
+            HStack(spacing: 8) {
+                CodexSessionMeta(label: "created", value: link.createdAt)
+                CodexSessionMeta(label: "opened", value: link.lastOpenedAt ?? "never")
+            }
+        }
+        .padding(10)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct CodexSessionMeta: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(label)
+                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+    }
+}
+
+private struct CodexSessionBindSheet: View {
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+    @State private var title = ""
+    @State private var sessionURL = ""
+    @State private var notes = ""
+    let workspace: WorkspaceSummary
+
+    private var canSave: Bool {
+        !sessionURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("绑定 Codex 会话 / Bind session")
+                    .font(.title3.weight(.semibold))
+                Text("This writes a local codex-sessions.json record inside the workspace.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Form {
+                Section("会话信息 / Session") {
+                    TextField("标题，例如：开发主会话", text: $title)
+                    TextField("Codex deep link or web URL", text: $sessionURL)
+                    TextField("备注，可选", text: $notes)
+                }
+
+                Section("写入位置 / Local file") {
+                    SummaryLine(label: "Workspace", value: workspace.name)
+                    SummaryLine(label: "File", value: appState.codexSessionLinksPath(for: workspace))
+                }
+            }
+
+            HStack {
+                Button("Cancel") {
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Spacer()
+
+                Button("Save") {
+                    Task {
+                        let saved = await appState.bindCodexSessionLink(
+                            to: workspace,
+                            title: title,
+                            url: sessionURL,
+                            notes: notes
+                        )
+                        if saved {
+                            dismiss()
+                        }
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!canSave)
+            }
+
+            if let error = appState.lastError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(NexusPalette.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(22)
+        .frame(width: 560)
+    }
+}
+
+private struct CodexSessionDeleteSheet: View {
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmed = false
+    let workspace: WorkspaceSummary
+    let link: CodexSessionLink
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("删除 Codex 会话 / Delete session")
+                    .font(.title3.weight(.semibold))
+                Text("This only removes the local binding from Nexus. It does not delete the Codex conversation.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            SectionBlock(title: "会话 / Session") {
+                VStack(alignment: .leading, spacing: 8) {
+                    SummaryLine(label: "Title", value: link.title)
+                    SummaryLine(label: "URL", value: link.url)
+                    SummaryLine(label: "File", value: appState.codexSessionLinksPath(for: workspace))
+                }
+            }
+
+            Toggle("确认从 codex-sessions.json 删除这条绑定", isOn: $confirmed)
+
+            HStack {
+                Button("Cancel") {
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Spacer()
+
+                Button("Delete", role: .destructive) {
+                    Task {
+                        let deleted = await appState.deleteCodexSessionLink(link, from: workspace)
+                        if deleted {
+                            dismiss()
+                        }
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!confirmed)
+            }
+
+            if let error = appState.lastError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(NexusPalette.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(22)
+        .frame(width: 560)
     }
 }
 

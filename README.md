@@ -20,6 +20,7 @@ It is designed for teams that work across multiple local service repositories an
 - Local SQLite + FTS index foundation for workspace Markdown, service scope, tasks, decisions, delivery records, and SQL notes.
 - Native SwiftUI Markdown document preview with preview/source modes, active-document highlighting, and local loading/error recovery for workspace handoff documents, standard workspace docs, and search result documents.
 - Native workspace handoff actions for opening the active workspace in Finder, Terminal, or Codex with a copied handoff pack that includes local-check, service/worktree, task, delivery, and recommended-action context.
+- Native workspace detail can bind, view, open, copy, and delete multiple Codex session deep links stored in workspace-local `codex-sessions.json`.
 - Native SwiftUI Task Center that surfaces open workspace tasks from `tasks.md`, including direct task-document opens, persisted filters, latest task writeback feedback, agent-sourced task writebacks, confirmed complete/defer actions, and task-level Codex copy-and-open handoff.
 - Native SwiftUI menu bar status for quick workspace, risk, task, worktree, refresh, settings, and copy-summary actions.
 - Local automation checks for refresh, risk, delivery, task, worktree, and dirty-service signals, exposed through Rust Core, the Swift/Rust bridge, the native menu bar, optional scheduled checks, visible local-check receipts, and configurable macOS notifications.
@@ -71,6 +72,8 @@ After importing a profile, use the native Settings path rows to choose local dir
 
 From a workspace detail view, use `Finder`, `Terminal`, or `Codex` to hand the current workspace to local tools. The Codex action copies a workspace-specific handoff pack and opens the configured Codex URL from Settings. The handoff pack includes the latest local-check receipt, service/worktree summaries, open tasks, delivery checks, standard document paths, and Nexus recommended actions.
 
+The `Codex Sessions` area in workspace detail can bind multiple Codex deep links for the same requirement. Bindings are stored in the workspace-local `codex-sessions.json`; deleting a binding only removes the local Nexus record and does not delete the Codex conversation.
+
 After any Codex handoff or context copy, the native inspector shows a dismissible `Handoff` panel with the copied context type, timestamp, and a reminder that the prompt is on the clipboard.
 
 ## Workspace Layout
@@ -90,6 +93,7 @@ Nexus expects each requirement workspace to contain Markdown files like:
   handoff.md
   delivery.md
   交付记录.md
+  codex-sessions.json
   bootstrap-report.md
   logs/
   sql/

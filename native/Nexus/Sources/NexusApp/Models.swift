@@ -357,6 +357,22 @@ struct LocalWriteFeedback: Identifiable, Hashable {
     let systemImage: String
 }
 
+struct CodexSessionLink: Codable, Identifiable, Hashable {
+    let id: String
+    var title: String
+    var url: String
+    var notes: String
+    var createdAt: String
+    var lastOpenedAt: String?
+}
+
+struct CodexSessionLinkStore: Codable, Hashable {
+    var schemaVersion: Int
+    var sessions: [CodexSessionLink]
+
+    static let currentSchemaVersion = 1
+}
+
 struct ActivityEvent: Identifiable, Hashable {
     let id = UUID()
     let time: String

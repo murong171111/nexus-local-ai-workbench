@@ -15,6 +15,7 @@ This first slice is intentionally small: it defines a durable local event format
 - The native SwiftUI shell reads recent events from Application Support and shows them in the sidebar.
 - Sidebar events can be opened to inspect full event context, metadata, and copy the raw JSON payload.
 - Event details expose safe local actions for matching workspaces, local file paths, web links, and Codex context copy.
+- Workspace details can bind multiple Codex session deep links, storing them in workspace-local `codex-sessions.json`.
 - `scripts/nexus-agent-event.mjs` lets local agent hooks append events before the local socket bridge exists.
 - Preview mode shows a sample event when `NEXUS_CORE_LIBRARY` is not configured.
 
@@ -119,6 +120,24 @@ Workspace tasks can also produce a copyable Codex handoff prompt through Rust Co
 - A workflow reminder to read workspace documents, inspect `repos/<service>` worktrees, keep SQL and delivery docs aligned, and report touched services, branches, verification, and risks.
 
 The native Task Center and workspace task rows expose this as a `Codex` action. The action copies the generated prompt to the pasteboard, opens the configured Codex URL, shows task-specific handoff feedback, and appends a `codex_task_handoff.opened` audit event. It does not execute task detail text by itself.
+
+## Codex Session Links
+
+Workspace-level Codex session links are the first explicit "return to this agent conversation" surface in Nexus. The native workspace detail view can:
+
+- bind a Codex deep link or web URL with a short title and optional note;
+- list multiple sessions for the same workspace;
+- open a saved link through macOS;
+- copy the link back to the clipboard;
+- delete a local binding after confirmation.
+
+The first native implementation stores these records in:
+
+```text
+<workspace>/codex-sessions.json
+```
+
+The file uses a small JSON envelope with `schemaVersion` and `sessions`. Deleting a record only removes the Nexus binding; it does not delete or mutate the Codex conversation. Bind, update, open, copy, and delete actions append local audit events when the bridge is available.
 
 ## Storage Boundary
 

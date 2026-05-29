@@ -87,6 +87,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Switched the frontend bridge to the official `@tauri-apps/api/core` dynamic invoke API.
 - Added UI actions to open Codex from the workbench.
 - Added "copy instruction and open Codex" flow for a workspace, later expanded into a richer handoff pack with checks, tasks, delivery, services, document paths, and recommended actions.
+- Added workspace-level Codex session deep-link bindings in the native detail surface, stored in `codex-sessions.json` with bind, view, open, copy, and confirmed delete actions.
 - Added native workspace creation based on the `ks-project-demand-workspace` standard layout.
 - Added native source repository scanning for service selection.
 - Added native environment health checks for configured paths and Git availability.
