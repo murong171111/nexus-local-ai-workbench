@@ -57,9 +57,9 @@ src-tauri/target/release/bundle/dmg/Nexus_0.1.0_aarch64.dmg
   - Workspace detail status overview and Command Center include Codex session-link count, a session path step, latest-session open action, and bind-session fallback when no link exists.
   - Clipboard and Codex handoff actions show context-aware feedback after copying workspace, lifecycle, risk, task, automation, agent-event, session-link, or task-locator context; Agent Event detail can also copy context and open Codex in one action.
   - Failed local operations show a unified Operation feedback card with copy-error, refresh, environment-check, Settings, and dismiss actions.
-  - Workspace detail shows the Workflow summary with task counts, delivery status, delivery-readiness checks, task/delivery document opens, inline local-check receipts, workspace Codex handoff, and delivery-update Codex handoff.
+  - Workspace detail shows the Workflow summary with task counts, delivery status, delivery-readiness checks, task/delivery document opens, inline local-check receipts, workspace Codex handoff, delivery-update Codex handoff, and validation/PR handoff.
   - SQL readiness blocks delivery when `交付记录.md` declares SQL changes anywhere in the document but `sql/` does not contain both formal SQL and rollback SQL files.
-  - Workflow starts with a delivery focus card that routes the next action to branch/service documents, worktree setup, task review, risk handoff, delivery records, local checks, Codex, or lifecycle confirmation.
+  - Workflow starts with a delivery focus card that routes the next action to branch/service documents, worktree setup, task review, risk handoff, delivery records, local checks, Codex, lifecycle confirmation, or post-done PR/CI review.
   - Task status and lifecycle writebacks show a dismissible local-write feedback card with affected-workspace focus, source-document review, and follow-up check actions; the compact action layout wraps cleanly in the inspector.
   - Task Center shows the latest `tasks.md` writeback result with affected-workspace focus and source-document actions after task status changes.
   - Task Center and workspace task rows show task source lines and can locate the owning `tasks.md` row before status changes or Codex handoff.

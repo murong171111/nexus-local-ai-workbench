@@ -44,6 +44,7 @@ Each line is a standalone JSON object:
 - `codex_task_handoff.opened`: written when Nexus copies a workspace task prompt and opens Codex in one action.
 - `workspace_task.source_located`: written when Nexus opens `tasks.md` for a specific task and copies its source locator.
 - `codex_worktree_setup.opened`: written when Nexus copies a worktree setup result prompt and opens Codex in one action.
+- `codex_validation_pr_handoff.opened`: written when Nexus copies a validation/PR handoff pack and opens Codex from the native Workflow section.
 - `codex_agent_event.copied`: written when an Agent Event Codex continuation prompt is copied from native event detail.
 - `codex_agent_event.opened`: written when Nexus copies an Agent Event continuation prompt and opens Codex in one action.
 - `codex_session_link.bound`: written when a workspace Codex session deep link is bound locally, including bindings accepted from Agent Event suggestions.
