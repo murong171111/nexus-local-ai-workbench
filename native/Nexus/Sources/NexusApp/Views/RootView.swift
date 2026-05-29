@@ -810,8 +810,221 @@ private struct CreateWorkspaceSheet: View {
     private var canCreate: Bool {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !folder.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && preflightCanCreate
             && confirmed
             && !appState.isCreatingWorkspace
+    }
+
+    private var normalizedFolder: String {
+        folder.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var normalizedTargetBranch: String {
+        targetBranch.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var folderNameIsValid: Bool {
+        guard !normalizedFolder.isEmpty else {
+            return false
+        }
+        guard normalizedFolder != "." && normalizedFolder != ".." else {
+            return false
+        }
+        return normalizedFolder.rangeOfCharacter(from: CharacterSet(charactersIn: "/:\\")) == nil
+    }
+
+    private var workspaceRootPath: String {
+        NSString(
+            string: appState.workspaceRoot.trimmingCharacters(in: .whitespacesAndNewlines)
+        ).expandingTildeInPath
+    }
+
+    private var workspaceRootStatus: (exists: Bool, isDirectory: Bool) {
+        guard !workspaceRootPath.isEmpty else {
+            return (false, false)
+        }
+        var isDirectory: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: workspaceRootPath, isDirectory: &isDirectory)
+        return (exists, isDirectory.boolValue)
+    }
+
+    private var workspaceRootCanCreate: Bool {
+        guard !workspaceRootPath.isEmpty else {
+            return false
+        }
+        let status = workspaceRootStatus
+        return !status.exists || status.isDirectory
+    }
+
+    private var destinationPath: String {
+        guard !workspaceRootPath.isEmpty else {
+            return "\(appState.workspaceRoot)/\(normalizedFolder)"
+        }
+        return URL(fileURLWithPath: workspaceRootPath)
+            .appendingPathComponent(normalizedFolder.isEmpty ? "workspace" : normalizedFolder)
+            .path
+    }
+
+    private var destinationExists: Bool {
+        FileManager.default.fileExists(atPath: destinationPath)
+    }
+
+    private var sourceRepositoryNames: Set<String> {
+        Set(availableSourceRepositories.map(\.name))
+    }
+
+    private var missingSelectedSourceRepositories: [String] {
+        services
+            .filter { !sourceRepositoryNames.contains($0) }
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    private var preflightCanCreate: Bool {
+        workspaceRootCanCreate && folderNameIsValid && !destinationExists
+    }
+
+    private var preflightItems: [WorkspaceCreationPreflightItem] {
+        [
+            workspaceRootPreflightItem,
+            folderPreflightItem,
+            destinationPreflightItem,
+            scopePreflightItem,
+            environmentPreflightItem
+        ]
+    }
+
+    private var workspaceRootPreflightItem: WorkspaceCreationPreflightItem {
+        let status = workspaceRootStatus
+        if workspaceRootPath.isEmpty {
+            return WorkspaceCreationPreflightItem(
+                id: "root",
+                title: "工作区根目录 / Workspaces root",
+                detail: "Settings 中的工作区路径为空，无法确定写入位置。",
+                status: .blocker
+            )
+        }
+        if status.exists && !status.isDirectory {
+            return WorkspaceCreationPreflightItem(
+                id: "root",
+                title: "工作区根目录 / Workspaces root",
+                detail: "\(workspaceRootPath) 不是目录，请先调整 Settings。",
+                status: .blocker
+            )
+        }
+        if status.exists {
+            return WorkspaceCreationPreflightItem(
+                id: "root",
+                title: "工作区根目录 / Workspaces root",
+                detail: workspaceRootPath,
+                status: .pass
+            )
+        }
+        return WorkspaceCreationPreflightItem(
+            id: "root",
+            title: "工作区根目录 / Workspaces root",
+            detail: "\(workspaceRootPath) 不存在，创建时会尝试建立目录。",
+            status: .review
+        )
+    }
+
+    private var folderPreflightItem: WorkspaceCreationPreflightItem {
+        if folderNameIsValid {
+            return WorkspaceCreationPreflightItem(
+                id: "folder",
+                title: "目录名 / Folder name",
+                detail: normalizedFolder,
+                status: .pass
+            )
+        }
+        return WorkspaceCreationPreflightItem(
+            id: "folder",
+            title: "目录名 / Folder name",
+            detail: "目录名不能为空，也不能使用 /、:、\\、. 或 ..。",
+            status: .blocker
+        )
+    }
+
+    private var destinationPreflightItem: WorkspaceCreationPreflightItem {
+        if destinationExists {
+            return WorkspaceCreationPreflightItem(
+                id: "destination",
+                title: "写入位置 / Destination",
+                detail: "\(destinationPath) 已存在，请换一个目录名。",
+                status: .blocker
+            )
+        }
+        return WorkspaceCreationPreflightItem(
+            id: "destination",
+            title: "写入位置 / Destination",
+            detail: destinationPath,
+            status: folderNameIsValid ? .pass : .review
+        )
+    }
+
+    private var scopePreflightItem: WorkspaceCreationPreflightItem {
+        if services.isEmpty && normalizedTargetBranch.isEmpty {
+            return WorkspaceCreationPreflightItem(
+                id: "scope",
+                title: "范围 / Scope",
+                detail: "服务范围和目标分支都会保持待确认，适合先建档再分析。",
+                status: .review
+            )
+        }
+        if services.isEmpty {
+            return WorkspaceCreationPreflightItem(
+                id: "scope",
+                title: "范围 / Scope",
+                detail: "目标分支已填写，服务范围仍待确认。",
+                status: .review
+            )
+        }
+        if normalizedTargetBranch.isEmpty {
+            return WorkspaceCreationPreflightItem(
+                id: "scope",
+                title: "范围 / Scope",
+                detail: "\(services.count) 个服务已选，目标分支仍待确认。",
+                status: .review
+            )
+        }
+        if !missingSelectedSourceRepositories.isEmpty {
+            return WorkspaceCreationPreflightItem(
+                id: "scope",
+                title: "范围 / Scope",
+                detail: "\(services.count) 个服务已选；\(missingSelectedSourceRepositories.count) 个未在源仓库扫描中出现，后续创建 worktree 前需复核。",
+                status: .review
+            )
+        }
+        return WorkspaceCreationPreflightItem(
+            id: "scope",
+            title: "范围 / Scope",
+            detail: "\(services.count) 个服务 · \(normalizedTargetBranch)",
+            status: .pass
+        )
+    }
+
+    private var environmentPreflightItem: WorkspaceCreationPreflightItem {
+        guard let health = appState.nativeEnvironmentHealth else {
+            return WorkspaceCreationPreflightItem(
+                id: "environment",
+                title: "环境检查 / Environment",
+                detail: "尚未运行环境检查。可以继续创建，也建议先检查 Git、路径和源仓库数量。",
+                status: .review
+            )
+        }
+        if health.ready {
+            return WorkspaceCreationPreflightItem(
+                id: "environment",
+                title: "环境检查 / Environment",
+                detail: "\(health.workspaceCount) workspaces · \(health.sourceRepoCount) repos",
+                status: .pass
+            )
+        }
+        return WorkspaceCreationPreflightItem(
+            id: "environment",
+            title: "环境检查 / Environment",
+            detail: "\(health.blockers.count) blockers · \(health.warnings.count) warnings。创建可继续，但建议先处理 Settings 中的环境提示。",
+            status: .review
+        )
     }
 
     var body: some View {
@@ -907,6 +1120,16 @@ private struct CreateWorkspaceSheet: View {
                 }
 
                 Section("创建确认 / Confirmation") {
+                    WorkspaceCreationPreflightView(
+                        items: preflightItems,
+                        canCreate: preflightCanCreate,
+                        isCheckingEnvironment: appState.isCheckingNativeEnvironment,
+                        runEnvironmentCheckAction: {
+                            Task {
+                                await appState.checkNativeEnvironment()
+                            }
+                        }
+                    )
                     WorkspaceCreationSummary(
                         workspaceRoot: appState.workspaceRoot,
                         folder: folder,
@@ -1029,6 +1252,77 @@ private struct WorkspaceCreationSummary: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+    }
+}
+
+private struct WorkspaceCreationPreflightItem: Identifiable {
+    let id: String
+    let title: String
+    let detail: String
+    let status: WorktreePreflightStatus
+}
+
+private struct WorkspaceCreationPreflightView: View {
+    let items: [WorkspaceCreationPreflightItem]
+    let canCreate: Bool
+    let isCheckingEnvironment: Bool
+    let runEnvironmentCheckAction: () -> Void
+
+    private var blockerCount: Int {
+        items.filter { $0.status == .blocker }.count
+    }
+
+    private var reviewCount: Int {
+        items.filter { $0.status == .review }.count
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 8) {
+                Label(summaryTitle, systemImage: canCreate ? "checkmark.seal" : "xmark.octagon")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(canCreate ? NexusPalette.success : NexusPalette.danger)
+
+                Spacer()
+
+                Button(isCheckingEnvironment ? "Checking" : "Run Check") {
+                    runEnvironmentCheckAction()
+                }
+                .disabled(isCheckingEnvironment)
+            }
+
+            Text(summaryDetail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(items) { item in
+                    WorktreePreflightRow(
+                        title: item.title,
+                        detail: item.detail,
+                        status: item.status
+                    )
+                }
+            }
+        }
+        .padding(12)
+        .background((canCreate ? NexusPalette.success : NexusPalette.warning).opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var summaryTitle: String {
+        canCreate ? "创建预检通过 / Preflight ready" : "需要先处理阻塞项 / Blocked"
+    }
+
+    private var summaryDetail: String {
+        if blockerCount > 0 {
+            return "\(blockerCount) 个阻塞项会导致创建失败。处理后再确认创建。"
+        }
+        if reviewCount > 0 {
+            return "\(reviewCount) 个 review 项不会阻止建档，但会影响后续 worktree 或交付检查。"
+        }
+        return "路径、目录名和写入位置都可用。创建后会进入工作区详情的下一步引导。"
     }
 }
 
@@ -1250,6 +1544,7 @@ private struct WorktreeSetupPreflightView: View {
 
 private enum WorktreePreflightStatus {
     case pass
+    case review
     case blocker
     case blockedDone
     case info
@@ -1258,6 +1553,8 @@ private enum WorktreePreflightStatus {
         switch self {
         case .pass:
             return "checkmark.circle"
+        case .review:
+            return "exclamationmark.triangle"
         case .blocker:
             return "xmark.octagon"
         case .blockedDone:
@@ -1271,6 +1568,8 @@ private enum WorktreePreflightStatus {
         switch self {
         case .pass, .blockedDone:
             return NexusPalette.success
+        case .review:
+            return NexusPalette.warning
         case .blocker:
             return NexusPalette.danger
         case .info:
@@ -1282,6 +1581,8 @@ private enum WorktreePreflightStatus {
         switch self {
         case .pass:
             return "ready"
+        case .review:
+            return "review"
         case .blocker:
             return "block"
         case .blockedDone:
