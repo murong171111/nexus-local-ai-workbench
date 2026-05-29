@@ -119,6 +119,7 @@ public final class PreviewNexusBridge: NexusBridge {
                 severity: "info",
                 metadata: [
                     "workspaceFolder": request.workspaceFolder ?? "2026-05-25-yibao-pay-log",
+                    "codexSessionUrl": "codex://session/preview-session",
                     "documentPath": "~/ks_project/workspaces/2026-05-25-yibao-pay-log/handoff.md",
                     "docs": "https://github.com/murong171111/nexus-local-ai-workbench"
                 ]

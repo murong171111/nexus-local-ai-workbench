@@ -42,7 +42,7 @@ Each line is a standalone JSON object:
 - `codex_task_handoff.copied`: written when a workspace task Codex handoff prompt is copied.
 - `codex_task_handoff.opened`: written when Nexus copies a workspace task prompt and opens Codex in one action.
 - `codex_worktree_setup.opened`: written when Nexus copies a worktree setup result prompt and opens Codex in one action.
-- `codex_session_link.bound`: written when a workspace Codex session deep link is bound locally.
+- `codex_session_link.bound`: written when a workspace Codex session deep link is bound locally, including bindings accepted from Agent Event suggestions.
 - `codex_session_link.updated`: written when binding the same Codex session URL updates the local title or note.
 - `codex_session_link.opened`: written when Nexus opens a saved workspace Codex session link.
 - `codex_session_link.copied`: written when a saved workspace Codex session link is copied.

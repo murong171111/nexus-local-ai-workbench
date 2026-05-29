@@ -3642,10 +3642,15 @@ private struct CodexSessionLinksView: View {
     @EnvironmentObject private var appState: AppState
     @State private var isBindSheetPresented = false
     @State private var pendingDelete: CodexSessionLink?
+    @State private var bindingSuggestionID: CodexSessionSuggestion.ID?
     let workspace: WorkspaceSummary
 
     private var links: [CodexSessionLink] {
         appState.codexSessionLinks(for: workspace)
+    }
+
+    private var suggestions: [CodexSessionSuggestion] {
+        appState.codexSessionSuggestions(for: workspace)
     }
 
     var body: some View {
@@ -3691,6 +3696,17 @@ private struct CodexSessionLinksView: View {
                     .help("复制 codex-sessions.json 路径 / Copy local session-link file path")
                 }
 
+                if !suggestions.isEmpty {
+                    CodexSessionSuggestionsView(
+                        suggestions: suggestions,
+                        bindingSuggestionID: bindingSuggestionID,
+                        bindAction: bindSuggestion,
+                        copyAction: { suggestion in
+                            copyToPasteboard(suggestion.url)
+                        }
+                    )
+                }
+
                 if links.isEmpty {
                     CodexSessionEmptyState()
                 } else {
@@ -3731,6 +3747,111 @@ private struct CodexSessionLinksView: View {
             CodexSessionDeleteSheet(workspace: workspace, link: link)
                 .environmentObject(appState)
         }
+    }
+
+    private func bindSuggestion(_ suggestion: CodexSessionSuggestion) {
+        bindingSuggestionID = suggestion.id
+        Task {
+            _ = await appState.bindCodexSessionSuggestion(suggestion, to: workspace)
+            bindingSuggestionID = nil
+        }
+    }
+}
+
+private struct CodexSessionSuggestionsView: View {
+    let suggestions: [CodexSessionSuggestion]
+    let bindingSuggestionID: CodexSessionSuggestion.ID?
+    let bindAction: (CodexSessionSuggestion) -> Void
+    let copyAction: (CodexSessionSuggestion) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 7) {
+                Image(systemName: "sparkle.magnifyingglass")
+                    .foregroundStyle(NexusPalette.accent)
+                Text("建议绑定 / Suggested from Agent events")
+                    .font(.caption.weight(.semibold))
+                Spacer()
+                Text("\(suggestions.count)")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+
+            ForEach(Array(suggestions.prefix(3))) { suggestion in
+                CodexSessionSuggestionRow(
+                    suggestion: suggestion,
+                    isBinding: bindingSuggestionID == suggestion.id,
+                    bindAction: {
+                        bindAction(suggestion)
+                    },
+                    copyAction: {
+                        copyAction(suggestion)
+                    }
+                )
+            }
+        }
+        .padding(10)
+        .background(NexusPalette.selected)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct CodexSessionSuggestionRow: View {
+    let suggestion: CodexSessionSuggestion
+    let isBinding: Bool
+    let bindAction: () -> Void
+    let copyAction: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "link.badge.plus")
+                    .foregroundStyle(NexusPalette.accent)
+                    .frame(width: 15)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(suggestion.title)
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
+                    Text(suggestion.url)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text("\(suggestion.source) · \(suggestion.eventTitle) · \(suggestion.eventTimestamp)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    bindAction()
+                } label: {
+                    if isBinding {
+                        Label("绑定中", systemImage: "hourglass")
+                    } else {
+                        Label("绑定", systemImage: "plus")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(isBinding)
+
+                Button {
+                    copyAction()
+                } label: {
+                    Label("复制", systemImage: "doc.on.doc")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+        .padding(9)
+        .background(NexusPalette.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 

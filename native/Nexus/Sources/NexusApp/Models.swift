@@ -373,6 +373,16 @@ struct CodexSessionLinkStore: Codable, Hashable {
     static let currentSchemaVersion = 1
 }
 
+struct CodexSessionSuggestion: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let url: String
+    let notes: String
+    let source: String
+    let eventTitle: String
+    let eventTimestamp: String
+}
+
 struct ActivityEvent: Identifiable, Hashable {
     let id = UUID()
     let time: String
