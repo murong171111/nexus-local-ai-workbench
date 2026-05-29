@@ -4189,6 +4189,7 @@ private struct WorkspaceDocumentEntry: Identifiable {
 
 private struct WorkspaceDocumentsHubView: View {
     @EnvironmentObject private var appState: AppState
+    @State private var recoveryEntry: ResolvedWorkspaceDocumentEntry?
     let workspace: WorkspaceSummary
 
     private let standardEntries: [WorkspaceDocumentEntry] = [
@@ -4258,6 +4259,16 @@ private struct WorkspaceDocumentsHubView: View {
         }
     }
 
+    private func recoverableEntry(for error: DocumentLoadError) -> ResolvedWorkspaceDocumentEntry? {
+        guard error.message.localizedCaseInsensitiveContains("does not exist") else {
+            return nil
+        }
+        return documentEntries.first { entry in
+            entry.path == error.path
+                && entry.path == "\(workspace.path)/\(entry.entry.fallbackRelativePath)"
+        }
+    }
+
     var body: some View {
         SectionBlock(title: "文档入口 / Documents") {
             VStack(alignment: .leading, spacing: 12) {
@@ -4283,8 +4294,11 @@ private struct WorkspaceDocumentsHubView: View {
                 if let loadingPath = activeLoadingPath {
                     NativeDocumentLoadingView(path: loadingPath)
                 } else if let error = activeDocumentError {
+                    let recovery = recoverableEntry(for: error)
                     NativeDocumentErrorView(
                         error: error,
+                        canCreateDocument: recovery != nil,
+                        isCreatingDocument: appState.isCreatingDocument,
                         retryAction: {
                             Task {
                                 await appState.loadDocument(path: error.path)
@@ -4297,6 +4311,9 @@ private struct WorkspaceDocumentsHubView: View {
                             Task {
                                 await appState.openWorkspaceInFinder(workspace)
                             }
+                        },
+                        createAction: {
+                            recoveryEntry = recovery
                         }
                     )
                 } else if let document = activePreview {
@@ -4305,6 +4322,10 @@ private struct WorkspaceDocumentsHubView: View {
                     NativeDocumentEmptyState()
                 }
             }
+        }
+        .sheet(item: $recoveryEntry) { entry in
+            CreateMissingDocumentSheet(workspace: workspace, entry: entry)
+                .environmentObject(appState)
         }
     }
 }
@@ -4384,11 +4405,86 @@ private struct NativeDocumentLoadingView: View {
     }
 }
 
+private struct CreateMissingDocumentSheet: View {
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmed = false
+    let workspace: WorkspaceSummary
+    let entry: ResolvedWorkspaceDocumentEntry
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("创建缺失文档 / Create document")
+                    .font(.title3.weight(.semibold))
+                Text("确认后，Nexus 会创建这个标准工作区文件。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            SectionBlock(title: "文档 / Document") {
+                VStack(alignment: .leading, spacing: 8) {
+                    SummaryLine(label: "工作区 / Workspace", value: workspace.name)
+                    SummaryLine(label: "文档 / Document", value: entry.label)
+                    SummaryLine(label: "相对路径 / Relative path", value: entry.entry.fallbackRelativePath)
+                    SummaryLine(label: "目标路径 / Target", value: entry.path)
+                }
+            }
+
+            Text("这只会创建缺失的标准骨架文件，不会覆盖已有文件。创建后请补充真实需求、服务、任务或交付内容。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Toggle("确认创建缺失的标准文档", isOn: $confirmed)
+                .toggleStyle(.checkbox)
+
+            HStack {
+                Button("取消") {
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Spacer()
+
+                Button(appState.isCreatingDocument ? "创建中" : "创建文档") {
+                    Task {
+                        let response = await appState.createWorkspaceDocument(
+                            in: workspace,
+                            documentKey: entry.entry.key,
+                            relativePath: entry.entry.fallbackRelativePath,
+                            documentLabel: entry.label,
+                            confirmed: confirmed
+                        )
+                        if response != nil {
+                            dismiss()
+                        }
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!confirmed || appState.isCreatingDocument)
+            }
+
+            if let error = appState.lastError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(NexusPalette.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(22)
+        .frame(width: 560)
+    }
+}
+
 private struct NativeDocumentErrorView: View {
     let error: DocumentLoadError
+    let canCreateDocument: Bool
+    let isCreatingDocument: Bool
     let retryAction: () -> Void
     let copyPathAction: () -> Void
     let finderAction: () -> Void
+    let createAction: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -4412,6 +4508,18 @@ private struct NativeDocumentErrorView: View {
             }
 
             HStack(spacing: 8) {
+                if canCreateDocument {
+                    Button {
+                        createAction()
+                    } label: {
+                        Label(isCreatingDocument ? "创建中" : "创建文档", systemImage: "doc.badge.plus")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(isCreatingDocument)
+                    .help("确认后创建缺失的标准工作区文档 / Create the missing standard workspace document")
+                }
+
                 Button {
                     retryAction()
                 } label: {
@@ -4457,7 +4565,7 @@ private struct NativeDocumentEmptyState: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text("选择一个文档后在这里预览。")
                     .font(.caption.weight(.semibold))
-                Text("如果标准文档缺失，Nexus 会在这里显示可重试的路径错误，便于回到 workspace 目录修复。")
+                Text("如果标准文档缺失，Nexus 会在这里提供确认创建入口；不可读文件仍可重试、复制路径或打开 Finder。")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

@@ -37,6 +37,7 @@ Each line is a standalone JSON object:
 - `workspace.created`: written after confirmed workspace creation succeeds.
 - `settings_profile.exported`: written after a settings profile export succeeds.
 - `document.opened`: written when a workspace document is opened inside Nexus.
+- `document.created`: written when Nexus creates a missing standard workspace document after explicit confirmation.
 - `codex.opened`: written when Codex is opened from the active workspace context.
 - `codex_instruction.copied`: written when a workspace handoff, Git, delivery, risk, or worktree prompt is copied.
 - `codex_task_handoff.copied`: written when a workspace task Codex handoff prompt is copied.
@@ -62,7 +63,7 @@ Each line is a standalone JSON object:
 
 - Widget snapshot refreshes, because they are high-frequency cache writes.
 - Generated worktree shell scripts being executed, because Nexus only generates commands and does not run them.
-- Markdown document edits, because in-app document editing is not implemented yet.
+- Markdown document edits, because in-app document editing is not implemented yet. Creating a missing standard document is audited separately as `document.created`.
 - Git operations such as reset, clean, branch deletion, or worktree removal, because these are intentionally outside the early write surface.
 
 ## Migration Path

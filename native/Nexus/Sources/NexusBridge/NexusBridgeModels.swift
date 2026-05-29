@@ -35,6 +35,53 @@ public struct ReadDocumentRequest: Codable, Equatable, Sendable {
     }
 }
 
+public struct CreateWorkspaceDocumentRequest: Codable, Equatable, Sendable {
+    public let workspacePath: String
+    public let documentKey: String
+    public let relativePath: String
+    public let confirmed: Bool
+    public let auditRoot: String?
+    public let actor: String?
+
+    public init(
+        workspacePath: String,
+        documentKey: String,
+        relativePath: String,
+        confirmed: Bool,
+        auditRoot: String? = nil,
+        actor: String? = nil
+    ) {
+        self.workspacePath = workspacePath
+        self.documentKey = documentKey
+        self.relativePath = relativePath
+        self.confirmed = confirmed
+        self.auditRoot = auditRoot
+        self.actor = actor
+    }
+}
+
+public struct CreateWorkspaceDocumentResponse: Codable, Equatable, Sendable {
+    public let path: String
+    public let documentKey: String
+    public let relativePath: String
+    public let created: Bool
+    public let alreadyExists: Bool
+
+    public init(
+        path: String,
+        documentKey: String,
+        relativePath: String,
+        created: Bool,
+        alreadyExists: Bool
+    ) {
+        self.path = path
+        self.documentKey = documentKey
+        self.relativePath = relativePath
+        self.created = created
+        self.alreadyExists = alreadyExists
+    }
+}
+
 public struct WidgetSnapshotRequest: Codable, Equatable, Sendable {
     public let workspacesRoot: String
     public let sourceReposRoot: String

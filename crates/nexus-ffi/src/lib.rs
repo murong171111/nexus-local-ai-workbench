@@ -1,11 +1,12 @@
 use nexus_core::{
     agent_event_handoff_prompt, agent_event_task_draft, append_agent_event_from_root,
     append_agent_task_draft, append_audit_event_from_root, create_workspace,
-    local_automation_check, read_agent_events_from_root, read_document, rebuild_search_index,
-    scan_source_repos, scan_workspaces, scan_workspaces_with_audit, search_index, setup_worktrees,
-    update_workspace_lifecycle, update_workspace_task, widget_snapshot_from_dashboard,
-    workspace_task_handoff_prompt, AgentEvent, AgentEventInput, AgentEventTaskDraftResponse,
-    AppendAgentTaskDraftRequest as CoreAppendAgentTaskDraftRequest, AuditEventInput,
+    create_workspace_document, local_automation_check, read_agent_events_from_root, read_document,
+    rebuild_search_index, scan_source_repos, scan_workspaces, scan_workspaces_with_audit,
+    search_index, setup_worktrees, update_workspace_lifecycle, update_workspace_task,
+    widget_snapshot_from_dashboard, workspace_task_handoff_prompt, AgentEvent, AgentEventInput,
+    AgentEventTaskDraftResponse, AppendAgentTaskDraftRequest as CoreAppendAgentTaskDraftRequest,
+    AuditEventInput, CreateWorkspaceDocumentRequest as CoreCreateWorkspaceDocumentRequest,
     CreateWorkspaceRequest as CoreCreateWorkspaceRequest,
     LocalAutomationCheckRequest as CoreLocalAutomationCheckRequest,
     SetupWorktreesRequest as CoreSetupWorktreesRequest,
@@ -36,6 +37,17 @@ struct ScanSourceReposRequest {
 #[serde(rename_all = "camelCase")]
 struct ReadDocumentRequest {
     path: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateWorkspaceDocumentBridgeRequest {
+    workspace_path: String,
+    document_key: String,
+    relative_path: String,
+    confirmed: bool,
+    audit_root: Option<String>,
+    actor: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -216,6 +228,50 @@ pub unsafe extern "C" fn nexus_read_document_json(input_json: *const c_char) -> 
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn nexus_create_workspace_document_json(
+    input_json: *const c_char,
+) -> *mut c_char {
+    bridge_call(
+        input_json,
+        |request: CreateWorkspaceDocumentBridgeRequest| {
+            let response = create_workspace_document(CoreCreateWorkspaceDocumentRequest {
+                workspace_path: request.workspace_path.clone(),
+                document_key: request.document_key.clone(),
+                relative_path: request.relative_path.clone(),
+                confirmed: request.confirmed,
+            })?;
+
+            if response.created {
+                if let Some(audit_root) = request.audit_root.as_deref() {
+                    let _ = append_audit_event_from_root(
+                        audit_root,
+                        AuditEventInput {
+                            actor: request.actor.unwrap_or_else(|| "Nexus Native".to_string()),
+                            action: "document.created".to_string(),
+                            target: response.path.clone(),
+                            summary: format!(
+                                "Created workspace document {}",
+                                response.relative_path
+                            ),
+                            metadata: [
+                                ("workspace".to_string(), request.workspace_path),
+                                ("documentKey".to_string(), response.document_key.clone()),
+                                ("relativePath".to_string(), response.relative_path.clone()),
+                                ("documentPath".to_string(), response.path.clone()),
+                            ]
+                            .into_iter()
+                            .collect(),
+                        },
+                    );
+                }
+            }
+
+            Ok(response)
+        },
+    )
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn nexus_widget_snapshot_json(input_json: *const c_char) -> *mut c_char {
     bridge_call(input_json, |request: WidgetSnapshotRequest| {
         scan_workspaces(
@@ -370,43 +426,46 @@ pub unsafe extern "C" fn nexus_update_workspace_task_json(
 pub unsafe extern "C" fn nexus_update_workspace_lifecycle_json(
     input_json: *const c_char,
 ) -> *mut c_char {
-    bridge_call(input_json, |request: UpdateWorkspaceLifecycleBridgeRequest| {
-        let response = update_workspace_lifecycle(CoreUpdateWorkspaceLifecycleRequest {
-            workspace_path: request.workspace_path.clone(),
-            state: request.state.clone(),
-            focus: request.focus.clone(),
-            next_action: request.next_action.clone(),
-            confirmed: request.confirmed,
-        })?;
+    bridge_call(
+        input_json,
+        |request: UpdateWorkspaceLifecycleBridgeRequest| {
+            let response = update_workspace_lifecycle(CoreUpdateWorkspaceLifecycleRequest {
+                workspace_path: request.workspace_path.clone(),
+                state: request.state.clone(),
+                focus: request.focus.clone(),
+                next_action: request.next_action.clone(),
+                confirmed: request.confirmed,
+            })?;
 
-        if response.updated {
-            if let Some(audit_root) = request.audit_root.as_deref() {
-                let _ = append_audit_event_from_root(
-                    audit_root,
-                    AuditEventInput {
-                        actor: request.actor.unwrap_or_else(|| "Nexus Native".to_string()),
-                        action: "workspace_lifecycle.updated".to_string(),
-                        target: response.workspace_path.clone(),
-                        summary: format!(
-                            "Updated lifecycle from {} to {}",
-                            response.previous_state, response.state
-                        ),
-                        metadata: [
-                            ("workspace".to_string(), request.workspace_path),
-                            ("previousState".to_string(), response.previous_state.clone()),
-                            ("state".to_string(), response.state.clone()),
-                            ("focus".to_string(), response.focus.clone()),
-                            ("nextAction".to_string(), response.next_action.clone()),
-                        ]
-                        .into_iter()
-                        .collect(),
-                    },
-                );
+            if response.updated {
+                if let Some(audit_root) = request.audit_root.as_deref() {
+                    let _ = append_audit_event_from_root(
+                        audit_root,
+                        AuditEventInput {
+                            actor: request.actor.unwrap_or_else(|| "Nexus Native".to_string()),
+                            action: "workspace_lifecycle.updated".to_string(),
+                            target: response.workspace_path.clone(),
+                            summary: format!(
+                                "Updated lifecycle from {} to {}",
+                                response.previous_state, response.state
+                            ),
+                            metadata: [
+                                ("workspace".to_string(), request.workspace_path),
+                                ("previousState".to_string(), response.previous_state.clone()),
+                                ("state".to_string(), response.state.clone()),
+                                ("focus".to_string(), response.focus.clone()),
+                                ("nextAction".to_string(), response.next_action.clone()),
+                            ]
+                            .into_iter()
+                            .collect(),
+                        },
+                    );
+                }
             }
-        }
 
-        Ok(response)
-    })
+            Ok(response)
+        },
+    )
 }
 
 #[no_mangle]
@@ -745,6 +804,41 @@ mod tests {
     }
 
     #[test]
+    fn create_workspace_document_bridge_writes_file_and_audit() {
+        let root =
+            std::env::temp_dir().join(format!("nexus-ffi-create-document-{}", std::process::id()));
+        let workspace = root.join("2026-05-29-document-demo");
+        let audit_root = root.join("audit");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&workspace).unwrap();
+        fs::create_dir_all(&audit_root).unwrap();
+
+        let request = format!(
+            r#"{{"workspacePath":"{}","documentKey":"tasks","relativePath":"tasks.md","confirmed":true,"auditRoot":"{}","actor":"Nexus FFI Test"}}"#,
+            workspace.to_string_lossy(),
+            audit_root.to_string_lossy()
+        );
+        let input = CString::new(request).unwrap();
+        let output = unsafe { nexus_create_workspace_document_json(input.as_ptr()) };
+        let response = unsafe { CStr::from_ptr(output).to_string_lossy().to_string() };
+        unsafe { nexus_string_free(output) };
+
+        let value = serde_json::from_str::<Value>(&response).unwrap();
+        assert_eq!(value["ok"], true);
+        assert_eq!(value["data"]["created"], true);
+        assert_eq!(value["data"]["relativePath"], "tasks.md");
+        assert!(fs::read_to_string(workspace.join("tasks.md"))
+            .unwrap()
+            .contains("| 任务 | 状态 | 说明 |"));
+
+        let audit_log = fs::read_to_string(audit_root.join("audit-log.jsonl")).unwrap();
+        assert!(audit_log.contains("document.created"));
+        assert!(audit_log.contains("tasks.md"));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn widget_snapshot_bridge_returns_compact_status_payload() {
         let root = std::env::temp_dir().join(format!("nexus-ffi-widget-{}", std::process::id()));
         let workspace = root.join("2026-05-27-widget-demo");
@@ -1033,10 +1127,8 @@ mod tests {
 
     #[test]
     fn update_workspace_lifecycle_bridge_writes_status_and_audit() {
-        let root = std::env::temp_dir().join(format!(
-            "nexus-ffi-lifecycle-update-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("nexus-ffi-lifecycle-update-{}", std::process::id()));
         let workspace = root.join("2026-05-28-lifecycle-demo");
         let audit_root = root.join("audit");
         let _ = fs::remove_dir_all(&root);

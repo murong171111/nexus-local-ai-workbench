@@ -103,6 +103,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added workspace bootstrap report and reviewable worktree command script generation.
 - Added delivery record placeholder detection as a workspace risk signal.
 - Added in-app Markdown document preview for workspace documents.
+- Added confirmed missing-standard-document recovery through Rust Core/FFI from the native Documents Hub.
 - Moved Settings to the lower-left app rail and kept it focused on local path customization for sharing.
 - Added widget snapshot generation through the native `write_widget_snapshot` command.
 - Added `nexus://workspace/<workspace-folder>` URL scheme registration and native deep-link handling that focuses the target workspace, clears filters/search, refreshes widget state, and records an audit event. The native Command Center can copy the same link for sharing with widgets, scripts, or another teammate's Nexus setup.
