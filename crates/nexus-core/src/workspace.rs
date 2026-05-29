@@ -1793,6 +1793,7 @@ fn audit_action_label(action: &str) -> String {
         "codex_handoff.opened" => "Codex 交接已打开 / Codex handoff".to_string(),
         "codex_instruction.copied" => "Codex 指令已复制 / Instruction copied".to_string(),
         "document.opened" => "文档已打开 / Document opened".to_string(),
+        "document.created" => "文档已创建 / Document created".to_string(),
         "agent_task_draft.appended" => "Agent 任务已写入 / Agent task added".to_string(),
         "workspace_lifecycle.updated" => "生命周期已更新 / Lifecycle updated".to_string(),
         "risk_instruction.copied" => "风险指令已复制 / Risk instruction".to_string(),

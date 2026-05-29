@@ -41,7 +41,7 @@ It is designed for teams that work across multiple local service repositories an
 - Native empty states for first-run or filtered-out workspace lists, showing configured paths, environment health, and direct Settings, New Workspace, Refresh, and Environment Check actions.
 - Native workflow summary in workspace detail for open tasks, blocked tasks, delivery status, a delivery focus card, delivery-readiness checks, lifecycle writeback recommendations, task documents, delivery records, local checks, workspace Codex handoff, and delivery-update Codex handoff, with Chinese-first primary action labels.
 - Native risk review in workspace detail for active risks, blocker/warning readiness checks, status documents, worktree setup, local re-check receipts, and copyable Codex risk-review prompts.
-- Native workspace Documents Hub for opening and previewing the standard workspace files without leaving the detail view, including retry, copy-path, and Finder recovery when a document is missing or unreadable.
+- Native workspace Documents Hub for opening and previewing the standard workspace files without leaving the detail view, including retry, copy-path, Finder recovery, and confirmed creation of missing standard documents when a file is absent.
 - Branch alignment checks that flag worktrees whose actual branch does not match the workspace target branch.
 - Workspace bootstrap reports and reviewable `scripts/worktree-commands.sh` files for semi-automated worktree setup.
 - Delivery-record completeness warnings when `交付记录.md` still needs real change notes.
@@ -133,7 +133,7 @@ When a task status writeback updates `tasks.md`, the native Task Center keeps a 
 
 Each workspace detail view also includes a `Risk review` section. It consolidates active risk signals and non-delivery readiness checks into risk, blocker, and warning counts, then routes the next step to a fresh local check, `STATUS.md`, confirmed worktree setup when services are missing, or a copied Codex risk-review prompt. The latest check receipt stays visible inside Risk Review so the user can confirm whether a re-check actually changed the risk surface.
 
-The workspace detail view also includes a `Documents` hub for the standard workspace files: `workspace.md`, `STATUS.md`, `services.md`, `branches.md`, `tasks.md`, `交付记录.md`, `handoff.md`, `bootstrap-report.md`, and `scripts/worktree-commands.sh`. Selecting a document highlights the active entry, opens it in the native preview/source viewer, and shows retry, copy-path, and Finder recovery if the file is missing or unreadable.
+The workspace detail view also includes a `Documents` hub for the standard workspace files: `workspace.md`, `STATUS.md`, `services.md`, `branches.md`, `tasks.md`, `交付记录.md`, `handoff.md`, `bootstrap-report.md`, and `scripts/worktree-commands.sh`. Selecting a document highlights the active entry, opens it in the native preview/source viewer, and shows retry, copy-path, and Finder recovery if the file is missing or unreadable. When a standard file is missing, Nexus can create a safe skeleton only after confirmation, then refresh the workspace, open the new document, and show local-write feedback.
 
 Archived workspaces remain visible in the workspace list and Archive filter, but they are excluded from active menu-bar counts, Task Center totals, and automation attention signals.
 

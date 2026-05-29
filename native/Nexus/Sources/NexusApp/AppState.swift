@@ -99,6 +99,7 @@ final class AppState: ObservableObject {
     @Published var isDocumentLoading = false
     @Published var isCreatingWorkspace = false
     @Published var isSettingUpWorktrees = false
+    @Published var isCreatingDocument = false
     @Published var isUpdatingTask = false
     @Published var isUpdatingLifecycle = false
     @Published var lastError: String?
@@ -1853,6 +1854,54 @@ final class AppState: ObservableObject {
         }
     }
 
+    func createWorkspaceDocument(
+        in workspace: WorkspaceSummary,
+        documentKey: String,
+        relativePath: String,
+        documentLabel: String,
+        confirmed: Bool
+    ) async -> CreateWorkspaceDocumentResponse? {
+        isCreatingDocument = true
+        lastError = nil
+        defer {
+            isCreatingDocument = false
+        }
+
+        do {
+            let response = try await bridge.createWorkspaceDocument(
+                request: CreateWorkspaceDocumentRequest(
+                    workspacePath: workspace.path,
+                    documentKey: documentKey,
+                    relativePath: relativePath,
+                    confirmed: confirmed,
+                    auditRoot: auditRootPath,
+                    actor: "Nexus Native"
+                )
+            )
+            if response.created || response.alreadyExists {
+                await refreshFromBridge()
+                await loadDocument(path: response.path)
+                if lastError == nil {
+                    markLocalWriteFeedback(
+                        title: response.created
+                            ? "文档已创建 / Document created"
+                            : "文档已存在 / Document already exists",
+                        detail: "\(workspace.name) · \(response.relativePath)。Documents Hub 已重新打开该文档。",
+                        workspaceID: workspace.id,
+                        workspaceName: workspace.name,
+                        documentPath: response.path,
+                        documentLabel: "打开 \(documentLabel)",
+                        systemImage: response.created ? "doc.badge.plus" : "doc.text"
+                    )
+                }
+            }
+            return response
+        } catch {
+            lastError = error.localizedDescription
+            return nil
+        }
+    }
+
     func agentEventHandoffPrompt(for event: AgentEvent) async -> String {
         do {
             let response = try await bridge.agentEventHandoffPrompt(
@@ -2514,6 +2563,8 @@ final class AppState: ObservableObject {
         switch action {
         case "document.opened":
             return "文档已打开 / Document opened"
+        case "document.created":
+            return "文档已创建 / Document created"
         case "codex.opened":
             return "Codex 已打开 / Codex opened"
         case "codex_instruction.copied":

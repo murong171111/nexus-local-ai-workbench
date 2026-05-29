@@ -7,6 +7,7 @@ public protocol NexusBridge {
     func scanWorkspaces(request: ScanWorkspacesRequest) async throws -> DashboardSnapshot
     func scanSourceRepos(request: ScanSourceReposRequest) async throws -> [SourceRepositorySnapshot]
     func readDocument(request: ReadDocumentRequest) async throws -> DocumentSnapshot
+    func createWorkspaceDocument(request: CreateWorkspaceDocumentRequest) async throws -> CreateWorkspaceDocumentResponse
     func widgetSnapshot(request: WidgetSnapshotRequest) async throws -> WidgetSnapshot
     func appendAuditEvent(request: AppendAuditEventRequest) async throws -> AppendAuditEventResponse
     func appendAgentEvent(request: AppendAgentEventRequest) async throws -> AppendAgentEventResponse
@@ -82,6 +83,13 @@ public final class PreviewNexusBridge: NexusBridge {
             isMarkdown: true,
             content: "# Preview Document\n\nSet NEXUS_CORE_LIBRARY to read real workspace documents through Rust Core."
         )
+    }
+
+    public func createWorkspaceDocument(request: CreateWorkspaceDocumentRequest) async throws -> CreateWorkspaceDocumentResponse {
+        guard request.confirmed else {
+            throw NexusBridgeError.coreError("workspace document creation requires explicit confirmation")
+        }
+        throw NexusBridgeError.coreError("Document recovery requires Rust Core bridge. Set NEXUS_CORE_LIBRARY to a local libnexus_ffi.dylib.")
     }
 
     public func widgetSnapshot(request: WidgetSnapshotRequest) async throws -> WidgetSnapshot {
@@ -195,6 +203,7 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
     private let scanWorkspacesFunction: BridgeCall
     private let scanSourceReposFunction: BridgeCall
     private let readDocumentFunction: BridgeCall
+    private let createWorkspaceDocumentFunction: BridgeCall
     private let widgetSnapshotFunction: BridgeCall
     private let appendAuditEventFunction: BridgeCall
     private let appendAgentEventFunction: BridgeCall
@@ -233,6 +242,10 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
             self.readDocumentFunction = try Self.loadSymbol(
                 handle: handle,
                 name: "nexus_read_document_json"
+            )
+            self.createWorkspaceDocumentFunction = try Self.loadSymbol(
+                handle: handle,
+                name: "nexus_create_workspace_document_json"
             )
             self.widgetSnapshotFunction = try Self.loadSymbol(
                 handle: handle,
@@ -316,6 +329,10 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
 
     public func readDocument(request: ReadDocumentRequest) async throws -> DocumentSnapshot {
         try call(readDocumentFunction, request: request)
+    }
+
+    public func createWorkspaceDocument(request: CreateWorkspaceDocumentRequest) async throws -> CreateWorkspaceDocumentResponse {
+        try call(createWorkspaceDocumentFunction, request: request)
     }
 
     public func widgetSnapshot(request: WidgetSnapshotRequest) async throws -> WidgetSnapshot {
