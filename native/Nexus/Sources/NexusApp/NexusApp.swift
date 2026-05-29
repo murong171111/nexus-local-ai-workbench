@@ -9,6 +9,11 @@ struct NexusNativeApp: App {
             RootView()
                 .environmentObject(appState)
                 .frame(minWidth: 1120, minHeight: 720)
+                .onOpenURL { url in
+                    Task {
+                        await appState.handleDeepLink(url)
+                    }
+                }
         }
         .windowStyle(.titleBar)
 

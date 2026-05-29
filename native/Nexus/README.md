@@ -46,6 +46,7 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - Workspace timelines populated from the Rust Core dashboard activity field, including local audit-log events when the bridge is available.
 - Native document opens append audit events and update the visible workspace timeline.
 - Native workspace detail starts with a Command Center for lifecycle progress, primary-path guidance, a compact scope/worktree/risk/task/delivery/Codex-sessions/handoff session path, Codex continuation, local-check receipts, next-step routing, and Finder/IDE/Terminal handoff, with quick actions grouped into handoff, execution, and local tool lanes.
+- Native shell handles `nexus://workspace/<workspace-folder>` by clearing filters/search, focusing the target workspace, refreshing widget state, and writing a matching audit event.
 - Native Command Center includes Codex session links in the status overview, metrics, session path, bind fallback, and latest-session resume action.
 - Native workspace detail starts with a compact status overview for lifecycle, branch, services, risk, tasks, delivery, Codex session count, and latest local-check state before deeper sections.
 - Native workspace detail shows a dismissible Codex handoff feedback panel after workspace, lifecycle, risk, task, automation, or agent-event context is copied.

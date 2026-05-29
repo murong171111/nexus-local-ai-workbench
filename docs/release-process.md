@@ -34,7 +34,7 @@ Open the built app and verify:
 - Markdown preview opens expected workspace documents.
 - Workspace creation writes the standard document set.
 - Widget snapshot is written to Application Support.
-- `nexus://workspace/<folder>` opens the app.
+- `nexus://workspace/<folder>` opens the app and focuses the target workspace when it exists.
 
 ## GitHub Release
 

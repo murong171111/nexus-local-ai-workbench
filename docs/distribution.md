@@ -71,7 +71,7 @@ src-tauri/target/release/bundle/dmg/Nexus_0.1.0_aarch64.dmg
   - Creating a workspace writes `bootstrap-report.md` and `scripts/worktree-commands.sh`.
   - Markdown preview works.
   - `~/Library/Application Support/com.ks.nexus/widget-snapshot.json` is generated.
-  - `nexus://workspace/<folder>` opens Nexus.
+  - `nexus://workspace/<folder>` opens Nexus and focuses the target workspace when it exists.
 
 ## Signing And Notarization
 
