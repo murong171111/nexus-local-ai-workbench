@@ -139,6 +139,8 @@ The first native implementation stores these records in:
 
 The file uses a small JSON envelope with `schemaVersion` and `sessions`. Deleting a record only removes the Nexus binding; it does not delete or mutate the Codex conversation. Bind, update, open, copy, and delete actions append local audit events when the bridge is available.
 
+Native Command Center now treats these links as part of the workspace session path instead of a separate utility only. The detail overview shows the saved session count, the session path includes a `会话 / Sessions` step, and when no other blocker is present the primary path can resume the latest saved Codex session. If no session is saved, the session path routes to the bind flow while the handoff path still copies a fresh workspace context pack.
+
 ## Storage Boundary
 
 Agent events are not workspace source-of-truth records. They are local operational telemetry used for:

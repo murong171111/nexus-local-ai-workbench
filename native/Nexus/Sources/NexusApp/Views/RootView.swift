@@ -2733,7 +2733,8 @@ private struct WorkspaceDetailView: View {
 
             WorkspaceDetailOverviewView(
                 workspace: workspace,
-                lastCheck: appState.lastAutomationCheck
+                lastCheck: appState.lastAutomationCheck,
+                codexSessionCount: appState.codexSessionLinks(for: workspace).count
             )
 
             if appState.lastCreatedWorkspace?.folder == workspace.folder {
@@ -2910,6 +2911,7 @@ private struct DetailOverviewItem: Identifiable {
 private struct WorkspaceDetailOverviewView: View {
     let workspace: WorkspaceSummary
     let lastCheck: LocalAutomationCheckResponse?
+    let codexSessionCount: Int
 
     private var items: [DetailOverviewItem] {
         [
@@ -2919,6 +2921,7 @@ private struct WorkspaceDetailOverviewView: View {
             riskItem,
             taskItem,
             deliveryItem,
+            sessionItem,
             checkItem
         ]
     }
@@ -3094,6 +3097,26 @@ private struct WorkspaceDetailOverviewView: View {
             value: workspace.lifecycle.stage == "delivery" ? "整理中" : "待检查",
             detail: "交付记录",
             status: workspace.lifecycle.stage == "delivery" ? .review : .pending
+        )
+    }
+
+    private var sessionItem: DetailOverviewItem {
+        if codexSessionCount > 0 {
+            return DetailOverviewItem(
+                id: "sessions",
+                label: "会话",
+                value: "\(codexSessionCount) 个",
+                detail: "Codex links",
+                status: .ready
+            )
+        }
+
+        return DetailOverviewItem(
+            id: "sessions",
+            label: "会话",
+            value: "未绑定",
+            detail: "可绑定",
+            status: .pending
         )
     }
 
@@ -3926,6 +3949,7 @@ private struct NativeDocumentPreview: View {
 
 private struct WorkspaceCommandCenterView: View {
     @EnvironmentObject private var appState: AppState
+    @State private var isCodexSessionBindPresented = false
     let workspace: WorkspaceSummary
 
     private var openTaskCount: Int {
@@ -3938,6 +3962,22 @@ private struct WorkspaceCommandCenterView: View {
 
     private var blockedTaskCount: Int {
         workspace.tasks.filter { !$0.isDone && $0.isBlocked }.count
+    }
+
+    private var codexSessionLinks: [CodexSessionLink] {
+        appState.codexSessionLinks(for: workspace)
+    }
+
+    private var latestCodexSessionLink: CodexSessionLink? {
+        codexSessionLinks.first
+    }
+
+    private var codexSessionValue: String {
+        codexSessionLinks.isEmpty ? "未绑定" : "\(codexSessionLinks.count) 个"
+    }
+
+    private var codexSessionTone: Color {
+        codexSessionLinks.isEmpty ? .secondary : NexusPalette.success
     }
 
     private var serviceValue: String {
@@ -4084,14 +4124,16 @@ private struct WorkspaceCommandCenterView: View {
         }
 
         return CommandCenterPrimaryStep(
-            title: "继续开发 / Continue with Codex",
-            detail: "当前主流程没有明显阻塞。可以把工作区上下文交给 Codex 继续开发或复核。",
+            title: latestCodexSessionLink == nil ? "继续开发 / Continue with Codex" : "回到 Codex 会话 / Resume Codex session",
+            detail: latestCodexSessionLink == nil
+                ? "当前主流程没有明显阻塞。可以把工作区上下文交给 Codex 继续开发或复核。"
+                : "当前主流程没有明显阻塞，且已有 \(codexSessionLinks.count) 个绑定会话。优先回到最近会话，避免重新解释上下文。",
             statusLabel: "ready",
-            systemImage: "point.3.connected.trianglepath.dotted",
-            actionLabel: "交接 Codex",
-            actionSystemImage: "point.3.connected.trianglepath.dotted",
+            systemImage: latestCodexSessionLink == nil ? "point.3.connected.trianglepath.dotted" : "link",
+            actionLabel: latestCodexSessionLink == nil ? "交接 Codex" : "打开会话",
+            actionSystemImage: latestCodexSessionLink == nil ? "point.3.connected.trianglepath.dotted" : "arrow.up.forward.app",
             tone: NexusPalette.success,
-            action: .codex
+            action: latestCodexSessionLink.map(CommandCenterPrimaryAction.codexSession) ?? .codex
         )
     }
 
@@ -4102,6 +4144,7 @@ private struct WorkspaceCommandCenterView: View {
             riskPathItem,
             taskPathItem,
             deliveryPathItem,
+            codexSessionPathItem,
             handoffPathItem
         ]
     }
@@ -4279,10 +4322,30 @@ private struct WorkspaceCommandCenterView: View {
     private var handoffPathItem: CommandCenterPathItem {
         CommandCenterPathItem(
             title: "交接 / Handoff",
-            detail: workspace.isArchived ? "查阅上下文" : "可交给 Codex",
+            detail: workspace.isArchived ? "查阅上下文" : "复制接力包",
             status: workspace.isArchived ? .pending : .ready,
             systemImage: "point.3.connected.trianglepath.dotted",
             action: workspace.isArchived ? .document("handoff") : .codex
+        )
+    }
+
+    private var codexSessionPathItem: CommandCenterPathItem {
+        if let latestCodexSessionLink {
+            return CommandCenterPathItem(
+                title: "会话 / Sessions",
+                detail: "\(codexSessionLinks.count) 个已绑定",
+                status: .ready,
+                systemImage: "link",
+                action: .codexSession(latestCodexSessionLink)
+            )
+        }
+
+        return CommandCenterPathItem(
+            title: "会话 / Sessions",
+            detail: "未绑定",
+            status: .pending,
+            systemImage: "link.badge.plus",
+            action: .bindCodexSession
         )
     }
 
@@ -4327,6 +4390,7 @@ private struct WorkspaceCommandCenterView: View {
                     WorkflowMetric(label: "服务", value: serviceValue, tone: worktreeTone)
                     WorkflowMetric(label: "风险", value: workspace.riskLevel.label, tone: workspace.risks.isEmpty ? NexusPalette.success : NexusPalette.warning)
                     WorkflowMetric(label: "任务", value: "\(openTaskCount) 个", tone: taskTone)
+                    WorkflowMetric(label: "会话", value: codexSessionValue, tone: codexSessionTone)
                 }
 
                 LazyVGrid(columns: actionColumns, alignment: .leading, spacing: 8) {
@@ -4338,6 +4402,23 @@ private struct WorkspaceCommandCenterView: View {
                         Label("交接 Codex", systemImage: "point.3.connected.trianglepath.dotted")
                     }
                     .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+
+                    Button {
+                        if let latestCodexSessionLink {
+                            Task {
+                                await appState.openCodexSessionLink(latestCodexSessionLink, in: workspace)
+                            }
+                        } else {
+                            isCodexSessionBindPresented = true
+                        }
+                    } label: {
+                        Label(
+                            latestCodexSessionLink == nil ? "绑定会话" : "最近会话",
+                            systemImage: latestCodexSessionLink == nil ? "link.badge.plus" : "arrow.up.forward.app"
+                        )
+                    }
+                    .buttonStyle(.bordered)
                     .controlSize(.small)
 
                     Button {
@@ -4392,11 +4473,15 @@ private struct WorkspaceCommandCenterView: View {
                     )
                 }
 
-                Text("主路径用于决定下一步；下方工具入口保留 Codex、本地检查、Finder 和 Terminal，方便接力或手工处理。")
+                Text("主路径用于决定下一步；会话节点用于回到已绑定 Codex 会话，交接节点用于复制新的工作区接力包。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+        }
+        .sheet(isPresented: $isCodexSessionBindPresented) {
+            CodexSessionBindSheet(workspace: workspace)
+                .environmentObject(appState)
         }
     }
 
@@ -4432,6 +4517,12 @@ private struct WorkspaceCommandCenterView: View {
             }
         case .worktree:
             appState.presentWorktreeSetup(for: workspace)
+        case .codexSession(let link):
+            Task {
+                await appState.openCodexSessionLink(link, in: workspace)
+            }
+        case .bindCodexSession:
+            isCodexSessionBindPresented = true
         }
     }
 
@@ -4532,6 +4623,8 @@ private enum CommandCenterPrimaryAction {
     case document(String)
     case riskPrompt
     case worktree
+    case codexSession(CodexSessionLink)
+    case bindCodexSession
 }
 
 private struct CommandCenterPrimaryStep {
@@ -4649,7 +4742,7 @@ private struct CommandCenterSessionPathView: View {
                 Text("会话路径 / Session path")
                     .font(.caption.weight(.semibold))
                 Spacer()
-                Text("scope -> delivery")
+                Text("scope -> codex")
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundStyle(.secondary)
             }

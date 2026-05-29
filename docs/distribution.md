@@ -53,7 +53,8 @@ src-tauri/target/release/bundle/dmg/Nexus_0.1.0_aarch64.dmg
   - Empty workspace and empty-filter states show configured paths, environment health, Settings, New Workspace, Refresh, Environment Check, and Show all actions as applicable.
   - Native worktree setup shows target branch, missing worktree, source repository, and workspace-local write-location preflight rows before the confirmation toggle is enabled.
   - Native worktree setup refreshes the active workspace state and shows Chinese-first created/skipped/failed results with Finder, result-aware Codex, and local-check follow-ups, including an in-card local-check summary after checks run.
-  - Workspace detail starts with a compact status overview, then the Command Center exposes lifecycle progress, primary-path guidance, branch/service/risk/task signals, a compact session path, Codex continuation, next-step routing, local check receipt, Finder, and Terminal.
+  - Workspace detail starts with a compact status overview, then the Command Center exposes lifecycle progress, primary-path guidance, branch/service/risk/task/session signals, a compact session path, Codex continuation, next-step routing, local check receipt, Finder, and Terminal.
+  - Workspace detail status overview and Command Center include Codex session-link count, a session path step, latest-session open action, and bind-session fallback when no link exists.
   - Codex handoff actions show the Handoff feedback panel after copying workspace, lifecycle, risk, task, automation, or agent-event context.
   - Workspace detail shows the Workflow summary with task counts, delivery status, delivery-readiness checks, task/delivery document opens, local check, and Codex handoff.
   - Workflow starts with a delivery focus card that routes the next action to branch/service documents, worktree setup, task review, risk handoff, delivery records, local checks, Codex, or lifecycle confirmation.
