@@ -1483,6 +1483,45 @@ final class AppState: ObservableObject {
         Self.codexSessionLinksURL(for: workspace).path
     }
 
+    func codexSessionSuggestions(for workspace: WorkspaceSummary) -> [CodexSessionSuggestion] {
+        let existingURLs = Set(codexSessionLinks(for: workspace).map { $0.url })
+        var seenURLs: Set<String> = []
+
+        return agentEvents
+            .filter { Self.agentEvent($0, matches: workspace) }
+            .flatMap { event in
+                Self.codexSessionURLCandidates(from: event).compactMap { candidate in
+                    guard !existingURLs.contains(candidate.url),
+                          !seenURLs.contains(candidate.url) else {
+                        return nil
+                    }
+                    seenURLs.insert(candidate.url)
+                    return CodexSessionSuggestion(
+                        id: "\(event.id)-\(candidate.url)",
+                        title: candidate.title,
+                        url: candidate.url,
+                        notes: "From \(event.source) event: \(event.title)",
+                        source: event.source,
+                        eventTitle: event.title,
+                        eventTimestamp: event.timestamp
+                    )
+                }
+            }
+    }
+
+    @discardableResult
+    func bindCodexSessionSuggestion(
+        _ suggestion: CodexSessionSuggestion,
+        to workspace: WorkspaceSummary
+    ) async -> Bool {
+        await bindCodexSessionLink(
+            to: workspace,
+            title: suggestion.title,
+            url: suggestion.url,
+            notes: suggestion.notes
+        )
+    }
+
     @discardableResult
     func bindCodexSessionLink(
         to workspace: WorkspaceSummary,
@@ -2783,6 +2822,92 @@ final class AppState: ObservableObject {
             return nil
         }
         return trimmed
+    }
+
+    private static func agentEvent(_ event: AgentEvent, matches workspace: WorkspaceSummary) -> Bool {
+        let workspaceCandidates = [
+            event.workspaceFolder,
+            event.metadata["workspaceFolder"],
+            event.metadata["folder"],
+            event.metadata["workspace"],
+            event.metadata["workspacePath"],
+            event.metadata["path"]
+        ]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        return workspaceCandidates.contains { candidate in
+            candidate == workspace.folder
+                || candidate == workspace.path
+                || (!workspace.path.isEmpty && candidate.contains(workspace.path))
+                || (!workspace.folder.isEmpty && candidate.contains("/\(workspace.folder)"))
+        }
+    }
+
+    private static func codexSessionURLCandidates(from event: AgentEvent) -> [(title: String, url: String)] {
+        var candidates = event.metadata
+            .sorted { $0.key < $1.key }
+            .compactMap { key, value -> (title: String, url: String)? in
+                guard isLikelyCodexSessionURLCandidate(key: key, value: value, source: event.source),
+                      let url = normalizedCodexSessionURL(value)
+                else {
+                    return nil
+                }
+                return (suggestedCodexSessionTitle(for: key, event: event), url)
+            }
+
+        if isLikelyCodexSessionURLCandidate(key: "sessionId", value: event.sessionId, source: event.source),
+           let url = normalizedCodexSessionURL(event.sessionId) {
+            candidates.append((suggestedCodexSessionTitle(for: "sessionId", event: event), url))
+        }
+
+        var seenURLs: Set<String> = []
+        return candidates.filter { candidate in
+            guard !seenURLs.contains(candidate.url) else { return false }
+            seenURLs.insert(candidate.url)
+            return true
+        }
+    }
+
+    private static func isLikelyCodexSessionURLCandidate(
+        key: String,
+        value: String,
+        source: String
+    ) -> Bool {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let components = URLComponents(string: trimmed),
+              let scheme = components.scheme?.lowercased(),
+              !scheme.isEmpty
+        else {
+            return false
+        }
+
+        let normalizedKey = key.lowercased()
+        let normalizedSource = source.lowercased()
+        let normalizedHost = components.host?.lowercased() ?? ""
+        let isLinkKey = normalizedKey.contains("url")
+            || normalizedKey.contains("link")
+        let isSessionKey = normalizedKey.contains("codex")
+            || normalizedKey.contains("deeplink")
+            || normalizedKey.contains("deep_link")
+            || normalizedKey.contains("deep")
+            || normalizedKey.contains("session")
+            || normalizedKey.contains("thread")
+            || normalizedKey.contains("conversation")
+
+        return scheme.contains("codex")
+            || normalizedKey.contains("codex") && (isLinkKey || isSessionKey)
+            || normalizedHost.contains("codex") && (isLinkKey || isSessionKey)
+            || normalizedSource.contains("codex") && isSessionKey
+    }
+
+    private static func suggestedCodexSessionTitle(for key: String, event: AgentEvent) -> String {
+        let cleanKey = key
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+        let trimmedTitle = event.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let eventTitle = trimmedTitle.isEmpty ? event.sessionId : trimmedTitle
+        return "\(event.source) · \(cleanKey) · \(eventTitle)"
     }
 
     private static func localFileURL(for rawPath: String) -> URL {

@@ -24,7 +24,7 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - Native document preview renders Markdown by default and keeps a source-mode toggle for raw workspace files.
 - Native workspace detail handoff actions open the workspace in Finder, IDE, Terminal, or Codex, copying workspace context for Codex first.
 - Native workspace Codex handoff copies a richer handoff pack with latest local-check status, service/worktree summaries, open tasks, delivery checks, document paths, and Nexus recommended actions.
-- Native workspace detail can bind, view, open, copy, and delete multiple Codex session deep links from workspace-local `codex-sessions.json`.
+- Native workspace detail can bind, view, open, copy, and delete multiple Codex session deep links from workspace-local `codex-sessions.json`, and can suggest new bindings from matching recent Agent Event deep-link metadata.
 - Native Workflow delivery focus card that turns task, delivery, risk, worktree, SQL, and lifecycle state into one next action.
 - Native Workflow delivery-update Codex handoff that copies delivery record, tasks, SQL, risks, services/worktrees, and latest local-check context before opening Codex.
 - Native Task Center recent-writeback card for task status updates that changed `tasks.md`.

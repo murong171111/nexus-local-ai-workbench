@@ -16,6 +16,7 @@ This first slice is intentionally small: it defines a durable local event format
 - Sidebar events can be opened to inspect full event context, metadata, and copy the raw JSON payload.
 - Event details expose safe local actions for matching workspaces, local file paths, web links, and Codex context copy.
 - Workspace details can bind multiple Codex session deep links, storing them in workspace-local `codex-sessions.json`.
+- Workspace details suggest Codex session bindings from recent matching Agent Events when metadata carries Codex deep-link fields.
 - `scripts/nexus-agent-event.mjs` lets local agent hooks append events before the local socket bridge exists.
 - Preview mode shows a sample event when `NEXUS_CORE_LIBRARY` is not configured.
 
@@ -39,6 +40,7 @@ The native shell treats metadata as data, not as executable instructions. It may
 - `workspaceFolder`, `folder`, `workspace`, `workspacePath`, or `path`: match and select a workspace when the value matches a known workspace folder or path.
 - Keys containing `path`, `file`, `folder`, or `directory`: open the value as a local `file://`, `/absolute/path`, or `~/path` target when it exists.
 - Any metadata value beginning with `http://` or `https://`: open as a normal web link.
+- Codex session links can be suggested when the event matches a workspace and metadata contains a URL-like value under keys such as `codexUrl`, `codexSessionUrl`, `sessionUrl`, `threadUrl`, `conversationUrl`, or `deepLink`. Values using a `codex` URL scheme are treated as Codex candidates even when the key is generic.
 
 Commands are copied or shown as text only. Nexus does not execute command metadata from agent events.
 

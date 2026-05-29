@@ -77,7 +77,7 @@ This roadmap describes the next product and engineering steps for Nexus. The cur
 - Add a local bridge server, preferably Unix socket first, so hook helpers can stream session, prompt, permission, question, and tool-use events into the native Mac app without cloud services. `[event JSONL store, FFI bridge, and native sidebar feed started]`
 - Add in-app reply and approval surfaces for agents that support structured hook responses, while degrading to copy-and-open handoff for agents that only expose one-way lifecycle events.
 - Add deep links back to the exact Codex thread, terminal pane, IDE workspace, or Nexus workspace when the event contains enough metadata. `[Nexus workspace deep-link focus started in native SwiftUI shell]`
-- Add workspace-level Codex session deep-link binding so a requirement can keep multiple return links to active Codex conversations. `[v1 landed in native SwiftUI shell with workspace detail bind, view, open, copy, delete, and workspace-local codex-sessions.json storage]`
+- Add workspace-level Codex session deep-link binding so a requirement can keep multiple return links to active Codex conversations. `[v1 landed in native SwiftUI shell with workspace detail bind, view, open, copy, delete, workspace-local codex-sessions.json storage, and Agent Event suggested bindings]`
 - Add native workspace handoff actions for local Finder, IDE, Terminal, and configured Codex URL launches. `[started in native SwiftUI shell with configurable IDE URL templates]`
 - Keep hooks fail-open: if Nexus is not running, the agent should continue normally without blocking local development.
 - Treat command approval, file mutation, worktree operations, and permission changes as explicit user decisions with visible audit records.
