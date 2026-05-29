@@ -535,8 +535,8 @@ private struct SidebarView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    if let lastError = appState.lastError {
-                        Text(lastError)
+                    if appState.lastError != nil {
+                        Text("右侧操作反馈包含恢复动作 / See operation feedback")
                             .font(.caption2)
                             .foregroundStyle(NexusPalette.danger)
                             .fixedSize(horizontal: false, vertical: true)
@@ -2373,6 +2373,19 @@ private struct InspectorView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                if let error = appState.lastError {
+                    OperationFeedbackView(
+                        error: error,
+                        settingsAction: {
+                            isSettingsPresented = true
+                        },
+                        dismissAction: {
+                            appState.clearLastError()
+                        }
+                    )
+                    .environmentObject(appState)
+                }
+
                 if let feedback = appState.codexHandoffFeedback {
                     CodexHandoffFeedbackView(feedback: feedback) {
                         appState.clearCodexHandoffFeedback()
@@ -2401,6 +2414,99 @@ private struct InspectorView: View {
         }
         .padding(18)
         .background(NexusPalette.inspector)
+    }
+}
+
+private struct OperationFeedbackView: View {
+    @EnvironmentObject private var appState: AppState
+    let error: String
+    let settingsAction: () -> Void
+    let dismissAction: () -> Void
+
+    var body: some View {
+        SectionBlock(title: "操作反馈 / Operation") {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 9) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundStyle(NexusPalette.danger)
+                        .frame(width: 16)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("需要处理 / Needs review")
+                            .font(.subheadline.weight(.semibold))
+                        Text("最近一次本地操作没有完成。先复制错误或运行恢复动作，再继续当前工作流。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer()
+
+                    Button {
+                        dismissAction()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(.plain)
+                    .help("关闭操作反馈 / Dismiss")
+                }
+
+                Text(error)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(NexusPalette.danger)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                LazyVGrid(columns: actionColumns, alignment: .leading, spacing: 8) {
+                    Button {
+                        copyToPasteboard(error)
+                    } label: {
+                        Label("复制错误", systemImage: "doc.on.clipboard")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("复制错误信息 / Copy error")
+
+                    Button {
+                        Task {
+                            await appState.refreshFromBridge()
+                        }
+                    } label: {
+                        Label(appState.isLoading ? "刷新中" : "刷新", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(appState.isLoading)
+                    .help("重新扫描工作区 / Refresh workspaces")
+
+                    Button {
+                        Task {
+                            await appState.checkNativeEnvironment()
+                        }
+                    } label: {
+                        Label(appState.isCheckingNativeEnvironment ? "检查中" : "环境检查", systemImage: "checkmark.seal")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(appState.isCheckingNativeEnvironment)
+                    .help("检查路径和 Git / Run environment check")
+
+                    Button {
+                        settingsAction()
+                    } label: {
+                        Label("Settings", systemImage: "gearshape")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("打开路径配置 / Open settings")
+                }
+            }
+        }
+    }
+
+    private var actionColumns: [GridItem] {
+        [GridItem(.adaptive(minimum: 104), spacing: 8, alignment: .leading)]
     }
 }
 
