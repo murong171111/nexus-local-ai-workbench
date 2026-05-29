@@ -49,7 +49,7 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - Native workspace detail shows Rust Core session actions that prioritize the next Codex, worktree, and document follow-up steps.
 - Native workspace detail includes a Workflow summary for open tasks, blocked tasks, delivery status, delivery-readiness checks, task/delivery document opens, local checks, and Codex handoff.
 - Native workspace detail includes a Risk Review section for active risks, blocker/warning readiness checks, status document access, confirmed worktree setup, local re-checks, and Codex risk-review prompts.
-- Native workspace detail includes a Documents Hub for standard workspace Markdown/script files, rendered through the preview/source document viewer.
+- Native workspace detail includes a Documents Hub for standard workspace Markdown/script files, rendered through the preview/source document viewer with active-document highlighting and local missing-file recovery actions.
 - Native workspace cards and details show Rust Core lifecycle stages with progress, next action, and Codex handoff controls.
 - Native lifecycle transitions can be confirmed and written back to `workspace.md` and `STATUS.md` through Rust Core and FFI, with local audit logging.
 - Archived workspaces can be filtered and restored later while staying out of active Task Center, menu-bar, and automation attention counts.

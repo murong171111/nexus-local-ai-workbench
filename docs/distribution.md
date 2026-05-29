@@ -63,7 +63,7 @@ src-tauri/target/release/bundle/dmg/Nexus_0.1.0_aarch64.dmg
   - Workflow delivery readiness can route into the confirmed lifecycle writeback sheet for entering delivery or marking the workspace done.
   - Workflow action labels are Chinese-first and include hover help for documents, checks, and Codex handoff.
   - Workspace detail shows the Risk Review summary with risk/blocker/warning counts, status document access, local check, worktree follow-up, and Codex risk prompt copy.
-  - Workspace detail shows the Documents Hub and clears stale previews after switching workspaces.
+  - Workspace detail shows the Documents Hub, highlights the active document, shows loading/error recovery close to the document entry, and clears stale previews after switching workspaces.
   - Settings export writes a Nexus team profile JSON, and importing that profile applies the same path conventions.
   - Creating a workspace writes `bootstrap-report.md` and `scripts/worktree-commands.sh`.
   - Markdown preview works.
