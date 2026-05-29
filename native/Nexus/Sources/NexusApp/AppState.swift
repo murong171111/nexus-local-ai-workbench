@@ -2084,12 +2084,61 @@ final class AppState: ObservableObject {
         }.joined(separator: "\n")
     }
 
-    func markAgentEventHandoffCopied(_ event: AgentEvent) {
+    func copyAgentEventCodexContext(_ event: AgentEvent) async {
+        let prompt = await agentEventHandoffPrompt(for: event)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(prompt, forType: .string)
+
         let target = event.workspaceFolder ?? event.id
         markCodexHandoff(
             title: "Agent 事件上下文已复制 / Event copied",
             detail: "\(event.title) · \(target)",
             systemImage: "doc.on.clipboard"
+        )
+
+        await recordAgentEventCodexAction(
+            event,
+            action: "codex_agent_event.copied",
+            target: target,
+            summary: "Copied Agent Event Codex context",
+            metadata: [:]
+        )
+    }
+
+    func openAgentEventInCodex(_ event: AgentEvent) async {
+        let prompt = await agentEventHandoffPrompt(for: event)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(prompt, forType: .string)
+
+        let rawURL = codexURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? Self.defaultCodexURL
+            : codexURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let target = event.workspaceFolder ?? event.id
+        if let url = URL(string: rawURL) {
+            NSWorkspace.shared.open(url)
+            markCodexHandoff(
+                title: "Codex 已打开 / Agent event copied",
+                detail: "\(event.title) · Agent 事件上下文已复制到剪贴板。",
+                systemImage: "point.3.connected.trianglepath.dotted"
+            )
+        } else {
+            lastError = "Invalid Codex URL: \(rawURL)"
+            markCodexHandoff(
+                title: "Agent 事件已复制 / URL needs review",
+                detail: "\(event.title) · Codex URL 无效，请在 Settings 中修正。",
+                systemImage: "exclamationmark.triangle"
+            )
+        }
+
+        await recordAgentEventCodexAction(
+            event,
+            action: "codex_agent_event.opened",
+            target: target,
+            summary: "Copied Agent Event context and opened Codex",
+            metadata: [
+                "tool": "Codex",
+                "codexUrl": rawURL
+            ]
         )
     }
 
@@ -2559,6 +2608,49 @@ final class AppState: ObservableObject {
         )
     }
 
+    private func recordAgentEventCodexAction(
+        _ event: AgentEvent,
+        action: String,
+        target: String,
+        summary: String,
+        metadata: [String: String]
+    ) async {
+        var eventMetadata = metadata
+        eventMetadata["eventId"] = event.id
+        eventMetadata["eventTitle"] = event.title
+        eventMetadata["eventKind"] = event.kind
+        eventMetadata["eventSeverity"] = event.severity
+        eventMetadata["eventSource"] = event.source
+        eventMetadata["sessionId"] = event.sessionId
+        if let workspaceFolder = event.workspaceFolder {
+            eventMetadata["workspaceFolder"] = workspaceFolder
+        }
+
+        if let workspace = workspaces.first(where: { Self.agentEvent(event, matches: $0) }) {
+            await recordWorkspaceAction(
+                action: action,
+                target: target,
+                summary: summary,
+                metadata: eventMetadata,
+                workspaceOverride: workspace
+            )
+            return
+        }
+
+        _ = try? await bridge.appendAuditEvent(
+            request: AppendAuditEventRequest(
+                auditRoot: auditRootPath,
+                event: AuditEventInput(
+                    actor: "Nexus Native",
+                    action: action,
+                    target: target,
+                    summary: summary,
+                    metadata: eventMetadata
+                )
+            )
+        )
+    }
+
     private static func auditActivityTitle(_ action: String) -> String {
         switch action {
         case "document.opened":
@@ -2575,6 +2667,10 @@ final class AppState: ObservableObject {
             return "任务上下文已复制 / Task handoff copied"
         case "codex_worktree_setup.opened":
             return "worktree 结果已交接 / Worktree result opened"
+        case "codex_agent_event.copied":
+            return "Agent 事件已复制 / Agent event copied"
+        case "codex_agent_event.opened":
+            return "Agent 事件 Codex 已打开 / Agent event opened"
         case "codex_session_link.bound":
             return "Codex 会话已绑定 / Session bound"
         case "codex_session_link.updated":

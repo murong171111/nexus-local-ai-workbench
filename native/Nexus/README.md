@@ -31,7 +31,7 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - Native local-write feedback after task and lifecycle writebacks, with affected-workspace focus, source-document review, follow-up check actions, and compact inspector action layout.
 - Unified inspector operation feedback for local errors, with copy-error, refresh, environment-check, Settings, and dismiss actions.
 - Native widget snapshot writing to Application Support, with automatic `group.com.ks.nexus` App Group mirroring when the signed app has that entitlement.
-- Recent agent event sidebar feed backed by the Swift/Rust agent event bridge, with detail inspection, safe metadata actions, shared task drafts, confirmed `tasks.md` writeback, Codex handoff prompts, and JSON copy support.
+- Recent agent event sidebar feed backed by the Swift/Rust agent event bridge, with detail inspection, safe metadata actions, shared task drafts, confirmed `tasks.md` writeback, Codex handoff prompts, copy-and-open Codex handoff, and JSON copy support.
 - Local Task Center that reads structured workspace task rows from Rust Core, lets the sidebar focus the owning workspace, and opens the owning `tasks.md` document directly when deeper review is needed.
 - Workspace detail task section for reviewing local workspace and agent-sourced tasks, with direct access back to the source `tasks.md` record.
 - Confirmed native task status updates for marking local tasks complete or deferred in `tasks.md`.

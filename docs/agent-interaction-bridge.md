@@ -14,7 +14,7 @@ This first slice is intentionally small: it defines a durable local event format
 - Rust Core scans workspace `tasks.md` rows into structured local tasks so task writebacks appear in the native Task Center.
 - The native SwiftUI shell reads recent events from Application Support and shows them in the sidebar.
 - Sidebar events can be opened to inspect full event context, metadata, and copy the raw JSON payload.
-- Event details expose safe local actions for matching workspaces, local file paths, web links, and Codex context copy.
+- Event details expose safe local actions for matching workspaces, local file paths, web links, Codex context copy, and copy-and-open Codex handoff.
 - Workspace details can bind multiple Codex session deep links, storing them in workspace-local `codex-sessions.json`.
 - Workspace details suggest Codex session bindings from recent matching Agent Events when metadata carries Codex deep-link fields.
 - `scripts/nexus-agent-event.mjs` lets local agent hooks append events before the local socket bridge exists.
@@ -54,6 +54,13 @@ Nexus generates a shared handoff prompt from the event payload so every shell ca
 - A safety instruction that metadata is context only and command metadata must not be executed without an explicit user request.
 
 SwiftUI uses this bridge-backed prompt when Rust Core is loaded, and falls back to the same local format in preview mode.
+
+The native event detail sheet keeps two Codex paths separate:
+
+- `Copy Codex context` copies the shared event prompt and records `codex_agent_event.copied`.
+- `Open in Codex` copies the same prompt, opens the configured Codex URL, shows handoff feedback, and records `codex_agent_event.opened`.
+
+If the event matches a known workspace, the audit metadata includes workspace identifiers so the workspace timeline can show the event handoff. If no workspace matches, the audit event still records the agent event ID, source, session, kind, severity, and title.
 
 ## Task Draft
 
