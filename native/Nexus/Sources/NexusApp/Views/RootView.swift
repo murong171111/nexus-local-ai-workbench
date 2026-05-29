@@ -2236,56 +2236,16 @@ private struct WorkspaceListEmptyStateView: View {
                 )
             }
 
-            LazyVGrid(columns: actionColumns, alignment: .leading, spacing: 8) {
-                if hasWorkspaces && hasSearchOrFilter {
-                    Button {
-                        appState.selectedFilter = .all
-                        appState.clearSearch()
-                    } label: {
-                        Label("Show all", systemImage: "square.grid.2x2")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                }
-
-                Button {
-                    isCreateWorkspacePresented = true
-                } label: {
-                    Label("New Workspace", systemImage: "plus")
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-
-                Button {
-                    isSettingsPresented = true
-                } label: {
-                    Label(hasWorkspaces ? "Settings" : "Team Profile", systemImage: "gearshape")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-
-                Button {
-                    Task {
-                        await appState.checkNativeEnvironment()
-                    }
-                } label: {
-                    Label(appState.isCheckingNativeEnvironment ? "Checking" : "Environment", systemImage: "checkmark.seal")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(appState.isCheckingNativeEnvironment)
-
-                Button {
-                    Task {
-                        await appState.refreshFromBridge()
-                    }
-                } label: {
-                    Label(appState.isLoading ? "Refreshing" : "Refresh", systemImage: "arrow.clockwise")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(appState.isLoading)
-            }
+            WorkspaceSetupActionGrid(
+                isCreateWorkspacePresented: $isCreateWorkspacePresented,
+                isSettingsPresented: $isSettingsPresented,
+                settingsLabel: hasWorkspaces ? "设置" : "团队配置",
+                showAllAction: hasWorkspaces && hasSearchOrFilter ? {
+                    appState.selectedFilter = .all
+                    appState.clearSearch()
+                } : nil,
+                minimumColumnWidth: 116
+            )
         }
         .frame(maxWidth: 720, alignment: .leading)
         .padding(18)
@@ -2297,8 +2257,86 @@ private struct WorkspaceListEmptyStateView: View {
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
+}
+
+private struct WorkspaceSetupActionGrid: View {
+    @EnvironmentObject private var appState: AppState
+    @Binding var isCreateWorkspacePresented: Bool
+    @Binding var isSettingsPresented: Bool
+    let settingsLabel: String
+    let showAllAction: (() -> Void)?
+    let minimumColumnWidth: CGFloat
+
+    var body: some View {
+        LazyVGrid(columns: actionColumns, alignment: .leading, spacing: 8) {
+            if let showAllAction {
+                Button {
+                    showAllAction()
+                } label: {
+                    Label("显示全部", systemImage: "square.grid.2x2")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .help("清空搜索和筛选 / Show all workspaces")
+            }
+
+            if showAllAction == nil {
+                newWorkspaceButton
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .help("创建需求工作区 / New workspace")
+            } else {
+                newWorkspaceButton
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("创建需求工作区 / New workspace")
+            }
+
+            Button {
+                isSettingsPresented = true
+            } label: {
+                Label(settingsLabel, systemImage: "gearshape")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .help("打开路径和团队配置 / Open Settings")
+
+            Button {
+                Task {
+                    await appState.checkNativeEnvironment()
+                }
+            } label: {
+                Label(appState.isCheckingNativeEnvironment ? "检查中" : "环境检查", systemImage: "checkmark.seal")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(appState.isCheckingNativeEnvironment)
+            .help("检查路径和 Git / Run environment check")
+
+            Button {
+                Task {
+                    await appState.refreshFromBridge()
+                }
+            } label: {
+                Label(appState.isLoading ? "刷新中" : "刷新", systemImage: "arrow.clockwise")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(appState.isLoading)
+            .help("重新扫描工作区 / Refresh workspaces")
+        }
+    }
+
     private var actionColumns: [GridItem] {
-        [GridItem(.adaptive(minimum: 126), spacing: 8, alignment: .leading)]
+        [GridItem(.adaptive(minimum: minimumColumnWidth), spacing: 8, alignment: .leading)]
+    }
+
+    private var newWorkspaceButton: some View {
+        Button {
+            isCreateWorkspacePresented = true
+        } label: {
+            Label("新建工作区", systemImage: "plus")
+        }
     }
 }
 
@@ -2683,36 +2721,25 @@ private struct InspectorEmptyStateView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                LazyVGrid(columns: actionColumns, alignment: .leading, spacing: 8) {
-                    Button {
-                        isCreateWorkspacePresented = true
-                    } label: {
-                        Label("New", systemImage: "plus")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-
-                    Button {
-                        isSettingsPresented = true
-                    } label: {
-                        Label("Settings", systemImage: "gearshape")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-
-                    Button {
-                        Task {
-                            await appState.refreshFromBridge()
-                        }
-                    } label: {
-                        Label(appState.isLoading ? "Refreshing" : "Refresh", systemImage: "arrow.clockwise")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(appState.isLoading)
-                }
+                WorkspaceSetupActionGrid(
+                    isCreateWorkspacePresented: $isCreateWorkspacePresented,
+                    isSettingsPresented: $isSettingsPresented,
+                    settingsLabel: appState.workspaces.isEmpty ? "团队配置" : "设置",
+                    showAllAction: hasHiddenWorkspaces ? {
+                        appState.selectedFilter = .all
+                        appState.clearSearch()
+                    } : nil,
+                    minimumColumnWidth: 96
+                )
             }
         }
+    }
+
+    private var hasHiddenWorkspaces: Bool {
+        !appState.workspaces.isEmpty
+            && appState.filteredWorkspaces.isEmpty
+            && (appState.selectedFilter != .all
+                || !appState.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
     private var title: String {
@@ -2724,10 +2751,6 @@ private struct InspectorEmptyStateView: View {
             return "创建工作区后，这里会展示 Command Center、Workflow、Risk Review、Documents 和 Activity。"
         }
         return "从中间列表选择工作区，或者清空筛选后进入详情。"
-    }
-
-    private var actionColumns: [GridItem] {
-        [GridItem(.adaptive(minimum: 92), spacing: 8, alignment: .leading)]
     }
 }
 
