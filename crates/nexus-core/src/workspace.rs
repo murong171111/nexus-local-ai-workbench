@@ -415,7 +415,7 @@ pub fn create_workspace(
     write_file(
         &workspace.join("AGENTS.md"),
         &format!(
-            "# Workspace Agent Guide\n\n- 需求名称: {}\n- 工作区: {}\n- 开发目录: `repos/<service>`\n- 源仓库目录: `{}`\n\n## Rules\n\n- 代码改动优先发生在 `repos/<service>` worktree 中。\n- 每次代码、SQL、业务逻辑、接口、DTO、配置或验证变化后，检查并更新 `交付记录.md`。\n- 凡是 `交付记录.md` 声明 SQL 变更，必须在 `sql/` 下同步正式 SQL 文件和回滚 SQL 文件。\n- 不直接切换源仓库分支，源仓库只作为 worktree 来源。\n",
+            "# Workspace Agent Guide\n\n- 需求名称: {}\n- 工作区: {}\n- 开发目录: `repos/<service>`\n- 源仓库目录: `{}`\n\n## Rules\n\n- 代码改动优先发生在 `repos/<service>` worktree 中。\n- 每次代码、SQL、业务逻辑、接口、DTO、配置或验证变化后，检查并更新 `交付记录.md`。\n- 凡是 `交付记录.md` 任意位置声明 SQL 变更，必须在 `sql/` 下同步正式 SQL 文件和回滚 SQL 文件。\n- 不直接切换源仓库分支，源仓库只作为 worktree 来源。\n",
             request.name,
             workspace.display(),
             request.source_repos_root
@@ -477,7 +477,7 @@ pub fn create_workspace(
     write_file(
         &workspace.join("交付记录.md"),
         &format!(
-            "# 交付记录\n\n## 需求信息\n\n- 需求名称: {}\n- 工作区: {}\n- 分支: {}\n\n## 涉及服务\n\n{}\n\n## 代码变更\n\n暂无。\n\n## SQL 变更\n\n- 是否有 SQL 变动：暂无。\n- 正式 SQL 文件：无\n- 回滚 SQL 文件：无\n- 文件规则：一旦本节记录有 SQL 变动，必须同步 `sql/` 下正式 SQL 与回滚 SQL 文件。\n\n## 新增逻辑\n\n暂无。\n\n## 验证结果\n\n暂无。\n\n## 遗留风险\n\n- 创建后需要确认服务范围、分支和 worktree 状态。\n",
+            "# 交付记录\n\n## 需求信息\n\n- 需求名称: {}\n- 工作区: {}\n- 分支: {}\n\n## 涉及服务\n\n{}\n\n## 代码变更\n\n暂无。\n\n## SQL 变更\n\n- 是否有 SQL 变动：暂无。\n- 正式 SQL 文件：无\n- 回滚 SQL 文件：无\n- 文件规则：一旦本文档任意位置记录有 SQL 变动，必须同步 `sql/` 下正式 SQL 与回滚 SQL 文件。\n\n## 新增逻辑\n\n暂无。\n\n## 验证结果\n\n暂无。\n\n## 遗留风险\n\n- 创建后需要确认服务范围、分支和 worktree 状态。\n",
             request.name,
             request.folder,
             target_branch,
@@ -2213,13 +2213,16 @@ fn is_rollback_sql_file(relative_path: &str, content: &str) -> bool {
 
 fn delivery_declares_sql_change(text: &str) -> bool {
     let sql_section = markdown_section_containing(text, "sql");
-    let target = if sql_section.trim().is_empty() {
+    let sql_target = if sql_section.trim().is_empty() {
         text
     } else {
         sql_section.as_str()
     };
 
-    contains_actual_sql_statement(target) || contains_explicit_sql_change_line(target)
+    contains_actual_sql_statement(text)
+        || contains_explicit_sql_change_line(text)
+        || contains_actual_sql_statement(sql_target)
+        || contains_explicit_sql_change_line(sql_target)
 }
 
 fn markdown_section_containing(text: &str, keyword: &str) -> String {
@@ -2295,11 +2298,18 @@ fn contains_actual_sql_statement(text: &str) -> bool {
 fn contains_explicit_sql_change_line(text: &str) -> bool {
     text.lines().any(|line| {
         let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
+        if trimmed.is_empty() {
             return false;
         }
-        let compact = compact_lowercase(trimmed);
-        if contains_placeholder_sql_language(&compact) || compact.contains("如有") {
+        let semantic_line = markdown_heading(trimmed)
+            .map(|(_, heading)| heading)
+            .unwrap_or_else(|| trimmed.to_string());
+        let compact = compact_lowercase(&semantic_line);
+        if is_plain_sql_heading(&compact)
+            || contains_placeholder_sql_language(&compact)
+            || compact.contains("如有")
+            || declares_no_sql_change(&compact)
+        {
             return false;
         }
         let mentions_sql = compact.contains("sql");
@@ -2321,6 +2331,46 @@ fn contains_explicit_sql_change_line(text: &str) -> bool {
             && !compact.contains("待确认");
 
         explicit_yes || change_language || concrete_table
+    })
+}
+
+fn is_plain_sql_heading(value: &str) -> bool {
+    let value = value.trim_start_matches(|character: char| {
+        character.is_ascii_digit() || matches!(character, '.' | '、' | ')' | '(' | '）' | '（')
+    });
+    matches!(
+        value,
+        "sql"
+            | "sql变更"
+            | "sql变动"
+            | "sql/config"
+            | "sql/配置"
+            | "sql与配置"
+            | "sql和配置"
+            | "sql与数据变更"
+            | "sql和数据变更"
+    )
+}
+
+fn declares_no_sql_change(value: &str) -> bool {
+    let negative_prefixes = [
+        "是否有sql变动",
+        "是否有sql变更",
+        "有sql变动",
+        "有sql变更",
+        "sql变动",
+        "sql变更",
+        "数据库变动",
+        "数据库变更",
+    ];
+    negative_prefixes.iter().any(|prefix| {
+        value.contains(prefix)
+            && (value.contains(":否")
+                || value.contains("：否")
+                || value.contains(":无")
+                || value.contains("：无")
+                || value.ends_with("否")
+                || value.ends_with("无"))
     })
 }
 
@@ -2671,7 +2721,7 @@ fn bootstrap_report(
             .join("\n")
     };
     format!(
-        "# Bootstrap Report\n\n- 需求名称: {}\n- 工作区: {}\n- 创建日期: {}\n- 目标分支: {}\n- 工作区路径: `{}`\n- 源仓库目录: `{}`\n\n## 服务范围\n\n{}\n\n## 初始风险\n\n{}\n\n## 下一步\n\n- [ ] 补充需求描述和影响范围。\n- [ ] 确认目标分支。\n- [ ] 复核 `scripts/worktree-commands.sh` 后创建 worktree。\n- [ ] 编码或 SQL 变更后更新 `交付记录.md`。\n- [ ] 若 `交付记录.md` 声明 SQL 变更，同步 `sql/` 下正式 SQL 和回滚 SQL 文件。\n",
+        "# Bootstrap Report\n\n- 需求名称: {}\n- 工作区: {}\n- 创建日期: {}\n- 目标分支: {}\n- 工作区路径: `{}`\n- 源仓库目录: `{}`\n\n## 服务范围\n\n{}\n\n## 初始风险\n\n{}\n\n## 下一步\n\n- [ ] 补充需求描述和影响范围。\n- [ ] 确认目标分支。\n- [ ] 复核 `scripts/worktree-commands.sh` 后创建 worktree。\n- [ ] 编码或 SQL 变更后更新 `交付记录.md`。\n- [ ] 若 `交付记录.md` 任意位置声明 SQL 变更，同步 `sql/` 下正式 SQL 和回滚 SQL 文件。\n",
         name,
         folder,
         today,
@@ -2857,6 +2907,66 @@ mod tests {
     }
 
     #[test]
+    fn scan_workspaces_requires_sql_artifacts_when_change_is_outside_sql_section() {
+        let root = std::env::temp_dir().join(format!(
+            "nexus-core-sql-artifact-outside-section-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        write_sql_rule_workspace(
+            &root,
+            "2026-05-29-sql-artifact-outside-section",
+            "# 交付记录\n\n## SQL 变更\n\n- 是否有 SQL 变动：否\n\n## 代码变更\n\n- SQL 变更：新增 pay_log 历史回填脚本，影响表 pay_log。\n",
+        );
+
+        let dashboard =
+            scan_workspaces(&root.to_string_lossy(), "~/source-repos", "~/docs").unwrap();
+        let item = &dashboard.workspaces[0];
+        let sql_check = item
+            .health_checks
+            .iter()
+            .find(|check| check.id == "sql-directory")
+            .unwrap();
+
+        assert_eq!(sql_check.status, "fail");
+        assert!(sql_check.detail.contains("缺少正式 SQL 与回滚 SQL"));
+        assert!(item
+            .risks
+            .iter()
+            .any(|risk| risk.contains("缺少正式 SQL 与回滚 SQL")));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn scan_workspaces_requires_sql_artifacts_when_heading_declares_change_detail() {
+        let root = std::env::temp_dir().join(format!(
+            "nexus-core-sql-artifact-heading-detail-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        write_sql_rule_workspace(
+            &root,
+            "2026-05-29-sql-artifact-heading-detail",
+            "# 交付记录\n\n## SQL 变更：新增 pay_log demo_flag 字段\n\n- 变更类型：DDL\n- 影响表：pay_log\n",
+        );
+
+        let dashboard =
+            scan_workspaces(&root.to_string_lossy(), "~/source-repos", "~/docs").unwrap();
+        let item = &dashboard.workspaces[0];
+        let sql_check = item
+            .health_checks
+            .iter()
+            .find(|check| check.id == "sql-directory")
+            .unwrap();
+
+        assert_eq!(sql_check.status, "fail");
+        assert!(sql_check.detail.contains("缺少正式 SQL 与回滚 SQL"));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn scan_workspaces_accepts_formal_and_rollback_sql_artifacts() {
         let root = std::env::temp_dir().join(format!(
             "nexus-core-sql-artifact-ready-{}",
@@ -2921,6 +3031,34 @@ mod tests {
         assert_eq!(sql_check.status, "pass");
         assert!(sql_check.detail.contains("未声明 SQL 变更"));
         assert!(!item.risks.iter().any(|risk| risk.contains("SQL 变更")));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn scan_workspaces_ignores_numbered_plain_sql_change_heading() {
+        let root = std::env::temp_dir().join(format!(
+            "nexus-core-sql-artifact-numbered-heading-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        write_sql_rule_workspace(
+            &root,
+            "2026-05-29-sql-artifact-numbered-heading",
+            "# 交付记录\n\n## 6. SQL 变更\n\n- 是否有 SQL 变更：否\n- 说明：本次无数据库变更。\n",
+        );
+
+        let dashboard =
+            scan_workspaces(&root.to_string_lossy(), "~/source-repos", "~/docs").unwrap();
+        let item = &dashboard.workspaces[0];
+        let sql_check = item
+            .health_checks
+            .iter()
+            .find(|check| check.id == "sql-directory")
+            .unwrap();
+
+        assert_eq!(sql_check.status, "pass");
+        assert!(sql_check.detail.contains("未声明 SQL 变更"));
 
         fs::remove_dir_all(root).unwrap();
     }

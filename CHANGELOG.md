@@ -128,6 +128,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Fixed
 
+- SQL artifact readiness now scans the full `交付记录.md`, so SQL changes mentioned outside the SQL section or in detailed headings still require formal and rollback SQL files under `sql/`.
 - First-run onboarding now waits for environment health checks, skips itself when the environment is ready, locks background scrolling, and exposes a clear close button.
 - Document preview now opens above workspace details and closes the details drawer to avoid stacked side panels.
 - Closing a document opened from workspace details now returns to the details drawer instead of dismissing both layers.
