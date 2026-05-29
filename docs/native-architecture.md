@@ -32,7 +32,7 @@ The first native shell scaffold is available at `native/Nexus`. It is a Swift Pa
 - SwiftUI app shell, navigation, document views, settings, command surfaces, and workspace cards.
 - AppKit adapters for menu bar, file panels, keyboard shortcuts, Finder/Terminal/IDE launch, and any behavior where AppKit is more reliable than SwiftUI alone.
 - Explicit confirmation flows for operations that create files, create worktrees, or change local state.
-- Create-workspace UX for scanning source repositories, filtering service candidates, accepting manual fallback services, showing pending scope, summarizing the local write before confirmation, verifying generated files and initial status through an initialization receipt, and guiding the user to the next safe step after creation.
+- Create-workspace UX for scanning source repositories, filtering service candidates, accepting manual fallback services, showing pending scope, preflighting workspaces root readiness, folder validity, destination collisions, environment health, and scope warnings before confirmation, verifying generated files and initial status through an initialization receipt, and guiding the user to the next safe step after creation.
 - Workspace workflow summary that keeps task status, delivery-record status, document opens, local checks, and Codex handoff together instead of scattering them across unrelated sections.
 - Workspace Documents Hub that maps standard workspace files to native preview/source rendering and avoids stale previews when the selected workspace changes.
 
@@ -65,6 +65,7 @@ The first native shell scaffold is available at `native/Nexus`. It is a Swift Pa
 - The native Settings surface can import and export the same shareable Nexus settings profile shape used by the Tauri preview app, so small teams can pass path conventions without copying workspace content or code.
 - The native Settings surface can show per-path readiness rows, use AppKit directory pickers and reveal actions, and run local environment checks for configured directories, write access, Git availability, workspace counts, and source repository counts after a profile is imported or paths are edited.
 - The native workspace list owns first-run and empty-filter guidance: it surfaces configured local paths, the latest environment-health summary, and the primary recovery actions before users reach a workspace detail.
+- The native create-workspace sheet owns local-write preflight for the setup path: it blocks only write-failure conditions such as invalid folders or destination collisions, while allowing branch/service uncertainty to remain visible as review items for early demand scoping.
 - The native workspace detail surface owns Mac handoff actions for Finder, Terminal, and Codex URL launches. Codex handoff copies a workspace prompt first, then opens the configured local URL.
 - Workspace Codex handoff now acts as a richer local handoff pack: it includes latest local-check status, service/worktree summaries, open tasks, delivery checks, standard document paths, and recommended session actions before opening the configured Codex URL.
 - The native workspace detail surface now owns workspace-level Codex session link bindings, backed by `codex-sessions.json`, so one requirement can keep multiple return links to active Codex conversations.

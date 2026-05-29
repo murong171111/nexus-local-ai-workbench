@@ -48,7 +48,7 @@ src-tauri/target/release/bundle/dmg/Nexus_0.1.0_aarch64.dmg
   - Workspace detail can bind multiple Codex session links, then open, copy, and delete the saved local bindings without deleting the Codex conversation.
   - Branch alignment filters and warnings appear when a worktree branch differs from the workspace target branch.
   - Source repository scanning populates the create-workspace service picker.
-  - Native create-workspace can filter scanned services, accept manual services, leave service scope pending, show the final path/branch/service summary before writing files, and show an initialization receipt after creation.
+  - Native create-workspace can filter scanned services, accept manual services, leave service scope pending, show root/folder/destination/environment/scope preflight before writing files, block destination collisions or invalid folder names, and show an initialization receipt after creation.
   - After native workspace creation, the app focuses the new workspace and shows the post-create next-step panel.
   - Empty workspace and empty-filter states show configured paths, environment health, Settings, New Workspace, Refresh, Environment Check, and Show all actions as applicable.
   - Native worktree setup shows target branch, missing worktree, source repository, and workspace-local write-location preflight rows before the confirmation toggle is enabled.

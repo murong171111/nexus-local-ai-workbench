@@ -10,7 +10,7 @@ It is designed for teams that work across multiple local service repositories an
 
 - Native macOS app built with Tauri, React, TailwindCSS, and Swift WidgetKit source.
 - Workspace cards for requirement folders, branches, services, risks, activity, and worktree state.
-- In-app workspace creation using the `ks-project-demand-workspace` layout, with scanned service selection, manual fallback, a confirmation summary, and guided next steps after creation.
+- In-app workspace creation using the `ks-project-demand-workspace` layout, with scanned service selection, manual fallback, a preflight review, a confirmation summary, and guided next steps after creation.
 - In-app Markdown document preview for status, service scope, branch notes, tasks, and delivery records.
 - Local path settings for workspaces, source repositories, and delivery document roots.
 - Exportable and importable team settings profiles for sharing local path conventions, including first-run onboarding import and native Settings import/export.
@@ -32,7 +32,7 @@ It is designed for teams that work across multiple local service repositories an
 - First-run onboarding for importing team profiles, configuring local paths, scanning source repositories, and optionally creating a demo workspace.
 - Environment health checks for configured directories and Git availability.
 - Native workspace scanning from the configured paths; no local Python script is required for the packaged app.
-- Native create-workspace flow that scans source repositories, filters service candidates, selects real local services, leaves service scope pending when needed, then focuses the new workspace with an initialization receipt, handoff, worktree, Codex, and check actions.
+- Native create-workspace flow that scans source repositories, filters service candidates, selects real local services, leaves service scope pending when needed, checks root/folder/destination/environment/scope readiness before writing, then focuses the new workspace with an initialization receipt, handoff, worktree, Codex, and check actions.
 - Native worktree setup includes a preflight review for target branch readiness, missing worktrees, source repositories, and workspace-local write locations, then refreshes the workspace state after running and routes the next step to Finder, result-aware Codex handoff, or local checks.
 - Native workspace Command Center that puts lifecycle progress, a primary-path recommendation, a compact scope -> worktree -> risk -> task -> delivery -> Codex sessions -> handoff session path, Codex continuation, local-check results, Finder, and Terminal at the top of each detail view.
 - Native workspace detail overview that keeps lifecycle, branch, services, risk, tasks, delivery, Codex session count, and latest local-check state visible before deeper workflow sections.
@@ -107,7 +107,7 @@ The `repos/<service>` directories are intended to be git worktrees for isolated 
 
 Use the `New Workspace` action in the left rail. Nexus can scan the configured source repository root, filter the detected repositories, and let you select services from that local list. You can still type service names manually when a repository is not present yet, or leave service scope pending during early scoping. Manual service input supports commas, spaces, new lines, semicolons, and Chinese separators such as `、` and `，`.
 
-Before writing files, Nexus shows a summary of the target path, branch, and service scope. Creating a workspace requires confirming the local write, then writes the standard Markdown document set and records selected services in `services.md` and `branches.md`. It also generates `bootstrap-report.md`, `scripts/worktree-commands.sh`, a local audit event, and an initialization receipt that verifies the generated files, initial `STATUS.md`, service scope, target branch, and worktree readiness.
+Before writing files, Nexus shows a summary of the target path, branch, and service scope. The preflight review blocks obvious failures such as an empty workspaces root, a root path that is not a directory, an invalid folder name, or a destination that already exists. Pending service scope, pending target branch, missing environment checks, and selected services that are not in the latest source-repository scan are shown as review items so early scoping can still be documented. Creating a workspace requires confirming the local write, then writes the standard Markdown document set and records selected services in `services.md` and `branches.md`. It also generates `bootstrap-report.md`, `scripts/worktree-commands.sh`, a local audit event, and an initialization receipt that verifies the generated files, initial `STATUS.md`, service scope, target branch, and worktree readiness.
 
 After creation, Nexus selects the new workspace, clears stale document previews, and shows a short next-step panel with the initialization receipt, opening `handoff.md`, creating confirmed worktrees when the branch and services are ready, handing off to Codex, or running the local check.
 

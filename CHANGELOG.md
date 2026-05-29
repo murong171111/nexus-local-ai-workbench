@@ -25,6 +25,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Native source repository scanning for service selection and git state awareness.
 - Service picker in the create-workspace flow, backed by scanned local repositories.
 - Native SwiftUI create-workspace flow now supports service filtering, selected scanned repositories, manual service fallback, pending service scope, and a creation summary before confirmed local writes.
+- Native SwiftUI create-workspace flow now includes a preflight review for workspaces root readiness, folder validity, destination collisions, environment health, and scope warnings before the local write can run.
 - Native SwiftUI now focuses a newly created workspace and shows a dismissible post-create next-step panel for handoff, worktree setup, Codex handoff, and local checks.
 - Native environment health checks for configured paths and Git availability.
 - Workspace bootstrap reports and reviewable worktree command scripts.
