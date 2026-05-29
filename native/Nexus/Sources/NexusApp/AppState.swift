@@ -17,6 +17,7 @@ private struct NativeSettingsProfileSettings: Codable {
     let sourceReposRoot: String
     let docsRoot: String
     let codexUrl: String
+    let ideUrl: String?
     let refreshIntervalSeconds: Int
 }
 
@@ -92,6 +93,7 @@ final class AppState: ObservableObject {
     @Published var sourceReposRoot: String
     @Published var docsRoot: String
     @Published var codexURL: String
+    @Published var ideURL: String
     @Published var refreshIntervalSeconds: Int
     @Published var isLoading = false
     @Published var isDocumentLoading = false
@@ -154,6 +156,7 @@ final class AppState: ObservableObject {
         static let sourceReposRoot = "nexus.native.sourceReposRoot"
         static let docsRoot = "nexus.native.docsRoot"
         static let codexURL = "nexus.native.codexURL"
+        static let ideURL = "nexus.native.ideURL"
         static let refreshIntervalSeconds = "nexus.native.refreshIntervalSeconds"
         static let isAutomationScheduleEnabled = "nexus.native.isAutomationScheduleEnabled"
         static let automationIntervalMinutes = "nexus.native.automationIntervalMinutes"
@@ -169,6 +172,7 @@ final class AppState: ObservableObject {
     static let defaultSourceReposRoot = "~/ks_project/source-repos"
     static let defaultDocsRoot = "~/ks_project/docs"
     static let defaultCodexURL = "codex://"
+    static let defaultIDEURL = "idea://open?file={path}"
     static let defaultRefreshIntervalSeconds = 10
     static let widgetAppGroupIdentifier = "group.com.ks.nexus"
     static let widgetSnapshotFileName = "widget-snapshot.json"
@@ -186,6 +190,7 @@ final class AppState: ObservableObject {
         sourceReposRoot: String = "~/ks_project/source-repos",
         docsRoot: String = "~/ks_project/docs",
         codexURL: String = "codex://",
+        ideURL: String = "idea://open?file={path}",
         refreshIntervalSeconds: Int = 10,
         bridgeMode: String = "Preview",
         defaults: UserDefaults = .standard
@@ -213,6 +218,11 @@ final class AppState: ObservableObject {
             defaults: defaults,
             key: DefaultsKey.codexURL,
             fallback: codexURL
+        )
+        self.ideURL = Self.storedPath(
+            defaults: defaults,
+            key: DefaultsKey.ideURL,
+            fallback: ideURL
         )
         self.refreshIntervalSeconds = Self.normalizedRefreshInterval(
             defaults.object(forKey: DefaultsKey.refreshIntervalSeconds) == nil
@@ -607,6 +617,10 @@ final class AppState: ObservableObject {
             codexURL.trimmingCharacters(in: .whitespacesAndNewlines),
             forKey: DefaultsKey.codexURL
         )
+        defaults.set(
+            ideURL.trimmingCharacters(in: .whitespacesAndNewlines),
+            forKey: DefaultsKey.ideURL
+        )
         refreshIntervalSeconds = Self.normalizedRefreshInterval(refreshIntervalSeconds)
         defaults.set(refreshIntervalSeconds, forKey: DefaultsKey.refreshIntervalSeconds)
     }
@@ -616,6 +630,7 @@ final class AppState: ObservableObject {
         sourceReposRoot = Self.defaultSourceReposRoot
         docsRoot = Self.defaultDocsRoot
         codexURL = Self.defaultCodexURL
+        ideURL = Self.defaultIDEURL
         refreshIntervalSeconds = Self.defaultRefreshIntervalSeconds
         persistLocalPaths()
     }
@@ -678,10 +693,13 @@ final class AppState: ObservableObject {
                 codexUrl: codexURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     ? Self.defaultCodexURL
                     : codexURL.trimmingCharacters(in: .whitespacesAndNewlines),
+                ideUrl: ideURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ? Self.defaultIDEURL
+                    : ideURL.trimmingCharacters(in: .whitespacesAndNewlines),
                 refreshIntervalSeconds: Self.normalizedRefreshInterval(refreshIntervalSeconds)
             ),
             notes: [
-                "This file stores local Nexus path conventions for team sharing.",
+                "This file stores local Nexus path and tool-link conventions for team sharing.",
                 "Review paths after importing because every machine can use different local roots."
             ]
         )
@@ -716,6 +734,7 @@ final class AppState: ObservableObject {
             sourceReposRoot = settings.sourceReposRoot
             docsRoot = settings.docsRoot
             codexURL = settings.codexUrl
+            ideURL = settings.ideUrl ?? Self.defaultIDEURL
             refreshIntervalSeconds = settings.refreshIntervalSeconds
             persistLocalPaths()
 
@@ -1337,6 +1356,37 @@ final class AppState: ObservableObject {
             target: workspace.path,
             summary: "Opened workspace in Terminal",
             metadata: ["tool": "Terminal"],
+            workspaceOverride: workspace
+        )
+    }
+
+    func openWorkspaceInIDE(_ workspace: WorkspaceSummary) async {
+        lastError = nil
+        let rawTemplate = ideURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rawTemplate.isEmpty else {
+            lastError = "IDE URL template is empty. Configure it in Settings, for example \(Self.defaultIDEURL)."
+            return
+        }
+
+        let rawPath = workspace.path.trimmingCharacters(in: .whitespacesAndNewlines)
+        let encodedPath = rawPath.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? rawPath
+        let rawURL = rawTemplate
+            .replacingOccurrences(of: "{path}", with: encodedPath)
+            .replacingOccurrences(of: "{rawPath}", with: rawPath)
+
+        guard let url = URL(string: rawURL), NSWorkspace.shared.open(url) else {
+            lastError = "IDE open failed. Check the IDE URL template in Settings: \(rawTemplate)"
+            return
+        }
+
+        await recordWorkspaceAction(
+            action: "workspace.ide.opened",
+            target: workspace.path,
+            summary: "Opened workspace in IDE",
+            metadata: [
+                "tool": "IDE",
+                "ideUrl": rawURL
+            ],
             workspaceOverride: workspace
         )
     }
@@ -2356,6 +2406,8 @@ final class AppState: ObservableObject {
             return "Finder 已打开 / Finder opened"
         case "workspace.terminal.opened":
             return "Terminal 已打开 / Terminal opened"
+        case "workspace.ide.opened":
+            return "IDE 已打开 / IDE opened"
         default:
             return action.replacingOccurrences(of: "_", with: " ")
                 .replacingOccurrences(of: ".", with: " ")
@@ -2403,12 +2455,14 @@ final class AppState: ObservableObject {
         let sourceReposRoot = try requiredProfilePath(profile.settings.sourceReposRoot, label: "sourceReposRoot")
         let docsRoot = try requiredProfilePath(profile.settings.docsRoot, label: "docsRoot")
         let codexUrl = profile.settings.codexUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ideUrl = profile.settings.ideUrl?.trimmingCharacters(in: .whitespacesAndNewlines)
 
         return NativeSettingsProfileSettings(
             workspacesRoot: workspacesRoot,
             sourceReposRoot: sourceReposRoot,
             docsRoot: docsRoot,
             codexUrl: codexUrl.isEmpty ? defaultCodexURL : codexUrl,
+            ideUrl: ideUrl?.isEmpty == false ? ideUrl : defaultIDEURL,
             refreshIntervalSeconds: normalizedRefreshInterval(profile.settings.refreshIntervalSeconds)
         )
     }

@@ -13,7 +13,7 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - Search result context previews with workspace risk, branch/service summary, and compact activity timeline.
 - Persisted native search scopes for workspace, state, workflow, SQL, and document-focused searches.
 - Pinned workspaces in the sidebar and workspace card flow, stored as local Mac preferences.
-- Sidebar Settings sheet with persisted workspace, source repository, delivery document roots, Codex URL, refresh interval, and compatible team profile import/export.
+- Sidebar Settings sheet with persisted workspace, source repository, delivery document roots, Codex URL, IDE URL template, refresh interval, and compatible team profile import/export.
 - Native Settings path rows with per-path readiness, directory pickers, reveal actions, and environment checks for local path readiness, Git availability, workspace counts, and source repository counts.
 - Chinese-first action labels and hover help for native path recovery, task source-document opens, task status updates, and task Codex handoff.
 - Native create-workspace sheet that scans configured source repositories, filters and selects service scope, accepts manual service fallback, shows root/folder/destination/environment/scope preflight before local writes, and shows an initialization receipt after creation.
@@ -22,7 +22,7 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - In-card local-check feedback after running checks from native worktree setup results.
 - Chinese-first result labels and action help in the native worktree setup result card.
 - Native document preview renders Markdown by default and keeps a source-mode toggle for raw workspace files.
-- Native workspace detail handoff actions open the workspace in Finder, Terminal, or Codex, copying workspace context for Codex first.
+- Native workspace detail handoff actions open the workspace in Finder, IDE, Terminal, or Codex, copying workspace context for Codex first.
 - Native workspace Codex handoff copies a richer handoff pack with latest local-check status, service/worktree summaries, open tasks, delivery checks, document paths, and Nexus recommended actions.
 - Native workspace detail can bind, view, open, copy, and delete multiple Codex session deep links from workspace-local `codex-sessions.json`.
 - Native Workflow delivery focus card that turns task, delivery, risk, worktree, SQL, and lifecycle state into one next action.
@@ -45,7 +45,7 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - Automation Action Center in the right inspector that converts local check signals into focus, delivery, task, worktree, and Codex handoff actions.
 - Workspace timelines populated from the Rust Core dashboard activity field, including local audit-log events when the bridge is available.
 - Native document opens append audit events and update the visible workspace timeline.
-- Native workspace detail starts with a Command Center for lifecycle progress, primary-path guidance, a compact scope/worktree/risk/task/delivery/Codex-sessions/handoff session path, Codex continuation, local-check receipts, next-step routing, and Finder/Terminal handoff, with quick actions grouped into handoff, execution, and local tool lanes.
+- Native workspace detail starts with a Command Center for lifecycle progress, primary-path guidance, a compact scope/worktree/risk/task/delivery/Codex-sessions/handoff session path, Codex continuation, local-check receipts, next-step routing, and Finder/IDE/Terminal handoff, with quick actions grouped into handoff, execution, and local tool lanes.
 - Native Command Center includes Codex session links in the status overview, metrics, session path, bind fallback, and latest-session resume action.
 - Native workspace detail starts with a compact status overview for lifecycle, branch, services, risk, tasks, delivery, Codex session count, and latest local-check state before deeper sections.
 - Native workspace detail shows a dismissible Codex handoff feedback panel after workspace, lifecycle, risk, task, automation, or agent-event context is copied.
