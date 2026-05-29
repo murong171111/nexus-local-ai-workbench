@@ -4835,6 +4835,11 @@ private struct WorkspaceCommandCenterView: View {
                             await appState.openWorkspaceInFinder(workspace)
                         }
                     },
+                    ideAction: {
+                        Task {
+                            await appState.openWorkspaceInIDE(workspace)
+                        }
+                    },
                     terminalAction: {
                         Task {
                             await appState.openWorkspaceInTerminal(workspace)
@@ -5179,6 +5184,7 @@ private struct CommandCenterQuickActionsView: View {
     let lifecycleAction: () -> Void
     let checkAction: () -> Void
     let finderAction: () -> Void
+    let ideAction: () -> Void
     let terminalAction: () -> Void
 
     var body: some View {
@@ -5229,6 +5235,14 @@ private struct CommandCenterQuickActionsView: View {
                     finderAction()
                 } label: {
                     Label("Finder", systemImage: "folder")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Button {
+                    ideAction()
+                } label: {
+                    Label("IDE", systemImage: "curlybraces")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -7529,13 +7543,20 @@ struct SettingsView: View {
                         }
                     )
 
-                    TextField("Codex URL", text: $appState.codexURL)
                     Stepper(
                         "Profile refresh interval: \(appState.refreshIntervalSeconds) sec",
                         value: $appState.refreshIntervalSeconds,
                         in: 3...3600,
                         step: 1
                     )
+                }
+
+                Section("Tool Links") {
+                    TextField("Codex URL", text: $appState.codexURL)
+                    TextField("IDE URL template", text: $appState.ideURL)
+                    Text("Use `{path}` for a URL-encoded workspace path. Default: \(AppState.defaultIDEURL)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 Section("Team Profile") {
@@ -7553,7 +7574,7 @@ struct SettingsView: View {
                             exportProfile()
                         }
                     }
-                    Text("Profiles are compatible with the Tauri preview app and store workspaces, source repositories, delivery documents, Codex URL, and refresh interval.")
+                    Text("Profiles are compatible with the Tauri preview app and store workspaces, source repositories, delivery documents, Codex URL, IDE URL template, and refresh interval.")
                         .foregroundStyle(.secondary)
                 }
 
@@ -7729,6 +7750,7 @@ struct SettingsView: View {
             appState.persistLocalPaths()
         }
         .onChange(of: appState.codexURL) { _ in appState.persistLocalPaths() }
+        .onChange(of: appState.ideURL) { _ in appState.persistLocalPaths() }
         .onChange(of: appState.refreshIntervalSeconds) { _ in appState.persistLocalPaths() }
         .onDisappear {
             appState.persistLocalPaths()

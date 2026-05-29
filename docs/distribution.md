@@ -38,13 +38,13 @@ src-tauri/target/release/bundle/dmg/Nexus_0.1.0_aarch64.dmg
   - First-run onboarding opens when no local settings exist.
   - Settings opens.
   - First-run onboarding can import a shared Nexus settings profile and lets the user review paths before saving.
-  - Native Settings can import and export the same `nexus-settings-profile-*.json` shape for small-team sharing.
+  - Native Settings can import and export `nexus-settings-profile-*.json` for small-team path, Codex URL, and IDE URL template sharing.
   - Native Settings path rows show per-path status, directory picker/reveal actions, and environment checks for configured path status, Git availability, workspace counts, and source repository counts.
   - Native path and task actions use concise Chinese-first labels with hover help for the underlying local effect.
   - First-run onboarding can create an optional demo workspace without creating worktrees.
   - Environment health check reports configured path status and Git availability.
   - Workspace scanning works after setting local paths.
-  - Native workspace handoff buttons open Finder, Terminal, and the configured Codex URL after copying a rich workspace handoff pack.
+  - Native workspace handoff buttons open Finder, the configured IDE URL template, Terminal, and the configured Codex URL after copying a rich workspace handoff pack for Codex.
   - Workspace detail can bind multiple Codex session links, then open, copy, and delete the saved local bindings without deleting the Codex conversation.
   - Branch alignment filters and warnings appear when a worktree branch differs from the workspace target branch.
   - Source repository scanning populates the create-workspace service picker.
@@ -53,7 +53,7 @@ src-tauri/target/release/bundle/dmg/Nexus_0.1.0_aarch64.dmg
   - Empty workspace and empty-filter states show configured paths, environment health, Settings, New Workspace, Refresh, Environment Check, and Show all actions as applicable.
   - Native worktree setup shows target branch, missing worktree, source repository, and workspace-local write-location preflight rows before the confirmation toggle is enabled.
   - Native worktree setup refreshes the active workspace state and shows Chinese-first created/skipped/failed results with Finder, result-aware Codex, and local-check follow-ups, including an in-card local-check summary after checks run.
-  - Workspace detail starts with a compact status overview, then the Command Center exposes lifecycle progress, primary-path guidance, branch/service/risk/task/session signals, a compact session path, Codex continuation, next-step routing, local check receipt, Finder, and Terminal, with quick actions grouped by handoff, execution, and local tools.
+  - Workspace detail starts with a compact status overview, then the Command Center exposes lifecycle progress, primary-path guidance, branch/service/risk/task/session signals, a compact session path, Codex continuation, next-step routing, local check receipt, Finder, IDE, and Terminal, with quick actions grouped by handoff, execution, and local tools.
   - Workspace detail status overview and Command Center include Codex session-link count, a session path step, latest-session open action, and bind-session fallback when no link exists.
   - Codex handoff actions show the Handoff feedback panel after copying workspace, lifecycle, risk, task, automation, or agent-event context.
   - Failed local operations show a unified Operation feedback card with copy-error, refresh, environment-check, Settings, and dismiss actions.
