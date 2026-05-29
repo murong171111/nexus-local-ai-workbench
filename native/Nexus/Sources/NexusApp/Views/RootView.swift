@@ -8525,6 +8525,8 @@ private struct AgentEventDetailSheet: View {
     @State private var isTaskWriteConfirmed = false
     @State private var isAppendingTaskDraft = false
     @State private var taskAppendResult: AppendAgentTaskDraftResponse?
+    @State private var isOpeningCodex = false
+    @State private var isCopyingCodexContext = false
 
     private var metadataRows: [(String, String)] {
         event.metadata
@@ -8712,10 +8714,19 @@ private struct AgentEventDetailSheet: View {
                     }
 
                     AgentEventActionRow(
-                        title: "复制 Codex 上下文 / Copy Codex context",
-                        detail: "Use this when continuing the event in Codex",
+                        title: isOpeningCodex ? "正在打开 Codex / Opening Codex" : "打开 Codex 继续 / Open in Codex",
+                        detail: "复制事件上下文并打开 Settings 中配置的 Codex URL。",
+                        systemImage: "point.3.connected.trianglepath.dotted",
+                        isEnabled: !isOpeningCodex
+                    ) {
+                        openInCodex()
+                    }
+
+                    AgentEventActionRow(
+                        title: isCopyingCodexContext ? "正在复制 / Copying" : "复制 Codex 上下文 / Copy Codex context",
+                        detail: "只复制事件接力包，不打开外部应用。",
                         systemImage: "doc.on.clipboard",
-                        isEnabled: true
+                        isEnabled: !isCopyingCodexContext
                     ) {
                         copyCodexContext()
                     }
@@ -8786,11 +8797,19 @@ private struct AgentEventDetailSheet: View {
         copyToPasteboard(payload)
     }
 
-    private func copyCodexContext() {
+    private func openInCodex() {
+        isOpeningCodex = true
         Task {
-            let payload = await appState.agentEventHandoffPrompt(for: event)
-            copyToPasteboard(payload)
-            appState.markAgentEventHandoffCopied(event)
+            await appState.openAgentEventInCodex(event)
+            isOpeningCodex = false
+        }
+    }
+
+    private func copyCodexContext() {
+        isCopyingCodexContext = true
+        Task {
+            await appState.copyAgentEventCodexContext(event)
+            isCopyingCodexContext = false
         }
     }
 

@@ -65,7 +65,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added actionable native session rows for document follow-ups and confirmed worktree setup, including a local-write confirmation sheet and created/skipped/failed result summary.
 - Added Rust Core and Swift/Rust bridge support for append-only agent event JSONL, plus a native sidebar feed for recent agent events.
 - Added native agent event detail inspection with metadata and JSON copy support.
-- Added safe native agent event actions for selecting matching workspaces, opening local paths and links, and copying Codex continuation context.
+- Added safe native agent event actions for selecting matching workspaces, opening local paths and links, copying Codex continuation context, and copying that context while opening Codex in one action.
 - Added shared Rust Core, FFI, and Swift bridge generation for Codex handoff prompts from agent events.
 - Added shared Rust Core, FFI, and native SwiftUI task drafts derived from agent events, including category, priority, prompt, and related targets.
 - Added confirmed Rust Core, FFI, and native SwiftUI writeback from agent task drafts into workspace `tasks.md`, with audit logging.
@@ -142,7 +142,7 @@ The local search index is stored at `~/Library/Application Support/com.ks.nexus/
 2. Keep Tauri commands as thin wrappers around Rust Core during migration.
 3. Scaffold the SwiftUI/AppKit native Mac shell.
 4. Add the Swift/Rust bridge and render real workspace data in the native shell.
-5. Expand native task actions into line-level document jumps, direct Codex launch, and more audited event types for validation runs and PR handoff.
+5. Expand native task actions into line-level document jumps and add more audited event types for validation runs and PR handoff.
 6. Package the WidgetKit extension with a full Xcode target and App Group storage.
 7. Add signing, notarization, and update channels after the native shell is ready.
 
