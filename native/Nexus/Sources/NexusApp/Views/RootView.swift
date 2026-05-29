@@ -6247,6 +6247,7 @@ private enum DeliveryFocusAction {
     case runCheck
     case openCodex
     case deliveryHandoff
+    case validationPrHandoff
     case enterDelivery
     case markDone
 }
@@ -6432,14 +6433,14 @@ private struct WorkflowStatusView: View {
 
         if workspace.lifecycle.stage == "done" {
             return DeliveryFocusStep(
-                title: "交付已完成 / Done",
-                detail: "生命周期已标记完成。建议保留交付记录作为后续追溯入口。",
+                title: "确认 PR 与 CI / Confirm PR and CI",
+                detail: "生命周期已标记完成。下一步复核本地验证、PR、CI、发布和遗留风险，再决定是否归档。",
                 statusLabel: "done",
                 tone: NexusPalette.success,
                 systemImage: "checkmark.seal",
-                actionLabel: "查看交付",
-                actionSystemImage: "doc.text",
-                action: .openDelivery
+                actionLabel: "PR 交接",
+                actionSystemImage: "point.3.connected.trianglepath.dotted",
+                action: .validationPrHandoff
             )
         }
 
@@ -6906,6 +6907,17 @@ private struct WorkflowStatusView: View {
 
                 DeliveryReadinessChecklistView(items: readinessItems)
 
+                ValidationPrHandoffView(
+                    localCheckStatus: appState.lastAutomationCheck?.status,
+                    lifecycleStage: workspace.lifecycle.label,
+                    hasOpenTasks: !openTasks.isEmpty,
+                    hasRisks: !workspace.risks.isEmpty
+                ) {
+                    Task {
+                        await appState.openValidationPrHandoffInCodex(workspace)
+                    }
+                }
+
                 if let lifecycleRecommendation {
                     DeliveryLifecycleRecommendationView(recommendation: lifecycleRecommendation) { transition in
                         lifecycleAction(transition)
@@ -6983,6 +6995,10 @@ private struct WorkflowStatusView: View {
         case .deliveryHandoff:
             Task {
                 await appState.openDeliveryUpdateInCodex(workspace)
+            }
+        case .validationPrHandoff:
+            Task {
+                await appState.openValidationPrHandoffInCodex(workspace)
             }
         case .enterDelivery:
             lifecycleAction(.delivery)
@@ -7161,6 +7177,75 @@ private struct DeliveryReadinessChecklistView: View {
                 ForEach(items) { item in
                     DeliveryReadinessRow(item: item)
                 }
+            }
+        }
+        .padding(10)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct ValidationPrHandoffView: View {
+    let localCheckStatus: String?
+    let lifecycleStage: String
+    let hasOpenTasks: Bool
+    let hasRisks: Bool
+    let action: () -> Void
+
+    private var statusTone: Color {
+        guard let status = localCheckStatus?.lowercased() else {
+            return NexusPalette.warning
+        }
+        if status.contains("attention") || status.contains("fail") {
+            return NexusPalette.danger
+        }
+        if status.contains("review") || hasOpenTasks || hasRisks {
+            return NexusPalette.warning
+        }
+        return NexusPalette.success
+    }
+
+    private var checkValue: String {
+        guard let localCheckStatus, !localCheckStatus.isEmpty else {
+            return "none"
+        }
+        return localCheckStatus
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 9) {
+                Image(systemName: "checkmark.seal")
+                    .foregroundStyle(statusTone)
+                    .frame(width: 15)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("验证与 PR / Validation & PR")
+                        .font(.subheadline.weight(.medium))
+                    Text("交付记录整理后，把本地检查、任务、SQL、服务状态和 PR 待确认项作为一份上下文交给 Codex。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            HStack(spacing: 8) {
+                WorkflowMetric(label: "Local check", value: checkValue, tone: statusTone)
+                WorkflowMetric(label: "Lifecycle", value: lifecycleStage, tone: NexusPalette.accent)
+                WorkflowMetric(label: "PR/CI", value: "handoff", tone: NexusPalette.warning)
+            }
+
+            HStack {
+                Button {
+                    action()
+                } label: {
+                    Label("PR 交接", systemImage: "point.3.connected.trianglepath.dotted")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help("复制验证与 PR 交接上下文并打开 Codex / Copy validation and PR handoff context and open Codex")
+
+                Spacer()
             }
         }
         .padding(10)

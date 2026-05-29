@@ -42,6 +42,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added native Workflow lifecycle recommendations that turn delivery-readiness results into confirmed lifecycle writeback actions.
 - Added a native Workflow delivery focus card that turns task, delivery, risk, worktree, SQL, and lifecycle state into one recommended next action.
 - Added native Workflow delivery-update Codex handoff with delivery record, tasks, SQL, risks, services/worktrees, and latest local-check context.
+- Added native Workflow validation/PR handoff with local checks, delivery, SQL, tasks, services/worktrees, PR summary requirements, clipboard feedback, and local audit logging.
 - Added SQL artifact enforcement so delivery records that declare SQL changes anywhere in the Markdown require both formal SQL and rollback SQL files under `sql/`.
 - Added native local-write feedback after task and lifecycle writebacks, including source-document review and follow-up check actions.
 - Added affected-workspace focus from native local-write feedback so task-center writebacks can return users to the refreshed workspace detail.
@@ -142,7 +143,7 @@ The local search index is stored at `~/Library/Application Support/com.ks.nexus/
 2. Keep Tauri commands as thin wrappers around Rust Core during migration.
 3. Scaffold the SwiftUI/AppKit native Mac shell.
 4. Add the Swift/Rust bridge and render real workspace data in the native shell.
-5. Add more audited event types for validation runs and PR handoff.
+5. Add richer validation-run capture after Nexus can ingest local command output.
 6. Package the WidgetKit extension with a full Xcode target and App Group storage.
 7. Add signing, notarization, and update channels after the native shell is ready.
 

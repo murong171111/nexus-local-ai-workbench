@@ -1321,6 +1321,105 @@ final class AppState: ObservableObject {
         ].joined(separator: "\n")
     }
 
+    func validationPrHandoffPrompt(for workspace: WorkspaceSummary) -> String {
+        let openTasks = workspace.tasks.filter { !$0.isDone }
+        let blockedTasks = openTasks.filter(\.isBlocked)
+        let deliveryPath = workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md"
+        let tasksPath = workspace.documentLinks["tasks"] ?? "\(workspace.path)/tasks.md"
+        let handoffPath = workspace.documentLinks["handoff"] ?? "\(workspace.path)/handoff.md"
+        let branchPath = workspace.documentLinks["branches"] ?? "\(workspace.path)/branches.md"
+        let localCheckLines = localCheckHandoffLines()
+        let readinessLines = workspace.healthChecks.isEmpty
+            ? ["- 暂无 workspace health check，请先运行 Nexus 本地检查。"]
+            : workspace.healthChecks.map { "- \($0.label) [\($0.status)]: \($0.detail)" }
+
+        return [
+            "请帮我准备这个 Nexus 工作区的验证与 PR 交接。",
+            "",
+            "## 工作区",
+            "- 名称: \(workspace.name)",
+            "- 目录: \(workspace.path)",
+            "- 文件夹: \(workspace.folder)",
+            "- 目标分支: \(workspace.branch)",
+            "- 涉及服务: \(workspace.serviceSummary.isEmpty ? "待确认" : workspace.serviceSummary)",
+            "- Worktree: \(workspace.worktreeState)",
+            "- 生命周期: \(workspace.lifecycle.label)",
+            "",
+            "## 最近本地检查",
+            localCheckLines.joined(separator: "\n"),
+            "",
+            "## 交付与就绪检查",
+            deliveryHandoffLines(for: workspace).joined(separator: "\n"),
+            readinessLines.joined(separator: "\n"),
+            "",
+            "## 任务状态",
+            "- 未完成任务: \(openTasks.count)",
+            "- 阻塞任务: \(blockedTasks.count)",
+            taskHandoffLines(for: workspace).joined(separator: "\n"),
+            "",
+            "## 服务与 worktree",
+            serviceHandoffLines(for: workspace).joined(separator: "\n"),
+            "",
+            "## 文档入口",
+            "- 交付记录: \(deliveryPath)",
+            "- tasks.md: \(tasksPath)",
+            "- branches.md: \(branchPath)",
+            "- handoff.md: \(handoffPath)",
+            "",
+            "## 处理要求",
+            "- 先复核本地工作树、目标分支、任务、交付记录、SQL 产物和最近本地检查。",
+            "- 不要编造验证结果；缺少的测试、CI、PR 链接或发布状态请明确列为待确认。",
+            "- 输出适合 PR 描述的摘要：背景、改动范围、影响服务、验证记录、SQL/配置、风险与回滚。",
+            "- 如果交付记录任意位置记录实际 SQL 变更，确认 sql/ 下已有正式 SQL 和回滚 SQL。",
+            "- 最后列出回到 Nexus 后需要执行的动作，例如刷新、运行本地检查、绑定 Codex 会话或归档。"
+        ].joined(separator: "\n")
+    }
+
+    func openValidationPrHandoffInCodex(_ workspace: WorkspaceSummary) async {
+        let prompt = validationPrHandoffPrompt(for: workspace)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(prompt, forType: .string)
+
+        let rawURL = codexURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? Self.defaultCodexURL
+            : codexURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let url = URL(string: rawURL) {
+            NSWorkspace.shared.open(url)
+            markCodexHandoff(
+                title: "验证与 PR 已复制 / PR handoff copied",
+                detail: "\(workspace.name) · 本地检查、交付、任务、SQL 和 PR 待确认项已复制到剪贴板。",
+                systemImage: "checkmark.seal",
+                sectionTitle: "验证交接 / Validation",
+                clipboardLabel: "Validation and PR handoff is on the clipboard"
+            )
+        } else {
+            lastError = "Invalid Codex URL: \(rawURL)"
+            markCodexHandoff(
+                title: "验证与 PR 已复制 / URL needs review",
+                detail: "\(workspace.name) · Codex URL 无效，请在 Settings 中修正。",
+                systemImage: "exclamationmark.triangle",
+                sectionTitle: "验证交接 / Validation",
+                clipboardLabel: "Validation and PR handoff is on the clipboard"
+            )
+        }
+
+        await recordWorkspaceAction(
+            action: "codex_validation_pr_handoff.opened",
+            target: workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md",
+            summary: "Copied validation and PR handoff and opened Codex",
+            metadata: [
+                "tool": "Codex",
+                "codexUrl": rawURL,
+                "lifecycle": workspace.lifecycle.stage,
+                "openTasks": "\(workspace.tasks.filter { !$0.isDone }.count)",
+                "riskCount": "\(workspace.risks.count)",
+                "serviceCount": "\(workspace.services.count)",
+                "lastLocalCheckStatus": lastAutomationCheck?.status ?? "none"
+            ],
+            workspaceOverride: workspace
+        )
+    }
+
     func openDeliveryUpdateInCodex(_ workspace: WorkspaceSummary) async {
         let prompt = deliveryUpdatePrompt(for: workspace)
         NSPasteboard.general.clearContents()
@@ -2753,6 +2852,8 @@ final class AppState: ObservableObject {
             return "任务上下文已复制 / Task handoff copied"
         case "codex_worktree_setup.opened":
             return "worktree 结果已交接 / Worktree result opened"
+        case "codex_validation_pr_handoff.opened":
+            return "验证 PR 已交接 / Validation PR handoff"
         case "workspace_task.source_located":
             return "任务来源已定位 / Task source located"
         case "codex_agent_event.copied":

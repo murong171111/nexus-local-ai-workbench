@@ -79,5 +79,5 @@ Next automation slices can build on the same contract:
 - per-workspace notification preferences
 - scheduled risk scans
 - delivery-record reminders after code or SQL changes
-- validation-run and PR handoff audit events
+- richer validation-run events after Nexus can capture command output directly
 - menu bar notifications for high-priority local tasks
