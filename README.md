@@ -134,7 +134,7 @@ The current stages are `scoping`, `setup`, `developing`, `delivery`, `done`, `bl
 
 When the Rust Core bridge is available, lifecycle transitions such as `developing`, `delivery`, `done`, `blocked`, and `archived` can be written back after explicit confirmation. The write updates `workspace.md` and `STATUS.md`, then appends a `workspace_lifecycle.updated` audit event. It does not move folders, delete worktrees, change git branches, or mark tasks complete.
 
-After task-status or lifecycle writebacks, the native inspector shows a local-write feedback card with the changed status, refresh confirmation, affected-workspace focus, a source-document action, and a follow-up local-check action.
+After task-status or lifecycle writebacks, the native inspector shows a local-write feedback card with the changed status, refresh confirmation, affected-workspace focus, a source-document action, and a follow-up local-check action. Source-document and check actions also focus the affected workspace first, so review stays on the refreshed context.
 
 ## Local Search Index
 

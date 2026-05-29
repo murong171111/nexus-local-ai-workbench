@@ -2225,7 +2225,7 @@ private struct LocalWriteFeedbackView: View {
                     .help("关闭写回提示 / Dismiss")
                 }
 
-                HStack(spacing: 8) {
+                LazyVGrid(columns: actionColumns, alignment: .leading, spacing: 8) {
                     Button {
                         appState.focusWorkspace(id: feedback.workspaceID)
                     } label: {
@@ -2236,6 +2236,7 @@ private struct LocalWriteFeedbackView: View {
                     .help("清空筛选并选中刚刚写回的工作区 / Focus the updated workspace")
 
                     Button {
+                        appState.focusWorkspace(id: feedback.workspaceID)
                         Task {
                             await appState.loadDocument(path: feedback.documentPath)
                         }
@@ -2247,6 +2248,7 @@ private struct LocalWriteFeedbackView: View {
                     .help("打开刚刚写回的源文档 / Open the updated source document")
 
                     Button {
+                        appState.focusWorkspace(id: feedback.workspaceID)
                         Task {
                             await appState.runLocalAutomationCheck(actor: "Nexus Writeback")
                         }
@@ -2260,6 +2262,10 @@ private struct LocalWriteFeedbackView: View {
                 }
             }
         }
+    }
+
+    private var actionColumns: [GridItem] {
+        [GridItem(.adaptive(minimum: 96), spacing: 8, alignment: .leading)]
     }
 }
 
