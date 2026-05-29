@@ -1985,7 +1985,10 @@ final class AppState: ObservableObject {
         markCodexHandoff(
             title: "任务定位已复制 / Task locator copied",
             detail: "\(workspace.name) · \(task.title) · \(task.sourceLineLabel)",
-            systemImage: "text.line.first.and.arrowtriangle.forward"
+            systemImage: "text.line.first.and.arrowtriangle.forward",
+            sectionTitle: "任务定位 / Task locator",
+            clipboardLabel: "Task locator is on the clipboard",
+            guidance: "Documents Hub 已打开 tasks.md；使用上方行号和剪贴板定位信息复查源任务。"
         )
         await recordWorkspaceAction(
             action: "workspace_task.source_located",
@@ -2229,12 +2232,22 @@ final class AppState: ObservableObject {
         lastError = nil
     }
 
-    private func markCodexHandoff(title: String, detail: String, systemImage: String) {
+    private func markCodexHandoff(
+        title: String,
+        detail: String,
+        systemImage: String,
+        sectionTitle: String = "剪贴板反馈 / Clipboard",
+        clipboardLabel: String = "Context is on the clipboard",
+        guidance: String = "需要继续时可粘贴剪贴板内容；如果 Codex 没有自动带入，也可以直接粘贴。"
+    ) {
         codexHandoffFeedback = CodexHandoffFeedback(
             title: title,
             detail: detail,
             timestamp: Self.activityTimestamp(),
-            systemImage: systemImage
+            systemImage: systemImage,
+            sectionTitle: sectionTitle,
+            clipboardLabel: clipboardLabel,
+            guidance: guidance
         )
     }
 

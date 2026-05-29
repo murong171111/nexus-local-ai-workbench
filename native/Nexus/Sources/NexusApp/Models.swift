@@ -338,11 +338,33 @@ struct ServiceStatus: Identifiable, Hashable {
 }
 
 struct CodexHandoffFeedback: Identifiable, Hashable {
-    let id = UUID()
+    let id: UUID
     let title: String
     let detail: String
     let timestamp: String
     let systemImage: String
+    let sectionTitle: String
+    let clipboardLabel: String
+    let guidance: String
+
+    init(
+        title: String,
+        detail: String,
+        timestamp: String,
+        systemImage: String,
+        sectionTitle: String = "剪贴板反馈 / Clipboard",
+        clipboardLabel: String = "Context is on the clipboard",
+        guidance: String = "需要继续时可粘贴剪贴板内容；如果 Codex 没有自动带入，也可以直接粘贴。"
+    ) {
+        self.id = UUID()
+        self.title = title
+        self.detail = detail
+        self.timestamp = timestamp
+        self.systemImage = systemImage
+        self.sectionTitle = sectionTitle
+        self.clipboardLabel = clipboardLabel
+        self.guidance = guidance
+    }
 }
 
 struct LocalWriteFeedback: Identifiable, Hashable {

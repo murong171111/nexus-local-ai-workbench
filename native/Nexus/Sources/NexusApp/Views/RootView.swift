@@ -2611,7 +2611,7 @@ private struct CodexHandoffFeedbackView: View {
     let dismissAction: () -> Void
 
     var body: some View {
-        SectionBlock(title: "交接状态 / Handoff") {
+        SectionBlock(title: feedback.sectionTitle) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top, spacing: 9) {
                     Image(systemName: feedback.systemImage)
@@ -2625,7 +2625,7 @@ private struct CodexHandoffFeedbackView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
-                        Text("\(feedback.timestamp) · Prompt is on the clipboard")
+                        Text("\(feedback.timestamp) · \(feedback.clipboardLabel)")
                             .font(.system(size: 10, design: .monospaced))
                             .foregroundStyle(.secondary)
                     }
@@ -2642,7 +2642,7 @@ private struct CodexHandoffFeedbackView: View {
                     .help("关闭交接提示 / Dismiss")
                 }
 
-                Label("如果 Codex 没有自动带入内容，直接粘贴剪贴板里的上下文。", systemImage: "doc.on.clipboard")
+                Label(feedback.guidance, systemImage: "doc.on.clipboard")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

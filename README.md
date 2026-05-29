@@ -36,7 +36,7 @@ It is designed for teams that work across multiple local service repositories an
 - Native worktree setup includes a preflight review for target branch readiness, missing worktrees, source repositories, and workspace-local write locations, then refreshes the workspace state after running and routes the next step to Finder, result-aware Codex handoff, or local checks.
 - Native workspace Command Center that puts lifecycle progress, a primary-path recommendation, a compact scope -> worktree -> risk -> task -> delivery -> Codex sessions -> handoff session path, Codex continuation, local-check results, Finder, IDE, Terminal, and workspace-link copy at the top of each detail view, with quick actions grouped into handoff, execution, and local tool lanes.
 - Native workspace detail overview that keeps lifecycle, branch, services, risk, tasks, delivery, Codex session count, and latest local-check state visible before deeper workflow sections.
-- Native Codex handoff feedback that confirms when workspace, lifecycle, risk, task, automation, or agent-event context has been copied and explains the next paste step.
+- Native clipboard feedback that confirms workspace, lifecycle, risk, task, automation, agent-event, session-link, or task-locator context has been copied, with context-aware next-step guidance.
 - Native Agent Event detail actions for copying a Codex continuation pack or copying it and opening Codex in one step, with local audit records for both paths.
 - Native inspector operation feedback for local errors, with dismiss, copy-error, refresh, environment-check, and Settings recovery actions.
 - Native empty states for first-run or filtered-out workspace lists, showing configured paths, environment health, and direct Settings, New Workspace, Refresh, and Environment Check actions.
@@ -77,7 +77,7 @@ From a workspace detail view, use `Finder`, `IDE`, `Terminal`, or `Codex` to han
 
 The `Codex Sessions` area in workspace detail can bind multiple Codex deep links for the same requirement. Bindings are stored in the workspace-local `codex-sessions.json`; deleting a binding only removes the local Nexus record and does not delete the Codex conversation.
 
-After any Codex handoff or context copy, the native inspector shows a dismissible `Handoff` panel with the copied context type, timestamp, and a reminder that the prompt is on the clipboard.
+After any Codex handoff, context copy, session-link copy, or task-source locator, the native inspector shows a dismissible clipboard feedback panel with the copied context type, timestamp, payload label, and next-step guidance. Codex prompts still explain the paste fallback, while task locators point back to `tasks.md` and the focused Documents Hub line context.
 
 When a local operation fails, such as an invalid path, invalid Codex URL, invalid IDE URL template, document-read failure, Terminal launch failure, or worktree setup error, the native inspector shows an `Operation` feedback card. It keeps the error visible and offers copy-error, refresh, environment-check, and Settings actions without moving the user out of the current workspace flow.
 
