@@ -43,7 +43,7 @@ The first native shell scaffold is available at `native/Nexus`. It is a Swift Pa
 - Git and worktree status inspection.
 - Branch alignment analysis.
 - Risk detection.
-- Workspace readiness checks for service scope, target branch, worktree readiness, branch alignment, dirty worktrees, delivery records, SQL artifact completeness, and blocked tasks.
+- Workspace readiness checks for service scope, target branch, worktree readiness, branch alignment, dirty worktrees, delivery records, full-document SQL artifact completeness, and blocked tasks.
 - Session-action generation that turns readiness and risk signals into prioritized Codex handoffs, worktree command copies, and document follow-ups.
 - Reviewable worktree command generation.
 - Confirmed worktree setup that validates service names, source repositories, target branches, and existing worktree paths before running Git, then returns created/skipped/failed details for native follow-up actions.

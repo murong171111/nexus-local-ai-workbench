@@ -249,7 +249,7 @@ function codexInstruction(workspace: Workspace, action: "continue" | "git" | "de
     return `检查工作区 ${workspace.folder} 的所有相关服务 git 状态。\n请重点检查 workspaces/${workspace.folder}/repos 下的 worktree 是否存在、分支是否匹配、是否有未提交改动，并给出处理建议。`;
   }
   if (action === "delivery") {
-    return `更新工作区 ${workspace.folder} 的交付记录。\n请根据本次代码/SQL/逻辑变更，补充交付记录.md，包含涉及服务、分支、变更点、SQL、验证结果和遗留风险。`;
+    return `更新工作区 ${workspace.folder} 的交付记录。\n请根据本次代码/SQL/逻辑变更，补充交付记录.md，包含涉及服务、分支、变更点、SQL、验证结果和遗留风险。\n如果交付记录.md 任意位置记录实际 SQL 变更，必须在 sql/ 下同步正式 SQL 文件和回滚 SQL 文件。`;
   }
   if (action === "worktree") {
     return workspace.worktreeCommand;

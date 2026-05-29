@@ -199,7 +199,7 @@ fn standard_document_template(document_key: &str) -> &'static str {
         }
         "tasks" => "# Tasks\n\n| 任务 | 状态 | 说明 |\n| --- | --- | --- |\n",
         "delivery" => {
-            "# 交付记录\n\n## 需求要点\n\n待补充。\n\n## 涉及服务\n\n待补充。\n\n## SQL / 配置\n\n- 是否有 SQL 变动：无\n- 正式 SQL 文件：无\n- 回滚 SQL 文件：无\n- 文件规则：如有 SQL 变更，必须同步 `sql/` 下正式 SQL 与回滚 SQL 文件。\n\n## 验证记录\n\n待补充。\n\n## 风险与后续\n\n待补充。\n"
+            "# 交付记录\n\n## 需求要点\n\n待补充。\n\n## 涉及服务\n\n待补充。\n\n## SQL / 配置\n\n- 是否有 SQL 变动：无\n- 正式 SQL 文件：无\n- 回滚 SQL 文件：无\n- 文件规则：如本文档任意位置记录 SQL 变更，必须同步 `sql/` 下正式 SQL 与回滚 SQL 文件。\n\n## 验证记录\n\n待补充。\n\n## 风险与后续\n\n待补充。\n"
         }
         "handoff" => {
             "# Handoff\n\n## Codex 上下文\n\n待补充。\n\n## 下一步\n\n- 读取 workspace.md、STATUS.md、services.md、branches.md、tasks.md 和交付记录。\n"
