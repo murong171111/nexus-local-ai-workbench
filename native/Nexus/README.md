@@ -55,7 +55,7 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - Native SQL readiness blocks delivery when `交付记录.md` declares SQL changes but `sql/` lacks either formal SQL or rollback SQL files.
 - Native Workflow delivery summary recommends confirmed lifecycle writebacks for entering delivery or marking the workspace done based on delivery readiness.
 - Native workspace detail shows Rust Core session actions that prioritize the next Codex, worktree, and document follow-up steps.
-- Native workspace detail includes a Workflow summary for open tasks, blocked tasks, delivery status, delivery-readiness checks, task/delivery document opens, local checks, and Codex handoff.
+- Native workspace detail includes a Workflow summary for open tasks, blocked tasks, delivery status, delivery-readiness checks, task/delivery document opens, inline local-check receipts, and Codex handoff.
 - Native workspace detail includes a Risk Review section for active risks, blocker/warning readiness checks, status document access, confirmed worktree setup, local re-check receipts, and Codex risk-review prompts.
 - Native workspace detail includes a Documents Hub for standard workspace Markdown/script files, rendered through the preview/source document viewer with active-document highlighting, local missing-file recovery actions, and confirmed creation of missing standard document skeletons.
 - Native workspace cards and details show Rust Core lifecycle stages with progress, next action, and Codex handoff controls.
