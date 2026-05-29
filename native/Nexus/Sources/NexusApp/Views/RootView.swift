@@ -2731,6 +2731,11 @@ private struct WorkspaceDetailView: View {
                     .lineLimit(2)
             }
 
+            WorkspaceDetailOverviewView(
+                workspace: workspace,
+                lastCheck: appState.lastAutomationCheck
+            )
+
             if appState.lastCreatedWorkspace?.folder == workspace.folder {
                 WorkspaceCreationNextStepsView(workspace: workspace)
             }
@@ -2855,6 +2860,348 @@ private struct WorkspaceDetailView: View {
         workspace.healthChecks.filter { check in
             check.id != "delivery-record" && check.action != "delivery"
         }
+    }
+}
+
+private enum DetailOverviewStatus {
+    case ready
+    case review
+    case blocked
+    case pending
+
+    var color: Color {
+        switch self {
+        case .ready:
+            NexusPalette.success
+        case .review:
+            NexusPalette.warning
+        case .blocked:
+            NexusPalette.danger
+        case .pending:
+            .secondary
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .ready:
+            "checkmark.circle"
+        case .review:
+            "exclamationmark.triangle"
+        case .blocked:
+            "xmark.octagon"
+        case .pending:
+            "circle.dotted"
+        }
+    }
+}
+
+private struct DetailOverviewItem: Identifiable {
+    let id: String
+    let label: String
+    let value: String
+    let detail: String
+    let status: DetailOverviewStatus
+}
+
+private struct WorkspaceDetailOverviewView: View {
+    let workspace: WorkspaceSummary
+    let lastCheck: LocalAutomationCheckResponse?
+
+    private var items: [DetailOverviewItem] {
+        [
+            lifecycleItem,
+            branchItem,
+            servicesItem,
+            riskItem,
+            taskItem,
+            deliveryItem,
+            checkItem
+        ]
+    }
+
+    private var openTasks: [WorkspaceTask] {
+        workspace.tasks.filter { !$0.isDone }
+    }
+
+    private var blockedTaskCount: Int {
+        openTasks.filter(\.isBlocked).count
+    }
+
+    private var missingWorktreeCount: Int {
+        workspace.services.filter { !$0.worktreeExists }.count
+    }
+
+    private var lifecycleItem: DetailOverviewItem {
+        let status: DetailOverviewStatus
+        switch workspace.lifecycle.stage {
+        case "done", "archived":
+            status = .ready
+        case "blocked":
+            status = .blocked
+        case "setup", "delivery":
+            status = .review
+        default:
+            status = .pending
+        }
+
+        return DetailOverviewItem(
+            id: "lifecycle",
+            label: "阶段",
+            value: workspace.lifecycle.label,
+            detail: "\(workspace.lifecycle.progress)%",
+            status: status
+        )
+    }
+
+    private var branchItem: DetailOverviewItem {
+        let branchReady = Self.hasConfirmedTargetBranch(workspace.branch)
+        return DetailOverviewItem(
+            id: "branch",
+            label: "分支",
+            value: branchReady ? shortBranch : "待确认",
+            detail: branchReady ? "目标分支" : "branches.md",
+            status: branchReady ? .ready : .blocked
+        )
+    }
+
+    private var servicesItem: DetailOverviewItem {
+        if workspace.services.isEmpty {
+            return DetailOverviewItem(
+                id: "services",
+                label: "服务",
+                value: "待确认",
+                detail: "services.md",
+                status: .blocked
+            )
+        }
+
+        if missingWorktreeCount > 0 {
+            return DetailOverviewItem(
+                id: "services",
+                label: "服务",
+                value: "\(workspace.services.count) 个",
+                detail: "缺 \(missingWorktreeCount) 个 worktree",
+                status: .review
+            )
+        }
+
+        return DetailOverviewItem(
+            id: "services",
+            label: "服务",
+            value: "\(workspace.services.count) 个",
+            detail: "worktree 就绪",
+            status: .ready
+        )
+    }
+
+    private var riskItem: DetailOverviewItem {
+        if workspace.risks.isEmpty {
+            return DetailOverviewItem(
+                id: "risk",
+                label: "风险",
+                value: "清晰",
+                detail: workspace.riskLevel.label,
+                status: .ready
+            )
+        }
+
+        return DetailOverviewItem(
+            id: "risk",
+            label: "风险",
+            value: "\(workspace.risks.count) 个",
+            detail: workspace.riskLevel.label,
+            status: workspace.riskLevel == .high ? .blocked : .review
+        )
+    }
+
+    private var taskItem: DetailOverviewItem {
+        if blockedTaskCount > 0 {
+            return DetailOverviewItem(
+                id: "tasks",
+                label: "任务",
+                value: "\(blockedTaskCount) 阻塞",
+                detail: "\(openTasks.count) 开放",
+                status: .blocked
+            )
+        }
+
+        if !openTasks.isEmpty {
+            return DetailOverviewItem(
+                id: "tasks",
+                label: "任务",
+                value: "\(openTasks.count) 开放",
+                detail: "tasks.md",
+                status: .review
+            )
+        }
+
+        return DetailOverviewItem(
+            id: "tasks",
+            label: "任务",
+            value: "已清理",
+            detail: "无开放任务",
+            status: .ready
+        )
+    }
+
+    private var deliveryItem: DetailOverviewItem {
+        if workspace.lifecycle.stage == "done" {
+            return DetailOverviewItem(
+                id: "delivery",
+                label: "交付",
+                value: "完成",
+                detail: "已完成",
+                status: .ready
+            )
+        }
+
+        if let deliveryCheck = workspace.healthChecks.first(where: { $0.id == "delivery-record" || $0.action == "delivery" }) {
+            switch deliveryCheck.status.lowercased() {
+            case "pass", "ok", "ready":
+                return DetailOverviewItem(
+                    id: "delivery",
+                    label: "交付",
+                    value: "可用",
+                    detail: "记录可用",
+                    status: .ready
+                )
+            case "warning", "warn", "review":
+                return DetailOverviewItem(
+                    id: "delivery",
+                    label: "交付",
+                    value: "复核",
+                    detail: "记录复核",
+                    status: .review
+                )
+            default:
+                return DetailOverviewItem(
+                    id: "delivery",
+                    label: "交付",
+                    value: "阻塞",
+                    detail: "记录阻塞",
+                    status: .blocked
+                )
+            }
+        }
+
+        return DetailOverviewItem(
+            id: "delivery",
+            label: "交付",
+            value: workspace.lifecycle.stage == "delivery" ? "整理中" : "待检查",
+            detail: "交付记录",
+            status: workspace.lifecycle.stage == "delivery" ? .review : .pending
+        )
+    }
+
+    private var checkItem: DetailOverviewItem {
+        guard let lastCheck else {
+            return DetailOverviewItem(
+                id: "check",
+                label: "检查",
+                value: "未运行",
+                detail: "本地检查",
+                status: .pending
+            )
+        }
+
+        let status: DetailOverviewStatus
+        let normalizedStatus = lastCheck.status.lowercased()
+        switch normalizedStatus {
+        case "attention":
+            status = .blocked
+        case "review":
+            status = .review
+        default:
+            status = .ready
+        }
+
+        return DetailOverviewItem(
+            id: "check",
+            label: "检查",
+            value: Self.checkStatusLabel(normalizedStatus),
+            detail: lastCheck.generatedAt,
+            status: status
+        )
+    }
+
+    var body: some View {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
+            ForEach(items) { item in
+                DetailOverviewTile(item: item)
+            }
+        }
+        .padding(10)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var columns: [GridItem] {
+        [GridItem(.adaptive(minimum: 92), spacing: 8, alignment: .leading)]
+    }
+
+    private var shortBranch: String {
+        let branch = workspace.branch.trimmingCharacters(in: .whitespacesAndNewlines)
+        if branch.count <= 16 {
+            return branch.isEmpty ? "待确认" : branch
+        }
+        return "\(branch.prefix(13))..."
+    }
+
+    private static func hasConfirmedTargetBranch(_ branch: String) -> Bool {
+        let normalized = branch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return false }
+        return !normalized.contains("待确认")
+            && !normalized.contains("未确认")
+            && !normalized.contains("pending")
+            && !normalized.contains("tbd")
+            && !normalized.contains("todo")
+            && normalized != "-"
+    }
+
+    private static func checkStatusLabel(_ status: String) -> String {
+        switch status {
+        case "attention":
+            return "阻塞"
+        case "review":
+            return "复核"
+        default:
+            return "通过"
+        }
+    }
+}
+
+private struct DetailOverviewTile: View {
+    let item: DetailOverviewItem
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 5) {
+                Image(systemName: item.status.symbol)
+                    .font(.caption2)
+                    .foregroundStyle(item.status.color)
+                    .frame(width: 12)
+
+                Text(item.label)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Text(item.value)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(item.status.color)
+                .lineLimit(1)
+
+            Text(item.detail)
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(NexusPalette.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 }
 
