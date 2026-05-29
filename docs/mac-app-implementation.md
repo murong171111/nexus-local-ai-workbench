@@ -80,7 +80,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added automation notification preferences for cooldown, minimum status, and signal types.
 - Added a native Automation Action Center that turns local check signals into focus, delivery, task, worktree, and Codex handoff actions.
 - Added inline local-check receipts in Command Center and Risk Review so manual checks leave visible status, metric, audit, and copy-summary feedback near the workflow that triggered them.
-- Added a compact native workspace-detail status overview for lifecycle, branch, services, risk, tasks, delivery, and latest local-check state.
+- Added a compact native workspace-detail status overview for lifecycle, branch, services, risk, tasks, delivery, Codex sessions, and latest local-check state.
 - Added a fail-open hook helper script that local agents can call to append events into Nexus before a local socket server is available.
 - Added an explicit local-write confirmation checkbox to the Tauri create-workspace flow.
 - Added frontend desktop bridge in `src/desktop.ts`.
@@ -88,6 +88,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added UI actions to open Codex from the workbench.
 - Added "copy instruction and open Codex" flow for a workspace, later expanded into a richer handoff pack with checks, tasks, delivery, services, document paths, and recommended actions.
 - Added workspace-level Codex session deep-link bindings in the native detail surface, stored in `codex-sessions.json` with bind, view, open, copy, and confirmed delete actions.
+- Folded Codex session links into the native Command Center overview, metrics, session path, and clean primary action so saved sessions are part of the core workspace flow.
 - Added native workspace creation based on the `ks-project-demand-workspace` standard layout.
 - Added native source repository scanning for service selection.
 - Added native environment health checks for configured paths and Git availability.
