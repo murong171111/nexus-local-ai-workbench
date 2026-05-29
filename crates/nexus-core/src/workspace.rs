@@ -105,6 +105,66 @@ pub struct WorkspaceSessionAction {
     pub document_key: String,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct SqlArtifactStatus {
+    sql_dir_exists: bool,
+    delivery_declares_sql_change: bool,
+    formal_files: Vec<String>,
+    rollback_files: Vec<String>,
+}
+
+impl SqlArtifactStatus {
+    fn requires_delivery_artifacts(&self) -> bool {
+        self.delivery_declares_sql_change
+            && (!self.sql_dir_exists
+                || self.formal_files.is_empty()
+                || self.rollback_files.is_empty())
+    }
+
+    fn health_status(&self) -> &'static str {
+        if !self.sql_dir_exists || self.requires_delivery_artifacts() {
+            "fail"
+        } else {
+            "pass"
+        }
+    }
+
+    fn detail(&self) -> String {
+        if !self.sql_dir_exists {
+            return "缺少 SQL 目录".to_string();
+        }
+        if !self.delivery_declares_sql_change {
+            return "交付记录未声明 SQL 变更，sql/ 可留空。".to_string();
+        }
+
+        match (self.formal_files.is_empty(), self.rollback_files.is_empty()) {
+            (true, true) => {
+                "交付记录包含 SQL 变更，但 sql/ 下缺少正式 SQL 与回滚 SQL 文件。".to_string()
+            }
+            (true, false) => format!(
+                "交付记录包含 SQL 变更，但 sql/ 下缺少正式 SQL 文件；已找到回滚 SQL: {}",
+                self.rollback_files.join(", ")
+            ),
+            (false, true) => format!(
+                "交付记录包含 SQL 变更，但 sql/ 下缺少回滚 SQL 文件；已找到正式 SQL: {}",
+                self.formal_files.join(", ")
+            ),
+            (false, false) => format!(
+                "SQL 变更已有正式 SQL {} 个、回滚 SQL {} 个。",
+                self.formal_files.len(),
+                self.rollback_files.len()
+            ),
+        }
+    }
+
+    fn risk(&self) -> Option<String> {
+        if !self.requires_delivery_artifacts() {
+            return None;
+        }
+        Some(self.detail())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitRow {
@@ -354,7 +414,7 @@ pub fn create_workspace(
     write_file(
         &workspace.join("AGENTS.md"),
         &format!(
-            "# Workspace Agent Guide\n\n- 需求名称: {}\n- 工作区: {}\n- 开发目录: `repos/<service>`\n- 源仓库目录: `{}`\n\n## Rules\n\n- 代码改动优先发生在 `repos/<service>` worktree 中。\n- 每次代码、SQL、业务逻辑、接口、DTO、配置或验证变化后，检查并更新 `交付记录.md`。\n- 不直接切换源仓库分支，源仓库只作为 worktree 来源。\n",
+            "# Workspace Agent Guide\n\n- 需求名称: {}\n- 工作区: {}\n- 开发目录: `repos/<service>`\n- 源仓库目录: `{}`\n\n## Rules\n\n- 代码改动优先发生在 `repos/<service>` worktree 中。\n- 每次代码、SQL、业务逻辑、接口、DTO、配置或验证变化后，检查并更新 `交付记录.md`。\n- 凡是 `交付记录.md` 声明 SQL 变更，必须在 `sql/` 下同步正式 SQL 文件和回滚 SQL 文件。\n- 不直接切换源仓库分支，源仓库只作为 worktree 来源。\n",
             request.name,
             workspace.display(),
             request.source_repos_root
@@ -399,7 +459,7 @@ pub fn create_workspace(
     )?;
     write_file(
         &workspace.join("tasks.md"),
-        "# Tasks\n\n| 任务 | 状态 | 说明 |\n| --- | --- | --- |\n| 确认需求范围 | 待办 | 补充业务目标、入口、影响范围 |\n| 确认服务范围 | 待办 | 标记涉及服务和待验证服务 |\n| 确认目标分支 | 待办 | 多服务优先统一分支 |\n| 创建 worktree | 待办 | 分支确认后再执行 |\n| 更新交付记录 | 待办 | 代码/SQL/逻辑变更后必须更新 |\n",
+        "# Tasks\n\n| 任务 | 状态 | 说明 |\n| --- | --- | --- |\n| 确认需求范围 | 待办 | 补充业务目标、入口、影响范围 |\n| 确认服务范围 | 待办 | 标记涉及服务和待验证服务 |\n| 确认目标分支 | 待办 | 多服务优先统一分支 |\n| 创建 worktree | 待办 | 分支确认后再执行 |\n| 更新交付记录 | 待办 | 代码/SQL/逻辑变更后必须更新；SQL 变更必须同步 sql/ 正式与回滚 SQL |\n",
     )?;
     write_file(
         &workspace.join("decisions.md"),
@@ -416,7 +476,7 @@ pub fn create_workspace(
     write_file(
         &workspace.join("交付记录.md"),
         &format!(
-            "# 交付记录\n\n## 需求信息\n\n- 需求名称: {}\n- 工作区: {}\n- 分支: {}\n\n## 涉及服务\n\n{}\n\n## 代码变更\n\n暂无。\n\n## SQL 变更\n\n暂无。\n\n## 新增逻辑\n\n暂无。\n\n## 验证结果\n\n暂无。\n\n## 遗留风险\n\n- 创建后需要确认服务范围、分支和 worktree 状态。\n",
+            "# 交付记录\n\n## 需求信息\n\n- 需求名称: {}\n- 工作区: {}\n- 分支: {}\n\n## 涉及服务\n\n{}\n\n## 代码变更\n\n暂无。\n\n## SQL 变更\n\n- 是否有 SQL 变动：暂无。\n- 正式 SQL 文件：无\n- 回滚 SQL 文件：无\n- 文件规则：一旦本节记录有 SQL 变动，必须同步 `sql/` 下正式 SQL 与回滚 SQL 文件。\n\n## 新增逻辑\n\n暂无。\n\n## 验证结果\n\n暂无。\n\n## 遗留风险\n\n- 创建后需要确认服务范围、分支和 worktree 状态。\n",
             request.name,
             request.folder,
             target_branch,
@@ -664,8 +724,7 @@ pub fn update_workspace_lifecycle(
         .unwrap_or_else(|| lifecycle_default_next_action(&state).to_string());
     let updated_at = generated_at();
 
-    let next_workspace_content =
-        upsert_bullet_value(&workspace_content, "当前状态", &state);
+    let next_workspace_content = upsert_bullet_value(&workspace_content, "当前状态", &state);
     fs::write(&workspace_document_path, next_workspace_content)
         .map_err(|error| error.to_string())?;
 
@@ -674,13 +733,8 @@ pub fn update_workspace_lifecycle(
     } else {
         "# STATUS\n\n".to_string()
     };
-    let next_status_content = update_status_document(
-        &status_content,
-        &state,
-        &focus,
-        &next_action,
-        &updated_at,
-    );
+    let next_status_content =
+        update_status_document(&status_content, &state, &focus, &next_action, &updated_at);
     fs::write(&status_document_path, next_status_content).map_err(|error| error.to_string())?;
 
     Ok(UpdateWorkspaceLifecycleResponse {
@@ -1024,16 +1078,25 @@ fn collect_workspace(
     }
     let delivery_path = path.join("交付记录.md");
     let delivery_exists = delivery_path.exists();
-    let delivery_stale = delivery_exists && delivery_needs_update(&read_text_lossy(&delivery_path));
+    let delivery_text = if delivery_exists {
+        read_text_lossy(&delivery_path)
+    } else {
+        String::new()
+    };
+    let delivery_stale = delivery_exists && delivery_needs_update(&delivery_text);
     let sql_dir_exists = path.join("sql").exists();
+    let sql_artifacts = sql_artifact_status(path, &delivery_text, delivery_exists, sql_dir_exists);
 
     if !delivery_exists {
         risks.push("缺少交付记录".to_string());
     } else if delivery_stale {
         risks.push("交付记录待补充".to_string());
     }
-    if !sql_dir_exists {
+    if !sql_dir_exists && !sql_artifacts.delivery_declares_sql_change {
         risks.push("缺少 SQL 目录".to_string());
+    }
+    if let Some(sql_risk) = sql_artifacts.risk() {
+        risks.push(sql_risk);
     }
 
     let mut links = BTreeMap::new();
@@ -1104,7 +1167,7 @@ fn collect_workspace(
         &branch_mismatches,
         delivery_exists,
         delivery_stale,
-        sql_dir_exists,
+        &sql_artifacts,
         &task_counts,
     );
     let session_actions = workspace_session_actions(
@@ -1115,6 +1178,7 @@ fn collect_workspace(
         &branch_mismatches,
         delivery_exists,
         delivery_stale,
+        &sql_artifacts,
         &task_counts,
     );
     let lifecycle = workspace_lifecycle(
@@ -1126,6 +1190,7 @@ fn collect_workspace(
         &branch_mismatches,
         delivery_exists,
         delivery_stale,
+        &sql_artifacts,
         &task_counts,
         risk_count,
     );
@@ -1163,6 +1228,7 @@ fn workspace_lifecycle(
     branch_mismatches: &[String],
     delivery_exists: bool,
     delivery_stale: bool,
+    sql_artifacts: &SqlArtifactStatus,
     task_counts: &TaskCounts,
     risk_count: usize,
 ) -> WorkspaceLifecycle {
@@ -1232,10 +1298,24 @@ fn workspace_lifecycle(
         return lifecycle(
             "setup",
             "环境准备 / Setup",
-            format!("还有 {} 个服务缺少 workspace-local worktree。", missing_worktrees.len()),
+            format!(
+                "还有 {} 个服务缺少 workspace-local worktree。",
+                missing_worktrees.len()
+            ),
             35,
             "创建缺失 worktree 后再进入开发。",
             "worktreeScript",
+        );
+    }
+
+    if sql_artifacts.requires_delivery_artifacts() {
+        return lifecycle(
+            "delivery",
+            "交付整理 / Delivery",
+            sql_artifacts.detail(),
+            80,
+            "补齐 sql/ 下的正式 SQL 和回滚 SQL。",
+            "delivery",
         );
     }
 
@@ -1354,7 +1434,7 @@ fn workspace_health_checks(
     branch_mismatches: &[String],
     delivery_exists: bool,
     delivery_stale: bool,
-    sql_dir_exists: bool,
+    sql_artifacts: &SqlArtifactStatus,
     task_counts: &TaskCounts,
 ) -> Vec<WorkspaceHealthCheck> {
     vec![
@@ -1454,13 +1534,9 @@ fn workspace_health_checks(
         ),
         health_check(
             "sql-directory",
-            "SQL 目录 / SQL directory",
-            if sql_dir_exists {
-                "SQL 目录已存在".to_string()
-            } else {
-                "缺少 SQL 目录".to_string()
-            },
-            if sql_dir_exists { "pass" } else { "fail" },
+            "SQL 产物 / SQL artifacts",
+            sql_artifacts.detail(),
+            sql_artifacts.health_status(),
             "sql",
         ),
         health_check(
@@ -1505,6 +1581,7 @@ fn workspace_session_actions(
     branch_mismatches: &[String],
     delivery_exists: bool,
     delivery_stale: bool,
+    sql_artifacts: &SqlArtifactStatus,
     task_counts: &TaskCounts,
 ) -> Vec<WorkspaceSessionAction> {
     let mut actions = Vec::new();
@@ -1581,6 +1658,18 @@ fn workspace_session_actions(
             "medium",
             "recommended",
             "delivery",
+            "delivery",
+        ));
+    }
+
+    if sql_artifacts.requires_delivery_artifacts() {
+        actions.push(session_action(
+            "sync-sql-artifacts",
+            "补齐 SQL 产物 / Sync SQL artifacts",
+            sql_artifacts.detail(),
+            "high",
+            "blocked",
+            "sql",
             "delivery",
         ));
     }
@@ -1705,9 +1794,7 @@ fn audit_action_label(action: &str) -> String {
         "codex_instruction.copied" => "Codex 指令已复制 / Instruction copied".to_string(),
         "document.opened" => "文档已打开 / Document opened".to_string(),
         "agent_task_draft.appended" => "Agent 任务已写入 / Agent task added".to_string(),
-        "workspace_lifecycle.updated" => {
-            "生命周期已更新 / Lifecycle updated".to_string()
-        }
+        "workspace_lifecycle.updated" => "生命周期已更新 / Lifecycle updated".to_string(),
         "risk_instruction.copied" => "风险指令已复制 / Risk instruction".to_string(),
         "worktree.command.copied" => "Worktree 命令已复制 / Worktree command".to_string(),
         "worktree.command.generated" => "Worktree 命令已生成 / Worktree command".to_string(),
@@ -1802,12 +1889,7 @@ fn normalized_lifecycle_state(value: &str) -> Result<String, String> {
         "done" | "ready" | "completed" | "complete" | "完成" | "已完成" => "done",
         "blocked" | "block" | "阻塞" => "blocked",
         "archived" | "archive" | "归档" | "已归档" => "archived",
-        _ => {
-            return Err(format!(
-                "unsupported lifecycle state: {}",
-                value.trim()
-            ))
-        }
+        _ => return Err(format!("unsupported lifecycle state: {}", value.trim())),
     };
     Ok(state.to_string())
 }
@@ -2002,6 +2084,234 @@ fn marker_value(text: &str, marker: &str) -> Option<String> {
     } else {
         Some(value.to_string())
     }
+}
+
+fn sql_artifact_status(
+    workspace: &Path,
+    delivery_text: &str,
+    delivery_exists: bool,
+    sql_dir_exists: bool,
+) -> SqlArtifactStatus {
+    let sql_files = if sql_dir_exists {
+        collect_sql_files(&workspace.join("sql"))
+    } else {
+        Vec::new()
+    };
+    let mut formal_files = Vec::new();
+    let mut rollback_files = Vec::new();
+    for (relative_path, content) in sql_files {
+        if is_rollback_sql_file(&relative_path, &content) {
+            rollback_files.push(relative_path);
+        } else {
+            formal_files.push(relative_path);
+        }
+    }
+    formal_files.sort();
+    rollback_files.sort();
+
+    SqlArtifactStatus {
+        sql_dir_exists,
+        delivery_declares_sql_change: delivery_exists
+            && delivery_declares_sql_change(delivery_text),
+        formal_files,
+        rollback_files,
+    }
+}
+
+fn collect_sql_files(sql_dir: &Path) -> Vec<(String, String)> {
+    let mut files = Vec::new();
+    collect_sql_files_inner(sql_dir, sql_dir, &mut files);
+    files.sort_by(|left, right| left.0.cmp(&right.0));
+    files
+}
+
+fn collect_sql_files_inner(dir: &Path, base: &Path, files: &mut Vec<(String, String)>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if file_type.is_dir() {
+            collect_sql_files_inner(&path, base, files);
+            continue;
+        }
+        if !file_type.is_file() {
+            continue;
+        }
+        let extension = path
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or_default()
+            .to_lowercase();
+        if extension != "sql" {
+            continue;
+        }
+        let relative_path = path
+            .strip_prefix(base)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .to_string();
+        files.push((relative_path, read_text_lossy(&path)));
+    }
+}
+
+fn is_rollback_sql_file(relative_path: &str, content: &str) -> bool {
+    let name = relative_path.to_lowercase();
+    let content = content.to_lowercase();
+    name.contains("rollback")
+        || name.contains("roll-back")
+        || name.contains("roll_back")
+        || name.contains("revert")
+        || name.contains("_down")
+        || name.contains(".down.")
+        || name.contains("回滚")
+        || name.contains("撤销")
+        || content.contains("@rollback")
+        || content.contains("-- rollback")
+        || content.contains("--rollback")
+        || content.contains("/* rollback")
+        || content.contains("回滚 sql")
+        || content.contains("回滚sql")
+}
+
+fn delivery_declares_sql_change(text: &str) -> bool {
+    let sql_section = markdown_section_containing(text, "sql");
+    let target = if sql_section.trim().is_empty() {
+        text
+    } else {
+        sql_section.as_str()
+    };
+
+    contains_actual_sql_statement(target) || contains_explicit_sql_change_line(target)
+}
+
+fn markdown_section_containing(text: &str, keyword: &str) -> String {
+    let keyword = keyword.to_lowercase();
+    let mut capture = false;
+    let mut capture_level = 0usize;
+    let mut lines = Vec::new();
+
+    for line in text.lines() {
+        if let Some((level, heading)) = markdown_heading(line) {
+            if capture && level <= capture_level {
+                break;
+            }
+            if heading.to_lowercase().contains(&keyword) {
+                capture = true;
+                capture_level = level;
+                continue;
+            }
+        }
+        if capture {
+            lines.push(line);
+        }
+    }
+
+    lines.join("\n")
+}
+
+fn markdown_heading(line: &str) -> Option<(usize, String)> {
+    let trimmed = line.trim_start();
+    let level = trimmed.chars().take_while(|value| *value == '#').count();
+    if level == 0 {
+        return None;
+    }
+    let heading = trimmed[level..].trim();
+    if heading.is_empty() {
+        None
+    } else {
+        Some((level, heading.to_string()))
+    }
+}
+
+fn contains_actual_sql_statement(text: &str) -> bool {
+    let prefixes = [
+        "alter table",
+        "create table",
+        "create index",
+        "drop table",
+        "drop index",
+        "insert into",
+        "update ",
+        "delete from",
+        "truncate table",
+        "rename table",
+    ];
+
+    text.lines().any(|line| {
+        let trimmed = line.trim();
+        if trimmed.is_empty()
+            || trimmed.starts_with('#')
+            || trimmed.starts_with("```")
+            || trimmed.starts_with("--")
+            || trimmed.starts_with("//")
+            || trimmed.starts_with("/*")
+        {
+            return false;
+        }
+        let normalized = trimmed.to_lowercase();
+        !contains_placeholder_sql_language(&normalized)
+            && prefixes.iter().any(|prefix| normalized.contains(prefix))
+    })
+}
+
+fn contains_explicit_sql_change_line(text: &str) -> bool {
+    text.lines().any(|line| {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            return false;
+        }
+        let compact = compact_lowercase(trimmed);
+        if contains_placeholder_sql_language(&compact) || compact.contains("如有") {
+            return false;
+        }
+        let mentions_sql = compact.contains("sql");
+        let explicit_yes = (compact.contains("是否有sql变动")
+            || compact.contains("是否有sql变更")
+            || compact.contains("有sql变动")
+            || compact.contains("有sql变更"))
+            && (compact.contains("是") || compact.contains("有"))
+            && !compact.contains("否");
+        let change_language = mentions_sql
+            && (compact.contains("新增")
+                || compact.contains("变更")
+                || compact.contains("调整")
+                || compact.contains("补充")
+                || compact.contains("正式sql")
+                || compact.contains("回滚sql"));
+        let concrete_table = (compact.contains("影响表:") || compact.contains("影响表："))
+            && !compact.contains("无")
+            && !compact.contains("待确认");
+
+        explicit_yes || change_language || concrete_table
+    })
+}
+
+fn contains_placeholder_sql_language(value: &str) -> bool {
+    value.contains("待补充")
+        || value.contains("待确认")
+        || value.contains("暂无")
+        || value.contains("后续")
+        || value.contains("如有")
+        || value.contains("无sql")
+        || value.contains("无变更")
+        || value.contains("无变动")
+        || value.ends_with(":无")
+        || value.ends_with("：无")
+        || value.contains("文件规范")
+        || value.contains("文件规则")
+}
+
+fn compact_lowercase(value: &str) -> String {
+    value
+        .chars()
+        .filter(|value| !value.is_whitespace())
+        .collect::<String>()
+        .to_lowercase()
 }
 
 fn delivery_needs_update(text: &str) -> bool {
@@ -2199,7 +2509,12 @@ fn initialization_checks(
             } else {
                 format!("缺失: {}", missing_files.join(", "))
             },
-            status: if missing_files.is_empty() { "pass" } else { "fail" }.to_string(),
+            status: if missing_files.is_empty() {
+                "pass"
+            } else {
+                "fail"
+            }
+            .to_string(),
         },
         WorkspaceInitializationCheck {
             id: "status-initial-state".to_string(),
@@ -2219,7 +2534,12 @@ fn initialization_checks(
             } else {
                 format!("已记录 {} 个服务。", services.len())
             },
-            status: if services.is_empty() { "warning" } else { "pass" }.to_string(),
+            status: if services.is_empty() {
+                "warning"
+            } else {
+                "pass"
+            }
+            .to_string(),
         },
         WorkspaceInitializationCheck {
             id: "target-branch".to_string(),
@@ -2229,7 +2549,12 @@ fn initialization_checks(
             } else {
                 format!("目标分支已记录为 {}。", target_branch)
             },
-            status: if target_branch == "待确认" { "warning" } else { "pass" }.to_string(),
+            status: if target_branch == "待确认" {
+                "warning"
+            } else {
+                "pass"
+            }
+            .to_string(),
         },
         WorkspaceInitializationCheck {
             id: "worktree-readiness".to_string(),
@@ -2239,7 +2564,12 @@ fn initialization_checks(
             } else {
                 "repos/ 目录或 worktree 脚本缺失。".to_string()
             },
-            status: if repos_ready && script_ready { "pass" } else { "fail" }.to_string(),
+            status: if repos_ready && script_ready {
+                "pass"
+            } else {
+                "fail"
+            }
+            .to_string(),
         },
     ]
 }
@@ -2308,7 +2638,7 @@ fn bootstrap_report(
             .join("\n")
     };
     format!(
-        "# Bootstrap Report\n\n- 需求名称: {}\n- 工作区: {}\n- 创建日期: {}\n- 目标分支: {}\n- 工作区路径: `{}`\n- 源仓库目录: `{}`\n\n## 服务范围\n\n{}\n\n## 初始风险\n\n{}\n\n## 下一步\n\n- [ ] 补充需求描述和影响范围。\n- [ ] 确认目标分支。\n- [ ] 复核 `scripts/worktree-commands.sh` 后创建 worktree。\n- [ ] 编码或 SQL 变更后更新 `交付记录.md`。\n",
+        "# Bootstrap Report\n\n- 需求名称: {}\n- 工作区: {}\n- 创建日期: {}\n- 目标分支: {}\n- 工作区路径: `{}`\n- 源仓库目录: `{}`\n\n## 服务范围\n\n{}\n\n## 初始风险\n\n{}\n\n## 下一步\n\n- [ ] 补充需求描述和影响范围。\n- [ ] 确认目标分支。\n- [ ] 复核 `scripts/worktree-commands.sh` 后创建 worktree。\n- [ ] 编码或 SQL 变更后更新 `交付记录.md`。\n- [ ] 若 `交付记录.md` 声明 SQL 变更，同步 `sql/` 下正式 SQL 和回滚 SQL 文件。\n",
         name,
         folder,
         today,
@@ -2352,6 +2682,34 @@ fn update_index(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn write_sql_rule_workspace(
+        root: &Path,
+        folder: &str,
+        delivery_text: &str,
+    ) -> std::path::PathBuf {
+        let workspace = root.join(folder);
+        fs::create_dir_all(workspace.join("sql")).unwrap();
+        fs::create_dir_all(workspace.join("repos")).unwrap();
+        fs::write(
+            workspace.join("workspace.md"),
+            "# SQL Rule\n\n- 需求名称: SQL Rule\n- 当前状态: delivery\n- 目标分支: chen/sql-rule\n- 源仓库集合: ~/source-repos\n",
+        )
+        .unwrap();
+        fs::write(
+            workspace.join("services.md"),
+            "# Services\n\n## 已确认相关\n\n| 服务 | 源仓库 | 说明 |\n| --- | --- | --- |\n",
+        )
+        .unwrap();
+        fs::write(
+            workspace.join("tasks.md"),
+            "# Tasks\n\n| 任务 | 状态 | 说明 |\n| --- | --- | --- |\n",
+        )
+        .unwrap();
+        fs::write(workspace.join("decisions.md"), "# Decisions\n").unwrap();
+        fs::write(workspace.join("交付记录.md"), delivery_text).unwrap();
+        workspace
+    }
 
     #[test]
     fn scan_workspaces_extracts_documents_and_risks() {
@@ -2428,8 +2786,116 @@ mod tests {
     }
 
     #[test]
+    fn scan_workspaces_requires_rollback_sql_when_delivery_declares_sql_change() {
+        let root = std::env::temp_dir().join(format!(
+            "nexus-core-sql-artifact-missing-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let workspace = write_sql_rule_workspace(
+            &root,
+            "2026-05-29-sql-artifact-missing",
+            "# 交付记录\n\n## SQL 变更\n\n- 是否有 SQL 变动：是\n- 影响表：pay_log\n\n```sql\nINSERT INTO pay_log (bill_no) VALUES ('demo');\n```\n",
+        );
+        fs::write(
+            workspace.join("sql").join("20260529_pay_log.sql"),
+            "INSERT INTO pay_log (bill_no) VALUES ('demo');\n",
+        )
+        .unwrap();
+
+        let dashboard =
+            scan_workspaces(&root.to_string_lossy(), "~/source-repos", "~/docs").unwrap();
+        let item = &dashboard.workspaces[0];
+        let sql_check = item
+            .health_checks
+            .iter()
+            .find(|check| check.id == "sql-directory")
+            .unwrap();
+
+        assert_eq!(sql_check.status, "fail");
+        assert!(sql_check.detail.contains("缺少回滚 SQL"));
+        assert!(item.risks.iter().any(|risk| risk.contains("缺少回滚 SQL")));
+        assert!(item
+            .session_actions
+            .iter()
+            .any(|action| action.id == "sync-sql-artifacts"));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn scan_workspaces_accepts_formal_and_rollback_sql_artifacts() {
+        let root = std::env::temp_dir().join(format!(
+            "nexus-core-sql-artifact-ready-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let workspace = write_sql_rule_workspace(
+            &root,
+            "2026-05-29-sql-artifact-ready",
+            "# 交付记录\n\n## SQL 变更\n\n- 是否有 SQL 变动：是\n- 影响表：pay_log\n\n```sql\nALTER TABLE pay_log ADD COLUMN demo_flag tinyint DEFAULT 0;\n```\n",
+        );
+        fs::write(
+            workspace.join("sql").join("20260529_pay_log.sql"),
+            "ALTER TABLE pay_log ADD COLUMN demo_flag tinyint DEFAULT 0;\n",
+        )
+        .unwrap();
+        fs::write(
+            workspace.join("sql").join("20260529_pay_log_rollback.sql"),
+            "ALTER TABLE pay_log DROP COLUMN demo_flag;\n",
+        )
+        .unwrap();
+
+        let dashboard =
+            scan_workspaces(&root.to_string_lossy(), "~/source-repos", "~/docs").unwrap();
+        let item = &dashboard.workspaces[0];
+        let sql_check = item
+            .health_checks
+            .iter()
+            .find(|check| check.id == "sql-directory")
+            .unwrap();
+
+        assert_eq!(sql_check.status, "pass");
+        assert!(sql_check.detail.contains("正式 SQL 1 个"));
+        assert!(sql_check.detail.contains("回滚 SQL 1 个"));
+        assert!(!item.risks.iter().any(|risk| risk.contains("SQL 变更")));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn scan_workspaces_allows_empty_sql_dir_when_delivery_has_no_sql_change() {
+        let root = std::env::temp_dir().join(format!(
+            "nexus-core-sql-artifact-empty-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        write_sql_rule_workspace(
+            &root,
+            "2026-05-29-sql-artifact-empty",
+            "# 交付记录\n\n## SQL 变更\n\n- 是否有 SQL 变动：否\n- 说明：本次无数据库变更。\n",
+        );
+
+        let dashboard =
+            scan_workspaces(&root.to_string_lossy(), "~/source-repos", "~/docs").unwrap();
+        let item = &dashboard.workspaces[0];
+        let sql_check = item
+            .health_checks
+            .iter()
+            .find(|check| check.id == "sql-directory")
+            .unwrap();
+
+        assert_eq!(sql_check.status, "pass");
+        assert!(sql_check.detail.contains("未声明 SQL 变更"));
+        assert!(!item.risks.iter().any(|risk| risk.contains("SQL 变更")));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn workspace_lifecycle_prioritizes_main_delivery_flow() {
         let empty_tasks = TaskCounts::default();
+        let clean_sql_artifacts = SqlArtifactStatus::default();
         let scoping = workspace_lifecycle(
             "analyzing",
             "待确认",
@@ -2439,6 +2905,7 @@ mod tests {
             &[],
             true,
             true,
+            &clean_sql_artifacts,
             &empty_tasks,
             2,
         );
@@ -2454,6 +2921,7 @@ mod tests {
             &[],
             true,
             true,
+            &clean_sql_artifacts,
             &empty_tasks,
             2,
         );
@@ -2473,6 +2941,7 @@ mod tests {
             &[],
             true,
             true,
+            &clean_sql_artifacts,
             &developing_tasks,
             1,
         );
@@ -2487,6 +2956,7 @@ mod tests {
             &[],
             true,
             true,
+            &clean_sql_artifacts,
             &empty_tasks,
             1,
         );
@@ -2501,6 +2971,7 @@ mod tests {
             &[],
             true,
             false,
+            &clean_sql_artifacts,
             &empty_tasks,
             0,
         );
@@ -2923,12 +3394,14 @@ mod tests {
             .generated_files
             .iter()
             .any(|file| file.relative_path == "STATUS.md" && file.exists));
-        assert!(created.initialization_checks.iter().any(|check| {
-            check.id == "status-initial-state" && check.status == "pass"
-        }));
-        assert!(created.initialization_checks.iter().any(|check| {
-            check.id == "service-scope" && check.status == "pass"
-        }));
+        assert!(created
+            .initialization_checks
+            .iter()
+            .any(|check| { check.id == "status-initial-state" && check.status == "pass" }));
+        assert!(created
+            .initialization_checks
+            .iter()
+            .any(|check| { check.id == "service-scope" && check.status == "pass" }));
         assert!(workspace.join("AGENTS.md").exists());
         assert!(workspace.join("repos").is_dir());
         assert!(workspace.join("sql").is_dir());
