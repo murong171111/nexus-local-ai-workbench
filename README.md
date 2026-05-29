@@ -19,7 +19,7 @@ It is designed for teams that work across multiple local service repositories an
 - Local audit log for confirmed workspace creation and settings profile exports.
 - Local SQLite + FTS index foundation for workspace Markdown, service scope, tasks, decisions, delivery records, and SQL notes.
 - Native SwiftUI Markdown document preview with preview/source modes, active-document highlighting, and local loading/error recovery for workspace handoff documents, standard workspace docs, and search result documents.
-- Native workspace handoff actions for opening the active workspace in Finder, Terminal, or Codex with copied context.
+- Native workspace handoff actions for opening the active workspace in Finder, Terminal, or Codex with a copied handoff pack that includes local-check, service/worktree, task, delivery, and recommended-action context.
 - Native SwiftUI Task Center that surfaces open workspace tasks from `tasks.md`, including direct task-document opens, persisted filters, latest task writeback feedback, agent-sourced task writebacks, confirmed complete/defer actions, and task-level Codex copy-and-open handoff.
 - Native SwiftUI menu bar status for quick workspace, risk, task, worktree, refresh, settings, and copy-summary actions.
 - Local automation checks for refresh, risk, delivery, task, worktree, and dirty-service signals, exposed through Rust Core, the Swift/Rust bridge, the native menu bar, optional scheduled checks, visible local-check receipts, and configurable macOS notifications.
@@ -69,7 +69,7 @@ To share Nexus setup with another teammate, open `Settings` and export a `nexus-
 
 After importing a profile, use the native Settings path rows to choose local directories, reveal existing folders, and run `Environment Check` to confirm the configured directories exist, are writable, Git is available, and source repositories are detected. Editing a path clears the previous health result so stale checks are not reused.
 
-From a workspace detail view, use `Finder`, `Terminal`, or `Codex` to hand the current workspace to local tools. The Codex action copies a workspace-specific prompt and opens the configured Codex URL from Settings.
+From a workspace detail view, use `Finder`, `Terminal`, or `Codex` to hand the current workspace to local tools. The Codex action copies a workspace-specific handoff pack and opens the configured Codex URL from Settings. The handoff pack includes the latest local-check receipt, service/worktree summaries, open tasks, delivery checks, standard document paths, and Nexus recommended actions.
 
 After any Codex handoff or context copy, the native inspector shows a dismissible `Handoff` panel with the copied context type, timestamp, and a reminder that the prompt is on the clipboard.
 

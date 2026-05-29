@@ -1033,7 +1033,15 @@ final class AppState: ObservableObject {
     }
 
     func workspaceHandoffPrompt(for workspace: WorkspaceSummary) -> String {
-        [
+        let openTasks = workspace.tasks.filter { !$0.isDone }
+        let blockedTaskCount = openTasks.filter(\.isBlocked).count
+        let deliveryLines = deliveryHandoffLines(for: workspace)
+        let serviceLines = serviceHandoffLines(for: workspace)
+        let taskLines = taskHandoffLines(for: workspace)
+        let actionLines = sessionActionHandoffLines(for: workspace)
+        let localCheckLines = localCheckHandoffLines()
+
+        return [
             "继续处理这个 Nexus 本地工作区。",
             "",
             "## 工作区",
@@ -1048,19 +1056,106 @@ final class AppState: ObservableObject {
             "- 生命周期: \(workspace.lifecycle.label)",
             "- 下一步: \(workspace.lifecycle.nextAction)",
             "- 风险数: \(workspace.risks.count)",
-            "- 未完成任务: \(workspace.tasks.filter { !$0.isDone }.count)",
+            "- 未完成任务: \(openTasks.count)",
+            "- 阻塞任务: \(blockedTaskCount)",
+            "- Worktree 缺失: \(workspace.services.filter { !$0.worktreeExists }.count)",
+            "",
+            "## 最近本地检查",
+            localCheckLines.joined(separator: "\n"),
+            "",
+            "## 服务与 worktree",
+            serviceLines.joined(separator: "\n"),
+            "",
+            "## 任务与交付",
+            taskLines.joined(separator: "\n"),
+            "",
+            "### 交付状态",
+            deliveryLines.joined(separator: "\n"),
+            "",
+            "## Nexus 推荐动作",
+            actionLines.joined(separator: "\n"),
             "",
             "## 本地路径",
             "- Workspaces root: \(workspaceRoot)",
             "- Source repos root: \(sourceReposRoot)",
             "- Docs root: \(docsRoot)",
+            "- tasks.md: \(workspace.documentLinks["tasks"] ?? "\(workspace.path)/tasks.md")",
+            "- 交付记录: \(workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md")",
+            "- handoff.md: \(workspace.documentLinks["handoff"] ?? "\(workspace.path)/handoff.md")",
             "",
             "## 处理要求",
             "- 先读取工作区 Markdown，再决定是否修改代码或文档。",
-            "- 优先在 workspace-local repos/<service> worktree 中处理。",
+            "- 优先按 Nexus 推荐动作处理；如果有阻塞项，先处理阻塞项再进入代码修改。",
+            "- 优先在 workspace-local repos/<service> worktree 中处理，不要切换源仓库分支。",
             "- 如果涉及代码、SQL、业务逻辑、接口、DTO、配置或验证变化，同步更新交付记录。",
-            "- 处理完成后回到 Nexus 刷新工作区状态。"
+            "- 处理完成后回到 Nexus 刷新工作区状态，并再次运行本地检查。"
         ].joined(separator: "\n")
+    }
+
+    private func localCheckHandoffLines() -> [String] {
+        guard let check = lastAutomationCheck else {
+            return ["- 尚未运行本地检查。建议先在 Nexus 运行本地检查，或接手后自行检查 workspace/git 状态。"]
+        }
+
+        return [
+            "- 触发方: \(lastAutomationCheckActor ?? "Nexus")",
+            "- 状态: \(check.status)",
+            "- 时间: \(check.generatedAt)",
+            "- 摘要: \(check.summary)",
+            "- 风险: \(check.riskCount)",
+            "- 交付问题: \(check.deliveryIssueCount)",
+            "- 开放任务: \(check.openTaskCount)（高优先级 \(check.highPriorityTaskCount)）",
+            "- worktree 问题: 缺失 \(check.missingWorktreeCount)，未提交 \(check.dirtyServiceCount)",
+            check.auditError.map { "- 审计写入失败: \($0)" } ?? "- 审计: \(check.auditEventId == nil ? "未写入" : "已写入")"
+        ]
+    }
+
+    private func serviceHandoffLines(for workspace: WorkspaceSummary) -> [String] {
+        guard !workspace.services.isEmpty else {
+            return ["- 服务范围待确认。先查看 services.md 和 branches.md。"]
+        }
+
+        return workspace.services.prefix(8).map { service in
+            "- \(service.name): branch=\(service.branch), worktree=\(service.worktree), git=\(service.gitSummary)"
+        } + (workspace.services.count > 8 ? ["- 仅列出前 8 个服务，完整范围请查看 services.md。"] : [])
+    }
+
+    private func taskHandoffLines(for workspace: WorkspaceSummary) -> [String] {
+        let openTasks = workspace.tasks.filter { !$0.isDone }
+        guard !openTasks.isEmpty else {
+            return ["- 当前没有开放任务。交付前仍需复核 tasks.md 是否有遗漏。"]
+        }
+
+        return openTasks.prefix(5).map { task in
+            "- [\(task.priority)] \(task.title) · 状态: \(task.status) · 来源: \(task.source)"
+        } + (openTasks.count > 5 ? ["- 仅列出前 5 个开放任务，完整任务请查看 tasks.md。"] : [])
+    }
+
+    private func deliveryHandoffLines(for workspace: WorkspaceSummary) -> [String] {
+        let deliveryPath = workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md"
+        let deliveryCheck = workspace.healthChecks.first { check in
+            check.id == "delivery-record" || check.action == "delivery"
+        }
+        let sqlCheck = workspace.healthChecks.first { check in
+            check.id == "sql-directory" || check.action == "sql"
+        }
+
+        return [
+            "- 交付记录: \(deliveryPath)",
+            "- 交付检查: \(deliveryCheck.map { "\($0.status) · \($0.detail)" } ?? "未生成检查结果")",
+            "- SQL 检查: \(sqlCheck.map { "\($0.status) · \($0.detail)" } ?? "未生成检查结果")",
+            "- 生命周期建议: \(workspace.lifecycle.nextAction)"
+        ]
+    }
+
+    private func sessionActionHandoffLines(for workspace: WorkspaceSummary) -> [String] {
+        guard !workspace.sessionActions.isEmpty else {
+            return ["- Nexus 当前没有返回推荐动作。可从状态概览、Workflow 和 Risk Review 继续判断。"]
+        }
+
+        return workspace.sessionActions.prefix(5).map { action in
+            "- [\(action.priority)] \(action.label): \(action.detail)"
+        }
     }
 
     func riskReviewPrompt(for workspace: WorkspaceSummary) -> String {
@@ -1158,8 +1253,8 @@ final class AppState: ObservableObject {
         if let url = URL(string: rawURL) {
             NSWorkspace.shared.open(url)
             markCodexHandoff(
-                title: "Codex 已打开 / Context copied",
-                detail: "\(workspace.name) · 工作区上下文已复制到剪贴板。",
+                title: "Codex 已打开 / Workspace copied",
+                detail: "\(workspace.name) · 工作区、任务、交付和最近检查上下文已复制。",
                 systemImage: "point.3.connected.trianglepath.dotted"
             )
         } else {
@@ -1177,7 +1272,10 @@ final class AppState: ObservableObject {
             summary: "Copied workspace handoff and opened Codex",
             metadata: [
                 "tool": "Codex",
-                "codexUrl": rawURL
+                "codexUrl": rawURL,
+                "riskCount": "\(workspace.risks.count)",
+                "openTaskCount": "\(workspace.tasks.filter { !$0.isDone }.count)",
+                "lastCheckStatus": lastAutomationCheck?.status ?? "none"
             ],
             workspaceOverride: workspace
         )
