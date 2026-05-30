@@ -39,6 +39,15 @@ export type WorkspaceSearchResultGroup = {
   results: WorkspaceSearchResult[];
 };
 
+export type WorkspaceTimelineEvent = {
+  id: string;
+  workspaceFolder: string;
+  workspaceName: string;
+  time: string;
+  title: string;
+  detail: string;
+};
+
 export function slugify(value: string) {
   return value
     .trim()
@@ -198,6 +207,41 @@ export function sortWorkspacesForAttention(workspaces: Workspace[], pinnedFolder
   });
 }
 
+export function workspaceTimelineEvents(workspace: Workspace, limit = 6): WorkspaceTimelineEvent[] {
+  const activities = workspace.activities?.length
+    ? workspace.activities
+    : [
+        {
+          time: workspace.updated,
+          title: "Workspace scan",
+          detail: `决策 ${workspace.decisionCount} / 待办 ${workspace.taskCounts.todo} / 风险 ${workspace.riskCount}`
+        }
+      ];
+
+  return activities
+    .map((activity, index) => ({
+      id: `${workspace.folder}-${index}-${activity.time}-${activity.title}`,
+      workspaceFolder: workspace.folder,
+      workspaceName: workspace.name,
+      time: activity.time,
+      title: activity.title,
+      detail: activity.detail
+    }))
+    .sort((left, right) => compareTimelineTime(right.time, left.time))
+    .slice(0, Math.max(1, limit));
+}
+
+export function dashboardTimelineEvents(workspaces: Workspace[], limit = 12): WorkspaceTimelineEvent[] {
+  return workspaces
+    .flatMap((workspace) => workspaceTimelineEvents(workspace, limit))
+    .sort((left, right) => {
+      const timeDelta = compareTimelineTime(right.time, left.time);
+      if (timeDelta !== 0) return timeDelta;
+      return left.workspaceName.localeCompare(right.workspaceName);
+    })
+    .slice(0, Math.max(1, limit));
+}
+
 export function workspaceSessionActions(workspace: Workspace): WorkspaceSessionAction[] {
   if (workspace.sessionActions?.length) return workspace.sessionActions;
 
@@ -247,6 +291,15 @@ export function workspaceSessionActions(workspace: Workspace): WorkspaceSessionA
   ));
 
   return actions;
+}
+
+function compareTimelineTime(left: string, right: string) {
+  const leftTime = Date.parse(left);
+  const rightTime = Date.parse(right);
+  if (Number.isFinite(leftTime) && Number.isFinite(rightTime)) {
+    return leftTime - rightTime;
+  }
+  return left.localeCompare(right);
 }
 
 function sessionAction(

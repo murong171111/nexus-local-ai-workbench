@@ -5,6 +5,7 @@ import {
   branchAlignmentRows,
   compactSearchSnippet,
   createSettingsProfile,
+  dashboardTimelineEvents,
   fallbackSearchResults,
   groupSearchResults,
   hasConfirmedTargetBranch,
@@ -19,6 +20,7 @@ import {
   slugify,
   todayString,
   widgetSnapshotFromDashboard,
+  workspaceTimelineEvents,
   workspaceFolderFromName,
   workspaceScore,
   workspaceSessionActions
@@ -155,6 +157,52 @@ test("sortWorkspacesForAttention falls back to risk score and stable names", () 
   assert.deepEqual(
     sortWorkspacesForAttention([beta, risky, alpha]).map((item) => item.folder),
     ["risky", "alpha", "beta"]
+  );
+});
+
+test("workspaceTimelineEvents uses audit activities before scan fallback", () => {
+  const events = workspaceTimelineEvents(
+    workspace({
+      folder: "timeline",
+      name: "Timeline Workspace",
+      updated: "2026-05-28",
+      activities: [
+        { time: "2026-05-28 09:00", title: "Older", detail: "old detail" },
+        { time: "2026-05-28 10:00", title: "Newer", detail: "new detail" }
+      ]
+    })
+  );
+
+  assert.deepEqual(
+    events.map((event) => [event.workspaceFolder, event.workspaceName, event.time, event.title, event.detail]),
+    [
+      ["timeline", "Timeline Workspace", "2026-05-28 10:00", "Newer", "new detail"],
+      ["timeline", "Timeline Workspace", "2026-05-28 09:00", "Older", "old detail"]
+    ]
+  );
+});
+
+test("dashboardTimelineEvents mixes workspaces and falls back to scan summaries", () => {
+  const alpha = workspace({
+    name: "Alpha",
+    folder: "alpha",
+    updated: "2026-05-28",
+    riskCount: 2,
+    taskCounts: { done: 1, doing: 0, todo: 4, blocked: 0 },
+    activities: []
+  });
+  const beta = workspace({
+    name: "Beta",
+    folder: "beta",
+    activities: [{ time: "2026-05-29 08:00", title: "Codex opened", detail: "handoff copied" }]
+  });
+
+  assert.deepEqual(
+    dashboardTimelineEvents([alpha, beta], 2).map((event) => [event.workspaceName, event.title, event.detail]),
+    [
+      ["Beta", "Codex opened", "handoff copied"],
+      ["Alpha", "Workspace scan", "决策 2 / 待办 4 / 风险 2"]
+    ]
   );
 });
 

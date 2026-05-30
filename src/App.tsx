@@ -40,7 +40,7 @@ import { Card } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { appendAuditEvent, checkEnvironment, createWorkspace, exportSettingsProfile, isDesktopApp, openExternalUrl, openPath as openPathInDesktop, readTextFile, rebuildSearchIndex, scanSourceRepos, scanWorkspaces, searchIndex, setupWorktrees, writeWidgetSnapshot, type EnvironmentHealth, type RebuildSearchIndexResponse, type SearchResult, type SourceRepo } from "./desktop";
 import { cn, riskTone } from "./lib";
-import { branchAlignmentRows, buildWorktreeCommand, createSettingsProfile, fallbackSearchResults, groupSearchResults, hasConfirmedTargetBranch, normalizeServiceList, orderedSearchResults, parseServiceInput, parseSettingsProfile, settingsProfileFilename, sortWorkspacesForAttention, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceSessionActions, type NexusSettingsProfile } from "./workspace-model";
+import { branchAlignmentRows, buildWorktreeCommand, createSettingsProfile, dashboardTimelineEvents, fallbackSearchResults, groupSearchResults, hasConfirmedTargetBranch, normalizeServiceList, orderedSearchResults, parseServiceInput, parseSettingsProfile, settingsProfileFilename, sortWorkspacesForAttention, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceSessionActions, type NexusSettingsProfile } from "./workspace-model";
 import type { DashboardData, Workspace, WorkspaceSessionAction } from "./types";
 
 const initialData = rawData as DashboardData;
@@ -1152,23 +1152,24 @@ function CommandPalette({
 function RightRail({ current, visible }: { current?: Workspace; visible: Workspace[] }) {
   const alerts = visible.flatMap((workspace) => workspace.risks.map((risk) => ({ workspace: workspace.name, risk }))).slice(0, 8);
   const branchMismatches = current ? branchAlignmentRows(current).length : 0;
-  const events = visible.slice(0, 6).map((workspace) => ({
-    label: workspace.name,
-    detail: workspace.riskCount ? `发现 ${workspace.riskCount} 个风险 / risks` : "扫描正常 / Clean"
-  }));
+  const events = dashboardTimelineEvents(visible, 8);
 
   return (
     <aside className="hidden h-screen border-l border-neutral-200 bg-neutral-50 p-4 2xl:block">
       <section>
         <div className="mb-3 flex items-center gap-2 text-sm text-neutral-900">
           <Activity className="h-4 w-4 text-blue-600" />
-          实时日志 / Live log
+          活动时间线 / Timeline
         </div>
         <div className="grid gap-2">
           {events.map((event) => (
-            <div key={event.label} className="rounded-md bg-white px-3 py-2">
-              <div className="truncate text-xs text-neutral-700">{event.label}</div>
-              <div className="mono mt-1 text-[11px] text-neutral-400">{event.detail}</div>
+            <div key={event.id} className="rounded-md bg-white px-3 py-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="truncate text-xs font-medium text-neutral-700">{event.title}</div>
+                <div className="mono shrink-0 text-[10px] text-neutral-400">{event.time}</div>
+              </div>
+              <div className="mt-1 truncate text-xs text-neutral-500">{event.workspaceName}</div>
+              <div className="mono mt-1 truncate text-[11px] text-neutral-400">{event.detail}</div>
             </div>
           ))}
         </div>

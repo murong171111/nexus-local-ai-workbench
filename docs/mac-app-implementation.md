@@ -60,6 +60,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added grouped search result sections and keyboard navigation to the Tauri preview search popover.
 - Added native SwiftUI search state and a top-bar search popover that uses the Swift/Rust local-index bridge with workspace metadata fallback.
 - Added native selected-result context previews and a reusable compact activity timeline for workspace details.
+- Added a Tauri/browser preview right-rail activity timeline backed by audit-enriched workspace activities with scan-summary fallback rows.
 - Added native search scope controls for workspace, state, workflow, SQL, and document search modes.
 - Added native Markdown document preview with preview/source modes, active-document highlighting, and local document-open recovery inside the SwiftUI workspace detail panel.
 - Added locally persisted pinned workspaces in the native SwiftUI shell, including card-level pin actions and a sidebar pinned section.
