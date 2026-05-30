@@ -198,6 +198,15 @@ export function sortWorkspacesForAttention(workspaces: Workspace[], pinnedFolder
   });
 }
 
+export function isArchivedWorkspace(workspace: Workspace) {
+  const state = workspace.state.trim().toLowerCase();
+  return state === "archived" || state === "archive" || state.includes("归档");
+}
+
+export function activeAttentionWorkspaces(workspaces: Workspace[]) {
+  return workspaces.filter((workspace) => !isArchivedWorkspace(workspace));
+}
+
 export function workspaceSessionActions(workspace: Workspace): WorkspaceSessionAction[] {
   if (workspace.sessionActions?.length) return workspace.sessionActions;
 
@@ -262,18 +271,19 @@ function sessionAction(
 }
 
 export function widgetSnapshotFromDashboard(dashboard: DashboardData, activeFolder: string) {
-  const activeWorkspace = dashboard.workspaces.find((workspace) => workspace.folder === activeFolder) ?? dashboard.workspaces[0];
-  const allGitRows = dashboard.workspaces.flatMap((workspace) => workspace.gitRows);
+  const attentionWorkspaces = activeAttentionWorkspaces(dashboard.workspaces);
+  const activeWorkspace = dashboard.workspaces.find((workspace) => workspace.folder === activeFolder) ?? attentionWorkspaces[0] ?? dashboard.workspaces[0];
+  const attentionGitRows = attentionWorkspaces.flatMap((workspace) => workspace.gitRows);
   return {
     generatedAt: new Date().toISOString(),
     workspacesRoot: dashboard.workspacesRoot,
     activeWorkspace: activeWorkspace?.name,
     activeWorkspaceFolder: activeWorkspace?.folder,
-    workspaceCount: dashboard.workspaces.length,
-    riskCount: dashboard.workspaces.reduce((sum, workspace) => sum + workspace.riskCount, 0),
-    dirtyServiceCount: allGitRows.filter((row) => row.worktree.dirty).length,
-    missingWorktreeCount: allGitRows.filter((row) => !row.worktree.exists).length,
-    topRisks: dashboard.workspaces.flatMap((workspace) => workspace.risks.map((risk) => `${workspace.name}: ${risk}`)).slice(0, 3),
+    workspaceCount: attentionWorkspaces.length,
+    riskCount: attentionWorkspaces.reduce((sum, workspace) => sum + workspace.riskCount, 0),
+    dirtyServiceCount: attentionGitRows.filter((row) => row.worktree.dirty).length,
+    missingWorktreeCount: attentionGitRows.filter((row) => !row.worktree.exists).length,
+    topRisks: attentionWorkspaces.flatMap((workspace) => workspace.risks.map((risk) => `${workspace.name}: ${risk}`)).slice(0, 3),
     deepLink: activeWorkspace ? `nexus://workspace/${encodeURIComponent(activeWorkspace.folder)}` : "nexus://"
   };
 }
