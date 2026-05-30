@@ -13,6 +13,7 @@ let package = Package(
     ],
     targets: [
         .target(name: "NexusBridge"),
-        .executableTarget(name: "NexusApp", dependencies: ["NexusBridge"])
+        .executableTarget(name: "NexusApp", dependencies: ["NexusBridge"]),
+        .testTarget(name: "NexusAppTests", dependencies: ["NexusApp"])
     ]
 )

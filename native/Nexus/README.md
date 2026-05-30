@@ -64,15 +64,16 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - Native lifecycle transitions can be confirmed and written back to `workspace.md` and `STATUS.md` through Rust Core and FFI, with local audit logging.
 - Archived workspaces can be filtered and restored later while staying out of active Task Center, menu-bar, and automation attention counts.
 - Native worktree setup is available from session actions when the Rust Core bridge is loaded, guarded by a preflight review, explicit confirmation sheet, refreshed workspace state, result summary, and Finder/Codex/local-check follow-up actions.
-- Build-only validation through Swift Package Manager.
+- Build and model-behavior validation through Swift Package Manager.
 
-## Build
+## Build And Test
 
 ```bash
 swift build --package-path native/Nexus
+swift test --package-path native/Nexus
 ```
 
-This does not produce a signed `.app` bundle yet. Packaging, signing, notarization, Widget Extension targets, and updater integration are intentionally separate later steps.
+This does not produce a signed `.app` bundle yet. Packaging, signing, notarization, Widget Extension targets, and updater integration are intentionally separate later steps. The SwiftPM test target covers native model behavior such as menu-bar status priority, lifecycle fallback stages, and Task Center filters.
 
 ## Rust Core Bridge
 
