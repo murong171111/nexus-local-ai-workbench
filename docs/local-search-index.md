@@ -63,4 +63,4 @@ Swift/Rust FFI:
 
 ## Next UI Work
 
-The Tauri preview app and native SwiftUI shell now both have grouped global search with keyboard navigation. Native search results also show compact workspace context, and the native shell has persisted search scopes plus pinned workspace preferences. The next product slice should promote these preferences into reusable saved filters and enrich activity ingestion from audit logs.
+The Tauri preview app and native SwiftUI shell now both have grouped global search with keyboard navigation. Native search results also show compact workspace context, and the native shell has persisted search scopes plus pinned workspace preferences. The browser preview can save reusable workspace filter/query combinations to localStorage, keeping saved filters testable before the native preference surface is complete. The next product slice should enrich activity ingestion from audit logs.

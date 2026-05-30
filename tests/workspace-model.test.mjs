@@ -4,6 +4,7 @@ import {
   buildWorktreeCommand,
   branchAlignmentRows,
   compactSearchSnippet,
+  createSavedWorkspaceFilter,
   createSettingsProfile,
   fallbackSearchResults,
   groupSearchResults,
@@ -11,6 +12,7 @@ import {
   normalizeServiceList,
   normalizeGitBranch,
   orderedSearchResults,
+  parseSavedWorkspaceFilters,
   parseServiceInput,
   parseSettingsProfile,
   serializeSettingsProfile,
@@ -20,6 +22,9 @@ import {
   todayString,
   widgetSnapshotFromDashboard,
   workspaceFolderFromName,
+  workspaceIsArchived,
+  workspaceMatchesFilter,
+  workspaceMatchesQuery,
   workspaceScore,
   workspaceSessionActions
 } from "../.tmp-tests/workspace-model.js";
@@ -156,6 +161,49 @@ test("sortWorkspacesForAttention falls back to risk score and stable names", () 
     sortWorkspacesForAttention([beta, risky, alpha]).map((item) => item.folder),
     ["risky", "alpha", "beta"]
   );
+});
+
+test("workspaceMatchesFilter keeps archived workspaces out of active signal filters", () => {
+  const archived = workspace({ state: "archived", riskCount: 3, risks: ["old risk"], gitRows: [gitRow("order", { worktree: { dirty: true } })] });
+  const dirty = workspace({ folder: "dirty", gitRows: [gitRow("order", { worktree: { dirty: true } })] });
+  const missing = workspace({ folder: "missing", gitRows: [gitRow("order", { worktree: { exists: false } })] });
+
+  assert.equal(workspaceIsArchived(archived), true);
+  assert.equal(workspaceMatchesFilter(archived, "risk"), false);
+  assert.equal(workspaceMatchesFilter(archived, "dirty"), false);
+  assert.equal(workspaceMatchesFilter(archived, "archived"), true);
+  assert.equal(workspaceMatchesFilter(dirty, "dirty"), true);
+  assert.equal(workspaceMatchesFilter(missing, "missing"), true);
+});
+
+test("workspaceMatchesQuery searches workspace identity, services, and risks", () => {
+  const sample = workspace({
+    name: "Payment Rollout",
+    confirmedServices: ["order"],
+    candidateServices: ["store-cashier"],
+    risks: ["交付记录待补充"]
+  });
+
+  assert.equal(workspaceMatchesQuery(sample, "store-cashier"), true);
+  assert.equal(workspaceMatchesQuery(sample, "交付"), true);
+  assert.equal(workspaceMatchesQuery(sample, "unknown"), false);
+});
+
+test("saved workspace filters normalize labels and recover stored filters", () => {
+  const firstDate = new Date("2026-05-30T08:00:00.000Z");
+  const secondDate = new Date("2026-05-30T09:00:00.000Z");
+  const riskFilter = createSavedWorkspaceFilter("risk", " pay-log ", firstDate);
+  const branchFilter = createSavedWorkspaceFilter("branch", "", secondDate);
+
+  assert.equal(riskFilter.label, "risk: pay-log");
+  assert.match(riskFilter.id, /risk-pay-log/);
+  assert.equal(branchFilter.label, "branch");
+
+  assert.deepEqual(
+    parseSavedWorkspaceFilters(JSON.stringify([riskFilter, { filter: "bad" }, branchFilter])).map((filter) => filter.id),
+    [branchFilter.id, riskFilter.id]
+  );
+  assert.deepEqual(parseSavedWorkspaceFilters("{bad json"), []);
 });
 
 test("workspaceSessionActions builds a startup flow from workspace state", () => {

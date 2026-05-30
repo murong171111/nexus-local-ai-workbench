@@ -39,6 +39,16 @@ export type WorkspaceSearchResultGroup = {
   results: WorkspaceSearchResult[];
 };
 
+export type WorkspaceFilterId = "all" | "risk" | "branch" | "dirty" | "missing" | "archived";
+
+export type SavedWorkspaceFilter = {
+  id: string;
+  label: string;
+  filter: WorkspaceFilterId;
+  query: string;
+  createdAt: string;
+};
+
 export function slugify(value: string) {
   return value
     .trim()
@@ -107,6 +117,21 @@ function normalizeSettings(settings: ShareableNexusSettings): ShareableNexusSett
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function isSavedWorkspaceFilter(value: unknown): value is SavedWorkspaceFilter {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.id === "string" &&
+    typeof value.label === "string" &&
+    isWorkspaceFilterId(value.filter) &&
+    typeof value.query === "string" &&
+    typeof value.createdAt === "string"
+  );
+}
+
+function isWorkspaceFilterId(value: unknown): value is WorkspaceFilterId {
+  return value === "all" || value === "risk" || value === "branch" || value === "dirty" || value === "missing" || value === "archived";
 }
 
 function requiredString(value: unknown, label: string) {
@@ -178,6 +203,68 @@ export function branchAlignmentRows(workspace: Workspace): BranchAlignmentRow[] 
       sourceBranch: normalizeGitBranch(row.source.branch)
     }))
     .filter((row) => row.actualBranch && row.actualBranch !== expectedBranch);
+}
+
+export function workspaceIsArchived(workspace: Workspace) {
+  const normalized = `${workspace.state} ${workspace.lifecycle?.stage ?? ""}`.toLowerCase();
+  return normalized.includes("archived") || normalized.includes("archive") || normalized.includes("归档");
+}
+
+export function workspaceMatchesFilter(workspace: Workspace, filter: WorkspaceFilterId) {
+  const archived = workspaceIsArchived(workspace);
+  if (filter === "all") return true;
+  if (filter === "archived") return archived;
+  if (archived) return false;
+  if (filter === "risk") return workspace.riskCount > 0;
+  if (filter === "branch") return branchAlignmentRows(workspace).length > 0;
+  if (filter === "dirty") return workspace.gitRows.some((row) => row.worktree.dirty);
+  if (filter === "missing") return workspace.gitRows.some((row) => !row.worktree.exists);
+  return true;
+}
+
+export function workspaceMatchesQuery(workspace: Workspace, query: string) {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return true;
+
+  return [
+    workspace.name,
+    workspace.folder,
+    workspace.targetBranch,
+    workspace.sourceRoot,
+    ...workspace.confirmedServices,
+    ...workspace.candidateServices,
+    ...workspace.risks
+  ]
+    .join(" ")
+    .toLowerCase()
+    .includes(normalized);
+}
+
+export function createSavedWorkspaceFilter(filter: WorkspaceFilterId, query: string, date = new Date()): SavedWorkspaceFilter {
+  const normalizedQuery = query.trim();
+  const label = normalizedQuery ? `${filter}: ${normalizedQuery}` : filter;
+  return {
+    id: `${date.toISOString()}-${slugify(label) || "filter"}`,
+    label,
+    filter,
+    query: normalizedQuery,
+    createdAt: date.toISOString()
+  };
+}
+
+export function parseSavedWorkspaceFilters(content: string, limit = 8): SavedWorkspaceFilter[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    return [];
+  }
+
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .filter(isSavedWorkspaceFilter)
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+    .slice(0, Math.max(1, limit));
 }
 
 export function workspaceScore(workspace: Workspace) {

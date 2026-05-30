@@ -1,6 +1,7 @@
 import {
   Activity,
   AlertTriangle,
+  Bookmark,
   BookOpen,
   Boxes,
   Braces,
@@ -25,6 +26,7 @@ import {
   Settings,
   Sparkles,
   Terminal,
+  Trash2,
   Upload,
   Workflow,
   X,
@@ -40,7 +42,7 @@ import { Card } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { appendAuditEvent, checkEnvironment, createWorkspace, exportSettingsProfile, isDesktopApp, openExternalUrl, openPath as openPathInDesktop, readTextFile, rebuildSearchIndex, scanSourceRepos, scanWorkspaces, searchIndex, setupWorktrees, writeWidgetSnapshot, type EnvironmentHealth, type RebuildSearchIndexResponse, type SearchResult, type SourceRepo } from "./desktop";
 import { cn, riskTone } from "./lib";
-import { branchAlignmentRows, buildWorktreeCommand, createSettingsProfile, fallbackSearchResults, groupSearchResults, hasConfirmedTargetBranch, normalizeServiceList, orderedSearchResults, parseServiceInput, parseSettingsProfile, settingsProfileFilename, sortWorkspacesForAttention, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceSessionActions, type NexusSettingsProfile } from "./workspace-model";
+import { branchAlignmentRows, buildWorktreeCommand, createSavedWorkspaceFilter, createSettingsProfile, fallbackSearchResults, groupSearchResults, hasConfirmedTargetBranch, normalizeServiceList, orderedSearchResults, parseSavedWorkspaceFilters, parseServiceInput, parseSettingsProfile, settingsProfileFilename, sortWorkspacesForAttention, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceIsArchived, workspaceMatchesFilter, workspaceMatchesQuery, workspaceSessionActions, type NexusSettingsProfile, type SavedWorkspaceFilter, type WorkspaceFilterId } from "./workspace-model";
 import type { DashboardData, Workspace, WorkspaceSessionAction } from "./types";
 
 const initialData = rawData as DashboardData;
@@ -70,11 +72,6 @@ const statLabels: Record<string, { title: string; desc: string }> = {
   branch: { title: "分支不一致", desc: "Branch mismatch" },
   missing: { title: "缺失 Worktree", desc: "Missing worktree" }
 };
-
-function workspaceIsArchived(workspace: Workspace) {
-  const normalized = `${workspace.state} ${workspace.lifecycle?.stage ?? ""}`.toLowerCase();
-  return normalized.includes("archived") || normalized.includes("archive") || normalized.includes("归档");
-}
 
 const auditActionLabels: Record<string, string> = {
   "codex.opened": "Codex 已打开 / Codex opened",
@@ -156,6 +153,7 @@ type SearchIndexState = {
 const settingsStorageKey = "nexus-settings";
 const onboardingStorageKey = "nexus-onboarding-complete";
 const pinnedWorkspacesStorageKey = "nexus-pinned-workspaces";
+const savedWorkspaceFiltersStorageKey = "nexus-saved-workspace-filters";
 const demoWorkspaceName = "Nexus 示例工作区";
 const demoWorkspaceBranch = "chen/nexus-demo-workspace";
 
@@ -199,6 +197,14 @@ function loadPinnedWorkspaces() {
     return new Set(Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : []);
   } catch {
     return new Set<string>();
+  }
+}
+
+function loadSavedWorkspaceFilters() {
+  try {
+    return parseSavedWorkspaceFilters(window.localStorage.getItem(savedWorkspaceFiltersStorageKey) ?? "[]");
+  } catch {
+    return [];
   }
 }
 
@@ -307,6 +313,10 @@ function Sidebar({
   filter,
   setFilter,
   pinnedFolders,
+  savedFilters,
+  onSaveFilter,
+  onApplySavedFilter,
+  onDeleteSavedFilter,
   onTogglePinned,
   onOpenCreate,
   onOpenSettings
@@ -314,14 +324,18 @@ function Sidebar({
   workspaces: Workspace[];
   active: string;
   setActive: (folder: string) => void;
-  filter: string;
-  setFilter: (filter: string) => void;
+  filter: WorkspaceFilterId;
+  setFilter: (filter: WorkspaceFilterId) => void;
   pinnedFolders: Set<string>;
+  savedFilters: SavedWorkspaceFilter[];
+  onSaveFilter: () => void;
+  onApplySavedFilter: (filter: SavedWorkspaceFilter) => void;
+  onDeleteSavedFilter: (id: string) => void;
   onTogglePinned: (folder: string) => void;
   onOpenCreate: () => void;
   onOpenSettings: () => void;
 }) {
-  const filters = ["all", "risk", "branch", "dirty", "missing", "archived"];
+  const filters: WorkspaceFilterId[] = ["all", "risk", "branch", "dirty", "missing", "archived"];
 
   return (
     <aside className="flex max-h-[42vh] flex-col border-b border-neutral-200 bg-neutral-50 px-3 py-4 lg:sticky lg:top-0 lg:h-screen lg:max-h-none lg:border-b-0 lg:border-r">
@@ -370,6 +384,44 @@ function Sidebar({
               {id === "archived" && <span className="mono text-[11px]">{workspaces.filter(workspaceIsArchived).length}</span>}
             </button>
           ))}
+        </div>
+      </div>
+
+      <div className="mt-4 lg:mt-5">
+        <div className="flex items-center justify-between px-2">
+          <span className="text-xs uppercase tracking-[0.14em] text-neutral-400">保存筛选 / Saved</span>
+          <button
+            type="button"
+            className="flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:bg-neutral-100 hover:text-blue-600"
+            onClick={onSaveFilter}
+            aria-label="保存当前筛选"
+          >
+            <Bookmark className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        <div className="mt-2 grid gap-1">
+          {savedFilters.length ? savedFilters.map((saved) => (
+            <div key={saved.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center rounded-md hover:bg-neutral-50">
+              <button
+                type="button"
+                className="min-w-0 px-2 py-1.5 text-left"
+                onClick={() => onApplySavedFilter(saved)}
+              >
+                <span className="block truncate text-xs text-neutral-700">{saved.label}</span>
+                <span className="mono block truncate text-[10px] text-neutral-400">{filterLabels[saved.filter].desc || saved.filter}</span>
+              </button>
+              <button
+                type="button"
+                className="mr-1 flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:bg-neutral-100 hover:text-red-600"
+                onClick={() => onDeleteSavedFilter(saved.id)}
+                aria-label="删除保存筛选"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )) : (
+            <div className="px-2 py-1.5 text-xs text-neutral-400">暂无保存筛选</div>
+          )}
         </div>
       </div>
 
@@ -996,7 +1048,7 @@ function CommandPalette({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   current?: Workspace;
-  setFilter: (filter: string) => void;
+  setFilter: (filter: WorkspaceFilterId) => void;
   refreshData: () => void;
   rebuildSearchIndex: () => void;
   onOpenCodex: () => void;
@@ -2317,8 +2369,9 @@ export function App() {
   const [dashboard, setDashboard] = useState<DashboardData>(initialData);
   const [settings, setSettings] = useState<NexusSettings>(() => loadSettings(initialData));
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState<WorkspaceFilterId>("all");
   const [pinnedFolders, setPinnedFolders] = useState<Set<string>>(() => loadPinnedWorkspaces());
+  const [savedFilters, setSavedFilters] = useState<SavedWorkspaceFilter[]>(() => loadSavedWorkspaceFilters());
   const [active, setActive] = useState(initialData.workspaces[0]?.folder ?? "");
   const [commandOpen, setCommandOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -2546,29 +2599,8 @@ export function App() {
 
   const sorted = useMemo(() => sortWorkspacesForAttention(dashboard.workspaces, pinnedFolders), [dashboard.workspaces, pinnedFolders]);
   const visible = useMemo(() => {
-    const lower = query.trim().toLowerCase();
     return sorted.filter((workspace) => {
-      const haystack = [
-        workspace.name,
-        workspace.folder,
-        workspace.targetBranch,
-        workspace.sourceRoot,
-        ...workspace.confirmedServices,
-        ...workspace.candidateServices,
-        ...workspace.risks
-      ]
-        .join(" ")
-        .toLowerCase();
-      const matchesQuery = !lower || haystack.includes(lower);
-      const archived = workspaceIsArchived(workspace);
-      const matchesFilter =
-        filter === "all" ||
-        (filter === "risk" && !archived && workspace.riskCount > 0) ||
-        (filter === "branch" && !archived && branchAlignmentRows(workspace).length > 0) ||
-        (filter === "dirty" && !archived && workspace.gitRows.some((row) => row.worktree.dirty)) ||
-        (filter === "missing" && !archived && workspace.gitRows.some((row) => !row.worktree.exists)) ||
-        (filter === "archived" && archived);
-      return matchesQuery && matchesFilter;
+      return workspaceMatchesQuery(workspace, query) && workspaceMatchesFilter(workspace, filter);
     });
   }, [filter, query, sorted]);
 
@@ -3000,6 +3032,35 @@ export function App() {
     showToast(wasPinned ? "已取消置顶工作区" : "已置顶工作区");
   };
 
+  const saveCurrentFilter = () => {
+    const nextFilter = createSavedWorkspaceFilter(filter, query);
+    const nextSavedFilters = [nextFilter, ...savedFilters.filter((saved) => saved.label !== nextFilter.label)].slice(0, 8);
+    setSavedFilters(nextSavedFilters);
+    try {
+      window.localStorage.setItem(savedWorkspaceFiltersStorageKey, JSON.stringify(nextSavedFilters));
+    } catch {
+      // Browser storage failures should not block applying the in-memory saved filter.
+    }
+    showToast("已保存当前筛选");
+  };
+
+  const applySavedFilter = (saved: SavedWorkspaceFilter) => {
+    setFilter(saved.filter);
+    setQuery(saved.query);
+    showToast(`已应用筛选：${saved.label}`);
+  };
+
+  const deleteSavedFilter = (id: string) => {
+    const nextSavedFilters = savedFilters.filter((saved) => saved.id !== id);
+    setSavedFilters(nextSavedFilters);
+    try {
+      window.localStorage.setItem(savedWorkspaceFiltersStorageKey, JSON.stringify(nextSavedFilters));
+    } catch {
+      // Browser storage failures should not block deleting the in-memory saved filter.
+    }
+    showToast("已删除保存筛选");
+  };
+
   return (
     <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[248px_minmax(0,1fr)] 2xl:grid-cols-[268px_minmax(0,1fr)_330px]">
       <Sidebar
@@ -3009,6 +3070,10 @@ export function App() {
         filter={filter}
         setFilter={setFilter}
         pinnedFolders={pinnedFolders}
+        savedFilters={savedFilters}
+        onSaveFilter={saveCurrentFilter}
+        onApplySavedFilter={applySavedFilter}
+        onDeleteSavedFilter={deleteSavedFilter}
         onTogglePinned={togglePinnedWorkspace}
         onOpenCreate={() => setCreateOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}
