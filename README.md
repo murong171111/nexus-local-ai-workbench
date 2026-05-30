@@ -221,6 +221,7 @@ Run the standard local verification set:
 
 ```bash
 npm run env:check
+npm run release:notes
 npm run verify
 ```
 

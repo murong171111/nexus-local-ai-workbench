@@ -13,6 +13,7 @@
     "preview": "vite preview --host 127.0.0.1",
     "generate": "python3 generate_dashboard.py",
     "agent:event": "node scripts/nexus-agent-event.mjs",
+    "release:notes": "node scripts/generate-release-notes.mjs",
     "icon": "node scripts/generate-icon.mjs && tauri icon src-tauri/icons/icon.png",
     "widget:typecheck": "swiftc -parse-as-library -typecheck widget/NexusWidget/NexusWidget.swift",
     "native:build": "swift build --package-path native/Nexus",

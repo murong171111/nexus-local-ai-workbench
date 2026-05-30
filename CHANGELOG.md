@@ -130,6 +130,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Branch alignment checks, filters, prompts, and UI warnings for worktrees that do not match the workspace target branch.
 - Manual service input parsing for commas, spaces, new lines, semicolons, and Chinese separators when creating workspaces.
 - Markdown document rendering with a preview/source toggle inside the workspace document viewer.
+- Release notes can now be generated from `CHANGELOG.md` with `npm run release:notes`.
 
 ### Fixed
 

@@ -39,6 +39,14 @@ Open the built app and verify:
 
 ## GitHub Release
 
+Generate release notes from `CHANGELOG.md` before opening the GitHub Release:
+
+```bash
+npm run release:notes -- --version v0.1.1-alpha --output release-notes.md
+```
+
+Omit `--output` to print the notes to stdout for review. Omit `--version` to preview the `Unreleased` section.
+
 Create and push a tag:
 
 ```bash

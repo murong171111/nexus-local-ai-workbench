@@ -223,6 +223,7 @@ npm run ffi:build
 
 ```bash
 npm run env:check
+npm run release:notes
 npm run verify
 ```
 
