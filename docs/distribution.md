@@ -29,7 +29,7 @@ src-tauri/target/release/bundle/dmg/Nexus_0.1.0_aarch64.dmg
 
 ## Release Checklist
 
-- Ensure `src/data/workspaces.json` and `public/data/workspaces.json` contain only sample data.
+- Ensure `src/data/workspaces.json` contains only sample data and passes `npm run sample:check`.
 - Run `npm run test`.
 - Run `npm run build`.
 - Run `npm run widget:typecheck`.
