@@ -25,16 +25,7 @@ export function parseAgentEventArgs(argv, env = process.env) {
     strict: false,
     help: false
   };
-  const event = {
-    source: "",
-    sessionId: "",
-    workspaceFolder: undefined,
-    kind: "",
-    title: "",
-    summary: "",
-    severity: "",
-    metadata: {}
-  };
+  const event = inferAgentEventDefaults(env);
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -96,6 +87,41 @@ export function parseAgentEventArgs(argv, env = process.env) {
   }
 
   return { event, options };
+}
+
+export function inferAgentEventDefaults(env = process.env) {
+  const sessionId = firstEnv(env, [
+    "NEXUS_AGENT_SESSION_ID",
+    "CODEX_SESSION_ID",
+    "CODEX_THREAD_ID",
+    "CLAUDE_CODE_SESSION_ID",
+    "OPENCODE_SESSION_ID"
+  ]);
+
+  const workspaceFolder = firstEnv(env, [
+    "NEXUS_WORKSPACE_FOLDER",
+    "CODEX_WORKSPACE_FOLDER",
+    "CLAUDE_PROJECT_DIR",
+    "OPENCODE_WORKSPACE"
+  ]);
+
+  const metadata = normalizeMetadata(compactEnvMetadata({
+    cwd: env.PWD,
+    codexThreadId: env.CODEX_THREAD_ID,
+    claudeProjectDir: env.CLAUDE_PROJECT_DIR,
+    opencodeWorkspace: env.OPENCODE_WORKSPACE
+  }));
+
+  return {
+    source: inferAgentSource(env),
+    sessionId: sessionId ?? "",
+    workspaceFolder,
+    kind: "",
+    title: "",
+    summary: "",
+    severity: "",
+    metadata
+  };
 }
 
 export function buildAgentEvent(input, now = new Date()) {
@@ -188,6 +214,38 @@ function parseMetadataJson(value) {
     throw new Error("--metadata-json expects an object");
   }
   return normalizeMetadata(parsed);
+}
+
+function firstEnv(env, keys) {
+  for (const key of keys) {
+    const value = env[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function inferAgentSource(env) {
+  const explicit = firstEnv(env, ["NEXUS_AGENT_SOURCE", "CODEX_AGENT_SOURCE"]);
+  if (explicit) return normalizeAgentSource(explicit);
+  if (firstEnv(env, ["CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_PROJECT_DIR"])) return "claude-code";
+  if (firstEnv(env, ["OPENCODE_SESSION_ID", "OPENCODE_WORKSPACE"])) return "opencode";
+  if (firstEnv(env, ["CODEX_SESSION_ID", "CODEX_THREAD_ID", "CODEX_WORKSPACE_FOLDER"])) return "codex";
+  return "";
+}
+
+function normalizeAgentSource(value) {
+  if (!value) return "";
+  if (value === "1") return "claude-code";
+  return String(value)
+    .trim()
+    .replace(/_/g, "-")
+    .toLowerCase();
+}
+
+function compactEnvMetadata(metadata) {
+  return Object.fromEntries(
+    Object.entries(metadata).filter(([, value]) => typeof value === "string" && value.trim())
+  );
 }
 
 function mergeEvent(target, input) {

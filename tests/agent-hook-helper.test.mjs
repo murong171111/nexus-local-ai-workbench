@@ -7,6 +7,7 @@ import test from "node:test";
 import {
   appendAgentEvent,
   buildAgentEvent,
+  inferAgentEventDefaults,
   parseAgentEventArgs
 } from "../scripts/nexus-agent-event.mjs";
 
@@ -59,6 +60,69 @@ test("parseAgentEventArgs merges direct flags, metadata, and JSON input", () => 
   assert.equal(event.sessionId, "s1");
   assert.equal(event.kind, "tool_use");
   assert.deepEqual(event.metadata, { tool: "shell", command: "git status" });
+});
+
+test("inferAgentEventDefaults reads common Codex environment values", () => {
+  const event = inferAgentEventDefaults({
+    CODEX_SESSION_ID: "thread-123",
+    CODEX_THREAD_ID: "thread-link-456",
+    CODEX_WORKSPACE_FOLDER: "2026-05-27-demo",
+    PWD: "/workspace/demo"
+  });
+
+  assert.equal(event.source, "codex");
+  assert.equal(event.sessionId, "thread-123");
+  assert.equal(event.workspaceFolder, "2026-05-27-demo");
+  assert.deepEqual(event.metadata, {
+    cwd: "/workspace/demo",
+    codexThreadId: "thread-link-456"
+  });
+});
+
+test("inferAgentEventDefaults detects Claude and OpenCode sources without leaking ids", () => {
+  assert.equal(
+    inferAgentEventDefaults({
+      CLAUDE_CODE_SESSION_ID: "claude-session",
+      CLAUDE_PROJECT_DIR: "/tmp/project"
+    }).source,
+    "claude-code"
+  );
+
+  assert.equal(
+    inferAgentEventDefaults({
+      OPENCODE_SESSION_ID: "open-session",
+      OPENCODE_WORKSPACE: "/tmp/open"
+    }).source,
+    "opencode"
+  );
+});
+
+test("parseAgentEventArgs lets explicit flags override inferred defaults", () => {
+  const { event } = parseAgentEventArgs(
+    [
+      "--source",
+      "opencode",
+      "--session-id",
+      "manual-session",
+      "--workspace-folder",
+      "manual-workspace",
+      "--metadata",
+      "cwd=/override"
+    ],
+    {
+      CLAUDE_CODE_SESSION_ID: "claude-session",
+      CLAUDE_PROJECT_DIR: "/tmp/project",
+      PWD: "/tmp/project"
+    }
+  );
+
+  assert.equal(event.source, "opencode");
+  assert.equal(event.sessionId, "manual-session");
+  assert.equal(event.workspaceFolder, "manual-workspace");
+  assert.deepEqual(event.metadata, {
+    cwd: "/override",
+    claudeProjectDir: "/tmp/project"
+  });
 });
 
 test("appendAgentEvent writes one JSONL event", () => {
