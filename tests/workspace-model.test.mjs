@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  activeAttentionWorkspaces,
   buildWorktreeCommand,
   branchAlignmentRows,
   compactSearchSnippet,
@@ -19,6 +20,7 @@ import {
   slugify,
   todayString,
   widgetSnapshotFromDashboard,
+  workspaceIsArchived,
   workspaceFolderFromName,
   workspaceScore,
   workspaceSessionActions
@@ -155,6 +157,42 @@ test("sortWorkspacesForAttention falls back to risk score and stable names", () 
   assert.deepEqual(
     sortWorkspacesForAttention([beta, risky, alpha]).map((item) => item.folder),
     ["risky", "alpha", "beta"]
+  );
+});
+
+test("workspaceIsArchived recognizes state and lifecycle archive markers", () => {
+  assert.equal(workspaceIsArchived(workspace({ state: "archived" })), true);
+  assert.equal(workspaceIsArchived(workspace({ state: "done", lifecycle: { stage: "归档", label: "", detail: "", progress: 1, nextAction: "", documentKey: "status" } })), true);
+  assert.equal(workspaceIsArchived(workspace({ state: "developing" })), false);
+});
+
+test("activeAttentionWorkspaces removes archived contexts from active signals", () => {
+  const archived = workspace({
+    name: "Archived Risk",
+    folder: "archived-risk",
+    state: "archived",
+    riskCount: 5,
+    risks: ["old blocker"],
+    gitRows: [gitRow("order", { worktree: { dirty: true } })]
+  });
+  const active = workspace({ name: "Active", folder: "active", riskCount: 0, risks: [] });
+
+  assert.deepEqual(activeAttentionWorkspaces([archived, active]).map((item) => item.folder), ["active"]);
+});
+
+test("sortWorkspacesForAttention keeps archived workspaces behind active attention", () => {
+  const archivedPinned = workspace({
+    name: "Archived Pinned",
+    folder: "archived-pinned",
+    state: "archived",
+    riskCount: 9,
+    risks: ["old blocker"]
+  });
+  const active = workspace({ name: "Active", folder: "active", riskCount: 0, risks: [] });
+
+  assert.deepEqual(
+    sortWorkspacesForAttention([archivedPinned, active], new Set(["archived-pinned"])).map((item) => item.folder),
+    ["active", "archived-pinned"]
   );
 });
 

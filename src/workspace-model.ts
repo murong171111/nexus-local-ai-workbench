@@ -180,6 +180,15 @@ export function branchAlignmentRows(workspace: Workspace): BranchAlignmentRow[] 
     .filter((row) => row.actualBranch && row.actualBranch !== expectedBranch);
 }
 
+export function workspaceIsArchived(workspace: Workspace) {
+  const normalized = `${workspace.state} ${workspace.lifecycle?.stage ?? ""}`.toLowerCase();
+  return normalized.includes("archived") || normalized.includes("archive") || normalized.includes("归档");
+}
+
+export function activeAttentionWorkspaces(workspaces: Workspace[]) {
+  return workspaces.filter((workspace) => !workspaceIsArchived(workspace));
+}
+
 export function workspaceScore(workspace: Workspace) {
   return workspace.riskCount * 10 + branchAlignmentRows(workspace).length * 5 + workspace.gitRows.filter((row) => row.worktree.dirty).length * 3;
 }
@@ -187,6 +196,10 @@ export function workspaceScore(workspace: Workspace) {
 export function sortWorkspacesForAttention(workspaces: Workspace[], pinnedFolders: Iterable<string> = []) {
   const pinned = new Set(pinnedFolders);
   return [...workspaces].sort((left, right) => {
+    const leftArchived = workspaceIsArchived(left);
+    const rightArchived = workspaceIsArchived(right);
+    if (leftArchived !== rightArchived) return leftArchived ? 1 : -1;
+
     const leftPinned = pinned.has(left.folder);
     const rightPinned = pinned.has(right.folder);
     if (leftPinned !== rightPinned) return leftPinned ? -1 : 1;

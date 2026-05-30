@@ -40,7 +40,7 @@ import { Card } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { appendAuditEvent, checkEnvironment, createWorkspace, exportSettingsProfile, isDesktopApp, openExternalUrl, openPath as openPathInDesktop, readTextFile, rebuildSearchIndex, scanSourceRepos, scanWorkspaces, searchIndex, setupWorktrees, writeWidgetSnapshot, type EnvironmentHealth, type RebuildSearchIndexResponse, type SearchResult, type SourceRepo } from "./desktop";
 import { cn, riskTone } from "./lib";
-import { branchAlignmentRows, buildWorktreeCommand, createSettingsProfile, fallbackSearchResults, groupSearchResults, hasConfirmedTargetBranch, normalizeServiceList, orderedSearchResults, parseServiceInput, parseSettingsProfile, settingsProfileFilename, sortWorkspacesForAttention, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceSessionActions, type NexusSettingsProfile } from "./workspace-model";
+import { activeAttentionWorkspaces, branchAlignmentRows, buildWorktreeCommand, createSettingsProfile, fallbackSearchResults, groupSearchResults, hasConfirmedTargetBranch, normalizeServiceList, orderedSearchResults, parseServiceInput, parseSettingsProfile, settingsProfileFilename, sortWorkspacesForAttention, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceIsArchived, workspaceSessionActions, type NexusSettingsProfile } from "./workspace-model";
 import type { DashboardData, Workspace, WorkspaceSessionAction } from "./types";
 
 const initialData = rawData as DashboardData;
@@ -70,11 +70,6 @@ const statLabels: Record<string, { title: string; desc: string }> = {
   branch: { title: "分支不一致", desc: "Branch mismatch" },
   missing: { title: "缺失 Worktree", desc: "Missing worktree" }
 };
-
-function workspaceIsArchived(workspace: Workspace) {
-  const normalized = `${workspace.state} ${workspace.lifecycle?.stage ?? ""}`.toLowerCase();
-  return normalized.includes("archived") || normalized.includes("archive") || normalized.includes("归档");
-}
 
 const auditActionLabels: Record<string, string> = {
   "codex.opened": "Codex 已打开 / Codex opened",
@@ -2574,7 +2569,7 @@ export function App() {
 
   const current = visible.find((workspace) => workspace.folder === active) ?? visible[0];
   const drawerWorkspace = dashboard.workspaces.find((workspace) => workspace.folder === drawerFolder);
-  const signalWorkspaces = dashboard.workspaces.filter((workspace) => !workspaceIsArchived(workspace));
+  const signalWorkspaces = activeAttentionWorkspaces(dashboard.workspaces);
   const services = new Set(signalWorkspaces.flatMap((workspace) => workspace.confirmedServices)).size;
   const risks = signalWorkspaces.reduce((sum, workspace) => sum + workspace.riskCount, 0);
   const branchMismatches = signalWorkspaces.reduce((sum, workspace) => sum + branchAlignmentRows(workspace).length, 0);
