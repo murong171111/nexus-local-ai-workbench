@@ -18,7 +18,24 @@ This first slice is intentionally small: it defines a durable local event format
 - Workspace details can bind multiple Codex session deep links, storing them in workspace-local `codex-sessions.json`.
 - Workspace details suggest Codex session bindings from recent matching Agent Events when metadata carries Codex deep-link fields.
 - `scripts/nexus-agent-event.mjs` lets local agent hooks append events before the local socket bridge exists.
+- `scripts/nexus-agent-bridge-server.mjs` starts a local Unix socket bridge that accepts one JSON event per line and appends into the same `agent-events.jsonl` store.
 - Preview mode shows a sample event when `NEXUS_CORE_LIBRARY` is not configured.
+
+## Local Socket Bridge
+
+Run the bridge server:
+
+```bash
+npm run agent:bridge -- --socket /tmp/nexus-agent.sock
+```
+
+Each client writes one JSON object per line using the same event fields accepted by `scripts/nexus-agent-event.mjs`. The server replies with one JSON line per submitted event:
+
+```json
+{"ok":true,"event":{"source":"codex","kind":"status"}}
+```
+
+The bridge is local-only. It does not execute command metadata, and malformed event lines receive an error response without stopping the server.
 
 ## Event Shape
 
