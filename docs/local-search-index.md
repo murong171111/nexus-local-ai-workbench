@@ -53,6 +53,7 @@ Tauri:
 - The top search popover queries the index, groups matched results by workspace/state/workflow/SQL, and opens matched documents in the in-app viewer.
 - Keyboard navigation supports arrow-key selection, Enter to open the selected result, and Escape to clear the query.
 - Browser preview mode falls back to workspace metadata results when Tauri is not available.
+- Browser preview mode can persist saved workspace filters in `localStorage`, pairing the current list filter with the current query so repeated local review contexts are one click away.
 
 Swift/Rust FFI:
 
@@ -63,4 +64,4 @@ Swift/Rust FFI:
 
 ## Next UI Work
 
-The Tauri preview app and native SwiftUI shell now both have grouped global search with keyboard navigation. Native search results also show compact workspace context, and the native shell has persisted search scopes plus pinned workspace preferences. The next product slice should promote these preferences into reusable saved filters and enrich activity ingestion from audit logs.
+The Tauri preview app and native SwiftUI shell now both have grouped global search with keyboard navigation. Native search results also show compact workspace context, the native shell has persisted search scopes plus pinned workspace preferences, and the preview app has persisted saved filters. The next product slice should converge saved filters across native and preview storage and enrich activity ingestion from audit logs.

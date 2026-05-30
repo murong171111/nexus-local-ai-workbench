@@ -53,7 +53,7 @@ This roadmap describes the next product and engineering steps for Nexus. The cur
 - Add full-text search across tasks, decisions, delivery records, SQL notes, and service scopes. `[started in Rust Core, bridge, Tauri preview UI, and native SwiftUI shell]`
 - Add search result grouping and keyboard navigation in the Mac UI. `[started in Tauri preview UI and native SwiftUI shell with stable group ordering and ranked browser-preview fallback results]`
 - Add timeline view for workspace activity. `[started in native SwiftUI shell]`
-- Add saved filters and pinned workspaces. `[started in native SwiftUI shell with persisted search scope and pinned workspace preferences, plus browser-preview workspace pins backed by localStorage and shared attention sorting]`
+- Add saved filters and pinned workspaces. `[started in native SwiftUI shell with persisted search scope and pinned workspace preferences, plus browser-preview workspace pins and saved filters backed by localStorage and shared attention sorting]`
 
 ## 0.5.x: Widget And Automation
 
