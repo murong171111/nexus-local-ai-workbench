@@ -5,9 +5,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 
 const ignoredDirectories = new Set([
+  ".build",
+  ".cache",
   ".git",
   ".npm-cache",
   ".swift-module-cache",
+  ".swiftpm",
   ".tmp-tests",
   "dist",
   "node_modules",

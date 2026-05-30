@@ -19,6 +19,7 @@ import {
   slugify,
   todayString,
   widgetSnapshotFromDashboard,
+  workspaceWorktreeSignals,
   workspaceFolderFromName,
   workspaceScore,
   workspaceSessionActions
@@ -125,6 +126,47 @@ test("workspaceScore prioritizes risks and dirty worktrees", () => {
     gitRows: [gitRow("order", { worktree: { dirty: true } }), gitRow("store", { worktree: { branch: "chen/other" } })]
   });
   assert.equal(workspaceScore(scored), 28);
+});
+
+test("workspaceWorktreeSignals maps git rows into stable attention signals", () => {
+  const signals = workspaceWorktreeSignals(
+    workspace({
+      targetBranch: "chen/demo",
+      gitRows: [
+        gitRow("missing", { worktree: { exists: false, branch: "未创建", summary: "missing" } }),
+        gitRow("mismatch", { worktree: { branch: "chen/other", summary: "wrong branch" } }),
+        gitRow("dirty", { worktree: { dirty: true, summary: "M file.ts" } }),
+        gitRow("source-dirty", { source: { dirty: true, summary: "M src/lib.rs" } }),
+        gitRow("clean")
+      ]
+    })
+  );
+
+  assert.deepEqual(
+    signals.map((signal) => [signal.service, signal.kind, signal.priority]),
+    [
+      ["missing", "missing", "high"],
+      ["mismatch", "branch-mismatch", "high"],
+      ["dirty", "dirty", "medium"],
+      ["source-dirty", "source-dirty", "low"],
+      ["clean", "clean", "low"]
+    ]
+  );
+  assert.match(signals[1].detail, /expected chen\/demo/);
+  assert.match(signals[2].detail, /M file\.ts/);
+});
+
+test("workspaceScore includes missing worktree signals before branch and dirty signals", () => {
+  const scored = workspace({
+    riskCount: 1,
+    gitRows: [
+      gitRow("missing", { worktree: { exists: false } }),
+      gitRow("mismatch", { worktree: { branch: "chen/other" } }),
+      gitRow("dirty", { worktree: { dirty: true } })
+    ]
+  });
+
+  assert.equal(workspaceScore(scored), 24);
 });
 
 test("sortWorkspacesForAttention keeps pinned workspaces ahead of risk score", () => {
