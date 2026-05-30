@@ -39,6 +39,29 @@ export type WorkspaceSearchResultGroup = {
   results: WorkspaceSearchResult[];
 };
 
+export type WorkspaceCreatePreflightIssue = {
+  code: string;
+  severity: "blocker" | "warning";
+  message: string;
+};
+
+export type WorkspaceCreatePreflightInput = {
+  name: string;
+  folder: string;
+  workspacesRoot: string;
+  sourceReposRoot: string;
+  services: string[];
+  targetBranch: string;
+  existingFolders?: string[];
+  knownSourceRepos?: string[];
+  environmentReady?: boolean;
+};
+
+export type WorkspaceCreatePreflightReport = {
+  canCreate: boolean;
+  issues: WorkspaceCreatePreflightIssue[];
+};
+
 export function slugify(value: string) {
   return value
     .trim()
@@ -118,6 +141,54 @@ function requiredString(value: unknown, label: string) {
 
 export function workspaceFolderFromName(name: string, date = new Date()) {
   return `${todayString(date)}-${slugify(name) || "workspace"}`;
+}
+
+export function workspaceCreatePreflight(input: WorkspaceCreatePreflightInput): WorkspaceCreatePreflightReport {
+  const issues: WorkspaceCreatePreflightIssue[] = [];
+  const folder = input.folder.trim();
+  const workspacesRoot = input.workspacesRoot.trim();
+  const sourceReposRoot = input.sourceReposRoot.trim();
+  const services = normalizeServiceList(input.services);
+  const existingFolders = new Set(input.existingFolders ?? []);
+  const knownSourceRepos = new Set((input.knownSourceRepos ?? []).map((service) => service.trim()).filter(Boolean));
+
+  if (!input.name.trim()) {
+    issues.push(preflightIssue("name-missing", "blocker", "需求名称不能为空 / Workspace name is required."));
+  }
+  if (!workspacesRoot) {
+    issues.push(preflightIssue("workspaces-root-missing", "blocker", "创建本地文件前需要配置工作区根目录 / Workspaces root is required."));
+  }
+  if (!sourceReposRoot) {
+    issues.push(preflightIssue("source-root-missing", "warning", "源仓库根目录未配置，后续 worktree 命令可能需要手动调整 / Source repositories root is missing."));
+  }
+  if (!folder || folder === `${todayString()}-workspace`) {
+    issues.push(preflightIssue("folder-generic", "warning", "目录名较通用，建议使用更明确的需求名称 / Workspace folder is generic."));
+  }
+  if (folder.includes("..") || folder.includes("/") || folder.includes("\\")) {
+    issues.push(preflightIssue("folder-invalid", "blocker", "工作区目录名必须是单个安全目录名 / Folder must be a single safe directory name."));
+  }
+  if (existingFolders.has(folder)) {
+    issues.push(preflightIssue("folder-exists", "blocker", `工作区目录已存在 / Workspace folder already exists: ${folder}.`));
+  }
+  if (!hasConfirmedTargetBranch(input.targetBranch)) {
+    issues.push(preflightIssue("target-branch-pending", "warning", "目标分支未确认，可以先建工作区，但 worktree 创建应稍后执行 / Target branch is pending."));
+  }
+  if (!services.length) {
+    issues.push(preflightIssue("services-pending", "warning", "尚未确认服务范围，早期梳理阶段可以先保持待确认 / Service scope can stay pending."));
+  }
+  for (const service of services) {
+    if (knownSourceRepos.size > 0 && !knownSourceRepos.has(service)) {
+      issues.push(preflightIssue("service-source-missing", "warning", `最新源仓库扫描中没有该服务 / Service is not in the latest source repo scan: ${service}.`));
+    }
+  }
+  if (input.environmentReady === false) {
+    issues.push(preflightIssue("environment-not-ready", "warning", "环境检查仍有阻塞项，请复核路径和工具后再依赖后续动作 / Environment check has blockers."));
+  }
+
+  return {
+    canCreate: issues.every((issue) => issue.severity !== "blocker"),
+    issues
+  };
 }
 
 export function parseServiceInput(value: string) {
@@ -259,6 +330,10 @@ function sessionAction(
   documentKey: string
 ): WorkspaceSessionAction {
   return { id, label, detail, priority, status, instructionType, documentKey };
+}
+
+function preflightIssue(code: string, severity: "blocker" | "warning", message: string): WorkspaceCreatePreflightIssue {
+  return { code, severity, message };
 }
 
 export function widgetSnapshotFromDashboard(dashboard: DashboardData, activeFolder: string) {
