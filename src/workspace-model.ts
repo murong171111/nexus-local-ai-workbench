@@ -39,6 +39,17 @@ export type WorkspaceSearchResultGroup = {
   results: WorkspaceSearchResult[];
 };
 
+export type DashboardDataQualityIssue = {
+  code: string;
+  message: string;
+  workspaceFolder?: string;
+};
+
+export type DashboardDataQualityReport = {
+  ok: boolean;
+  issues: DashboardDataQualityIssue[];
+};
+
 export function slugify(value: string) {
   return value
     .trim()
@@ -114,6 +125,73 @@ function requiredString(value: unknown, label: string) {
     throw new Error(`配置文件缺少 ${label}`);
   }
   return value;
+}
+
+export function dashboardDataQualityReport(dashboard: DashboardData): DashboardDataQualityReport {
+  const issues: DashboardDataQualityIssue[] = [];
+  const seenFolders = new Set<string>();
+
+  if (!hasText(dashboard.generatedAt)) {
+    issues.push(dataIssue("generated-at-missing", "Dashboard data is missing generatedAt."));
+  } else if (Number.isNaN(Date.parse(dashboard.generatedAt))) {
+    issues.push(dataIssue("generated-at-invalid", `Dashboard generatedAt is not an ISO-compatible date: ${dashboard.generatedAt}`));
+  }
+  if (!hasText(dashboard.workspacesRoot)) {
+    issues.push(dataIssue("workspaces-root-missing", "Dashboard data is missing workspacesRoot."));
+  }
+
+  for (const workspace of dashboard.workspaces) {
+    const workspaceFolder = hasText(workspace.folder) ? workspace.folder.trim() : "";
+    if (!workspaceFolder) {
+      issues.push(dataIssue("workspace-folder-missing", `Workspace "${workspace.name || "unnamed"}" is missing folder.`));
+    } else if (seenFolders.has(workspaceFolder)) {
+      issues.push(dataIssue("workspace-folder-duplicate", `Workspace folder is duplicated: ${workspaceFolder}`, workspaceFolder));
+    } else {
+      seenFolders.add(workspaceFolder);
+    }
+
+    if (!hasText(workspace.name)) {
+      issues.push(dataIssue("workspace-name-missing", "Workspace is missing name.", workspaceFolder));
+    }
+    if (!pathLooksInsideRoot(workspace.path, dashboard.workspacesRoot, workspace.folder)) {
+      issues.push(dataIssue("workspace-path-outside-root", `Workspace path should live under workspacesRoot and end with its folder: ${workspace.path}`, workspaceFolder));
+    }
+    if (workspace.riskCount !== workspace.risks.length) {
+      issues.push(dataIssue("risk-count-mismatch", `riskCount is ${workspace.riskCount} but risks has ${workspace.risks.length} item(s).`, workspaceFolder));
+    }
+    for (const [key, value] of Object.entries(workspace.taskCounts)) {
+      if (!Number.isInteger(value) || value < 0) {
+        issues.push(dataIssue("task-count-invalid", `taskCounts.${key} must be a non-negative integer.`, workspaceFolder));
+      }
+    }
+    if (!Number.isInteger(workspace.decisionCount) || workspace.decisionCount < 0) {
+      issues.push(dataIssue("decision-count-invalid", "decisionCount must be a non-negative integer.", workspaceFolder));
+    }
+
+    const gitServices = new Set(workspace.gitRows.map((row) => row.service));
+    for (const service of workspace.confirmedServices) {
+      if (!gitServices.has(service)) {
+        issues.push(dataIssue("confirmed-service-missing-git-row", `Confirmed service "${service}" has no matching gitRows entry.`, workspaceFolder));
+      }
+    }
+    for (const row of workspace.gitRows) {
+      if (!row.service.trim()) {
+        issues.push(dataIssue("git-row-service-missing", "A gitRows entry is missing service.", workspaceFolder));
+      }
+      if (row.service && !row.sourcePath.endsWith(`/${row.service}`)) {
+        issues.push(dataIssue("git-source-path-mismatch", `sourcePath for "${row.service}" should end with the service name.`, workspaceFolder));
+      }
+      if (row.service && !row.worktreePath.endsWith(`/repos/${row.service}`)) {
+        issues.push(dataIssue("git-worktree-path-mismatch", `worktreePath for "${row.service}" should end with repos/<service>.`, workspaceFolder));
+      }
+    }
+
+    if (workspace.links.folder && workspace.links.folder !== workspace.path) {
+      issues.push(dataIssue("folder-link-mismatch", "links.folder should match workspace.path.", workspaceFolder));
+    }
+  }
+
+  return { ok: issues.length === 0, issues };
 }
 
 export function workspaceFolderFromName(name: string, date = new Date()) {
@@ -259,6 +337,22 @@ function sessionAction(
   documentKey: string
 ): WorkspaceSessionAction {
   return { id, label, detail, priority, status, instructionType, documentKey };
+}
+
+function dataIssue(code: string, message: string, workspaceFolder?: string): DashboardDataQualityIssue {
+  return workspaceFolder ? { code, message, workspaceFolder } : { code, message };
+}
+
+function hasText(value: string | undefined) {
+  return Boolean(String(value ?? "").trim());
+}
+
+function pathLooksInsideRoot(pathValue: string, rootValue: string, folder: string) {
+  const normalizedPath = pathValue.replace(/\/+$/g, "");
+  const normalizedRoot = rootValue.replace(/\/+$/g, "");
+  const normalizedFolder = folder.replace(/^\/+|\/+$/g, "");
+  return Boolean(normalizedRoot && normalizedFolder)
+    && normalizedPath === `${normalizedRoot}/${normalizedFolder}`;
 }
 
 export function widgetSnapshotFromDashboard(dashboard: DashboardData, activeFolder: string) {

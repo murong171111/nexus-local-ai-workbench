@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { createRequire } from "node:module";
 import test from "node:test";
 import {
   buildWorktreeCommand,
   branchAlignmentRows,
   compactSearchSnippet,
   createSettingsProfile,
+  dashboardDataQualityReport,
   fallbackSearchResults,
   groupSearchResults,
   hasConfirmedTargetBranch,
@@ -23,6 +25,9 @@ import {
   workspaceScore,
   workspaceSessionActions
 } from "../.tmp-tests/workspace-model.js";
+
+const require = createRequire(import.meta.url);
+const sampleDashboard = require("../src/data/workspaces.json");
 
 function gitRow(service, overrides = {}) {
   return {
@@ -199,6 +204,61 @@ test("workspaceSessionActions returns core-provided session actions when present
   };
 
   assert.deepEqual(workspaceSessionActions(workspace({ sessionActions: [coreAction] })), [coreAction]);
+});
+
+test("dashboardDataQualityReport accepts the publishable browser preview sample", () => {
+  assert.deepEqual(dashboardDataQualityReport(sampleDashboard), { ok: true, issues: [] });
+});
+
+test("dashboardDataQualityReport reports unsafe sample regressions with context", () => {
+  const badDashboard = {
+    generatedAt: "not-a-date",
+    workspacesRoot: "/workspace",
+    sourceReposRoot: "/source",
+    docsRoot: "/docs",
+    workspaces: [
+      workspace({
+        folder: "duplicate-folder",
+        path: "/other/root/duplicate-folder",
+        riskCount: 3,
+        risks: ["one risk"],
+        confirmedServices: ["order", "missing-service"],
+        taskCounts: { done: 0, doing: -1, todo: 1.5, blocked: 0 },
+        decisionCount: -1,
+        links: { folder: "/wrong/folder" },
+        gitRows: [
+          {
+            ...gitRow("order"),
+            sourcePath: "/source/not-order",
+            worktreePath: "/workspace/duplicate-folder/repos/not-order"
+          }
+        ]
+      }),
+      workspace({
+        name: "",
+        folder: "duplicate-folder",
+        path: "/workspace/duplicate-folder"
+      })
+    ]
+  };
+
+  assert.deepEqual(
+    dashboardDataQualityReport(badDashboard).issues.map((issue) => issue.code),
+    [
+      "generated-at-invalid",
+      "workspace-path-outside-root",
+      "risk-count-mismatch",
+      "task-count-invalid",
+      "task-count-invalid",
+      "decision-count-invalid",
+      "confirmed-service-missing-git-row",
+      "git-source-path-mismatch",
+      "git-worktree-path-mismatch",
+      "folder-link-mismatch",
+      "workspace-folder-duplicate",
+      "workspace-name-missing"
+    ]
+  );
 });
 
 test("normalizeGitBranch strips git status tracking suffixes", () => {
