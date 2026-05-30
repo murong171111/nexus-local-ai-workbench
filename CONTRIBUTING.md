@@ -55,7 +55,7 @@ npm run build
 npm run widget:typecheck
 ```
 
-`npm run env:check` verifies the local Node, Git, Rust, Swift, SwiftPM, and `node_modules` prerequisites before the full verification suite, with recovery guidance for missing tools.
+`npm run env:check` verifies the local Node, Git, Rust, Swift, SwiftPM, `node_modules`, and packaged Tauri CLI prerequisites before the full verification suite, with recovery guidance for missing tools.
 
 `npm run test` also runs `npm run privacy:check`, which scans publishable text files for private local paths and secret-like assignments. You can run that check directly after changing sample data or documentation:
 

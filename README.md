@@ -224,6 +224,8 @@ npm run env:check
 npm run verify
 ```
 
+`npm run env:check` also confirms the local `@tauri-apps/cli` binary is installed under `node_modules` before release packaging commands run.
+
 For a faster public-preview baseline during documentation or sample-data work:
 
 ```bash

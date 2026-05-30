@@ -57,12 +57,20 @@ export function checkDevEnvironment(options = {}) {
     });
   }
 
-  const dependencyPath = path.join(cwd, "node_modules", ".bin", process.platform === "win32" ? "tsc.cmd" : "tsc");
+  const dependencyPath = localBin(cwd, process.platform === "win32" ? "tsc.cmd" : "tsc");
   results.push({
     name: "Node dependencies",
     available: existsSync(dependencyPath),
     detail: existsSync(dependencyPath) ? "node_modules is installed." : "node_modules is missing or incomplete.",
     recover: existsSync(dependencyPath) ? "" : "Run npm ci from the repository root."
+  });
+
+  const tauriPath = localBin(cwd, process.platform === "win32" ? "tauri.cmd" : "tauri");
+  results.push({
+    name: "Tauri CLI",
+    available: existsSync(tauriPath),
+    detail: existsSync(tauriPath) ? "Tauri CLI is available from node_modules." : "Tauri CLI is missing from node_modules.",
+    recover: existsSync(tauriPath) ? "" : "Run npm ci, then rerun npm run env:check before npm run tauri:build."
   });
 
   return {
@@ -77,6 +85,10 @@ function runCommand(command, args, cwd) {
 
 function firstLine(value) {
   return value.split(/\r?\n/u).find(Boolean) ?? "";
+}
+
+function localBin(cwd, executable) {
+  return path.join(cwd, "node_modules", ".bin", executable);
 }
 
 function main() {
