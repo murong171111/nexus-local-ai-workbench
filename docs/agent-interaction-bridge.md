@@ -194,3 +194,38 @@ By default the helper writes to:
 Set `NEXUS_AGENT_EVENTS_ROOT` or pass `--events-root` to override the storage root.
 
 The helper is fail-open by default. It logs a warning and exits `0` if it cannot write an event. Pass `--strict` only for tests or workflows that should fail when event capture fails.
+
+## Local Response Files
+
+Agents that can accept structured hook responses can opt into a local response-file check after writing an event:
+
+```bash
+npm run agent:event -- \
+  --source codex \
+  --session-id "$CODEX_SESSION_ID" \
+  --kind permission \
+  --summary "Codex requested git push" \
+  --wait-response-ms 1500 \
+  --print-response
+```
+
+By default Nexus looks beside the event store:
+
+```text
+~/Library/Application Support/com.ks.nexus/agent-events/agent-responses/<event-id>.json
+```
+
+Set `NEXUS_AGENT_RESPONSES_ROOT` or pass `--responses-root` to use another local directory. A response file is a small JSON object:
+
+```json
+{
+  "eventId": "agent-codex-thread-1-permission-1770000000000",
+  "decision": "approve",
+  "message": "Approved after local review",
+  "metadata": {
+    "reviewer": "nexus"
+  }
+}
+```
+
+Waiting is opt-in and capped. If no response file appears, the helper still exits successfully and prints `agentResponse: null` when `--print-response` is enabled. This keeps hooks fail-open until a user explicitly configures stricter behavior.

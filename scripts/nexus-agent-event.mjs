@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 
-import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 const EVENT_FILE = "agent-events.jsonl";
+const RESPONSE_DIR = "agent-responses";
 
 export function defaultAgentEventsRoot(env = process.env, platform = process.platform) {
   if (env.NEXUS_AGENT_EVENTS_ROOT?.trim()) {
@@ -19,9 +20,19 @@ export function defaultAgentEventsRoot(env = process.env, platform = process.pla
   return path.join(os.homedir(), ".nexus", "agent-events");
 }
 
+export function defaultAgentResponsesRoot(eventsRoot, env = process.env) {
+  if (env.NEXUS_AGENT_RESPONSES_ROOT?.trim()) {
+    return expandHome(env.NEXUS_AGENT_RESPONSES_ROOT.trim());
+  }
+  return path.join(eventsRoot, RESPONSE_DIR);
+}
+
 export function parseAgentEventArgs(argv, env = process.env) {
   const options = {
     eventsRoot: defaultAgentEventsRoot(env),
+    responsesRoot: "",
+    waitResponseMs: 0,
+    printResponse: false,
     strict: false,
     help: false
   };
@@ -49,6 +60,15 @@ export function parseAgentEventArgs(argv, env = process.env) {
     switch (arg) {
       case "--events-root":
         options.eventsRoot = expandHome(nextValue());
+        break;
+      case "--responses-root":
+        options.responsesRoot = expandHome(nextValue());
+        break;
+      case "--wait-response-ms":
+        options.waitResponseMs = parseWaitMilliseconds(nextValue());
+        break;
+      case "--print-response":
+        options.printResponse = true;
         break;
       case "--source":
         event.source = nextValue();
@@ -95,6 +115,7 @@ export function parseAgentEventArgs(argv, env = process.env) {
     }
   }
 
+  options.responsesRoot = options.responsesRoot || defaultAgentResponsesRoot(options.eventsRoot, env);
   return { event, options };
 }
 
@@ -126,11 +147,38 @@ export function appendAgentEvent(eventsRoot, input, now = new Date()) {
   return { path: filePath, event };
 }
 
+export function agentResponsePath(responsesRoot, eventId) {
+  return path.join(responsesRoot, `${sanitizeIdSegment(eventId)}.json`);
+}
+
+export function readAgentResponse(responsesRoot, eventId) {
+  const filePath = agentResponsePath(responsesRoot, eventId);
+  if (!existsSync(filePath)) {
+    return { path: filePath, response: null };
+  }
+
+  const response = normalizeAgentResponse(JSON.parse(readFileSync(filePath, "utf8")), eventId);
+  return { path: filePath, response };
+}
+
+export function waitForAgentResponse(responsesRoot, eventId, timeoutMs) {
+  const deadline = Date.now() + Math.max(0, timeoutMs);
+  let result = readAgentResponse(responsesRoot, eventId);
+
+  while (!result.response && Date.now() < deadline) {
+    sleep(100);
+    result = readAgentResponse(responsesRoot, eventId);
+  }
+
+  return result;
+}
+
 export function helpText() {
   return `Usage: nexus-agent-event [options]
 
 Options:
   --events-root <path>       Override agent event storage root.
+  --responses-root <path>    Override local response storage root.
   --source <name>            Agent source, for example codex.
   --session-id <id>          Agent session or thread id.
   --workspace-folder <name>  Optional Nexus workspace folder.
@@ -142,6 +190,8 @@ Options:
   --metadata-json <json>     Add metadata object.
   --input-json <json>        Merge event fields from JSON.
   --stdin                    Read event JSON from stdin.
+  --wait-response-ms <ms>    Poll for a Nexus response file before exiting.
+  --print-response           Include the response file payload in stdout when present.
   --strict                   Exit non-zero on failure. Default is fail-open.
   --help                     Show this message.
 `;
@@ -155,6 +205,25 @@ export function runAgentEventCli(argv = process.argv.slice(2), env = process.env
       return 0;
     }
     const response = appendAgentEvent(options.eventsRoot, event);
+    if (options.waitResponseMs > 0 || options.printResponse) {
+      try {
+        const agentResponse = waitForAgentResponse(
+          options.responsesRoot,
+          response.event.id,
+          options.waitResponseMs
+        );
+        response.responsePath = agentResponse.path;
+        if (options.printResponse) {
+          response.agentResponse = agentResponse.response;
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        response.responseError = message;
+        if (options.strict) {
+          throw error;
+        }
+      }
+    }
     process.stdout.write(`${JSON.stringify(response)}\n`);
     return 0;
   } catch (error) {
@@ -190,6 +259,14 @@ function parseMetadataJson(value) {
   return normalizeMetadata(parsed);
 }
 
+function parseWaitMilliseconds(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error("--wait-response-ms expects a non-negative number");
+  }
+  return Math.min(Math.round(parsed), 60_000);
+}
+
 function mergeEvent(target, input) {
   if (!input || Array.isArray(input) || typeof input !== "object") {
     throw new Error("input event JSON must be an object");
@@ -213,6 +290,27 @@ function mergeEvent(target, input) {
   if (input.metadata !== undefined) {
     target.metadata = { ...target.metadata, ...normalizeMetadata(input.metadata) };
   }
+}
+
+function normalizeAgentResponse(input, eventId) {
+  if (!input || Array.isArray(input) || typeof input !== "object") {
+    throw new Error("agent response JSON must be an object");
+  }
+
+  const decision = nonEmpty(input.decision, "continue");
+  const message = normalizeOptional(input.message);
+  const response = {
+    eventId: nonEmpty(input.eventId ?? input.event_id, eventId),
+    decision,
+    message,
+    metadata: normalizeMetadata(input.metadata)
+  };
+
+  return Object.fromEntries(Object.entries(response).filter(([, value]) => value !== undefined));
+}
+
+function sleep(milliseconds) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 }
 
 function normalizeMetadata(metadata) {

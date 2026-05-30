@@ -1,13 +1,16 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
+  agentResponsePath,
   appendAgentEvent,
   buildAgentEvent,
-  parseAgentEventArgs
+  defaultAgentResponsesRoot,
+  parseAgentEventArgs,
+  readAgentResponse
 } from "../scripts/nexus-agent-event.mjs";
 
 const scriptPath = path.resolve("scripts/nexus-agent-event.mjs");
@@ -40,6 +43,8 @@ test("parseAgentEventArgs merges direct flags, metadata, and JSON input", () => 
     [
       "--events-root",
       "/tmp/nexus-events",
+      "--responses-root",
+      "/tmp/nexus-responses",
       "--source",
       "codex",
       "--metadata",
@@ -48,17 +53,52 @@ test("parseAgentEventArgs merges direct flags, metadata, and JSON input", () => 
       "{\"command\":\"git status\"}",
       "--input-json",
       "{\"sessionId\":\"s1\",\"kind\":\"tool_use\",\"summary\":\"Ran status\"}",
+      "--wait-response-ms",
+      "25",
+      "--print-response",
       "--strict"
     ],
     {}
   );
 
   assert.equal(options.eventsRoot, "/tmp/nexus-events");
+  assert.equal(options.responsesRoot, "/tmp/nexus-responses");
+  assert.equal(options.waitResponseMs, 25);
+  assert.equal(options.printResponse, true);
   assert.equal(options.strict, true);
   assert.equal(event.source, "codex");
   assert.equal(event.sessionId, "s1");
   assert.equal(event.kind, "tool_use");
   assert.deepEqual(event.metadata, { tool: "shell", command: "git status" });
+});
+
+test("agent response helpers resolve sibling response files", () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "nexus-agent-response-"));
+  const responsesRoot = defaultAgentResponsesRoot(root, {});
+  mkdirSync(responsesRoot);
+  try {
+    const filePath = agentResponsePath(responsesRoot, "agent-codex-session-permission-123");
+    writeFileSync(
+      filePath,
+      JSON.stringify({
+        decision: "approve",
+        message: "Approved after review",
+        metadata: { reviewer: "nexus", count: 1 }
+      })
+    );
+
+    const result = readAgentResponse(responsesRoot, "agent-codex-session-permission-123");
+
+    assert.equal(result.path, filePath);
+    assert.deepEqual(result.response, {
+      eventId: "agent-codex-session-permission-123",
+      decision: "approve",
+      message: "Approved after review",
+      metadata: { reviewer: "nexus", count: "1" }
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("appendAgentEvent writes one JSONL event", () => {
@@ -119,6 +159,39 @@ test("CLI writes events and remains fail-open by default", () => {
     });
     assert.equal(failed.status, 0);
     assert.match(failed.stderr, /helper skipped/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("CLI can include a local Nexus response without requiring one", () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "nexus-agent-cli-response-"));
+  const responsesRoot = path.join(root, "responses");
+  mkdirSync(responsesRoot);
+  try {
+    const output = execFileSync(
+      process.execPath,
+      [
+        scriptPath,
+        "--events-root",
+        root,
+        "--responses-root",
+        responsesRoot,
+        "--source",
+        "codex",
+        "--session-id",
+        "s4",
+        "--kind",
+        "question",
+        "--summary",
+        "Need input",
+        "--print-response"
+      ],
+      { encoding: "utf8" }
+    );
+    const missingResponse = JSON.parse(output);
+    assert.match(missingResponse.responsePath, /responses\/agent-codex-s4-question-\d+\.json$/);
+    assert.equal(missingResponse.agentResponse, null);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
