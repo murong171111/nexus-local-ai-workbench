@@ -23,6 +23,7 @@ import {
   todayString,
   widgetSnapshotFromDashboard,
   workspaceWorktreeSignals,
+  workspaceCreatePreflight,
   workspaceFolderFromName,
   workspaceIsArchived,
   workspaceMatchesFilter,
@@ -88,6 +89,55 @@ test("workspaceFolderFromName prefixes a stable date", () => {
 test("workspaceFolderFromName falls back when the request name has no slug", () => {
   const date = new Date("2026-05-26T04:00:00.000Z");
   assert.equal(workspaceFolderFromName(" /// ", date), "2026-05-26-workspace");
+});
+
+test("workspaceCreatePreflight allows early scoping with warnings", () => {
+  const report = workspaceCreatePreflight({
+    name: "支付日志追踪",
+    folder: "2026-05-26-pay-log",
+    workspacesRoot: "/workspace",
+    sourceReposRoot: "/source",
+    services: ["order", "unknown-service"],
+    targetBranch: "待确认",
+    existingFolders: ["2026-05-26-other"],
+    knownSourceRepos: ["order"],
+    environmentReady: false
+  });
+
+  assert.equal(report.canCreate, true);
+  assert.deepEqual(
+    report.issues.map((issue) => [issue.code, issue.severity]),
+    [
+      ["target-branch-pending", "warning"],
+      ["service-source-missing", "warning"],
+      ["environment-not-ready", "warning"]
+    ]
+  );
+});
+
+test("workspaceCreatePreflight blocks unsafe local writes", () => {
+  const report = workspaceCreatePreflight({
+    name: "",
+    folder: "../bad",
+    workspacesRoot: "",
+    sourceReposRoot: "",
+    services: [],
+    targetBranch: "chen/demo",
+    existingFolders: ["../bad"]
+  });
+
+  assert.equal(report.canCreate, false);
+  assert.deepEqual(
+    report.issues.map((issue) => issue.code),
+    [
+      "name-missing",
+      "workspaces-root-missing",
+      "source-root-missing",
+      "folder-invalid",
+      "folder-exists",
+      "services-pending"
+    ]
+  );
 });
 
 test("normalizeServiceList trims, deduplicates, and sorts service names", () => {

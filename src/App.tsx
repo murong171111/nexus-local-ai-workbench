@@ -40,7 +40,7 @@ import { Card } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { appendAuditEvent, checkEnvironment, createWorkspace, exportSettingsProfile, isDesktopApp, openExternalUrl, openPath as openPathInDesktop, readTextFile, rebuildSearchIndex, scanSourceRepos, scanWorkspaces, searchIndex, setupWorktrees, writeWidgetSnapshot, type EnvironmentHealth, type RebuildSearchIndexResponse, type SearchResult, type SourceRepo } from "./desktop";
 import { cn, riskTone } from "./lib";
-import { branchAlignmentRows, buildWorktreeCommand, createSettingsProfile, fallbackSearchResults, filterWorkspaces, groupSearchResults, hasConfirmedTargetBranch, normalizeServiceList, orderedSearchResults, parseServiceInput, parseSettingsProfile, settingsProfileFilename, sortWorkspacesForAttention, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceIsArchived, workspaceSessionActions, type NexusSettingsProfile } from "./workspace-model";
+import { branchAlignmentRows, buildWorktreeCommand, createSettingsProfile, fallbackSearchResults, filterWorkspaces, groupSearchResults, hasConfirmedTargetBranch, normalizeServiceList, orderedSearchResults, parseServiceInput, parseSettingsProfile, settingsProfileFilename, sortWorkspacesForAttention, todayString, widgetSnapshotFromDashboard, workspaceCreatePreflight, workspaceFolderFromName, workspaceIsArchived, workspaceSessionActions, type NexusSettingsProfile } from "./workspace-model";
 import type { DashboardData, Workspace, WorkspaceSessionAction } from "./types";
 
 const initialData = rawData as DashboardData;
@@ -2062,6 +2062,8 @@ function CreateWorkspacePanel({
   settings,
   sourceRepos,
   sourceScanning,
+  existingFolders,
+  environmentReady,
   onClose,
   onCreate,
   onScanSourceRepos
@@ -2070,6 +2072,8 @@ function CreateWorkspacePanel({
   settings: NexusSettings;
   sourceRepos: SourceRepo[];
   sourceScanning: boolean;
+  existingFolders: string[];
+  environmentReady: boolean;
   onClose: () => void;
   onCreate: (input: { name: string; folder: string; services: string[]; targetBranch: string; confirmed: boolean }) => void;
   onScanSourceRepos: () => void;
@@ -2081,10 +2085,23 @@ function CreateWorkspacePanel({
   const [targetBranch, setTargetBranch] = useState("");
   const [confirmed, setConfirmed] = useState(false);
   const folder = workspaceFolderFromName(name);
-  if (!open) return null;
-
   const manualServices = parseServiceInput(servicesText);
   const services = normalizeServiceList([...selectedServices, ...manualServices]);
+  const preflight = workspaceCreatePreflight({
+    name,
+    folder,
+    workspacesRoot: settings.workspacesRoot,
+    sourceReposRoot: settings.sourceReposRoot,
+    services,
+    targetBranch,
+    existingFolders,
+    knownSourceRepos: sourceRepos.map((repo) => repo.name),
+    environmentReady
+  });
+  const blockers = preflight.issues.filter((issue) => issue.severity === "blocker");
+  const warnings = preflight.issues.filter((issue) => issue.severity === "warning");
+  if (!open) return null;
+
   const serviceMatches = sourceRepos
     .filter((repo) => repo.name.toLowerCase().includes(serviceQuery.trim().toLowerCase()))
     .slice(0, 16);
@@ -2192,6 +2209,31 @@ function CreateWorkspacePanel({
               <div className="mono mt-2 break-all text-xs text-neutral-500">{settings.workspacesRoot}</div>
               <div className="mt-3 text-neutral-500">创建后不会自动创建 worktree；目标分支确认后再按工作区里的命令创建。</div>
             </Card>
+            <Card className="p-4 text-sm leading-6 text-neutral-600">
+              <div className="font-medium text-neutral-950">创建前检查 / Preflight</div>
+              {!preflight.issues.length ? (
+                <div className="mt-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-700">
+                  当前输入可以创建工作区。
+                </div>
+              ) : (
+                <div className="mt-3 grid gap-2">
+                  {[...blockers, ...warnings].map((issue) => (
+                    <div
+                      key={`${issue.code}-${issue.message}`}
+                      className={cn(
+                        "rounded-md border px-3 py-2",
+                        issue.severity === "blocker"
+                          ? "border-red-200 bg-red-50 text-red-700"
+                          : "border-amber-200 bg-amber-50 text-amber-800"
+                      )}
+                    >
+                      <span className="font-medium">{issue.severity === "blocker" ? "阻塞" : "提示"}</span>
+                      <span className="ml-2">{issue.message}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
             <label className="flex items-start gap-3 rounded-md border border-neutral-200 bg-white p-4 text-sm text-neutral-600">
               <input
                 type="checkbox"
@@ -2210,7 +2252,7 @@ function CreateWorkspacePanel({
         </div>
         <div className="flex justify-end gap-2 border-t border-neutral-200 px-5 py-4">
           <Button variant="ghost" onClick={onClose}>取消</Button>
-          <Button disabled={!name.trim() || !confirmed} onClick={() => onCreate({ name: name.trim(), folder, services, targetBranch, confirmed })}>
+          <Button disabled={!preflight.canCreate || !confirmed} onClick={() => onCreate({ name: name.trim(), folder, services, targetBranch, confirmed })}>
             创建工作区
           </Button>
         </div>
@@ -3084,6 +3126,8 @@ export function App() {
         settings={settings}
         sourceRepos={sourceRepos}
         sourceScanning={sourceScanning}
+        existingFolders={dashboard.workspaces.map((workspace) => workspace.folder)}
+        environmentReady={environmentHealth.ready}
         onClose={() => setCreateOpen(false)}
         onCreate={handleCreateWorkspace}
         onScanSourceRepos={handleScanSourceRepos}
