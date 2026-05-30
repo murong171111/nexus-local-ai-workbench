@@ -18,6 +18,7 @@ import {
   GitBranch,
   GitCommit,
   ListChecks,
+  Pin,
   Plus,
   RefreshCw,
   Search,
@@ -39,7 +40,7 @@ import { Card } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { appendAuditEvent, checkEnvironment, createWorkspace, exportSettingsProfile, isDesktopApp, openExternalUrl, openPath as openPathInDesktop, readTextFile, rebuildSearchIndex, scanSourceRepos, scanWorkspaces, searchIndex, setupWorktrees, writeWidgetSnapshot, type EnvironmentHealth, type RebuildSearchIndexResponse, type SearchResult, type SourceRepo } from "./desktop";
 import { cn, riskTone } from "./lib";
-import { branchAlignmentRows, buildWorktreeCommand, createSettingsProfile, fallbackSearchResults, groupSearchResults, hasConfirmedTargetBranch, normalizeServiceList, orderedSearchResults, parseServiceInput, parseSettingsProfile, settingsProfileFilename, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceScore, workspaceSessionActions, type NexusSettingsProfile } from "./workspace-model";
+import { branchAlignmentRows, buildWorktreeCommand, createSettingsProfile, fallbackSearchResults, groupSearchResults, hasConfirmedTargetBranch, normalizeServiceList, orderedSearchResults, parseServiceInput, parseSettingsProfile, settingsProfileFilename, sortWorkspacesForAttention, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceSessionActions, type NexusSettingsProfile } from "./workspace-model";
 import type { DashboardData, Workspace, WorkspaceSessionAction } from "./types";
 
 const initialData = rawData as DashboardData;
@@ -154,6 +155,7 @@ type SearchIndexState = {
 
 const settingsStorageKey = "nexus-settings";
 const onboardingStorageKey = "nexus-onboarding-complete";
+const pinnedWorkspacesStorageKey = "nexus-pinned-workspaces";
 const demoWorkspaceName = "Nexus 示例工作区";
 const demoWorkspaceBranch = "chen/nexus-demo-workspace";
 
@@ -188,6 +190,15 @@ function shouldShowOnboarding() {
     return !window.localStorage.getItem(settingsStorageKey) && !window.localStorage.getItem(onboardingStorageKey);
   } catch {
     return false;
+  }
+}
+
+function loadPinnedWorkspaces() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(pinnedWorkspacesStorageKey) ?? "[]");
+    return new Set(Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : []);
+  } catch {
+    return new Set<string>();
   }
 }
 
@@ -295,6 +306,8 @@ function Sidebar({
   setActive,
   filter,
   setFilter,
+  pinnedFolders,
+  onTogglePinned,
   onOpenCreate,
   onOpenSettings
 }: {
@@ -303,6 +316,8 @@ function Sidebar({
   setActive: (folder: string) => void;
   filter: string;
   setFilter: (filter: string) => void;
+  pinnedFolders: Set<string>;
+  onTogglePinned: (folder: string) => void;
   onOpenCreate: () => void;
   onOpenSettings: () => void;
 }) {
@@ -362,20 +377,38 @@ function Sidebar({
         <div className="px-2 text-xs uppercase tracking-[0.14em] text-neutral-400">工作区 / Workspaces</div>
         <div className="mt-2 grid gap-1">
           {workspaces.map((workspace) => (
-            <button
+            <div
               key={workspace.folder}
-              onClick={() => setActive(workspace.folder)}
               className={cn(
-                "rounded-md px-2 py-2 text-left transition-colors hover:bg-neutral-50",
+                "grid grid-cols-[minmax(0,1fr)_auto] items-start rounded-md transition-colors hover:bg-neutral-50",
                 active === workspace.folder && "bg-neutral-100"
               )}
             >
-              <div className="flex items-center justify-between gap-2">
-                <span className="truncate text-sm text-neutral-900">{workspace.name}</span>
-                {workspace.riskCount > 0 && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />}
-              </div>
-              <div className="mono mt-1 truncate text-[11px] text-neutral-400">{workspace.folder}</div>
-            </button>
+              <button type="button" className="min-w-0 px-2 py-2 text-left" onClick={() => setActive(workspace.folder)}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-sm text-neutral-900">{workspace.name}</span>
+                  <span className="flex shrink-0 items-center gap-1">
+                    {pinnedFolders.has(workspace.folder) && <Pin className="h-3 w-3 fill-blue-500 text-blue-500" />}
+                    {workspace.riskCount > 0 && <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />}
+                  </span>
+                </div>
+                <div className="mono truncate text-[11px] text-neutral-400">{workspace.folder}</div>
+              </button>
+              <button
+                type="button"
+                className="mr-1 mt-1 flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:bg-neutral-100 hover:text-blue-600"
+                onClick={() => onTogglePinned(workspace.folder)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onTogglePinned(workspace.folder);
+                }}
+                aria-label={pinnedFolders.has(workspace.folder) ? "取消置顶工作区" : "置顶工作区"}
+              >
+                <Pin className={cn("h-3 w-3", pinnedFolders.has(workspace.folder) && "fill-blue-500 text-blue-500")} />
+              </button>
+            </div>
           ))}
         </div>
       </div>
@@ -2285,6 +2318,7 @@ export function App() {
   const [settings, setSettings] = useState<NexusSettings>(() => loadSettings(initialData));
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
+  const [pinnedFolders, setPinnedFolders] = useState<Set<string>>(() => loadPinnedWorkspaces());
   const [active, setActive] = useState(initialData.workspaces[0]?.folder ?? "");
   const [commandOpen, setCommandOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -2510,7 +2544,7 @@ export function App() {
     void writeWidgetSnapshot(widgetSnapshotFromDashboard(dashboard, active));
   }, [dashboard, active]);
 
-  const sorted = useMemo(() => [...dashboard.workspaces].sort((a, b) => workspaceScore(b) - workspaceScore(a)), [dashboard.workspaces]);
+  const sorted = useMemo(() => sortWorkspacesForAttention(dashboard.workspaces, pinnedFolders), [dashboard.workspaces, pinnedFolders]);
   const visible = useMemo(() => {
     const lower = query.trim().toLowerCase();
     return sorted.filter((workspace) => {
@@ -2948,6 +2982,24 @@ export function App() {
     showToast("已复制风险处理指令");
   };
 
+  const togglePinnedWorkspace = (folder: string) => {
+    const nextPinned = new Set(pinnedFolders);
+    const wasPinned = nextPinned.has(folder);
+    if (wasPinned) {
+      nextPinned.delete(folder);
+    } else {
+      nextPinned.add(folder);
+    }
+
+    setPinnedFolders(nextPinned);
+    try {
+      window.localStorage.setItem(pinnedWorkspacesStorageKey, JSON.stringify(Array.from(nextPinned)));
+    } catch {
+      // Browser storage failures should not block the in-memory pin action.
+    }
+    showToast(wasPinned ? "已取消置顶工作区" : "已置顶工作区");
+  };
+
   return (
     <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[248px_minmax(0,1fr)] 2xl:grid-cols-[268px_minmax(0,1fr)_330px]">
       <Sidebar
@@ -2956,6 +3008,8 @@ export function App() {
         setActive={setActive}
         filter={filter}
         setFilter={setFilter}
+        pinnedFolders={pinnedFolders}
+        onTogglePinned={togglePinnedWorkspace}
         onOpenCreate={() => setCreateOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}
       />

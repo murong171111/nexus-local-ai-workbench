@@ -15,6 +15,7 @@ import {
   parseSettingsProfile,
   serializeSettingsProfile,
   settingsProfileFilename,
+  sortWorkspacesForAttention,
   slugify,
   todayString,
   widgetSnapshotFromDashboard,
@@ -77,6 +78,11 @@ test("workspaceFolderFromName prefixes a stable date", () => {
   assert.equal(workspaceFolderFromName("示例需求", date), "2026-05-26-示例需求");
 });
 
+test("workspaceFolderFromName falls back when the request name has no slug", () => {
+  const date = new Date("2026-05-26T04:00:00.000Z");
+  assert.equal(workspaceFolderFromName(" /// ", date), "2026-05-26-workspace");
+});
+
 test("normalizeServiceList trims, deduplicates, and sorts service names", () => {
   assert.deepEqual(normalizeServiceList([" order ", "store", "order", "", "cashier"]), ["cashier", "order", "store"]);
 });
@@ -102,6 +108,13 @@ test("buildWorktreeCommand creates reviewable git worktree commands", () => {
   assert.match(command, /git -C '\/source\/order' worktree add '\/workspace\/demo\/repos\/order' 'chen\/demo'/);
 });
 
+test("buildWorktreeCommand keeps early workspace creation safe without confirmed services", () => {
+  assert.equal(
+    buildWorktreeCommand("/workspace/demo", "/source", [], "待确认"),
+    "# No services are confirmed yet. Add services before creating worktrees."
+  );
+});
+
 test("todayString returns an ISO date", () => {
   assert.equal(todayString(new Date("2026-05-26T23:59:00.000Z")), "2026-05-26");
 });
@@ -112,6 +125,37 @@ test("workspaceScore prioritizes risks and dirty worktrees", () => {
     gitRows: [gitRow("order", { worktree: { dirty: true } }), gitRow("store", { worktree: { branch: "chen/other" } })]
   });
   assert.equal(workspaceScore(scored), 28);
+});
+
+test("sortWorkspacesForAttention keeps pinned workspaces ahead of risk score", () => {
+  const lowRiskPinned = workspace({
+    name: "Pinned Low Risk",
+    folder: "pinned-low-risk",
+    riskCount: 0,
+    risks: []
+  });
+  const highRisk = workspace({
+    name: "High Risk",
+    folder: "high-risk",
+    riskCount: 3,
+    risks: ["blocked"]
+  });
+
+  assert.deepEqual(
+    sortWorkspacesForAttention([highRisk, lowRiskPinned], new Set(["pinned-low-risk"])).map((item) => item.folder),
+    ["pinned-low-risk", "high-risk"]
+  );
+});
+
+test("sortWorkspacesForAttention falls back to risk score and stable names", () => {
+  const alpha = workspace({ name: "Alpha", folder: "alpha", riskCount: 0, risks: [] });
+  const beta = workspace({ name: "Beta", folder: "beta", riskCount: 0, risks: [] });
+  const risky = workspace({ name: "Risky", folder: "risky", riskCount: 1, risks: ["risk"] });
+
+  assert.deepEqual(
+    sortWorkspacesForAttention([beta, risky, alpha]).map((item) => item.folder),
+    ["risky", "alpha", "beta"]
+  );
 });
 
 test("workspaceSessionActions builds a startup flow from workspace state", () => {
@@ -222,6 +266,28 @@ test("widgetSnapshotFromDashboard summarizes active workspace state", () => {
   assert.match(snapshot.generatedAt, /^\d{4}-\d{2}-\d{2}T/);
 });
 
+test("widgetSnapshotFromDashboard limits top risks for a compact menu and widget summary", () => {
+  const dashboard = {
+    generatedAt: "2026-01-01T00:00:00.000Z",
+    workspacesRoot: "/workspace",
+    sourceReposRoot: "/source",
+    docsRoot: "/docs",
+    workspaces: [
+      workspace({
+        name: "Risky Workspace",
+        risks: ["risk one", "risk two", "risk three", "risk four"],
+        riskCount: 4
+      })
+    ]
+  };
+
+  assert.deepEqual(widgetSnapshotFromDashboard(dashboard, "missing").topRisks, [
+    "Risky Workspace: risk one",
+    "Risky Workspace: risk two",
+    "Risky Workspace: risk three"
+  ]);
+});
+
 test("fallbackSearchResults mirrors indexed search result shape for browser preview", () => {
   const dashboard = {
     generatedAt: "2026-01-01T00:00:00.000Z",
@@ -249,6 +315,33 @@ test("fallbackSearchResults mirrors indexed search result shape for browser prev
   assert.match(results[0].snippet, /store-cashier/);
 });
 
+test("fallbackSearchResults prioritizes direct workspace matches before metadata matches", () => {
+  const dashboard = {
+    generatedAt: "2026-01-01T00:00:00.000Z",
+    workspacesRoot: "/workspace",
+    sourceReposRoot: "/source",
+    docsRoot: "/docs",
+    workspaces: [
+      workspace({
+        name: "Backend Cleanup",
+        folder: "2026-01-01-backend-cleanup",
+        risks: ["pay-log delivery risk"],
+        links: { folder: "/workspace/2026-01-01-backend-cleanup" }
+      }),
+      workspace({
+        name: "Pay Log Workspace",
+        folder: "2026-01-01-pay-log",
+        links: { folder: "/workspace/2026-01-01-pay-log" }
+      })
+    ]
+  };
+
+  assert.deepEqual(
+    fallbackSearchResults(dashboard, "pay-log", 2).map((result) => result.workspaceName),
+    ["Pay Log Workspace", "Backend Cleanup"]
+  );
+});
+
 test("compactSearchSnippet keeps nearby context around a query", () => {
   const snippet = compactSearchSnippet("alpha beta gamma pay_log delta epsilon", "pay_log", 6);
   assert.equal(snippet, "...gamma pay_log delta...");
@@ -256,6 +349,24 @@ test("compactSearchSnippet keeps nearby context around a query", () => {
 
 test("groupSearchResults gives the global search popover stable sections", () => {
   const results = [
+    {
+      workspaceFolder: "a",
+      workspaceName: "A",
+      documentKey: "tasks",
+      documentName: "Tasks",
+      documentPath: "/a/tasks.md",
+      kind: "tasks",
+      snippet: "todo"
+    },
+    {
+      workspaceFolder: "a",
+      workspaceName: "A",
+      documentKey: "branches",
+      documentName: "Branches",
+      documentPath: "/a/branches.md",
+      kind: "branches",
+      snippet: "main"
+    },
     {
       workspaceFolder: "a",
       workspaceName: "A",
@@ -277,15 +388,6 @@ test("groupSearchResults gives the global search popover stable sections", () =>
     {
       workspaceFolder: "a",
       workspaceName: "A",
-      documentKey: "tasks",
-      documentName: "Tasks",
-      documentPath: "/a/tasks.md",
-      kind: "tasks",
-      snippet: "todo"
-    },
-    {
-      workspaceFolder: "a",
-      workspaceName: "A",
       documentKey: "delivery",
       documentName: "Delivery",
       documentPath: "/a/delivery.md",
@@ -300,13 +402,14 @@ test("groupSearchResults gives the global search popover stable sections", () =>
     groups.map((group) => [group.id, group.label, group.results.length]),
     [
       ["workspace", "工作区 / Workspace", 1],
+      ["state", "服务与状态 / State", 1],
+      ["workflow", "任务与交付 / Workflow", 2],
       ["sql", "SQL 与数据变更 / SQL", 1],
-      ["workflow", "任务与交付 / Workflow", 2]
     ]
   );
   assert.deepEqual(
     orderedSearchResults(results).map((result) => result.documentKey),
-    ["workspace", "sql", "tasks", "delivery"]
+    ["workspace", "branches", "tasks", "delivery", "sql"]
   );
 });
 
@@ -351,8 +454,19 @@ test("parseSettingsProfile validates and normalizes imported settings", () => {
   });
 });
 
-test("parseSettingsProfile rejects unrelated JSON files", () => {
-  assert.throws(() => parseSettingsProfile(JSON.stringify({ app: "Other", schemaVersion: 1, settings: {} })), /不是 Nexus Profile/);
+test("parseSettingsProfile rejects unrelated JSON files with recovery context", () => {
+  assert.throws(
+    () => parseSettingsProfile(JSON.stringify({ app: "Other", schemaVersion: 1, settings: {} })),
+    /app 必须是 Nexus/
+  );
+  assert.throws(
+    () => parseSettingsProfile(JSON.stringify({ app: "Nexus", schemaVersion: 2, settings: {} })),
+    /暂不支持该配置版本：2/
+  );
+  assert.throws(
+    () => parseSettingsProfile(JSON.stringify({ app: "Nexus", schemaVersion: 1 })),
+    /需要包含 workspacesRoot/
+  );
 });
 
 test("settingsProfileFilename uses the export date", () => {

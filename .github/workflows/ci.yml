@@ -30,8 +30,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Check development environment
+        run: npm run env:check
+
       - name: Run tests
         run: npm run test
+
+      - name: Check public sample data
+        run: npm run privacy:check
 
       - name: Build frontend
         run: npm run build

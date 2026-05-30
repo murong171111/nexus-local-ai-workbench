@@ -1,6 +1,8 @@
 node_modules/
 dist/
 .vite/
+.npm-cache/
+.swift-module-cache/
 .tmp-tests/
 src-tauri/target/
 src-tauri/gen/

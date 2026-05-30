@@ -7,6 +7,7 @@ const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const tsc = path.join(root, "node_modules", ".bin", process.platform === "win32" ? "tsc.cmd" : "tsc");
 
 rmSync(path.join(root, ".tmp-tests"), { recursive: true, force: true });
+execFileSync(process.execPath, ["scripts/check-public-data.mjs"], { cwd: root, stdio: "inherit" });
 execFileSync(tsc, ["-p", "tsconfig.test.json"], { cwd: root, stdio: "inherit" });
 
 const testFiles = readdirSync(path.join(root, "tests"))

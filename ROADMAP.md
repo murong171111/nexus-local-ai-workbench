@@ -12,11 +12,11 @@ This roadmap describes the next product and engineering steps for Nexus. The cur
 
 ## 0.1.x: Public Preview Hardening
 
-- Add automated CI validation for pull requests and pushes to `main`.
-- Add automated release builds for Apple Silicon and Intel macOS.
-- Keep sample workspace data free of private local paths.
-- Improve error messages for missing directories, invalid paths, and git failures.
-- Add unit coverage for workspace parsing, creation defaults, widget snapshots, and git status mapping.
+- Add automated CI validation for pull requests and pushes to `main`. `[done with GitHub Actions for environment diagnostics, Node, Rust, Swift widget/native, Tauri checks, and public-data privacy checks]`
+- Add automated release builds for Apple Silicon and Intel macOS. `[started with tag/workflow_dispatch DMG builds for aarch64 and x86_64]`
+- Keep sample workspace data free of private local paths. `[done with publishable text scan in npm run privacy:check]`
+- Improve error messages for missing directories, invalid paths, and git failures. `[started with native operation feedback, create/worktree preflight copy, settings profile import recovery context, and local dev-tool diagnostics]`
+- Add unit coverage for workspace parsing, creation defaults, widget snapshots, and git status mapping. `[started with JS coverage for workspace parsing, creation defaults, widget snapshots, search grouping, settings profiles, agent hooks, and Rust Core git/workspace tests]`
 - Split the large Rust command layer by extracting reusable logic into `nexus-core`.
 
 ## 0.2.x: Native Foundation
@@ -51,9 +51,9 @@ This roadmap describes the next product and engineering steps for Nexus. The cur
 
 - Add SQLite local index for workspace metadata and Markdown documents. `[started in Rust Core]`
 - Add full-text search across tasks, decisions, delivery records, SQL notes, and service scopes. `[started in Rust Core, bridge, Tauri preview UI, and native SwiftUI shell]`
-- Add search result grouping and keyboard navigation in the Mac UI. `[started in Tauri preview UI and native SwiftUI shell]`
+- Add search result grouping and keyboard navigation in the Mac UI. `[started in Tauri preview UI and native SwiftUI shell with stable group ordering and ranked browser-preview fallback results]`
 - Add timeline view for workspace activity. `[started in native SwiftUI shell]`
-- Add saved filters and pinned workspaces. `[started in native SwiftUI shell with persisted search scope and pinned workspace preferences]`
+- Add saved filters and pinned workspaces. `[started in native SwiftUI shell with persisted search scope and pinned workspace preferences, plus browser-preview workspace pins backed by localStorage and shared attention sorting]`
 
 ## 0.5.x: Widget And Automation
 
