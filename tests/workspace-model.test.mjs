@@ -8,6 +8,7 @@ import {
   fallbackSearchResults,
   groupSearchResults,
   hasConfirmedTargetBranch,
+  localOperationErrorMessage,
   normalizeServiceList,
   normalizeGitBranch,
   orderedSearchResults,
@@ -410,6 +411,25 @@ test("groupSearchResults gives the global search popover stable sections", () =>
   assert.deepEqual(
     orderedSearchResults(results).map((result) => result.documentKey),
     ["workspace", "branches", "tasks", "delivery", "sql"]
+  );
+});
+
+test("localOperationErrorMessage adds operation, target, and recovery guidance", () => {
+  assert.equal(
+    localOperationErrorMessage({
+      operation: "打开文档 tasks.md",
+      error: new Error("No such file or directory"),
+      targetPath: "/workspace/demo/tasks.md",
+      recovery: "刷新工作区后重试。"
+    }),
+    "打开文档 tasks.md失败：No such file or directory · 目标：/workspace/demo/tasks.md · 建议：刷新工作区后重试。"
+  );
+});
+
+test("localOperationErrorMessage falls back for unknown errors", () => {
+  assert.equal(
+    localOperationErrorMessage({ operation: "", error: null }),
+    "本地操作失败：未知错误 · 建议：请检查 Settings 中的本机路径配置，或刷新工作区数据后重试。"
   );
 });
 

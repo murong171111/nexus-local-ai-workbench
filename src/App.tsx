@@ -40,7 +40,7 @@ import { Card } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { appendAuditEvent, checkEnvironment, createWorkspace, exportSettingsProfile, isDesktopApp, openExternalUrl, openPath as openPathInDesktop, readTextFile, rebuildSearchIndex, scanSourceRepos, scanWorkspaces, searchIndex, setupWorktrees, writeWidgetSnapshot, type EnvironmentHealth, type RebuildSearchIndexResponse, type SearchResult, type SourceRepo } from "./desktop";
 import { cn, riskTone } from "./lib";
-import { branchAlignmentRows, buildWorktreeCommand, createSettingsProfile, fallbackSearchResults, groupSearchResults, hasConfirmedTargetBranch, normalizeServiceList, orderedSearchResults, parseServiceInput, parseSettingsProfile, settingsProfileFilename, sortWorkspacesForAttention, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceSessionActions, type NexusSettingsProfile } from "./workspace-model";
+import { branchAlignmentRows, buildWorktreeCommand, createSettingsProfile, fallbackSearchResults, groupSearchResults, hasConfirmedTargetBranch, localOperationErrorMessage, normalizeServiceList, orderedSearchResults, parseServiceInput, parseSettingsProfile, settingsProfileFilename, sortWorkspacesForAttention, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceSessionActions, type NexusSettingsProfile } from "./workspace-model";
 import type { DashboardData, Workspace, WorkspaceSessionAction } from "./types";
 
 const initialData = rawData as DashboardData;
@@ -2441,7 +2441,14 @@ export function App() {
         state: "error",
         message: "index error"
       });
-      if (options.showToast) showToast(error instanceof Error ? error.message : "索引重建失败");
+      if (options.showToast) {
+        showToast(localOperationErrorMessage({
+          operation: "重建本地搜索索引",
+          error,
+          targetPath: settings.workspacesRoot,
+          recovery: "检查 workspacesRoot、sourceReposRoot 和 docsRoot 是否仍然有效，然后重试重建索引。"
+        }));
+      }
       return null;
     }
   }, [settings.docsRoot, settings.sourceReposRoot, settings.workspacesRoot, showToast]);
@@ -2713,7 +2720,12 @@ export function App() {
       setWorktreeSetupWorkspace(undefined);
       await refreshData();
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "worktree 创建失败");
+      showToast(localOperationErrorMessage({
+        operation: "创建 worktree",
+        error,
+        targetPath: workspace.path,
+        recovery: "确认目标分支、源仓库路径和 workspace/repos 写入位置后再执行。"
+      }));
     } finally {
       setWorktreeSetupRunning(false);
     }
@@ -2755,7 +2767,11 @@ export function App() {
       downloadSettingsProfile(profile);
       showToast("已下载 Nexus 配置文件");
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "导出配置失败");
+      showToast(localOperationErrorMessage({
+        operation: "导出团队配置",
+        error,
+        recovery: "确认 Nexus Mac App 有权写入 Application Support，或使用浏览器下载备份。"
+      }));
     }
   };
 
@@ -2811,7 +2827,12 @@ export function App() {
         });
       }
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "文档读取失败");
+      showToast(localOperationErrorMessage({
+        operation: `打开文档 ${title}`,
+        error,
+        targetPath: path,
+        recovery: "确认文件仍存在且可读；如果路径来自旧搜索结果，请先刷新工作区数据。"
+      }));
     }
   };
 
@@ -2940,7 +2961,12 @@ export function App() {
       void refreshSearchIndex();
       showToast(`已创建工作区 ${input.name}`);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "创建工作区失败");
+      showToast(localOperationErrorMessage({
+        operation: "创建工作区",
+        error,
+        targetPath: `${settings.workspacesRoot}/${input.folder}`,
+        recovery: "检查工作区根目录、目录名和目标目录是否已存在，然后重新确认创建。"
+      }));
     }
   };
 

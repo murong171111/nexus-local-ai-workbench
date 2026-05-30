@@ -39,7 +39,7 @@ It is designed for teams that work across multiple local service repositories an
 - Native workspace detail overview that keeps lifecycle, branch, services, risk, tasks, delivery, Codex session count, and latest local-check state visible before deeper workflow sections.
 - Native clipboard feedback that confirms workspace, lifecycle, risk, task, automation, agent-event, session-link, or task-locator context has been copied, with context-aware next-step guidance.
 - Native Agent Event detail actions for copying a Codex continuation pack or copying it and opening Codex in one step, with local audit records for both paths.
-- Native inspector operation feedback for local errors, with dismiss, copy-error, refresh, environment-check, and Settings recovery actions.
+- Native inspector operation feedback for local errors, with dismiss, copy-error, refresh, environment-check, and Settings recovery actions. The preview app also expands failed local operations with the operation name, target path, and recovery guidance.
 - Native empty states for first-run, filtered-out workspace lists, or unselected details, showing configured paths, environment health, a first-run setup path for team profile -> environment check -> workspace creation, and one shared action group for New Workspace, Settings/Profile, Environment Check, Refresh, and Show All recovery.
 - Native workflow summary in workspace detail for open tasks, blocked tasks, delivery status, a delivery focus card, grouped document/check/Agent action lanes, delivery-readiness checks, inline local-check receipts, lifecycle writeback recommendations, task documents, delivery records, workspace Codex handoff, delivery-update Codex handoff, and validation/PR handoff, with Chinese-first primary action labels.
 - Native risk review in workspace detail for active risks, blocker/warning readiness checks, status documents, worktree setup, local re-check receipts, and copyable Codex risk-review prompts.
@@ -80,7 +80,7 @@ The `Codex Sessions` area in workspace detail can bind multiple Codex deep links
 
 After any Codex handoff, context copy, session-link copy, or task-source locator, the native inspector shows a dismissible clipboard feedback panel with the copied context type, timestamp, payload label, and next-step guidance. Codex prompts still explain the paste fallback, while task locators point back to `tasks.md` and the focused Documents Hub line context.
 
-When a local operation fails, such as an invalid path, invalid Codex URL, invalid IDE URL template, document-read failure, Terminal launch failure, or worktree setup error, the native inspector shows an `Operation` feedback card. It keeps the error visible and offers copy-error, refresh, environment-check, and Settings actions without moving the user out of the current workspace flow.
+When a local operation fails, such as an invalid path, invalid Codex URL, invalid IDE URL template, document-read failure, Terminal launch failure, or worktree setup error, the native inspector shows an `Operation` feedback card. It keeps the error visible and offers copy-error, refresh, environment-check, and Settings actions without moving the user out of the current workspace flow. The preview app uses the same recovery language in toasts for document opens, index rebuilds, workspace creation, settings export, and worktree setup.
 
 ## Workspace Layout
 
