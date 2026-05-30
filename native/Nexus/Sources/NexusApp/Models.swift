@@ -299,6 +299,12 @@ struct MenuBarStatusSummary: Hashable {
         if riskyWorkspaceCount > 0 {
             return "\(riskyWorkspaceCount) workspaces have risk signals"
         }
+        if missingWorktreeCount > 0 {
+            return "\(missingWorktreeCount) worktrees are missing"
+        }
+        if dirtyServiceCount > 0 {
+            return "\(dirtyServiceCount) services have uncommitted changes"
+        }
         if highPriorityTaskCount > 0 {
             return "\(highPriorityTaskCount) high-priority tasks are open"
         }
@@ -322,7 +328,8 @@ struct MenuBarStatusSummary: Hashable {
             "High-priority tasks: \(highPriorityTaskCount)",
             "Agent tasks: \(agentTaskCount)",
             "Missing worktrees: \(missingWorktreeCount)",
-            "Dirty services: \(dirtyServiceCount)"
+            "Dirty services: \(dirtyServiceCount)",
+            "Status: \(statusLine)"
         ].joined(separator: "\n")
     }
 }

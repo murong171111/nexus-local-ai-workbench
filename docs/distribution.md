@@ -73,6 +73,7 @@ src-tauri/target/release/bundle/dmg/Nexus_0.1.0_aarch64.dmg
   - Markdown preview works.
   - `~/Library/Application Support/com.ks.nexus/widget-snapshot.json` is generated.
   - `nexus://workspace/<folder>` opens Nexus and focuses the target workspace when it exists, and the Command Center can copy the same link for the selected workspace.
+  - Menu-bar status text names missing worktrees or dirty services before lower-priority open-task counts.
 
 ## Signing And Notarization
 
