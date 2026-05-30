@@ -7,6 +7,7 @@
 - [ ] `npm run test`
 - [ ] `npm run build`
 - [ ] `npm run widget:typecheck`
+- [ ] `npm run verify:preview` for preview/docs/sample-data changes
 - [ ] `npm run tauri:build` when native packaging changes
 
 ## Documentation

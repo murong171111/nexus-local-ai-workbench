@@ -63,6 +63,12 @@ npm run widget:typecheck
 npm run privacy:check
 ```
 
+For documentation, sample-data, and browser-preview changes that do not touch native packaging, you can run the preview baseline:
+
+```bash
+npm run verify:preview
+```
+
 For native changes, also run:
 
 ```bash

@@ -31,8 +31,10 @@ test("scanPublicData skips generated and dependency directories", () => {
   const root = mkdtempSync(path.join(tmpdir(), "nexus-public-data-"));
   mkdirSync(path.join(root, "node_modules"));
   mkdirSync(path.join(root, "dist"));
+  mkdirSync(path.join(root, "native", "Nexus", ".build"), { recursive: true });
   writeFileSync(path.join(root, "node_modules", "private.md"), "/Users/" + "alice/private");
   writeFileSync(path.join(root, "dist", "private.md"), "TOKEN" + "=abc123");
+  writeFileSync(path.join(root, "native", "Nexus", ".build", "debug.yaml"), "/Users/" + "alice/private");
 
   assert.deepEqual(scanPublicData(root), []);
 });

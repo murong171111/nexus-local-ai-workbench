@@ -12,7 +12,7 @@ This roadmap describes the next product and engineering steps for Nexus. The cur
 
 ## 0.1.x: Public Preview Hardening
 
-- Add automated CI validation for pull requests and pushes to `main`. `[done with GitHub Actions for environment diagnostics, Node, Rust, Swift widget/native, Tauri checks, and public-data privacy checks]`
+- Add automated CI validation for pull requests and pushes to `main`. `[done with GitHub Actions for environment diagnostics, Node, Rust, Swift widget/native, Tauri checks, public-data privacy checks, and a local preview verification script]`
 - Add automated release builds for Apple Silicon and Intel macOS. `[started with tag/workflow_dispatch DMG builds for aarch64 and x86_64]`
 - Keep sample workspace data free of private local paths. `[done with publishable text scan in npm run privacy:check]`
 - Improve error messages for missing directories, invalid paths, and git failures. `[started with native operation feedback, create/worktree preflight copy, settings profile import recovery context, and local dev-tool diagnostics]`

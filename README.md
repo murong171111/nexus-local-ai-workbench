@@ -227,9 +227,7 @@ npm run verify
 For a faster public-preview baseline during documentation or sample-data work:
 
 ```bash
-npm run test
-npm run build
-npm run privacy:check
+npm run verify:preview
 ```
 
 ## Widget Status
