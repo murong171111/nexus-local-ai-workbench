@@ -59,6 +59,21 @@ const checks = [
     name: "secret-like assignment",
     pattern: /\b(?:TOKEN|SECRET|PASSWORD|PRIVATE_KEY)\s*[:=]\s*['"]?[^'"\s]+/gi,
     allow: () => false
+  },
+  {
+    name: "private key block",
+    pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----/g,
+    allow: () => false
+  },
+  {
+    name: "GitHub token",
+    pattern: /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{20,}\b/g,
+    allow: () => false
+  },
+  {
+    name: "GitHub fine-grained token",
+    pattern: /\bgithub_pat_[A-Za-z0-9_]{40,}\b/g,
+    allow: () => false
   }
 ];
 
@@ -114,7 +129,7 @@ function main() {
   const findings = scanPublicData(root);
 
   if (findings.length) {
-    console.error("Public data check failed. Remove private paths or secret-like values before publishing:");
+    console.error("Public data check failed. Remove private paths, private keys, or secret-like values before publishing:");
     for (const line of formatFindings(findings)) {
       console.error(line);
     }

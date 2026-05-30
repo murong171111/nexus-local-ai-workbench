@@ -27,6 +27,43 @@ test("scanPublicData reports private paths with file and line context", () => {
   ]);
 });
 
+test("scanPublicData reports private key blocks and GitHub tokens", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "nexus-public-data-"));
+  const privateKeyHeader = "-----BEGIN " + "OPENSSH PRIVATE KEY-----";
+  const classicToken = "ghp_" + "1234567890abcdefghijklmnop";
+  const fineGrainedToken = "github_" + "pat_1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN";
+  writeFileSync(
+    path.join(root, "secrets.md"),
+    [
+      "Do not publish:",
+      privateKeyHeader,
+      classicToken,
+      fineGrainedToken
+    ].join("\n")
+  );
+
+  assert.deepEqual(scanPublicData(root), [
+    {
+      file: "secrets.md",
+      line: 2,
+      name: "private key block",
+      value: privateKeyHeader
+    },
+    {
+      file: "secrets.md",
+      line: 3,
+      name: "GitHub token",
+      value: classicToken
+    },
+    {
+      file: "secrets.md",
+      line: 4,
+      name: "GitHub fine-grained token",
+      value: fineGrainedToken
+    }
+  ]);
+});
+
 test("scanPublicData skips generated and dependency directories", () => {
   const root = mkdtempSync(path.join(tmpdir(), "nexus-public-data-"));
   mkdirSync(path.join(root, ".build"));
