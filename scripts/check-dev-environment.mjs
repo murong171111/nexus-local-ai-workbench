@@ -58,11 +58,18 @@ export function checkDevEnvironment(options = {}) {
   }
 
   const dependencyPath = path.join(cwd, "node_modules", ".bin", process.platform === "win32" ? "tsc.cmd" : "tsc");
+  const tauriCliPath = path.join(cwd, "node_modules", ".bin", process.platform === "win32" ? "tauri.cmd" : "tauri");
   results.push({
     name: "Node dependencies",
     available: existsSync(dependencyPath),
     detail: existsSync(dependencyPath) ? "node_modules is installed." : "node_modules is missing or incomplete.",
     recover: existsSync(dependencyPath) ? "" : "Run npm ci from the repository root."
+  });
+  results.push({
+    name: "Tauri CLI",
+    available: existsSync(tauriCliPath),
+    detail: existsSync(tauriCliPath) ? "Project-local Tauri CLI is installed." : "Project-local Tauri CLI is missing.",
+    recover: existsSync(tauriCliPath) ? "" : "Run npm ci so @tauri-apps/cli is available before npm run tauri:build."
   });
 
   return {
