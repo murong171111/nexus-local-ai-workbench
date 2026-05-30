@@ -6,8 +6,11 @@ const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 
 const ignoredDirectories = new Set([
   ".git",
+  ".build",
+  ".cache",
   ".npm-cache",
   ".swift-module-cache",
+  ".swiftpm",
   ".tmp-tests",
   "dist",
   "node_modules",
