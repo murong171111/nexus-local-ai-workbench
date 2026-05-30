@@ -232,6 +232,8 @@ npm run build
 npm run privacy:check
 ```
 
+`npm run env:check` also verifies the project-local Tauri CLI under `node_modules/.bin`, so a missing desktop app runner is reported before `npm run tauri:dev` or `npm run tauri:build`.
+
 ## Widget Status
 
 The main app already writes the widget snapshot and registers the `nexus://` URL scheme. The native shell writes the same snapshot to Application Support, handles `nexus://workspace/<folder>` focus links, and mirrors the snapshot into `group.com.ks.nexus` once the app is packaged with App Group entitlements. The WidgetKit source lives in:

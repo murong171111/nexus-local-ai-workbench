@@ -65,6 +65,14 @@ export function checkDevEnvironment(options = {}) {
     recover: existsSync(dependencyPath) ? "" : "Run npm ci from the repository root."
   });
 
+  const tauriCliPath = path.join(cwd, "node_modules", ".bin", process.platform === "win32" ? "tauri.cmd" : "tauri");
+  results.push({
+    name: "Tauri CLI",
+    available: existsSync(tauriCliPath),
+    detail: existsSync(tauriCliPath) ? "Local Tauri CLI is installed." : "Local Tauri CLI was not found in node_modules.",
+    recover: existsSync(tauriCliPath) ? "" : "Run npm ci, then use npm run tauri:dev or npm run tauri:build from the repository root."
+  });
+
   return {
     ready: results.every((result) => result.available),
     results

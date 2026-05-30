@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -25,6 +25,7 @@ function tempProject(withDependencies = true) {
   if (withDependencies) {
     mkdirSync(path.join(root, "node_modules", ".bin"), { recursive: true });
     writeFileSync(path.join(root, "node_modules", ".bin", process.platform === "win32" ? "tsc.cmd" : "tsc"), "");
+    writeFileSync(path.join(root, "node_modules", ".bin", process.platform === "win32" ? "tauri.cmd" : "tauri"), "");
   }
   return root;
 }
@@ -48,8 +49,23 @@ test("checkDevEnvironment reports missing Rust with recovery guidance", () => {
 test("checkDevEnvironment reports missing node dependencies before full verify", () => {
   const report = checkDevEnvironment({ cwd: tempProject(false), run: fakeRun() });
   const dependencies = report.results.find((result) => result.name === "Node dependencies");
+  const tauri = report.results.find((result) => result.name === "Tauri CLI");
 
   assert.equal(report.ready, false);
   assert.equal(dependencies.available, false);
   assert.match(dependencies.recover, /npm ci/);
+  assert.equal(tauri.available, false);
+});
+
+test("checkDevEnvironment reports a missing local Tauri CLI", () => {
+  const root = tempProject();
+  const tauriPath = path.join(root, "node_modules", ".bin", process.platform === "win32" ? "tauri.cmd" : "tauri");
+  rmSync(tauriPath, { force: true });
+
+  const report = checkDevEnvironment({ cwd: root, run: fakeRun() });
+  const tauri = report.results.find((result) => result.name === "Tauri CLI");
+
+  assert.equal(report.ready, false);
+  assert.equal(tauri.available, false);
+  assert.match(tauri.recover, /tauri:dev/);
 });
