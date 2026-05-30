@@ -39,6 +39,14 @@ export type WorkspaceSearchResultGroup = {
   results: WorkspaceSearchResult[];
 };
 
+export type SavedWorkspaceFilter = {
+  id: string;
+  label: string;
+  query: string;
+  filter: string;
+  createdAt: string;
+};
+
 export function slugify(value: string) {
   return value
     .trim()
@@ -125,6 +133,52 @@ export function parseServiceInput(value: string) {
     .split(/[,\n，、;；\s]+/u)
     .map((service) => service.trim())
     .filter(Boolean);
+}
+
+export function createSavedWorkspaceFilter(input: { query: string; filter: string }, date = new Date()): SavedWorkspaceFilter {
+  const query = input.query.trim();
+  const filter = input.filter.trim() || "all";
+  const label = query ? `${query} · ${filter}` : filter;
+  const baseId = slugify(`${filter}-${query}`) || "workspace-filter";
+  return {
+    id: `${baseId}-${date.getTime()}`,
+    label,
+    query,
+    filter,
+    createdAt: date.toISOString()
+  };
+}
+
+export function normalizeSavedWorkspaceFilters(value: unknown): SavedWorkspaceFilter[] {
+  if (!Array.isArray(value)) return [];
+
+  const seen = new Set<string>();
+  return value
+    .filter(isRecord)
+    .map((item) => {
+      const query = typeof item.query === "string" ? item.query.trim() : "";
+      const filter = typeof item.filter === "string" && item.filter.trim() ? item.filter.trim() : "all";
+      const createdAt = typeof item.createdAt === "string" && item.createdAt.trim() ? item.createdAt.trim() : new Date(0).toISOString();
+      const fallbackLabel = query ? `${query} · ${filter}` : filter;
+      const label = typeof item.label === "string" && item.label.trim() ? item.label.trim() : fallbackLabel;
+      const id = typeof item.id === "string" && item.id.trim() ? item.id.trim() : slugify(`${filter}-${query}-${createdAt}`);
+      return { id: id || "workspace-filter", label, query, filter, createdAt };
+    })
+    .filter((item) => {
+      const signature = `${item.filter}\n${item.query}`;
+      if (seen.has(signature)) return false;
+      seen.add(signature);
+      return true;
+    })
+    .slice(0, 12);
+}
+
+export function parseSavedWorkspaceFilters(content: string): SavedWorkspaceFilter[] {
+  try {
+    return normalizeSavedWorkspaceFilters(JSON.parse(content));
+  } catch {
+    return [];
+  }
 }
 
 export function normalizeServiceList(values: string[]) {

@@ -58,6 +58,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added Tauri commands for rebuilding and querying the local search index.
 - Added a top-bar global search popover that uses the local index in the packaged app and workspace metadata fallback in browser preview mode.
 - Added grouped search result sections and keyboard navigation to the Tauri preview search popover.
+- Added browser-preview saved workspace filters that persist the current quick filter plus query in localStorage.
 - Added native SwiftUI search state and a top-bar search popover that uses the Swift/Rust local-index bridge with workspace metadata fallback.
 - Added native selected-result context previews and a reusable compact activity timeline for workspace details.
 - Added native search scope controls for workspace, state, workflow, SQL, and document search modes.

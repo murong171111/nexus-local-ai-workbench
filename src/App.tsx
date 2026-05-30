@@ -1,6 +1,8 @@
 import {
   Activity,
   AlertTriangle,
+  Bookmark,
+  BookmarkPlus,
   BookOpen,
   Boxes,
   Braces,
@@ -25,6 +27,7 @@ import {
   Settings,
   Sparkles,
   Terminal,
+  Trash2,
   Upload,
   Workflow,
   X,
@@ -40,7 +43,7 @@ import { Card } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { appendAuditEvent, checkEnvironment, createWorkspace, exportSettingsProfile, isDesktopApp, openExternalUrl, openPath as openPathInDesktop, readTextFile, rebuildSearchIndex, scanSourceRepos, scanWorkspaces, searchIndex, setupWorktrees, writeWidgetSnapshot, type EnvironmentHealth, type RebuildSearchIndexResponse, type SearchResult, type SourceRepo } from "./desktop";
 import { cn, riskTone } from "./lib";
-import { branchAlignmentRows, buildWorktreeCommand, createSettingsProfile, fallbackSearchResults, groupSearchResults, hasConfirmedTargetBranch, normalizeServiceList, orderedSearchResults, parseServiceInput, parseSettingsProfile, settingsProfileFilename, sortWorkspacesForAttention, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceSessionActions, type NexusSettingsProfile } from "./workspace-model";
+import { branchAlignmentRows, buildWorktreeCommand, createSavedWorkspaceFilter, createSettingsProfile, fallbackSearchResults, groupSearchResults, hasConfirmedTargetBranch, normalizeServiceList, orderedSearchResults, parseSavedWorkspaceFilters, parseServiceInput, parseSettingsProfile, settingsProfileFilename, sortWorkspacesForAttention, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceSessionActions, type NexusSettingsProfile, type SavedWorkspaceFilter } from "./workspace-model";
 import type { DashboardData, Workspace, WorkspaceSessionAction } from "./types";
 
 const initialData = rawData as DashboardData;
@@ -156,6 +159,7 @@ type SearchIndexState = {
 const settingsStorageKey = "nexus-settings";
 const onboardingStorageKey = "nexus-onboarding-complete";
 const pinnedWorkspacesStorageKey = "nexus-pinned-workspaces";
+const savedWorkspaceFiltersStorageKey = "nexus-saved-workspace-filters";
 const demoWorkspaceName = "Nexus 示例工作区";
 const demoWorkspaceBranch = "chen/nexus-demo-workspace";
 
@@ -199,6 +203,14 @@ function loadPinnedWorkspaces() {
     return new Set(Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : []);
   } catch {
     return new Set<string>();
+  }
+}
+
+function loadSavedWorkspaceFilters() {
+  try {
+    return parseSavedWorkspaceFilters(window.localStorage.getItem(savedWorkspaceFiltersStorageKey) ?? "[]");
+  } catch {
+    return [];
   }
 }
 
@@ -307,7 +319,11 @@ function Sidebar({
   filter,
   setFilter,
   pinnedFolders,
+  savedFilters,
   onTogglePinned,
+  onSaveFilter,
+  onApplySavedFilter,
+  onDeleteSavedFilter,
   onOpenCreate,
   onOpenSettings
 }: {
@@ -317,7 +333,11 @@ function Sidebar({
   filter: string;
   setFilter: (filter: string) => void;
   pinnedFolders: Set<string>;
+  savedFilters: SavedWorkspaceFilter[];
   onTogglePinned: (folder: string) => void;
+  onSaveFilter: () => void;
+  onApplySavedFilter: (filter: SavedWorkspaceFilter) => void;
+  onDeleteSavedFilter: (id: string) => void;
   onOpenCreate: () => void;
   onOpenSettings: () => void;
 }) {
@@ -371,6 +391,51 @@ function Sidebar({
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="mt-4 lg:mt-5">
+        <div className="flex items-center justify-between px-2">
+          <span className="text-xs uppercase tracking-[0.14em] text-neutral-400">保存筛选 / Saved</span>
+          <button
+            type="button"
+            className="flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:bg-neutral-100 hover:text-blue-600"
+            onClick={onSaveFilter}
+            aria-label="保存当前筛选"
+            title="保存当前筛选"
+          >
+            <BookmarkPlus className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        {savedFilters.length ? (
+          <div className="mt-2 grid gap-1">
+            {savedFilters.map((savedFilter) => (
+              <div key={savedFilter.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center rounded-md transition-colors hover:bg-neutral-50">
+                <button
+                  type="button"
+                  className="flex min-w-0 items-center gap-2 px-2 py-1.5 text-left text-xs text-neutral-600"
+                  onClick={() => onApplySavedFilter(savedFilter)}
+                >
+                  <Bookmark className="h-3.5 w-3.5 shrink-0 text-blue-500" />
+                  <span className="min-w-0">
+                    <span className="block truncate text-neutral-800">{savedFilter.label}</span>
+                    <span className="mono block truncate text-[10px] text-neutral-400">{savedFilter.query || filterLabels[savedFilter.filter]?.desc || savedFilter.filter}</span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="mr-1 flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:bg-neutral-100 hover:text-red-600"
+                  onClick={() => onDeleteSavedFilter(savedFilter.id)}
+                  aria-label="删除保存筛选"
+                  title="删除保存筛选"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-2 px-2 text-xs text-neutral-400">暂无保存筛选</div>
+        )}
       </div>
 
       <div className="mt-4 min-h-0 flex-1 overflow-auto lg:mt-5">
@@ -2319,6 +2384,7 @@ export function App() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
   const [pinnedFolders, setPinnedFolders] = useState<Set<string>>(() => loadPinnedWorkspaces());
+  const [savedFilters, setSavedFilters] = useState<SavedWorkspaceFilter[]>(() => loadSavedWorkspaceFilters());
   const [active, setActive] = useState(initialData.workspaces[0]?.folder ?? "");
   const [commandOpen, setCommandOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -3000,6 +3066,36 @@ export function App() {
     showToast(wasPinned ? "已取消置顶工作区" : "已置顶工作区");
   };
 
+  const persistSavedFilters = (filters: SavedWorkspaceFilter[]) => {
+    setSavedFilters(filters);
+    try {
+      window.localStorage.setItem(savedWorkspaceFiltersStorageKey, JSON.stringify(filters));
+    } catch {
+      // Browser storage failures should not block in-memory saved filters.
+    }
+  };
+
+  const saveCurrentWorkspaceFilter = () => {
+    const savedFilter = createSavedWorkspaceFilter({ query, filter });
+    const nextFilters = [
+      savedFilter,
+      ...savedFilters.filter((item) => item.query !== savedFilter.query || item.filter !== savedFilter.filter)
+    ].slice(0, 12);
+    persistSavedFilters(nextFilters);
+    showToast("已保存当前筛选");
+  };
+
+  const applySavedWorkspaceFilter = (savedFilter: SavedWorkspaceFilter) => {
+    setFilter(savedFilter.filter);
+    setQuery(savedFilter.query);
+    showToast(`已应用筛选：${savedFilter.label}`);
+  };
+
+  const deleteSavedWorkspaceFilter = (id: string) => {
+    persistSavedFilters(savedFilters.filter((item) => item.id !== id));
+    showToast("已删除保存筛选");
+  };
+
   return (
     <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[248px_minmax(0,1fr)] 2xl:grid-cols-[268px_minmax(0,1fr)_330px]">
       <Sidebar
@@ -3009,7 +3105,11 @@ export function App() {
         filter={filter}
         setFilter={setFilter}
         pinnedFolders={pinnedFolders}
+        savedFilters={savedFilters}
         onTogglePinned={togglePinnedWorkspace}
+        onSaveFilter={saveCurrentWorkspaceFilter}
+        onApplySavedFilter={applySavedWorkspaceFilter}
+        onDeleteSavedFilter={deleteSavedWorkspaceFilter}
         onOpenCreate={() => setCreateOpen(true)}
         onOpenSettings={() => setSettingsOpen(true)}
       />

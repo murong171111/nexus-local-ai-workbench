@@ -4,6 +4,7 @@ import {
   buildWorktreeCommand,
   branchAlignmentRows,
   compactSearchSnippet,
+  createSavedWorkspaceFilter,
   createSettingsProfile,
   fallbackSearchResults,
   groupSearchResults,
@@ -11,6 +12,8 @@ import {
   normalizeServiceList,
   normalizeGitBranch,
   orderedSearchResults,
+  normalizeSavedWorkspaceFilters,
+  parseSavedWorkspaceFilters,
   parseServiceInput,
   parseSettingsProfile,
   serializeSettingsProfile,
@@ -100,6 +103,35 @@ test("parseServiceInput accepts common Chinese and English separators", () => {
 
 test("normalizeServiceList parses compound manual service input", () => {
   assert.deepEqual(normalizeServiceList(["order、store-cashier、commodity", "order"]), ["commodity", "order", "store-cashier"]);
+});
+
+test("createSavedWorkspaceFilter captures the current query and workspace filter", () => {
+  const saved = createSavedWorkspaceFilter(
+    { query: " pay_log ", filter: " risk " },
+    new Date("2026-05-30T08:00:00.000Z")
+  );
+
+  assert.equal(saved.label, "pay_log · risk");
+  assert.equal(saved.query, "pay_log");
+  assert.equal(saved.filter, "risk");
+  assert.equal(saved.createdAt, "2026-05-30T08:00:00.000Z");
+  assert.match(saved.id, /^risk-pay-log-\d+$/);
+});
+
+test("parseSavedWorkspaceFilters normalizes, deduplicates, and ignores broken storage", () => {
+  const filters = parseSavedWorkspaceFilters(JSON.stringify([
+    { id: "one", label: "", query: " order ", filter: "missing", createdAt: "2026-05-30T08:00:00.000Z" },
+    { id: "duplicate", label: "Duplicate", query: "order", filter: "missing", createdAt: "2026-05-30T08:01:00.000Z" },
+    { query: "", filter: "" },
+    "bad"
+  ]));
+
+  assert.deepEqual(filters.map((filter) => [filter.id, filter.label, filter.query, filter.filter]), [
+    ["one", "order · missing", "order", "missing"],
+    ["all-1970-01-01t00-00-00-000z", "all", "", "all"]
+  ]);
+  assert.deepEqual(parseSavedWorkspaceFilters("not-json"), []);
+  assert.deepEqual(normalizeSavedWorkspaceFilters({}), []);
 });
 
 test("buildWorktreeCommand creates reviewable git worktree commands", () => {
