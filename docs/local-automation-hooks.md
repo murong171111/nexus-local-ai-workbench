@@ -19,6 +19,7 @@ It checks:
 - archived workspace count
 
 The native Mac menu bar can run this check from `Run Checks`. The result appears in the same menu as a compact automation summary.
+Copying the menu-bar status summary also includes the latest automation status, generated time, actor, and summary so a handoff can carry the same local-check context without opening the full workspace detail.
 
 Archived workspaces are counted separately and are intentionally excluded from risk, delivery, task, worktree, and dirty-service attention totals. They stay searchable and recoverable, but they do not create active reminders.
 

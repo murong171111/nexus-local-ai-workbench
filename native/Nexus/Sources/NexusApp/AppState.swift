@@ -373,7 +373,11 @@ final class AppState: ObservableObject {
             missingWorktreeCount: missingWorktreeCount,
             dirtyServiceCount: dirtyServiceCount,
             activeWorkspaceName: selectedWorkspace?.name,
-            bridgeMode: bridgeMode
+            bridgeMode: bridgeMode,
+            automationStatus: lastAutomationCheck?.status,
+            automationSummary: lastAutomationCheck?.summary,
+            automationGeneratedAt: lastAutomationCheck?.generatedAt,
+            automationActor: lastAutomationCheckActor
         )
     }
 

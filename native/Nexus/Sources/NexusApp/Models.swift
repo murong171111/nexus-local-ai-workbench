@@ -265,6 +265,10 @@ struct MenuBarStatusSummary: Hashable {
     let dirtyServiceCount: Int
     let activeWorkspaceName: String?
     let bridgeMode: String
+    let automationStatus: String?
+    let automationSummary: String?
+    let automationGeneratedAt: String?
+    let automationActor: String?
 
     var menuTitle: String {
         if blockedWorkspaceCount > 0 {
@@ -309,7 +313,7 @@ struct MenuBarStatusSummary: Hashable {
     }
 
     var clipboardText: String {
-        [
+        ([
             "Nexus status",
             "Bridge: \(bridgeMode)",
             "Active workspace: \(activeWorkspaceName ?? "None")",
@@ -323,7 +327,19 @@ struct MenuBarStatusSummary: Hashable {
             "Agent tasks: \(agentTaskCount)",
             "Missing worktrees: \(missingWorktreeCount)",
             "Dirty services: \(dirtyServiceCount)"
-        ].joined(separator: "\n")
+        ] + automationClipboardLines).joined(separator: "\n")
+    }
+
+    private var automationClipboardLines: [String] {
+        guard let automationStatus, let automationSummary, let automationGeneratedAt else {
+            return ["Automation: not run"]
+        }
+        return [
+            "Automation: \(automationStatus)",
+            "Automation generated at: \(automationGeneratedAt)",
+            "Automation actor: \(automationActor ?? "Nexus")",
+            "Automation summary: \(automationSummary)"
+        ]
     }
 }
 
