@@ -49,6 +49,13 @@ export type WorkspaceSearchResultGroup = {
   results: WorkspaceSearchResult[];
 };
 
+export type WorkspaceFilterId = "all" | "risk" | "branch" | "dirty" | "missing" | "archived" | string;
+
+export type WorkspaceFilterOptions = {
+  query?: string;
+  filter?: WorkspaceFilterId;
+};
+
 export function slugify(value: string) {
   return value
     .trim()
@@ -248,6 +255,51 @@ export function workspaceWorktreeSignals(workspace: Workspace) {
   return workspace.gitRows.map((row) => worktreeStatusSignal(row, workspace.targetBranch));
 }
 
+export function workspaceIsArchived(workspace: Workspace) {
+  const normalized = `${workspace.state} ${workspace.lifecycle?.stage ?? ""}`.toLowerCase();
+  return normalized.includes("archived") || normalized.includes("archive") || normalized.includes("归档");
+}
+
+export function workspaceSearchHaystack(workspace: Workspace) {
+  return [
+    workspace.name,
+    workspace.folder,
+    workspace.state,
+    workspace.lifecycle?.stage ?? "",
+    workspace.lifecycle?.label ?? "",
+    workspace.targetBranch,
+    workspace.sourceRoot,
+    ...workspace.confirmedServices,
+    ...workspace.candidateServices,
+    ...workspace.risks
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
+export function workspaceMatchesQuery(workspace: Workspace, query = "") {
+  const normalizedQuery = query.trim().toLowerCase();
+  return !normalizedQuery || workspaceSearchHaystack(workspace).includes(normalizedQuery);
+}
+
+export function workspaceMatchesFilter(workspace: Workspace, filter: WorkspaceFilterId = "all") {
+  const archived = workspaceIsArchived(workspace);
+  if (filter === "all") return true;
+  if (filter === "archived") return archived;
+  if (archived) return false;
+  if (filter === "risk") return workspace.riskCount > 0;
+  if (filter === "branch") return branchAlignmentRows(workspace).length > 0;
+  if (filter === "dirty") return workspace.gitRows.some((row) => row.worktree.dirty);
+  if (filter === "missing") return workspace.gitRows.some((row) => !row.worktree.exists);
+  return true;
+}
+
+export function filterWorkspaces(workspaces: Workspace[], options: WorkspaceFilterOptions = {}) {
+  return workspaces.filter((workspace) =>
+    workspaceMatchesQuery(workspace, options.query) && workspaceMatchesFilter(workspace, options.filter)
+  );
+}
+
 export function workspaceScore(workspace: Workspace) {
   const signals = workspaceWorktreeSignals(workspace);
   const missing = signals.filter((signal) => signal.kind === "missing").length;
@@ -271,8 +323,7 @@ export function sortWorkspacesForAttention(workspaces: Workspace[], pinnedFolder
 }
 
 export function isArchivedWorkspace(workspace: Workspace) {
-  const state = workspace.state.trim().toLowerCase();
-  return state === "archived" || state === "archive" || state.includes("归档");
+  return workspaceIsArchived(workspace);
 }
 
 export function activeAttentionWorkspaces(workspaces: Workspace[]) {

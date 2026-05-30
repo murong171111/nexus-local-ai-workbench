@@ -6,6 +6,7 @@ import {
   compactSearchSnippet,
   createSettingsProfile,
   fallbackSearchResults,
+  filterWorkspaces,
   groupSearchResults,
   hasConfirmedTargetBranch,
   activeAttentionWorkspaces,
@@ -23,6 +24,9 @@ import {
   widgetSnapshotFromDashboard,
   workspaceWorktreeSignals,
   workspaceFolderFromName,
+  workspaceIsArchived,
+  workspaceMatchesFilter,
+  workspaceMatchesQuery,
   workspaceScore,
   workspaceSessionActions
 } from "../.tmp-tests/workspace-model.js";
@@ -287,6 +291,63 @@ test("branchAlignmentRows returns worktrees that are not on the target branch", 
       sourceBranch: "master"
     }
   ]);
+});
+
+test("workspaceIsArchived reads state and lifecycle stage", () => {
+  assert.equal(workspaceIsArchived(workspace({ state: "archived" })), true);
+  assert.equal(workspaceIsArchived(workspace({ lifecycle: { stage: "归档", label: "已归档", detail: "", progress: 1, nextAction: "", documentKey: "status" } })), true);
+  assert.equal(workspaceIsArchived(workspace({ state: "developing" })), false);
+});
+
+test("workspaceMatchesQuery covers metadata, services, and risks", () => {
+  const item = workspace({
+    name: "Payment Checkout",
+    confirmedServices: ["cashier"],
+    candidateServices: ["coupon"],
+    risks: ["delivery note missing"]
+  });
+
+  assert.equal(workspaceMatchesQuery(item, "checkout"), true);
+  assert.equal(workspaceMatchesQuery(item, "coupon"), true);
+  assert.equal(workspaceMatchesQuery(item, "delivery note"), true);
+  assert.equal(workspaceMatchesQuery(item, "inventory"), false);
+});
+
+test("workspaceMatchesFilter excludes archived workspaces from active attention filters", () => {
+  const archivedRisk = workspace({
+    state: "archived",
+    riskCount: 3,
+    risks: ["old risk"],
+    gitRows: [gitRow("order", { worktree: { dirty: true, branch: "chen/other" } })]
+  });
+  const activeMissing = workspace({
+    folder: "active-missing",
+    gitRows: [gitRow("order", { worktree: { exists: false, branch: "missing" } })]
+  });
+
+  assert.equal(workspaceMatchesFilter(archivedRisk, "risk"), false);
+  assert.equal(workspaceMatchesFilter(archivedRisk, "dirty"), false);
+  assert.equal(workspaceMatchesFilter(archivedRisk, "archived"), true);
+  assert.equal(workspaceMatchesFilter(activeMissing, "missing"), true);
+});
+
+test("filterWorkspaces combines query and saved-filter-compatible ids", () => {
+  const risky = workspace({ name: "Risky checkout", folder: "risky", riskCount: 1, risks: ["risk"] });
+  const branchMismatch = workspace({
+    name: "Branch mismatch",
+    folder: "branch",
+    gitRows: [gitRow("order", { worktree: { branch: "chen/other" } })]
+  });
+  const archived = workspace({ name: "Archived checkout", folder: "archived", state: "archived", riskCount: 5 });
+
+  assert.deepEqual(
+    filterWorkspaces([risky, branchMismatch, archived], { query: "checkout", filter: "risk" }).map((item) => item.folder),
+    ["risky"]
+  );
+  assert.deepEqual(
+    filterWorkspaces([risky, branchMismatch, archived], { filter: "branch" }).map((item) => item.folder),
+    ["branch"]
+  );
 });
 
 test("widgetSnapshotFromDashboard summarizes active workspace state", () => {

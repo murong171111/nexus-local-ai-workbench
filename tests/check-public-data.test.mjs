@@ -38,9 +38,12 @@ test("scanPublicData skips generated and dependency directories", () => {
   mkdirSync(path.join(root, "node_modules"));
   mkdirSync(path.join(root, "dist"));
   writeFileSync(path.join(root, ".build", "private.md"), "/Users/" + "alice/private");
+  writeFileSync(path.join(root, ".build", "private.json"), `{"path": "${"/Users/" + "alice/private/build"}"}`);
   writeFileSync(path.join(root, "native", "Nexus", ".build", "description.json"), "/Users/" + "alice/private");
   writeFileSync(path.join(root, ".cache", "vite.json"), "/Users/" + "alice/private");
+  writeFileSync(path.join(root, ".cache", "private.md"), "SECRET" + "=abc123");
   writeFileSync(path.join(root, ".swiftpm", "configuration"), "/Users/" + "alice/private");
+  writeFileSync(path.join(root, ".swiftpm", "private.yml"), "TOKEN" + "=abc123");
   writeFileSync(path.join(root, "node_modules", "private.md"), "/Users/" + "alice/private");
   writeFileSync(path.join(root, "dist", "private.md"), "TOKEN" + "=abc123");
 
