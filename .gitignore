@@ -19,5 +19,6 @@ crates/*/Cargo.lock
 config/
 *.dmg
 *.app
+release-notes.md
 .cache/
 .DS_Store

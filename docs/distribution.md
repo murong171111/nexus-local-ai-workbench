@@ -33,6 +33,7 @@ src-tauri/target/release/bundle/dmg/Nexus_0.1.0_aarch64.dmg
 - Run `npm run test`.
 - Run `npm run build`.
 - Run `npm run widget:typecheck`.
+- Run `npm run release:notes` and review `release-notes.md`.
 - Run `npm run tauri:build`.
 - Open the built app and confirm:
   - First-run onboarding opens when no local settings exist.

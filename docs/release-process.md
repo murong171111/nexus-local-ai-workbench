@@ -39,6 +39,14 @@ Open the built app and verify:
 
 ## GitHub Release
 
+Prepare release notes from the current changelog:
+
+```bash
+npm run release:notes
+```
+
+By default this writes `release-notes.md` from the `[Unreleased]` changelog section. Use `node scripts/prepare-release-notes.mjs --section <version> --out release-notes.md` after cutting a dated version section.
+
 Create and push a tag:
 
 ```bash

@@ -67,7 +67,7 @@ This roadmap describes the next product and engineering steps for Nexus. The cur
 - Configure Apple Developer signing and notarization.
 - Publish both `aarch64` and `x86_64` DMG assets, or ship a Universal Binary.
 - Add native updater support backed by signed GitHub Releases.
-- Add release notes automation using `CHANGELOG.md`.
+- Add release notes automation using `CHANGELOG.md`. `[started with npm-run release notes extraction from the Unreleased changelog section]`
 - Expand first-run onboarding with team profile import and optional demo workspace creation. `[started in Tauri preview UI and native SwiftUI shell with a confirmed create-workspace demo template]`
 - Add settings export/import for team sharing. `[done in 0.1.x preview; started in native SwiftUI shell]`
 

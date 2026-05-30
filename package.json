@@ -11,6 +11,7 @@
     "verify": "npm run env:check && npm run test && npm run build && npm run rust:test && npm run widget:typecheck && npm run native:build",
     "build": "tsc && vite build",
     "preview": "vite preview --host 127.0.0.1",
+    "release:notes": "node scripts/prepare-release-notes.mjs --out release-notes.md",
     "generate": "python3 generate_dashboard.py",
     "agent:event": "node scripts/nexus-agent-event.mjs",
     "icon": "node scripts/generate-icon.mjs && tauri icon src-tauri/icons/icon.png",
