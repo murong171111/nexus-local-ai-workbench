@@ -6,9 +6,13 @@ const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 
 const ignoredDirectories = new Set([
   ".git",
+  ".build",
+  ".cache",
   ".npm-cache",
   ".swift-module-cache",
+  ".swiftpm",
   ".tmp-tests",
+  ".vite",
   "dist",
   "node_modules",
   "target"
@@ -20,9 +24,12 @@ const ignoredFiles = new Set([
 ]);
 
 const textExtensions = new Set([
+  ".css",
+  ".html",
   ".json",
   ".md",
   ".mjs",
+  ".plist",
   ".rs",
   ".swift",
   ".toml",
