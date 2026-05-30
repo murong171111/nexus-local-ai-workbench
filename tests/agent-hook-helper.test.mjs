@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
+  agentEventDefaultsFromEnv,
   appendAgentEvent,
   buildAgentEvent,
   parseAgentEventArgs
@@ -59,6 +60,50 @@ test("parseAgentEventArgs merges direct flags, metadata, and JSON input", () => 
   assert.equal(event.sessionId, "s1");
   assert.equal(event.kind, "tool_use");
   assert.deepEqual(event.metadata, { tool: "shell", command: "git status" });
+});
+
+test("agentEventDefaultsFromEnv infers common local agent session context", () => {
+  assert.deepEqual(agentEventDefaultsFromEnv({
+    CODEX_SESSION_ID: "codex-thread",
+    NEXUS_WORKSPACE_FOLDER: "2026-05-30-demo"
+  }), {
+    source: "codex",
+    sessionId: "codex-thread",
+    workspaceFolder: "2026-05-30-demo"
+  });
+
+  assert.deepEqual(agentEventDefaultsFromEnv({
+    CLAUDE_CODE_SESSION_ID: "claude-thread"
+  }), {
+    source: "claude-code",
+    sessionId: "claude-thread",
+    workspaceFolder: undefined
+  });
+
+  assert.deepEqual(agentEventDefaultsFromEnv({
+    NEXUS_AGENT_SOURCE: "custom-agent",
+    NEXUS_AGENT_SESSION_ID: "custom-session",
+    OPENCODE_SESSION_ID: "ignored"
+  }), {
+    source: "custom-agent",
+    sessionId: "custom-session",
+    workspaceFolder: undefined
+  });
+});
+
+test("parseAgentEventArgs uses environment defaults unless flags override them", () => {
+  const { event } = parseAgentEventArgs(
+    ["--session-id", "manual-session", "--kind", "status"],
+    {
+      CODEX_SESSION_ID: "codex-thread",
+      NEXUS_WORKSPACE_FOLDER: "2026-05-30-demo"
+    }
+  );
+
+  assert.equal(event.source, "codex");
+  assert.equal(event.sessionId, "manual-session");
+  assert.equal(event.workspaceFolder, "2026-05-30-demo");
+  assert.equal(event.kind, "status");
 });
 
 test("appendAgentEvent writes one JSONL event", () => {

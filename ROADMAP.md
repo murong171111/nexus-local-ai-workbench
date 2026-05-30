@@ -73,7 +73,7 @@ This roadmap describes the next product and engineering steps for Nexus. The cur
 
 ## 0.7.x: Agent Interaction Bridge
 
-- Add a Nexus hook helper CLI that can receive Codex, Claude Code, OpenCode, and compatible agent lifecycle events. `[started with fail-open JSONL helper script]`
+- Add a Nexus hook helper CLI that can receive Codex, Claude Code, OpenCode, and compatible agent lifecycle events. `[started with fail-open JSONL helper script and common agent environment defaults]`
 - Add a local bridge server, preferably Unix socket first, so hook helpers can stream session, prompt, permission, question, and tool-use events into the native Mac app without cloud services. `[event JSONL store, FFI bridge, and native sidebar feed started]`
 - Add in-app reply and approval surfaces for agents that support structured hook responses, while degrading to copy-and-open handoff for agents that only expose one-way lifecycle events.
 - Add deep links back to the exact Codex thread, terminal pane, IDE workspace, or Nexus workspace when the event contains enough metadata. `[Nexus workspace deep-link focus and copy started in native SwiftUI shell]`

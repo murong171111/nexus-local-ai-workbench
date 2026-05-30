@@ -193,4 +193,12 @@ By default the helper writes to:
 
 Set `NEXUS_AGENT_EVENTS_ROOT` or pass `--events-root` to override the storage root.
 
+The helper also reads optional environment defaults so hook scripts can stay small:
+
+- `NEXUS_AGENT_SOURCE` and `NEXUS_AGENT_SESSION_ID` explicitly set the agent identity.
+- `CODEX_SESSION_ID` or `CODEX_THREAD_ID` infer `source=codex`.
+- `CLAUDECODE_SESSION_ID` or `CLAUDE_CODE_SESSION_ID` infer `source=claude-code`.
+- `OPENCODE_SESSION_ID` or `OPEN_CODE_SESSION_ID` infer `source=opencode`.
+- `NEXUS_WORKSPACE_FOLDER` fills the Nexus workspace folder.
+
 The helper is fail-open by default. It logs a warning and exits `0` if it cannot write an event. Pass `--strict` only for tests or workflows that should fail when event capture fails.

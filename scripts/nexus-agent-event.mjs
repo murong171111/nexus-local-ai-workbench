@@ -20,15 +20,16 @@ export function defaultAgentEventsRoot(env = process.env, platform = process.pla
 }
 
 export function parseAgentEventArgs(argv, env = process.env) {
+  const envDefaults = agentEventDefaultsFromEnv(env);
   const options = {
     eventsRoot: defaultAgentEventsRoot(env),
     strict: false,
     help: false
   };
   const event = {
-    source: "",
-    sessionId: "",
-    workspaceFolder: undefined,
+    source: envDefaults.source,
+    sessionId: envDefaults.sessionId,
+    workspaceFolder: envDefaults.workspaceFolder,
     kind: "",
     title: "",
     summary: "",
@@ -96,6 +97,26 @@ export function parseAgentEventArgs(argv, env = process.env) {
   }
 
   return { event, options };
+}
+
+export function agentEventDefaultsFromEnv(env = process.env) {
+  const explicitSource = env.NEXUS_AGENT_SOURCE?.trim();
+  const codexSession = env.CODEX_SESSION_ID?.trim() || env.CODEX_THREAD_ID?.trim();
+  const claudeSession = env.CLAUDECODE_SESSION_ID?.trim() || env.CLAUDE_CODE_SESSION_ID?.trim();
+  const openCodeSession = env.OPENCODE_SESSION_ID?.trim() || env.OPEN_CODE_SESSION_ID?.trim();
+  const sessionId = env.NEXUS_AGENT_SESSION_ID?.trim() || codexSession || claudeSession || openCodeSession || "";
+  const source = explicitSource || (
+    codexSession ? "codex" :
+      claudeSession ? "claude-code" :
+        openCodeSession ? "opencode" :
+          ""
+  );
+
+  return {
+    source,
+    sessionId,
+    workspaceFolder: env.NEXUS_WORKSPACE_FOLDER?.trim() || undefined
+  };
 }
 
 export function buildAgentEvent(input, now = new Date()) {
