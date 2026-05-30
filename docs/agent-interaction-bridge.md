@@ -193,4 +193,13 @@ By default the helper writes to:
 
 Set `NEXUS_AGENT_EVENTS_ROOT` or pass `--events-root` to override the storage root.
 
+The helper infers safe defaults from common local agent environments before applying explicit CLI flags:
+
+- `CODEX_SESSION_ID`, `CODEX_THREAD_ID`, and `CODEX_WORKSPACE_FOLDER`.
+- `CLAUDE_CODE_SESSION_ID` and `CLAUDE_PROJECT_DIR`.
+- `OPENCODE_SESSION_ID` and `OPENCODE_WORKSPACE`.
+- `NEXUS_AGENT_SOURCE`, `NEXUS_AGENT_SESSION_ID`, and `NEXUS_WORKSPACE_FOLDER`.
+
+Inferred values only fill defaults. Passing `--source`, `--session-id`, `--workspace-folder`, or `--metadata` always wins.
+
 The helper is fail-open by default. It logs a warning and exits `0` if it cannot write an event. Pass `--strict` only for tests or workflows that should fail when event capture fails.
