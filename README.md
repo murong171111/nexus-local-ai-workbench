@@ -29,6 +29,7 @@ It is designed for teams that work across multiple local service repositories an
 - Confirmed lifecycle writeback from the native shell into `workspace.md` and `STATUS.md`, with local audit events for status transitions.
 - Native local-write feedback after task and lifecycle updates, with affected-workspace focus, source-document review, and follow-up local checks.
 - Global search popover for indexed workspace documents, SQL notes, and browser-preview metadata fallback, with grouped results and keyboard navigation.
+- Browser-preview workspace pins are persisted locally and keep important workspaces above the risk-score sort while leaving workspace Markdown unchanged.
 - First-run onboarding for importing team profiles, configuring local paths, scanning source repositories, and optionally creating a demo workspace, with native empty-state setup guidance and a demo template inside the create-workspace sheet.
 - Environment health checks for configured directories and Git availability.
 - Native workspace scanning from the configured paths; no local Python script is required for the packaged app.
@@ -219,7 +220,16 @@ During native shell development, set `NEXUS_CORE_LIBRARY` to the built `libnexus
 Run the standard local verification set:
 
 ```bash
+npm run env:check
 npm run verify
+```
+
+For a faster public-preview baseline during documentation or sample-data work:
+
+```bash
+npm run test
+npm run build
+npm run privacy:check
 ```
 
 ## Widget Status

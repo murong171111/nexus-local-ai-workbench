@@ -82,9 +82,9 @@ export function parseSettingsProfile(content: string): ShareableNexusSettings {
   }
 
   if (!isRecord(parsed)) throw new Error("配置文件格式不正确");
-  if (parsed.app !== "Nexus") throw new Error("配置文件不是 Nexus Profile");
-  if (parsed.schemaVersion !== 1) throw new Error("暂不支持该配置版本");
-  if (!isRecord(parsed.settings)) throw new Error("配置文件缺少 settings");
+  if (parsed.app !== "Nexus") throw new Error("配置文件不是 Nexus Profile：app 必须是 Nexus");
+  if (parsed.schemaVersion !== 1) throw new Error(`暂不支持该配置版本：${String(parsed.schemaVersion ?? "缺失")}`);
+  if (!isRecord(parsed.settings)) throw new Error("配置文件缺少 settings：需要包含 workspacesRoot、sourceReposRoot、docsRoot、codexUrl 和 refreshIntervalSeconds");
 
   return normalizeSettings({
     workspacesRoot: requiredString(parsed.settings.workspacesRoot, "workspacesRoot"),
@@ -182,6 +182,20 @@ export function branchAlignmentRows(workspace: Workspace): BranchAlignmentRow[] 
 
 export function workspaceScore(workspace: Workspace) {
   return workspace.riskCount * 10 + branchAlignmentRows(workspace).length * 5 + workspace.gitRows.filter((row) => row.worktree.dirty).length * 3;
+}
+
+export function sortWorkspacesForAttention(workspaces: Workspace[], pinnedFolders: Iterable<string> = []) {
+  const pinned = new Set(pinnedFolders);
+  return [...workspaces].sort((left, right) => {
+    const leftPinned = pinned.has(left.folder);
+    const rightPinned = pinned.has(right.folder);
+    if (leftPinned !== rightPinned) return leftPinned ? -1 : 1;
+
+    const scoreDelta = workspaceScore(right) - workspaceScore(left);
+    if (scoreDelta !== 0) return scoreDelta;
+
+    return left.name.localeCompare(right.name);
+  });
 }
 
 export function workspaceSessionActions(workspace: Workspace): WorkspaceSessionAction[] {
@@ -301,6 +315,7 @@ export function fallbackSearchResults(dashboard: DashboardData, query: string, l
       };
     })
     .filter((result): result is WorkspaceSearchResult => Boolean(result))
+    .sort((left, right) => fallbackSearchRank(left, normalizedQuery) - fallbackSearchRank(right, normalizedQuery))
     .slice(0, Math.max(1, limit));
 }
 
@@ -319,7 +334,7 @@ export function groupSearchResults(results: WorkspaceSearchResult[]): WorkspaceS
     existing.results.push(result);
   }
 
-  return groups;
+  return groups.sort((left, right) => searchResultGroupRank(left.id) - searchResultGroupRank(right.id));
 }
 
 export function orderedSearchResults(results: WorkspaceSearchResult[]) {
@@ -336,6 +351,29 @@ function searchResultGroupForKind(kind: string) {
     return { id: "workflow", label: "任务与交付 / Workflow" };
   }
   return { id: "documents", label: "文档 / Documents" };
+}
+
+function searchResultGroupRank(groupId: string) {
+  const ranks: Record<string, number> = {
+    workspace: 0,
+    state: 1,
+    workflow: 2,
+    sql: 3,
+    documents: 4
+  };
+  return ranks[groupId] ?? 99;
+}
+
+function fallbackSearchRank(result: WorkspaceSearchResult, query: string) {
+  const name = result.workspaceName.toLowerCase();
+  const folder = result.workspaceFolder.toLowerCase();
+  const snippet = result.snippet.toLowerCase();
+
+  if (name === query || folder === query) return 0;
+  if (name.startsWith(query) || folder.startsWith(query)) return 1;
+  if (name.includes(query) || folder.includes(query)) return 2;
+  if (snippet.includes(query)) return 3;
+  return 4;
 }
 
 export function compactSearchSnippet(content: string, query: string, radius = 72) {

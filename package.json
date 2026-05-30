@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "test": "node scripts/run-tests.mjs",
-    "verify": "npm run test && npm run build && npm run rust:test && npm run widget:typecheck && npm run native:build",
+    "privacy:check": "node scripts/check-public-data.mjs",
+    "env:check": "node scripts/check-dev-environment.mjs",
+    "verify": "npm run env:check && npm run test && npm run build && npm run rust:test && npm run widget:typecheck && npm run native:build",
     "build": "tsc && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "generate": "python3 generate_dashboard.py",
