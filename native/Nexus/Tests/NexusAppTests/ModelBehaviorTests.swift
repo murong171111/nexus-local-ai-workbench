@@ -25,6 +25,47 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(summary.clipboardText.contains("Archived workspaces: 1"))
     }
 
+    func testMenuBarStatusSummaryPrioritizesWorktreeAttentionBeforeTasks() {
+        let missing = MenuBarStatusSummary(
+            workspaceCount: 3,
+            activeWorkspaceCount: 3,
+            archivedWorkspaceCount: 0,
+            riskyWorkspaceCount: 0,
+            blockedWorkspaceCount: 0,
+            openTaskCount: 5,
+            highPriorityTaskCount: 2,
+            agentTaskCount: 1,
+            missingWorktreeCount: 2,
+            dirtyServiceCount: 0,
+            activeWorkspaceName: "Checkout",
+            bridgeMode: "ffi"
+        )
+
+        XCTAssertEqual(missing.menuTitle, "Nexus 2")
+        XCTAssertEqual(missing.systemImage, "exclamationmark.triangle.fill")
+        XCTAssertEqual(missing.statusLine, "2 worktrees are missing")
+        XCTAssertTrue(missing.clipboardText.contains("Status: 2 worktrees are missing"))
+
+        let dirty = MenuBarStatusSummary(
+            workspaceCount: 2,
+            activeWorkspaceCount: 2,
+            archivedWorkspaceCount: 0,
+            riskyWorkspaceCount: 0,
+            blockedWorkspaceCount: 0,
+            openTaskCount: 3,
+            highPriorityTaskCount: 1,
+            agentTaskCount: 0,
+            missingWorktreeCount: 0,
+            dirtyServiceCount: 4,
+            activeWorkspaceName: nil,
+            bridgeMode: "ffi"
+        )
+
+        XCTAssertEqual(dirty.menuTitle, "Nexus 4")
+        XCTAssertEqual(dirty.statusLine, "4 services have uncommitted changes")
+        XCTAssertTrue(dirty.clipboardText.contains("Status: 4 services have uncommitted changes"))
+    }
+
     func testWorkspaceLifecycleFallsBackToSetupWhenWorktreesAreMissing() {
         let lifecycle = WorkspaceLifecycle(
             snapshot: nil,

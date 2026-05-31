@@ -22,7 +22,7 @@ Nexus 是一个面向 macOS 的本地 AI 开发工作台，用来管理需求工
 - 原生工作区详情支持一键用 Finder、IDE、Terminal 或 Codex 打开当前工作区，其中 Codex 会先复制包含本地检查、服务/worktree、任务、交付和推荐动作的工作区接力包；IDE 使用 Settings 中的 URL 模板，默认适配 IntelliJ IDEA。
 - 原生工作区详情支持绑定多个 Codex 会话深度链接，可查看、打开、复制和删除，并把绑定保存到工作区内的 `codex-sessions.json`；当近期 Agent Event 带有匹配当前工作区的 Codex 深链 metadata 时，Sessions 区块会给出建议绑定。
 - 原生 SwiftUI 壳支持本地任务中心，从 `tasks.md` 展示未完成任务，可显示任务来源行号并定位源文档，支持持久化筛选、最近任务写回反馈，也能显示 Agent 写回的任务，并支持确认后完成、延期任务，以及复制任务级上下文并打开 Codex。
-- 原生 SwiftUI 壳支持 macOS 菜单栏状态入口，可快速查看工作区、风险、任务、worktree 状态，并执行刷新、设置和复制摘要动作。
+- 原生 SwiftUI 壳支持 macOS 菜单栏状态入口，可快速查看工作区、风险、任务、worktree 和未提交服务状态，并执行刷新、设置和复制摘要动作；缺失 worktree 或未提交服务会进入菜单栏标题和复制摘要。
 - 支持本地自动化检查，可从 Rust Core、Swift/Rust 桥接、原生菜单栏、可配置周期调度、可见检查回执和可配置 macOS 本地通知生成刷新、风险、交付、任务、worktree、未提交服务信号。
 - 原生 SwiftUI 壳支持自动化动作中心，可把本地检查信号直接转成风险聚焦、交付文档打开、任务定位、worktree 处理和 Codex 交接 Prompt。
 - 支持从本地工作区证据派生生命周期阶段，并在原生卡片和详情中展示进度、当前原因、下一步、文档打开和 Codex 交接动作。
