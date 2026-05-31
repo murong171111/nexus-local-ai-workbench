@@ -176,6 +176,32 @@ enum TaskCenterFilter: String, CaseIterable, Identifiable {
     }
 }
 
+enum WorkflowPathStatus: String, CaseIterable, Hashable {
+    case ready
+    case review
+    case blocked
+    case pending
+    case next
+    case archived
+
+    var displayLabel: String {
+        switch self {
+        case .ready:
+            "就绪 / ready"
+        case .review:
+            "复核 / review"
+        case .blocked:
+            "阻塞 / block"
+        case .pending:
+            "待确认 / pending"
+        case .next:
+            "下一步 / next"
+        case .archived:
+            "归档 / archive"
+        }
+    }
+}
+
 enum AutomationNotificationMinimumStatus: String, CaseIterable, Identifiable {
     case review = "review"
     case attention = "attention"

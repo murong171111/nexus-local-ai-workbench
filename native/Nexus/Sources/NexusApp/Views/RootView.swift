@@ -4954,7 +4954,7 @@ private struct WorkspaceCommandCenterView: View {
             return CommandCenterPrimaryStep(
                 title: "已归档 / Archived",
                 detail: "这个工作区已退出活跃流。需要恢复时先查看 handoff 和交付记录，再决定是否重新进入开发。",
-                statusLabel: "archive",
+                status: .archived,
                 systemImage: "archivebox",
                 actionLabel: "查看文档",
                 actionSystemImage: "doc.text",
@@ -4967,7 +4967,7 @@ private struct WorkspaceCommandCenterView: View {
             return CommandCenterPrimaryStep(
                 title: "确认目标分支 / Confirm branch",
                 detail: "分支仍是待确认状态。先补齐 branches.md 或 workspace.md，后续 worktree 和交付检查才有可靠基准。",
-                statusLabel: "block",
+                status: .blocked,
                 systemImage: "arrow.triangle.branch",
                 actionLabel: "打开分支",
                 actionSystemImage: "doc.text",
@@ -4980,7 +4980,7 @@ private struct WorkspaceCommandCenterView: View {
             return CommandCenterPrimaryStep(
                 title: "确认服务范围 / Confirm services",
                 detail: "服务范围为空。先确认涉及服务，Nexus 才能检查 worktree、风险和交付影响面。",
-                statusLabel: "block",
+                status: .blocked,
                 systemImage: "square.stack.3d.up",
                 actionLabel: "打开服务",
                 actionSystemImage: "doc.text",
@@ -4993,7 +4993,7 @@ private struct WorkspaceCommandCenterView: View {
             return CommandCenterPrimaryStep(
                 title: "创建缺失 worktree / Setup worktrees",
                 detail: "\(missingWorktreeCount) 个服务还没有 workspace-local worktree。先完成隔离工作副本，再进入代码修改。",
-                statusLabel: "next",
+                status: .next,
                 systemImage: "arrow.triangle.branch",
                 actionLabel: "创建 worktree",
                 actionSystemImage: "wrench.and.screwdriver",
@@ -5006,7 +5006,7 @@ private struct WorkspaceCommandCenterView: View {
             return CommandCenterPrimaryStep(
                 title: "复核风险 / Review risks",
                 detail: "当前存在 \(workspace.risks.count) 个风险信号。建议先复制风险复核上下文交给 Codex，再决定是否继续交付。",
-                statusLabel: workspace.riskLevel == .high ? "block" : "review",
+                status: workspace.riskLevel == .high ? .blocked : .review,
                 systemImage: "exclamationmark.triangle",
                 actionLabel: "风险交接",
                 actionSystemImage: "point.3.connected.trianglepath.dotted",
@@ -5019,7 +5019,7 @@ private struct WorkspaceCommandCenterView: View {
             return CommandCenterPrimaryStep(
                 title: "处理阻塞任务 / Resolve blocked tasks",
                 detail: "\(blockedTaskCount) 个任务仍处于阻塞状态。先打开 tasks.md，确认完成、延期或继续拆解。",
-                statusLabel: "block",
+                status: .blocked,
                 systemImage: "checklist",
                 actionLabel: "打开任务",
                 actionSystemImage: "checklist",
@@ -5032,7 +5032,7 @@ private struct WorkspaceCommandCenterView: View {
             return CommandCenterPrimaryStep(
                 title: "处理开放任务 / Review tasks",
                 detail: "\(openTaskCount) 个任务仍未关闭。开发前后都可以从这里确认任务状态和交付影响。",
-                statusLabel: "next",
+                status: .next,
                 systemImage: "checklist",
                 actionLabel: "打开任务",
                 actionSystemImage: "checklist",
@@ -5045,7 +5045,7 @@ private struct WorkspaceCommandCenterView: View {
             return CommandCenterPrimaryStep(
                 title: "整理交付 / Prepare delivery",
                 detail: "任务和 worktree 已基本就绪。现在重点是交付记录、SQL、验证和风险说明。",
-                statusLabel: "next",
+                status: .next,
                 systemImage: "shippingbox",
                 actionLabel: "打开交付",
                 actionSystemImage: "doc.text",
@@ -5059,7 +5059,7 @@ private struct WorkspaceCommandCenterView: View {
             detail: latestCodexSessionLink == nil
                 ? "当前主流程没有明显阻塞。可以把工作区上下文交给 Codex 继续开发或复核。"
                 : "当前主流程没有明显阻塞，且已有 \(codexSessionLinks.count) 个绑定会话。优先回到最近会话，避免重新解释上下文。",
-            statusLabel: "ready",
+            status: .ready,
             systemImage: latestCodexSessionLink == nil ? "point.3.connected.trianglepath.dotted" : "link",
             actionLabel: latestCodexSessionLink == nil ? "交接 Codex" : "打开会话",
             actionSystemImage: latestCodexSessionLink == nil ? "point.3.connected.trianglepath.dotted" : "arrow.up.forward.app",
@@ -5222,7 +5222,7 @@ private struct WorkspaceCommandCenterView: View {
         }
 
         if let deliveryCheck = workspace.healthChecks.first(where: { $0.id == "delivery-record" || $0.action == "delivery" }) {
-            let status: CommandCenterPathStatus
+            let status: WorkflowPathStatus
             switch deliveryCheck.status.lowercased() {
             case "pass":
                 status = .ready
@@ -5386,7 +5386,7 @@ private struct WorkspaceCommandCenterView: View {
                     )
                 }
 
-                Text("主路径用于决定下一步；会话节点用于回到已绑定 Codex 会话，交接节点用于复制新的工作区接力包。")
+                Text("主路径用于决定下一步；工作流路径用于定位范围、worktree、风险、任务、交付和会话状态。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -5478,17 +5478,17 @@ private struct WorkspaceCommandCenterView: View {
     private var nextActionLabel: String {
         switch workspace.lifecycle.documentKey {
         case "worktreeScript":
-            return "打开下一步"
+            return "打开 Worktree"
         case "delivery":
-            return "打开下一步"
+            return "打开交付"
         case "tasks":
-            return "打开下一步"
+            return "打开任务"
         case "branches":
-            return "打开下一步"
+            return "打开分支"
         case "services":
-            return "打开下一步"
+            return "打开服务"
         case "status":
-            return "打开下一步"
+            return "打开状态"
         default:
             return "打开下一步"
         }
@@ -5533,7 +5533,7 @@ private enum CommandCenterPrimaryAction {
 private struct CommandCenterPrimaryStep {
     let title: String
     let detail: String
-    let statusLabel: String
+    let status: WorkflowPathStatus
     let systemImage: String
     let actionLabel: String
     let actionSystemImage: String
@@ -5556,12 +5556,12 @@ private struct CommandCenterPrimaryStepView: View {
                     Text("主路径 / Primary path")
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
                         .foregroundStyle(.secondary)
-                    Text(step.statusLabel)
+                    Text(step.status.displayLabel)
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(step.tone)
+                        .foregroundStyle(step.status.color)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 2)
-                        .background(step.tone.opacity(0.1))
+                        .background(step.status.color.opacity(0.1))
                         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 }
 
@@ -5590,25 +5590,7 @@ private struct CommandCenterPrimaryStepView: View {
     }
 }
 
-private enum CommandCenterPathStatus {
-    case ready
-    case review
-    case blocked
-    case pending
-
-    var label: String {
-        switch self {
-        case .ready:
-            "ready"
-        case .review:
-            "review"
-        case .blocked:
-            "block"
-        case .pending:
-            "pending"
-        }
-    }
-
+private extension WorkflowPathStatus {
     var color: Color {
         switch self {
         case .ready:
@@ -5619,6 +5601,10 @@ private enum CommandCenterPathStatus {
             NexusPalette.danger
         case .pending:
             .secondary
+        case .next:
+            NexusPalette.accent
+        case .archived:
+            .secondary
         }
     }
 }
@@ -5626,7 +5612,7 @@ private enum CommandCenterPathStatus {
 private struct CommandCenterPathItem: Identifiable {
     let title: String
     let detail: String
-    let status: CommandCenterPathStatus
+    let status: WorkflowPathStatus
     let systemImage: String
     let action: CommandCenterPrimaryAction
 
@@ -5637,15 +5623,19 @@ private struct CommandCenterSessionPathView: View {
     let items: [CommandCenterPathItem]
     let action: (CommandCenterPrimaryAction) -> Void
 
+    private var readyCount: Int {
+        items.filter { $0.status == .ready }.count
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 7) {
                 Image(systemName: "point.3.connected.trianglepath.dotted")
                     .foregroundStyle(NexusPalette.accent)
-                Text("会话路径 / Session path")
+                Text("工作流路径 / Workflow path")
                     .font(.caption.weight(.semibold))
                 Spacer()
-                Text("scope -> codex")
+                Text("\(readyCount)/\(items.count) ready")
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundStyle(.secondary)
             }
@@ -5672,9 +5662,10 @@ private struct CommandCenterSessionPathView: View {
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
 
-                            Text(item.status.label)
+                            Text(item.status.displayLabel)
                                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                                 .foregroundStyle(item.status.color)
+                                .lineLimit(1)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(9)
@@ -5735,7 +5726,7 @@ private struct CommandCenterQuickActionsView: View {
                 .controlSize(.small)
             }
 
-            CommandCenterActionGroup(title: "执行 / Execute") {
+            CommandCenterActionGroup(title: "下一步 / Next") {
                 Button {
                     lifecycleAction()
                 } label: {
@@ -5754,7 +5745,7 @@ private struct CommandCenterQuickActionsView: View {
                 .disabled(isChecking)
             }
 
-            CommandCenterActionGroup(title: "本地 / Local") {
+            CommandCenterActionGroup(title: "本地打开 / Local") {
                 Button {
                     finderAction()
                 } label: {
