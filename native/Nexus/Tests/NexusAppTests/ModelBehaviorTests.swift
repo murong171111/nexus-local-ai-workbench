@@ -194,4 +194,24 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(WorkflowPathStatus.next.displayLabel, "下一步 / next")
         XCTAssertEqual(WorkflowPathStatus.archived.displayLabel, "归档 / archive")
     }
+
+    func testWorkspaceWorkflowSummaryCombinesTaskAndDeliverySignals() {
+        let payLogSummary = WorkspaceWorkflowSummary(workspace: WorkspaceSummary.previewData[0])
+
+        XCTAssertEqual(payLogSummary.openTaskCount, 3)
+        XCTAssertEqual(payLogSummary.blockedTaskCount, 0)
+        XCTAssertEqual(payLogSummary.taskValue, "开 3")
+        XCTAssertEqual(payLogSummary.taskStatus, .review)
+        XCTAssertEqual(payLogSummary.deliveryValue, "需补充")
+        XCTAssertEqual(payLogSummary.deliveryStatus, .review)
+        XCTAssertTrue(payLogSummary.deliveryDetail.contains("交付记录"))
+
+        let readySummary = WorkspaceWorkflowSummary(workspace: WorkspaceSummary.previewData[1])
+
+        XCTAssertEqual(readySummary.openTaskCount, 0)
+        XCTAssertEqual(readySummary.taskValue, "已清理")
+        XCTAssertEqual(readySummary.taskStatus, .ready)
+        XCTAssertEqual(readySummary.deliveryValue, "待检查")
+        XCTAssertEqual(readySummary.deliveryStatus, .pending)
+    }
 }

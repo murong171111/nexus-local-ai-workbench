@@ -4895,6 +4895,10 @@ private struct WorkspaceCommandCenterView: View {
         workspace.tasks.filter { !$0.isDone && $0.isBlocked }.count
     }
 
+    private var workflowSummary: WorkspaceWorkflowSummary {
+        WorkspaceWorkflowSummary(workspace: workspace)
+    }
+
     private var codexSessionLinks: [CodexSessionLink] {
         appState.codexSessionLinks(for: workspace)
     }
@@ -4933,7 +4937,11 @@ private struct WorkspaceCommandCenterView: View {
     }
 
     private var taskTone: Color {
-        openTaskCount == 0 ? NexusPalette.success : NexusPalette.accent
+        workflowSummary.taskStatus.color
+    }
+
+    private var deliveryTone: Color {
+        workflowSummary.deliveryStatus.color
     }
 
     private var lifecycleTone: Color {
@@ -5171,81 +5179,21 @@ private struct WorkspaceCommandCenterView: View {
     }
 
     private var taskPathItem: CommandCenterPathItem {
-        if blockedTaskCount > 0 {
-            return CommandCenterPathItem(
-                title: "任务 / Tasks",
-                detail: "\(blockedTaskCount) 个阻塞",
-                status: .blocked,
-                systemImage: "checklist",
-                action: .document("tasks")
-            )
-        }
-
-        if openTaskCount > 0 {
-            return CommandCenterPathItem(
-                title: "任务 / Tasks",
-                detail: "\(openTaskCount) 个开放",
-                status: .review,
-                systemImage: "checklist",
-                action: .document("tasks")
-            )
-        }
-
-        return CommandCenterPathItem(
+        CommandCenterPathItem(
             title: "任务 / Tasks",
-            detail: "已清理",
-            status: .ready,
-            systemImage: "checklist.checked",
+            detail: workflowSummary.taskValue,
+            status: workflowSummary.taskStatus,
+            systemImage: workflowSummary.taskStatus == .ready ? "checklist.checked" : "checklist",
             action: .document("tasks")
         )
     }
 
     private var deliveryPathItem: CommandCenterPathItem {
-        if workspace.lifecycle.stage == "done" {
-            return CommandCenterPathItem(
-                title: "交付 / Delivery",
-                detail: "已完成",
-                status: .ready,
-                systemImage: "checkmark.seal",
-                action: .document("delivery")
-            )
-        }
-
-        if workspace.lifecycle.stage == "delivery" {
-            return CommandCenterPathItem(
-                title: "交付 / Delivery",
-                detail: "整理中",
-                status: .review,
-                systemImage: "shippingbox",
-                action: .document("delivery")
-            )
-        }
-
-        if let deliveryCheck = workspace.healthChecks.first(where: { $0.id == "delivery-record" || $0.action == "delivery" }) {
-            let status: WorkflowPathStatus
-            switch deliveryCheck.status.lowercased() {
-            case "pass":
-                status = .ready
-            case "warning":
-                status = .review
-            default:
-                status = .blocked
-            }
-
-            return CommandCenterPathItem(
-                title: "交付 / Delivery",
-                detail: deliveryCheck.status.lowercased() == "pass" ? "记录可用" : "需要补充",
-                status: status,
-                systemImage: "doc.text",
-                action: .document("delivery")
-            )
-        }
-
-        return CommandCenterPathItem(
+        CommandCenterPathItem(
             title: "交付 / Delivery",
-            detail: "待检查",
-            status: .pending,
-            systemImage: "doc.text",
+            detail: workflowSummary.deliveryValue,
+            status: workflowSummary.deliveryStatus,
+            systemImage: deliverySymbol,
             action: .document("delivery")
         )
     }
@@ -5320,7 +5268,8 @@ private struct WorkspaceCommandCenterView: View {
                     WorkflowMetric(label: "分支", value: shortBranch, tone: branchTone)
                     WorkflowMetric(label: "服务", value: serviceValue, tone: worktreeTone)
                     WorkflowMetric(label: "风险", value: workspace.riskLevel.label, tone: workspace.risks.isEmpty ? NexusPalette.success : NexusPalette.warning)
-                    WorkflowMetric(label: "任务", value: "\(openTaskCount) 个", tone: taskTone)
+                    WorkflowMetric(label: "任务", value: workflowSummary.taskValue, tone: taskTone)
+                    WorkflowMetric(label: "交付", value: workflowSummary.deliveryValue, tone: deliveryTone)
                     WorkflowMetric(label: "会话", value: codexSessionValue, tone: codexSessionTone)
                 }
 
@@ -5472,6 +5421,21 @@ private struct WorkspaceCommandCenterView: View {
             return "pause.circle"
         default:
             return "point.3.connected.trianglepath.dotted"
+        }
+    }
+
+    private var deliverySymbol: String {
+        switch workflowSummary.deliveryStatus {
+        case .ready:
+            return "checkmark.seal"
+        case .review, .next:
+            return "shippingbox"
+        case .blocked:
+            return "xmark.octagon"
+        case .archived:
+            return "archivebox"
+        case .pending:
+            return "doc.text"
         }
     }
 

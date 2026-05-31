@@ -202,6 +202,83 @@ enum WorkflowPathStatus: String, CaseIterable, Hashable {
     }
 }
 
+struct WorkspaceWorkflowSummary: Hashable {
+    let openTaskCount: Int
+    let blockedTaskCount: Int
+    let taskValue: String
+    let taskStatus: WorkflowPathStatus
+    let deliveryValue: String
+    let deliveryStatus: WorkflowPathStatus
+    let deliveryDetail: String
+
+    init(workspace: WorkspaceSummary) {
+        let openTasks = workspace.tasks.filter { !$0.isDone }
+        let blockedTasks = openTasks.filter(\.isBlocked)
+        openTaskCount = openTasks.count
+        blockedTaskCount = blockedTasks.count
+
+        if !blockedTasks.isEmpty {
+            taskValue = "阻 \(blockedTasks.count) / 开 \(openTasks.count)"
+            taskStatus = .blocked
+        } else if !openTasks.isEmpty {
+            taskValue = "开 \(openTasks.count)"
+            taskStatus = .review
+        } else {
+            taskValue = "已清理"
+            taskStatus = .ready
+        }
+
+        if workspace.isArchived {
+            deliveryValue = "已归档"
+            deliveryStatus = .archived
+            deliveryDetail = "工作区已退出活跃交付流。"
+        } else if workspace.lifecycle.stage == "done" {
+            deliveryValue = "已完成"
+            deliveryStatus = .ready
+            deliveryDetail = "生命周期已标记完成。"
+        } else if workspace.lifecycle.stage == "delivery" {
+            deliveryValue = "整理中"
+            deliveryStatus = .review
+            deliveryDetail = "工作区处于交付整理阶段。"
+        } else if let deliveryCheck = Self.deliveryCheck(in: workspace) {
+            let normalizedStatus = deliveryCheck.status.lowercased()
+            deliveryDetail = deliveryCheck.detail
+            switch normalizedStatus {
+            case "pass", "ok":
+                deliveryValue = "记录可用"
+                deliveryStatus = .ready
+            case "warning", "review":
+                deliveryValue = "需补充"
+                deliveryStatus = .review
+            default:
+                deliveryValue = "阻塞"
+                deliveryStatus = .blocked
+            }
+        } else if let deliveryRisk = Self.deliveryRisk(in: workspace) {
+            deliveryValue = "需复核"
+            deliveryStatus = .review
+            deliveryDetail = deliveryRisk.detail
+        } else {
+            deliveryValue = "待检查"
+            deliveryStatus = .pending
+            deliveryDetail = "尚未生成交付记录检查结果。"
+        }
+    }
+
+    private static func deliveryCheck(in workspace: WorkspaceSummary) -> WorkspaceHealthCheck? {
+        workspace.healthChecks.first { check in
+            check.id == "delivery-record" || check.action == "delivery"
+        }
+    }
+
+    private static func deliveryRisk(in workspace: WorkspaceSummary) -> RiskAlert? {
+        workspace.risks.first { risk in
+            let normalized = "\(risk.title) \(risk.detail)".lowercased()
+            return normalized.contains("交付") || normalized.contains("delivery")
+        }
+    }
+}
+
 enum AutomationNotificationMinimumStatus: String, CaseIterable, Identifiable {
     case review = "review"
     case attention = "attention"
