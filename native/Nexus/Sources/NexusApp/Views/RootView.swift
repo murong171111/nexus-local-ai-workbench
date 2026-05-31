@@ -719,7 +719,7 @@ private struct SidebarView: View {
 
                 ForEach(WorkspaceFilter.allCases) { filter in
                     Button {
-                        appState.selectedFilter = filter
+                        appState.setWorkspaceFilter(filter)
                     } label: {
                         HStack(spacing: 10) {
                             Image(systemName: filter.systemImage)
@@ -731,6 +731,9 @@ private struct SidebarView: View {
                                     .foregroundStyle(.secondary)
                             }
                             Spacer()
+                            Text("\(appState.workspaceCount(for: filter))")
+                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(filter == appState.selectedFilter ? NexusPalette.accent : .secondary)
                         }
                         .padding(.horizontal, 10)
                         .padding(.vertical, 8)
@@ -738,6 +741,20 @@ private struct SidebarView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                     }
                     .buttonStyle(.plain)
+                    .disabled(appState.workspaceCount(for: filter) == 0 && filter != appState.selectedFilter)
+                }
+
+                if appState.hasWorkspaceListScope {
+                    Button {
+                        appState.resetWorkspaceListScope()
+                    } label: {
+                        Label("清空筛选 / Reset", systemImage: "line.3.horizontal.decrease.circle")
+                            .font(.caption.weight(.medium))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+                    .help("清空搜索和工作区筛选 / Clear search and workspace filter")
                 }
             }
 
@@ -2241,8 +2258,7 @@ private struct WorkspaceListEmptyStateView: View {
                 isSettingsPresented: $isSettingsPresented,
                 settingsLabel: hasWorkspaces ? "设置" : "团队配置",
                 showAllAction: hasWorkspaces && hasSearchOrFilter ? {
-                    appState.selectedFilter = .all
-                    appState.clearSearch()
+                    appState.resetWorkspaceListScope()
                 } : nil,
                 minimumColumnWidth: 116
             )
@@ -2726,8 +2742,7 @@ private struct InspectorEmptyStateView: View {
                     isSettingsPresented: $isSettingsPresented,
                     settingsLabel: appState.workspaces.isEmpty ? "团队配置" : "设置",
                     showAllAction: hasHiddenWorkspaces ? {
-                        appState.selectedFilter = .all
-                        appState.clearSearch()
+                        appState.resetWorkspaceListScope()
                     } : nil,
                     minimumColumnWidth: 96
                 )

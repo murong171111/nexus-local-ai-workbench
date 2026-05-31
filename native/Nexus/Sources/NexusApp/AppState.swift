@@ -164,6 +164,7 @@ final class AppState: ObservableObject {
 
     private enum DefaultsKey {
         static let pinnedWorkspaceIDs = "nexus.native.pinnedWorkspaceIDs"
+        static let selectedWorkspaceFilter = "nexus.native.selectedWorkspaceFilter"
         static let selectedSearchScope = "nexus.native.selectedSearchScope"
         static let selectedTaskCenterFilter = "nexus.native.selectedTaskCenterFilter"
         static let workspaceRoot = "nexus.native.workspaceRoot"
@@ -245,6 +246,9 @@ final class AppState: ObservableObject {
         )
         self.bridgeMode = bridge.modeDescription.isEmpty ? bridgeMode : bridge.modeDescription
         self.pinnedWorkspaceIDs = Set(defaults.stringArray(forKey: DefaultsKey.pinnedWorkspaceIDs) ?? [])
+        self.selectedFilter = WorkspaceFilter(
+            rawValue: defaults.string(forKey: DefaultsKey.selectedWorkspaceFilter) ?? ""
+        ) ?? .all
         self.selectedSearchScope = SearchScope(
             rawValue: defaults.string(forKey: DefaultsKey.selectedSearchScope) ?? ""
         ) ?? .all
@@ -385,6 +389,10 @@ final class AppState: ObservableObject {
         !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    var hasWorkspaceListScope: Bool {
+        selectedFilter != .all || hasSearchQuery
+    }
+
     var automationScheduleToken: String {
         "\(isAutomationScheduleEnabled)-\(automationIntervalMinutes)"
     }
@@ -472,43 +480,8 @@ final class AppState: ObservableObject {
     }
 
     var filteredWorkspaces: [WorkspaceSummary] {
-        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-
         let matchingWorkspaces = workspaces.enumerated().filter { item in
-            let workspace = item.element
-            let matchesFilter: Bool
-            switch selectedFilter {
-            case .all:
-                matchesFilter = true
-            case .active:
-                matchesFilter = !workspace.isArchived
-                    && (workspace.state == .developing || workspace.state == .analyzing)
-            case .risky:
-                matchesFilter = !workspace.isArchived
-                    && (workspace.riskLevel == .high || workspace.riskLevel == .medium)
-            case .blocked:
-                matchesFilter = !workspace.isArchived && workspace.state == .blocked
-            case .archived:
-                matchesFilter = workspace.isArchived
-            }
-
-            guard matchesFilter else { return false }
-            guard !trimmedQuery.isEmpty else { return true }
-
-            let haystack = [
-                workspace.name,
-                workspace.folder,
-                workspace.branch,
-                workspace.aiState,
-                workspace.serviceSummary,
-                workspace.worktreeState,
-                workspace.tasks.map(\.title).joined(separator: " "),
-                workspace.tasks.map(\.detail).joined(separator: " ")
-            ]
-            .joined(separator: " ")
-            .lowercased()
-
-            return haystack.contains(trimmedQuery)
+            selectedFilter.matches(item.element, query: query)
         }
         .sorted { lhs, rhs in
             let lhsPinned = pinnedWorkspaceIDs.contains(lhs.element.id)
@@ -521,6 +494,10 @@ final class AppState: ObservableObject {
         .map(\.element)
 
         return matchingWorkspaces
+    }
+
+    func workspaceCount(for filter: WorkspaceFilter) -> Int {
+        workspaces.filter { filter.matches($0, query: query) }.count
     }
 
     func select(_ workspace: WorkspaceSummary) {
@@ -550,7 +527,7 @@ final class AppState: ObservableObject {
             documentPreview = nil
             documentFocusHint = nil
         }
-        selectedFilter = .all
+        setWorkspaceFilter(.all)
         clearSearch()
         selectedWorkspaceID = id
         Task {
@@ -680,6 +657,16 @@ final class AppState: ObservableObject {
         }
         pinnedWorkspaceIDs = updatedPinnedIDs
         persistPinnedWorkspaces()
+    }
+
+    func setWorkspaceFilter(_ filter: WorkspaceFilter) {
+        selectedFilter = filter
+        defaults.set(filter.rawValue, forKey: DefaultsKey.selectedWorkspaceFilter)
+    }
+
+    func resetWorkspaceListScope() {
+        setWorkspaceFilter(.all)
+        clearSearch()
     }
 
     func setSearchScope(_ scope: SearchScope) {
@@ -1065,12 +1052,12 @@ final class AppState: ObservableObject {
     func runAutomationSignalAction(_ signal: LocalAutomationSignal) async {
         switch signal.action {
         case "review-risk":
-            selectedFilter = .risky
+            setWorkspaceFilter(.risky)
             if let workspace = firstWorkspaceWithRisk() {
                 selectedWorkspaceID = workspace.id
             }
         case "update-delivery":
-            selectedFilter = .risky
+            setWorkspaceFilter(.risky)
             let workspace = firstWorkspaceWithDeliveryIssue() ?? selectedWorkspace
             if let workspace {
                 selectedWorkspaceID = workspace.id
@@ -2521,7 +2508,7 @@ final class AppState: ObservableObject {
                 )
             )
             lastCreatedWorkspace = response
-            selectedFilter = .all
+            setWorkspaceFilter(.all)
             selectedWorkspaceID = response.folder
             documentPreview = nil
             documentFocusHint = nil
