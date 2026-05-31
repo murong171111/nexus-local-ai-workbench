@@ -30,13 +30,17 @@ test("scanPublicData reports private paths with file and line context", () => {
 test("scanPublicData skips generated and dependency directories", () => {
   const root = mkdtempSync(path.join(tmpdir(), "nexus-public-data-"));
   mkdirSync(path.join(root, ".build"));
+  mkdirSync(path.join(root, "native"));
+  mkdirSync(path.join(root, "native", "Nexus"));
+  mkdirSync(path.join(root, "native", "Nexus", ".build"));
   mkdirSync(path.join(root, ".cache"));
   mkdirSync(path.join(root, ".swiftpm"));
   mkdirSync(path.join(root, "node_modules"));
   mkdirSync(path.join(root, "dist"));
   writeFileSync(path.join(root, ".build", "private.md"), "/Users/" + "alice/private");
-  writeFileSync(path.join(root, ".cache", "private.md"), "TOKEN" + "=abc123");
-  writeFileSync(path.join(root, ".swiftpm", "private.md"), "SECRET" + "=abc123");
+  writeFileSync(path.join(root, "native", "Nexus", ".build", "description.json"), "/Users/" + "alice/private");
+  writeFileSync(path.join(root, ".cache", "vite.json"), "/Users/" + "alice/private");
+  writeFileSync(path.join(root, ".swiftpm", "configuration"), "/Users/" + "alice/private");
   writeFileSync(path.join(root, "node_modules", "private.md"), "/Users/" + "alice/private");
   writeFileSync(path.join(root, "dist", "private.md"), "TOKEN" + "=abc123");
 

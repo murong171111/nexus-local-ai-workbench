@@ -1,4 +1,4 @@
-import type { DashboardData, Workspace, WorkspaceSessionAction } from "./types";
+import type { DashboardData, GitRow, Workspace, WorkspaceSessionAction } from "./types";
 
 export type ShareableNexusSettings = {
   workspacesRoot: string;
@@ -21,6 +21,16 @@ export type BranchAlignmentRow = {
   expectedBranch: string;
   actualBranch: string;
   sourceBranch: string;
+};
+
+export type WorktreeStatusKind = "missing" | "branch-mismatch" | "dirty" | "source-dirty" | "clean";
+
+export type WorktreeStatusSignal = {
+  service: string;
+  kind: WorktreeStatusKind;
+  priority: "high" | "medium" | "low";
+  label: string;
+  detail: string;
 };
 
 export type WorkspaceSearchResult = {
@@ -180,8 +190,70 @@ export function branchAlignmentRows(workspace: Workspace): BranchAlignmentRow[] 
     .filter((row) => row.actualBranch && row.actualBranch !== expectedBranch);
 }
 
+export function worktreeStatusSignal(row: GitRow, targetBranch: string): WorktreeStatusSignal {
+  const expectedBranch = normalizeGitBranch(targetBranch);
+  const actualBranch = normalizeGitBranch(row.worktree.branch);
+  const sourceBranch = normalizeGitBranch(row.source.branch);
+
+  if (!row.worktree.exists) {
+    return {
+      service: row.service,
+      kind: "missing",
+      priority: "high",
+      label: "缺失 worktree / Missing",
+      detail: `${row.service} has no workspace worktree at ${row.worktreePath}.`
+    };
+  }
+
+  if (hasConfirmedTargetBranch(targetBranch) && actualBranch && actualBranch !== expectedBranch) {
+    return {
+      service: row.service,
+      kind: "branch-mismatch",
+      priority: "high",
+      label: "分支不一致 / Branch mismatch",
+      detail: `${row.service} worktree is on ${actualBranch}; expected ${expectedBranch}.`
+    };
+  }
+
+  if (row.worktree.dirty) {
+    return {
+      service: row.service,
+      kind: "dirty",
+      priority: "medium",
+      label: "未提交改动 / Dirty worktree",
+      detail: `${row.service} worktree has uncommitted changes: ${row.worktree.summary || "dirty"}.`
+    };
+  }
+
+  if (row.source.exists && row.source.dirty) {
+    return {
+      service: row.service,
+      kind: "source-dirty",
+      priority: "low",
+      label: "源仓库有改动 / Source dirty",
+      detail: `${row.service} source repo has uncommitted changes: ${row.source.summary || "dirty"}.`
+    };
+  }
+
+  return {
+    service: row.service,
+    kind: "clean",
+    priority: "low",
+    label: "就绪 / Clean",
+    detail: `${row.service} worktree is ready on ${actualBranch || "unknown branch"}; source branch is ${sourceBranch || "unknown"}.`
+  };
+}
+
+export function workspaceWorktreeSignals(workspace: Workspace) {
+  return workspace.gitRows.map((row) => worktreeStatusSignal(row, workspace.targetBranch));
+}
+
 export function workspaceScore(workspace: Workspace) {
-  return workspace.riskCount * 10 + branchAlignmentRows(workspace).length * 5 + workspace.gitRows.filter((row) => row.worktree.dirty).length * 3;
+  const signals = workspaceWorktreeSignals(workspace);
+  const missing = signals.filter((signal) => signal.kind === "missing").length;
+  const mismatches = signals.filter((signal) => signal.kind === "branch-mismatch").length;
+  const dirty = signals.filter((signal) => signal.kind === "dirty").length;
+  return workspace.riskCount * 10 + missing * 6 + mismatches * 5 + dirty * 3;
 }
 
 export function sortWorkspacesForAttention(workspaces: Workspace[], pinnedFolders: Iterable<string> = []) {
