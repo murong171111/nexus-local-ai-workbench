@@ -57,7 +57,7 @@ npm run widget:typecheck
 
 `npm run env:check` verifies the local Node, Git, Rust, Swift, SwiftPM, and `node_modules` prerequisites before the full verification suite, with recovery guidance for missing tools.
 
-`npm run test` also runs `npm run privacy:check`, which scans publishable text files for private local paths and secret-like assignments. You can run that check directly after changing sample data or documentation:
+`npm run test` also runs `npm run privacy:check`, which scans publishable text files for private local paths, private key blocks, GitHub token shapes, and secret-like assignments. You can run that check directly after changing sample data or documentation:
 
 ```bash
 npm run privacy:check
