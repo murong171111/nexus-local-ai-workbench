@@ -110,7 +110,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Native Task Center and workspace task rows can now mark tasks complete or deferred after explicit `tasks.md` write confirmation.
 - Rust Core, FFI, and native SwiftUI now generate copyable Codex handoff prompts from workspace tasks.
 - Native Task Center now has persisted filters for all open tasks, high-priority tasks, agent-sourced tasks, and deferred tasks.
-- Native SwiftUI now includes a macOS menu bar status item with workspace, risk, task, worktree, refresh, settings, and copy-summary actions.
+- Native SwiftUI now includes a macOS menu bar status item with workspace, risk, task, worktree, dirty-service, refresh, settings, and copy-summary actions; worktree attention is reflected in the menu title, status line, and copied summary.
 - Rust Core, FFI, and the native menu bar now expose a local automation check for refresh, risk, delivery, task, worktree, and dirty-service signals, with fail-open audit logging.
 - Native SwiftUI now supports persisted scheduled local automation checks with 5/15/30/60 minute intervals while Nexus is running.
 - Native SwiftUI now supports optional local macOS notifications for automation checks that need review or attention.
