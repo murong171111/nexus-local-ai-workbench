@@ -8,6 +8,8 @@ import {
   fallbackSearchResults,
   groupSearchResults,
   hasConfirmedTargetBranch,
+  activeAttentionWorkspaces,
+  isArchivedWorkspace,
   normalizeServiceList,
   normalizeGitBranch,
   orderedSearchResults,
@@ -200,6 +202,17 @@ test("sortWorkspacesForAttention falls back to risk score and stable names", () 
   );
 });
 
+test("activeAttentionWorkspaces excludes archived retained history", () => {
+  const active = workspace({ name: "Active", folder: "active", state: "developing" });
+  const archived = workspace({ name: "Archived", folder: "archived", state: " archived " });
+  const localizedArchive = workspace({ name: "Localized", folder: "localized", state: "已归档" });
+
+  assert.equal(isArchivedWorkspace(archived), true);
+  assert.equal(isArchivedWorkspace(localizedArchive), true);
+  assert.deepEqual(activeAttentionWorkspaces([archived, active, localizedArchive]).map((item) => item.folder), ["active"]);
+  assert.deepEqual(sortWorkspacesForAttention([archived, active]).map((item) => item.folder), ["active", "archived"]);
+});
+
 test("workspaceSessionActions builds a startup flow from workspace state", () => {
   const actions = workspaceSessionActions(
     workspace({
@@ -328,6 +341,43 @@ test("widgetSnapshotFromDashboard limits top risks for a compact menu and widget
     "Risky Workspace: risk two",
     "Risky Workspace: risk three"
   ]);
+});
+
+test("widgetSnapshotFromDashboard excludes archived workspaces from attention totals", () => {
+  const dashboard = {
+    generatedAt: "2026-01-01T00:00:00.000Z",
+    workspacesRoot: "/workspace",
+    sourceReposRoot: "/source",
+    docsRoot: "/docs",
+    workspaces: [
+      workspace({
+        name: "Archived Incident",
+        folder: "archived-incident",
+        state: "archived",
+        risks: ["old blocker"],
+        riskCount: 1,
+        gitRows: [gitRow("legacy", { worktree: { dirty: true } })]
+      }),
+      workspace({
+        name: "Active Delivery",
+        folder: "active-delivery",
+        state: "delivery",
+        risks: ["fresh blocker"],
+        riskCount: 1,
+        gitRows: [gitRow("order", { worktree: { exists: false, summary: "missing" } })]
+      })
+    ]
+  };
+
+  const snapshot = widgetSnapshotFromDashboard(dashboard, "archived-incident");
+
+  assert.equal(snapshot.activeWorkspace, "Archived Incident");
+  assert.equal(snapshot.workspaceCount, 1);
+  assert.equal(snapshot.riskCount, 1);
+  assert.equal(snapshot.dirtyServiceCount, 0);
+  assert.equal(snapshot.missingWorktreeCount, 1);
+  assert.deepEqual(snapshot.topRisks, ["Active Delivery: fresh blocker"]);
+  assert.equal(snapshot.deepLink, "nexus://workspace/archived-incident");
 });
 
 test("fallbackSearchResults mirrors indexed search result shape for browser preview", () => {
