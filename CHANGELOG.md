@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Added
 
+- Native Agent Event task-draft writebacks now show a result card with Agent Task focus and `tasks.md` review actions, plus shared local-write feedback for appended or already-existing tasks.
 - Native sidebar now shows an Agent Workflow bridge between Agent Inbox and Task Center, summarizing pending agent events and Agent-sourced tasks with a direct focus action for the Agent task filter.
 - Native sidebar Agent Events are now an Agent Inbox with Attention and Recent groups, prioritizing permission, question, tool-review, and error events before informational events and showing an empty clear state when no events exist.
 - Native Agent Event detail now includes an Agent action surface for permission, question, and tool-review events, with copyable approve/deny/answer/review response templates, clipboard feedback, and audit records without executing command metadata.

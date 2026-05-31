@@ -45,7 +45,7 @@ This roadmap describes the next product and engineering steps for Nexus. The cur
 - Add actionable empty states and recovery feedback for first-run setup, empty filters, missing workspace selection, and local operation errors. `[started in native SwiftUI shell with team-profile -> environment-check -> workspace-create setup guidance, shared setup action groups, and sidebar reset recovery for hidden workspace lists]`
 - Add archived workspace filtering and keep archived contexts out of active risk/task/worktree attention signals. `[started in Rust Core, shared preview/widget model, Tauri preview UI, and native SwiftUI shell]`
 - Add explicit confirmation flows for local write operations. `[started for native workspace creation with source-repo service selection, filtering, pending scope, shared preflight model, confirmation summary, initialization receipt, and post-create next steps]`
-- Add local audit logs for workspace creation and file writes. `[started for workspace creation, settings profile export, confirmed worktree setup, document opens, Codex handoffs, copied prompts, and dashboard activity timelines]`
+- Add local audit logs for workspace creation and file writes. `[started for workspace creation, settings profile export, confirmed worktree setup, document opens, Codex handoffs, copied prompts, agent task writeback feedback, and dashboard activity timelines]`
 
 ## 0.4.x: Search And Local Index
 
@@ -74,7 +74,7 @@ This roadmap describes the next product and engineering steps for Nexus. The cur
 ## 0.7.x: Agent Interaction Bridge
 
 - Add a Nexus hook helper CLI that can receive Codex, Claude Code, OpenCode, and compatible agent lifecycle events. `[started with fail-open JSONL helper script]`
-- Add a local bridge server, preferably Unix socket first, so hook helpers can stream session, prompt, permission, question, and tool-use events into the native Mac app without cloud services. `[event JSONL store, FFI bridge, and native Agent Inbox sidebar feed started with Attention/Recent grouping, empty state, and an Agent Workflow bridge to Agent-sourced Task Center items]`
+- Add a local bridge server, preferably Unix socket first, so hook helpers can stream session, prompt, permission, question, and tool-use events into the native Mac app without cloud services. `[event JSONL store, FFI bridge, and native Agent Inbox sidebar feed started with Attention/Recent grouping, empty state, an Agent Workflow bridge to Agent-sourced Task Center items, and task-draft writeback follow-up actions]`
 - Add in-app reply and approval surfaces for agents that support structured hook responses, while degrading to copy-and-open handoff for agents that only expose one-way lifecycle events. `[started in native Agent Event detail with copyable approve/deny/answer/review response templates, inspector feedback, and local audit records while keeping command metadata review-only]`
 - Add deep links back to the exact Codex thread, terminal pane, IDE workspace, or Nexus workspace when the event contains enough metadata. `[Nexus workspace deep-link focus and copy started in native SwiftUI shell]`
 - Add workspace-level Codex session deep-link binding so a requirement can keep multiple return links to active Codex conversations. `[v1 landed in native SwiftUI shell with workspace detail bind, view, open, copy, delete, workspace-local codex-sessions.json storage, and Agent Event suggested bindings]`

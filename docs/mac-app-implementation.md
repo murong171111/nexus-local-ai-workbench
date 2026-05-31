@@ -72,6 +72,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added shared Rust Core, FFI, and Swift bridge generation for Codex handoff prompts from agent events.
 - Added shared Rust Core, FFI, and native SwiftUI task drafts derived from agent events, including category, priority, prompt, and related targets.
 - Added confirmed Rust Core, FFI, and native SwiftUI writeback from agent task drafts into workspace `tasks.md`, with audit logging.
+- Added native Agent Event task-draft result follow-ups for appended or already-existing tasks, including Agent Task focus, `tasks.md` review, and shared local-write feedback.
 - Added structured Rust Core, FFI, and native SwiftUI task snapshots from workspace `tasks.md` rows.
 - Added a native local Task Center in the sidebar and a workspace task section in the detail panel.
 - Added task source-line locators from Task Center and workspace detail task rows so task review can jump back to the Markdown source of truth with copied line context.
