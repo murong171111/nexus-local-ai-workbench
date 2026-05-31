@@ -23,6 +23,7 @@ private func localCheckSummaryPayload(
         "- Workspaces: \(check.workspaceCount) total, \(check.archivedWorkspaceCount) archived",
         "- Risks: \(check.riskCount)",
         "- Delivery issues: \(check.deliveryIssueCount)",
+        "- Branch issues: \(check.branchMismatchCount)",
         "- Open tasks: \(check.openTaskCount) (\(check.highPriorityTaskCount) high priority)",
         "- Worktree issues: \(check.missingWorktreeCount) missing, \(check.dirtyServiceCount) dirty"
     ]
@@ -2045,6 +2046,12 @@ private struct WorktreeSetupFollowUpCheckView: View {
                     help: "未完成任务数量 / Open task count"
                 )
                 WorktreeSetupCheckMetric(
+                    label: "分支",
+                    value: check.branchMismatchCount,
+                    tone: check.branchMismatchCount > 0 ? NexusPalette.warning : NexusPalette.success,
+                    help: "分支不一致工作区数量 / Branch mismatch workspace count"
+                )
+                WorktreeSetupCheckMetric(
                     label: "WT",
                     value: worktreeIssueCount,
                     tone: worktreeIssueCount > 0 ? NexusPalette.warning : NexusPalette.success,
@@ -3100,6 +3107,11 @@ private struct AutomationCheckMetrics: View {
                 tone: check.highPriorityTaskCount > 0 ? NexusPalette.warning : NexusPalette.accent
             )
             AutomationMetric(
+                label: "Branch",
+                value: check.branchMismatchCount,
+                tone: check.branchMismatchCount > 0 ? NexusPalette.warning : NexusPalette.success
+            )
+            AutomationMetric(
                 label: "WT",
                 value: worktreeIssueCount,
                 tone: worktreeIssueCount > 0 ? NexusPalette.warning : NexusPalette.success
@@ -3358,6 +3370,8 @@ private struct AutomationSignalRow: View {
             "处理交付"
         case "review-worktrees":
             "Worktree"
+        case "review-branches":
+            "打开分支"
         case "review-tasks":
             "Tasks"
         case "refresh":
@@ -3377,6 +3391,8 @@ private struct AutomationSignalRow: View {
             "checklist"
         case "worktree":
             "terminal"
+        case "branch":
+            "arrow.triangle.branch"
         default:
             "sparkles"
         }

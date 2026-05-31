@@ -26,6 +26,7 @@ pub struct LocalAutomationCheckResponse {
     pub archived_workspace_count: usize,
     pub risk_count: usize,
     pub delivery_issue_count: usize,
+    pub branch_mismatch_count: usize,
     pub open_task_count: usize,
     pub high_priority_task_count: usize,
     pub missing_worktree_count: usize,
@@ -105,6 +106,10 @@ fn automation_response_from_workspaces(
         .iter()
         .filter(|workspace| workspace_has_delivery_issue(workspace))
         .count();
+    let branch_mismatch_count = active_workspaces
+        .iter()
+        .filter(|workspace| workspace_has_branch_issue(workspace))
+        .count();
     let open_task_count = active_workspaces
         .iter()
         .flat_map(|workspace| workspace.tasks.iter())
@@ -159,6 +164,20 @@ fn automation_response_from_workspaces(
             detail: format!("{delivery_issue_count} workspaces need delivery-record attention."),
             count: delivery_issue_count,
             action: "update-delivery".to_string(),
+        });
+    }
+
+    if branch_mismatch_count > 0 {
+        signals.push(LocalAutomationSignal {
+            id: "branch.check".to_string(),
+            kind: "branch".to_string(),
+            severity: "warning".to_string(),
+            title: "分支检查 / Branch check".to_string(),
+            detail: format!(
+                "{branch_mismatch_count} workspaces have branch alignment issues."
+            ),
+            count: branch_mismatch_count,
+            action: "review-branches".to_string(),
         });
     }
 
@@ -221,7 +240,7 @@ fn automation_response_from_workspaces(
             "Automation check found {risk_count} risks and {high_priority_task_count} high-priority tasks."
         ),
         "review" => format!(
-            "Automation check found {risk_count} risks, {delivery_issue_count} delivery issues, and {open_task_count} open tasks."
+            "Automation check found {risk_count} risks, {delivery_issue_count} delivery issues, {branch_mismatch_count} branch issues, and {open_task_count} open tasks."
         ),
         _ => format!("Automation check passed for {active_workspace_count} active workspaces."),
     };
@@ -234,6 +253,7 @@ fn automation_response_from_workspaces(
         archived_workspace_count,
         risk_count,
         delivery_issue_count,
+        branch_mismatch_count,
         open_task_count,
         high_priority_task_count,
         missing_worktree_count,
@@ -260,6 +280,10 @@ fn automation_metadata(response: &LocalAutomationCheckResponse) -> BTreeMap<Stri
         (
             "deliveryIssueCount".to_string(),
             response.delivery_issue_count.to_string(),
+        ),
+        (
+            "branchMismatchCount".to_string(),
+            response.branch_mismatch_count.to_string(),
         ),
         (
             "openTaskCount".to_string(),
@@ -312,6 +336,15 @@ fn workspace_has_delivery_issue(workspace: &WorkspaceData) -> bool {
     })
 }
 
+fn workspace_has_branch_issue(workspace: &WorkspaceData) -> bool {
+    workspace.risks.iter().any(|risk| {
+        let normalized = risk.to_lowercase();
+        risk.contains("分支不一致") || normalized.contains("branch mismatch")
+    }) || workspace.health_checks.iter().any(|check| {
+        check.id == "branch-alignment" && !matches!(check.status.as_str(), "pass" | "ok")
+    })
+}
+
 fn task_is_done(task: &WorkspaceTask) -> bool {
     let normalized = task.status.to_lowercase();
     normalized.contains("完成")
@@ -334,6 +367,7 @@ fn task_is_high_priority(task: &WorkspaceTask) -> bool {
 mod tests {
     use super::*;
     use std::fs;
+    use std::process::Command;
 
     #[test]
     fn local_automation_check_reports_risk_delivery_tasks_and_audit_event() {
@@ -376,6 +410,7 @@ mod tests {
         assert_eq!(response.archived_workspace_count, 0);
         assert!(response.risk_count > 0);
         assert_eq!(response.delivery_issue_count, 1);
+        assert_eq!(response.branch_mismatch_count, 0);
         assert_eq!(response.open_task_count, 1);
         assert_eq!(response.high_priority_task_count, 1);
         assert_eq!(response.missing_worktree_count, 1);
@@ -398,6 +433,60 @@ mod tests {
         let audit_log = fs::read_to_string(audit_root.join("audit-log.jsonl")).unwrap();
         assert!(audit_log.contains("automation.check.completed"));
         assert!(audit_log.contains("Nexus Test"));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn local_automation_check_reports_branch_alignment_signal() {
+        let root = std::env::temp_dir().join(format!(
+            "nexus-core-automation-branch-{}",
+            std::process::id()
+        ));
+        let workspace = root.join("2026-05-31-branch-demo");
+        let worktree = workspace.join("repos").join("order");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(workspace.join("sql")).unwrap();
+        fs::create_dir_all(&worktree).unwrap();
+        fs::write(
+            workspace.join("workspace.md"),
+            "# Branch Demo\n\n- 需求名称: Branch Demo\n- 当前状态: developing\n- 目标分支: chen/target-branch\n- 源仓库集合: ~/source-repos\n",
+        )
+        .unwrap();
+        fs::write(
+            workspace.join("services.md"),
+            "# Services\n\n## 已确认相关\n\n| 服务 | 源仓库 | 说明 |\n| --- | --- | --- |\n| order | ~/source-repos/order | core |\n",
+        )
+        .unwrap();
+        fs::write(workspace.join("tasks.md"), "# Tasks\n").unwrap();
+        fs::write(
+            workspace.join("交付记录.md"),
+            "# 交付记录\n\n## SQL 变更\n\n- 是否有 SQL 变更：否\n",
+        )
+        .unwrap();
+        let init_status = Command::new("git")
+            .args(["init", "-b", "chen/old-branch"])
+            .current_dir(&worktree)
+            .status()
+            .unwrap();
+        assert!(init_status.success());
+
+        let response = local_automation_check(LocalAutomationCheckRequest {
+            workspaces_root: root.to_string_lossy().to_string(),
+            source_repos_root: "~/source-repos".to_string(),
+            docs_root: "~/docs".to_string(),
+            audit_root: None,
+            actor: None,
+            generated_at: "2026-05-31T10:00:00Z".to_string(),
+        })
+        .unwrap();
+
+        assert_eq!(response.branch_mismatch_count, 1);
+        assert!(response.signals.iter().any(|signal| {
+            signal.id == "branch.check"
+                && signal.action == "review-branches"
+                && signal.count == 1
+        }));
 
         fs::remove_dir_all(root).unwrap();
     }

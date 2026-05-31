@@ -925,6 +925,7 @@ public struct LocalAutomationCheckResponse: Codable, Equatable, Sendable {
     public let archivedWorkspaceCount: Int
     public let riskCount: Int
     public let deliveryIssueCount: Int
+    public let branchMismatchCount: Int
     public let openTaskCount: Int
     public let highPriorityTaskCount: Int
     public let missingWorktreeCount: Int
@@ -941,6 +942,7 @@ public struct LocalAutomationCheckResponse: Codable, Equatable, Sendable {
         archivedWorkspaceCount: Int = 0,
         riskCount: Int,
         deliveryIssueCount: Int,
+        branchMismatchCount: Int = 0,
         openTaskCount: Int,
         highPriorityTaskCount: Int,
         missingWorktreeCount: Int,
@@ -956,6 +958,7 @@ public struct LocalAutomationCheckResponse: Codable, Equatable, Sendable {
         self.archivedWorkspaceCount = archivedWorkspaceCount
         self.riskCount = riskCount
         self.deliveryIssueCount = deliveryIssueCount
+        self.branchMismatchCount = branchMismatchCount
         self.openTaskCount = openTaskCount
         self.highPriorityTaskCount = highPriorityTaskCount
         self.missingWorktreeCount = missingWorktreeCount
@@ -1505,6 +1508,7 @@ public extension LocalAutomationCheckResponse {
             archivedWorkspaceCount: 0,
             riskCount: 2,
             deliveryIssueCount: 1,
+            branchMismatchCount: 1,
             openTaskCount: 2,
             highPriorityTaskCount: 1,
             missingWorktreeCount: 1,
@@ -1536,6 +1540,15 @@ public extension LocalAutomationCheckResponse {
                     detail: "1 preview workspace needs delivery-record attention.",
                     count: 1,
                     action: "update-delivery"
+                ),
+                LocalAutomationSignal(
+                    id: "branch.check",
+                    kind: "branch",
+                    severity: "warning",
+                    title: "分支检查 / Branch check",
+                    detail: "1 preview workspace has branch alignment issues.",
+                    count: 1,
+                    action: "review-branches"
                 )
             ]
         )
