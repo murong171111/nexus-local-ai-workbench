@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Added
 
+- Native Workflow and Risk Review SQL readiness actions now route to SQL artifact review or SQL-aware delivery handoff instead of only rerunning checks.
 - Native Documents Hub now lists scanned `sql/*.sql` artifacts in a dedicated SQL section, so formal and rollback SQL files can be opened in-app beside the standard workspace documents.
 - Native Agent Event task-draft writebacks now show a result card with Agent Task focus and `tasks.md` review actions, plus shared local-write feedback for appended or already-existing tasks.
 - Native sidebar now shows an Agent Workflow bridge between Agent Inbox and Task Center, summarizing pending agent events and Agent-sourced tasks with a direct focus action for the Agent task filter.

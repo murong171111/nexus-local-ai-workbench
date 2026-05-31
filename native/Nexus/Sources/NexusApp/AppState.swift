@@ -2154,6 +2154,14 @@ final class AppState: ObservableObject {
         await loadDocument(path: path)
     }
 
+    func openSqlReviewDocument(in workspace: WorkspaceSummary) async {
+        selectedWorkspaceID = workspace.id
+        let path = workspace.sqlFiles.first?.path
+            ?? workspace.documentLinks["delivery"]
+            ?? "\(workspace.path)/交付记录.md"
+        await loadDocument(path: path)
+    }
+
     func loadDocument(path: String, focusHint: DocumentFocusHint? = nil) async {
         isDocumentLoading = true
         documentLoadingPath = path
