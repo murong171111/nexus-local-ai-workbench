@@ -195,6 +195,13 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(WorkflowPathStatus.archived.displayLabel, "归档 / archive")
     }
 
+    func testWorkflowDeliveryRouteLabelsStayActionOriented() {
+        XCTAssertEqual(WorkflowDeliveryRoute.runLocalCheck.displayLabel, "运行检查")
+        XCTAssertEqual(WorkflowDeliveryRoute.updateDelivery.displayLabel, "交付交接")
+        XCTAssertEqual(WorkflowDeliveryRoute.validationHandoff.displayLabel, "PR 交接")
+        XCTAssertEqual(WorkflowDeliveryRoute.openDelivery.displayLabel, "打开文档")
+    }
+
     func testWorkspaceWorkflowSummaryCombinesTaskAndDeliverySignals() {
         let payLogSummary = WorkspaceWorkflowSummary(workspace: WorkspaceSummary.previewData[0])
 
@@ -205,6 +212,7 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(payLogSummary.deliveryValue, "需补充")
         XCTAssertEqual(payLogSummary.deliveryStatus, .review)
         XCTAssertTrue(payLogSummary.deliveryDetail.contains("交付记录"))
+        XCTAssertEqual(payLogSummary.deliveryRoute, .updateDelivery)
 
         let readySummary = WorkspaceWorkflowSummary(workspace: WorkspaceSummary.previewData[1])
 
@@ -213,5 +221,67 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(readySummary.taskStatus, .ready)
         XCTAssertEqual(readySummary.deliveryValue, "待检查")
         XCTAssertEqual(readySummary.deliveryStatus, .pending)
+        XCTAssertEqual(readySummary.deliveryRoute, .runLocalCheck)
+    }
+
+    func testWorkspaceWorkflowSummaryRoutesDoneDeliveryToValidationHandoff() {
+        let doneWorkspace = workspaceForWorkflowSummary(stage: "done")
+        let deliveryWorkspace = workspaceForWorkflowSummary(stage: "delivery")
+        let passedWorkspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            healthChecks: [
+                WorkspaceHealthCheck(id: "delivery-record", label: "交付记录", detail: "交付记录可用", status: "pass", action: "delivery")
+            ]
+        )
+
+        XCTAssertEqual(WorkspaceWorkflowSummary(workspace: doneWorkspace).deliveryRoute, .validationHandoff)
+        XCTAssertEqual(WorkspaceWorkflowSummary(workspace: deliveryWorkspace).deliveryRoute, .updateDelivery)
+        XCTAssertEqual(WorkspaceWorkflowSummary(workspace: passedWorkspace).deliveryRoute, .openDelivery)
+    }
+
+    private func workspaceForWorkflowSummary(
+        stage: String,
+        healthChecks: [WorkspaceHealthCheck] = [],
+        risks: [RiskAlert] = []
+    ) -> WorkspaceSummary {
+        WorkspaceSummary(
+            id: "workflow-summary-\(stage)",
+            name: "Workflow Summary",
+            folder: "workflow-summary-\(stage)",
+            path: "~/ks_project/workspaces/workflow-summary-\(stage)",
+            branch: "feature/workflow-summary",
+            state: .developing,
+            riskLevel: risks.isEmpty ? .low : .medium,
+            aiState: "Ready",
+            worktreeState: "Ready",
+            documentLinks: ["delivery": "~/ks_project/workspaces/workflow-summary-\(stage)/交付记录.md"],
+            services: [
+                ServiceStatus(name: "order", branch: "feature/workflow-summary", worktree: "ready", gitSummary: "clean", worktreeExists: true, sourceExists: true)
+            ],
+            activities: [],
+            risks: risks,
+            healthChecks: healthChecks,
+            sessionActions: [],
+            lifecycle: WorkspaceLifecycle(
+                stage: stage,
+                label: "Workflow",
+                detail: "Workflow test fixture",
+                progress: 80,
+                nextAction: "Continue",
+                documentKey: "delivery"
+            ),
+            tasks: [
+                WorkspaceTask(
+                    id: "done-task",
+                    title: "Done",
+                    status: "done",
+                    detail: "Done",
+                    priority: "normal",
+                    source: "workspace",
+                    sourceEventID: nil,
+                    sourceLine: nil
+                )
+            ]
+        )
     }
 }

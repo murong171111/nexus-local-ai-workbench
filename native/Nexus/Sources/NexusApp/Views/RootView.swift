@@ -4944,6 +4944,19 @@ private struct WorkspaceCommandCenterView: View {
         workflowSummary.deliveryStatus.color
     }
 
+    private var deliveryPrimaryAction: CommandCenterPrimaryAction {
+        switch workflowSummary.deliveryRoute {
+        case .runLocalCheck:
+            .localCheck
+        case .updateDelivery:
+            .deliveryHandoff
+        case .validationHandoff:
+            .validationHandoff
+        case .openDelivery:
+            .document("delivery")
+        }
+    }
+
     private var lifecycleTone: Color {
         switch workspace.lifecycle.stage {
         case "blocked":
@@ -5052,13 +5065,13 @@ private struct WorkspaceCommandCenterView: View {
         if workspace.lifecycle.stage == "delivery" {
             return CommandCenterPrimaryStep(
                 title: "整理交付 / Prepare delivery",
-                detail: "任务和 worktree 已基本就绪。现在重点是交付记录、SQL、验证和风险说明。",
+                detail: "任务和 worktree 已基本就绪。现在把交付记录、SQL、验证和风险说明交给 Codex 做最后整理。",
                 status: .next,
                 systemImage: "shippingbox",
-                actionLabel: "打开交付",
-                actionSystemImage: "doc.text",
+                actionLabel: "交付交接",
+                actionSystemImage: "point.3.connected.trianglepath.dotted",
                 tone: NexusPalette.warning,
-                action: .document("delivery")
+                action: .deliveryHandoff
             )
         }
 
@@ -5095,6 +5108,7 @@ private struct WorkspaceCommandCenterView: View {
                 detail: "分支待确认",
                 status: .blocked,
                 systemImage: "arrow.triangle.branch",
+                actionLabel: "打开分支",
                 action: .document("branches")
             )
         }
@@ -5105,6 +5119,7 @@ private struct WorkspaceCommandCenterView: View {
                 detail: "服务待确认",
                 status: .blocked,
                 systemImage: "square.stack.3d.up",
+                actionLabel: "打开服务",
                 action: .document("services")
             )
         }
@@ -5114,6 +5129,7 @@ private struct WorkspaceCommandCenterView: View {
             detail: "\(workspace.services.count) 个服务",
             status: .ready,
             systemImage: "scope",
+            actionLabel: "打开服务",
             action: .document("services")
         )
     }
@@ -5125,6 +5141,7 @@ private struct WorkspaceCommandCenterView: View {
                 detail: "等待服务范围",
                 status: .pending,
                 systemImage: "arrow.triangle.branch",
+                actionLabel: "打开服务",
                 action: .document("services")
             )
         }
@@ -5135,6 +5152,7 @@ private struct WorkspaceCommandCenterView: View {
                 detail: "缺 \(missingWorktreeCount) 个",
                 status: .review,
                 systemImage: "arrow.triangle.branch",
+                actionLabel: "创建 worktree",
                 action: .worktree
             )
         }
@@ -5144,6 +5162,7 @@ private struct WorkspaceCommandCenterView: View {
             detail: "已就绪",
             status: .ready,
             systemImage: "arrow.triangle.branch",
+            actionLabel: "打开脚本",
             action: .document("worktreeScript")
         )
     }
@@ -5155,6 +5174,7 @@ private struct WorkspaceCommandCenterView: View {
                 detail: "\(workspace.risks.count) 个高风险",
                 status: .blocked,
                 systemImage: "exclamationmark.triangle",
+                actionLabel: "风险交接",
                 action: .riskPrompt
             )
         }
@@ -5165,6 +5185,7 @@ private struct WorkspaceCommandCenterView: View {
                 detail: "\(workspace.risks.count) 个待复核",
                 status: .review,
                 systemImage: "exclamationmark.triangle",
+                actionLabel: "风险交接",
                 action: .riskPrompt
             )
         }
@@ -5174,6 +5195,7 @@ private struct WorkspaceCommandCenterView: View {
             detail: "暂无风险",
             status: .ready,
             systemImage: "checkmark.shield",
+            actionLabel: "打开状态",
             action: .document("status")
         )
     }
@@ -5184,6 +5206,7 @@ private struct WorkspaceCommandCenterView: View {
             detail: workflowSummary.taskValue,
             status: workflowSummary.taskStatus,
             systemImage: workflowSummary.taskStatus == .ready ? "checklist.checked" : "checklist",
+            actionLabel: "打开任务",
             action: .document("tasks")
         )
     }
@@ -5194,7 +5217,8 @@ private struct WorkspaceCommandCenterView: View {
             detail: workflowSummary.deliveryValue,
             status: workflowSummary.deliveryStatus,
             systemImage: deliverySymbol,
-            action: .document("delivery")
+            actionLabel: workflowSummary.deliveryRoute.displayLabel,
+            action: deliveryPrimaryAction
         )
     }
 
@@ -5204,6 +5228,7 @@ private struct WorkspaceCommandCenterView: View {
             detail: workspace.isArchived ? "查阅上下文" : "复制接力包",
             status: workspace.isArchived ? .pending : .ready,
             systemImage: "point.3.connected.trianglepath.dotted",
+            actionLabel: workspace.isArchived ? "查看交接" : "交接 Codex",
             action: workspace.isArchived ? .document("handoff") : .codex
         )
     }
@@ -5215,6 +5240,7 @@ private struct WorkspaceCommandCenterView: View {
                 detail: "\(codexSessionLinks.count) 个已绑定",
                 status: .ready,
                 systemImage: "link",
+                actionLabel: "打开会话",
                 action: .codexSession(latestCodexSessionLink)
             )
         }
@@ -5224,6 +5250,7 @@ private struct WorkspaceCommandCenterView: View {
             detail: "未绑定",
             status: .pending,
             systemImage: "link.badge.plus",
+            actionLabel: "绑定会话",
             action: .bindCodexSession
         )
     }
@@ -5375,6 +5402,18 @@ private struct WorkspaceCommandCenterView: View {
             }
         case .worktree:
             appState.presentWorktreeSetup(for: workspace)
+        case .localCheck:
+            Task {
+                await appState.runLocalAutomationCheck(actor: "Nexus Command Center")
+            }
+        case .deliveryHandoff:
+            Task {
+                await appState.openDeliveryUpdateInCodex(workspace)
+            }
+        case .validationHandoff:
+            Task {
+                await appState.openValidationPrHandoffInCodex(workspace)
+            }
         case .codexSession(let link):
             Task {
                 await appState.openCodexSessionLink(link, in: workspace)
@@ -5490,6 +5529,9 @@ private enum CommandCenterPrimaryAction {
     case document(String)
     case riskPrompt
     case worktree
+    case localCheck
+    case deliveryHandoff
+    case validationHandoff
     case codexSession(CodexSessionLink)
     case bindCodexSession
 }
@@ -5578,9 +5620,26 @@ private struct CommandCenterPathItem: Identifiable {
     let detail: String
     let status: WorkflowPathStatus
     let systemImage: String
+    let actionLabel: String
     let action: CommandCenterPrimaryAction
 
     var id: String { title }
+
+    init(
+        title: String,
+        detail: String,
+        status: WorkflowPathStatus,
+        systemImage: String,
+        actionLabel: String = "",
+        action: CommandCenterPrimaryAction
+    ) {
+        self.title = title
+        self.detail = detail
+        self.status = status
+        self.systemImage = systemImage
+        self.actionLabel = actionLabel
+        self.action = action
+    }
 }
 
 private struct CommandCenterSessionPathView: View {
@@ -5626,6 +5685,13 @@ private struct CommandCenterSessionPathView: View {
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
 
+                            if !item.actionLabel.isEmpty {
+                                Text(item.actionLabel)
+                                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(NexusPalette.accent)
+                                    .lineLimit(1)
+                            }
+
                             Text(item.status.displayLabel)
                                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                                 .foregroundStyle(item.status.color)
@@ -5641,7 +5707,7 @@ private struct CommandCenterSessionPathView: View {
                         }
                     }
                     .buttonStyle(.plain)
-                    .help(item.detail)
+                    .help(item.actionLabel.isEmpty ? item.detail : "\(item.detail) · \(item.actionLabel)")
                 }
             }
         }
