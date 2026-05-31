@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Added
 
+- Native Automation Action Center now separates dirty-service git signals from missing-worktree signals and routes them to the relevant service-scoped Codex handoff with dirty service evidence.
 - Native local automation checks now emit branch-alignment signals, surface branch issue counts, and route Action Center branch actions to the relevant workspace `branches.md` context.
 - Native Automation Action Center task signals now target the workspace with high-priority or open tasks when building copied Codex prompts, instead of falling back to whichever workspace was selected.
 - Native Automation Action Center delivery signals now target the relevant workspace, prefer SQL delivery issues first, route into SQL-aware delivery handoff or missing-delivery review, and include delivery/SQL checks in copied Codex prompts.

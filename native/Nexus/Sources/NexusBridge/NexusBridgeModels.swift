@@ -1490,7 +1490,7 @@ public extension WidgetSnapshot {
             activeWorkspaceFolder: activeWorkspace?.folder,
             workspaceCount: dashboard.workspaces.count,
             riskCount: riskTotal,
-            dirtyServiceCount: allGitRows.filter(\.worktree.dirty).count,
+            dirtyServiceCount: allGitRows.filter { $0.worktree.dirty || $0.source.dirty }.count,
             missingWorktreeCount: allGitRows.filter { !$0.worktree.exists }.count,
             topRisks: Array(topRisks),
             deepLink: activeWorkspace.map { "nexus://workspace/\($0.folder.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? $0.folder)" } ?? "nexus://"
@@ -1503,7 +1503,7 @@ public extension LocalAutomationCheckResponse {
         LocalAutomationCheckResponse(
             generatedAt: generatedAt,
             status: "review",
-            summary: "Preview automation check found 2 risks, 1 delivery issue, and 2 open tasks.",
+            summary: "Preview automation check found 2 risks, 1 delivery issue, 1 missing worktree, 1 dirty service, and 2 open tasks.",
             workspaceCount: 1,
             archivedWorkspaceCount: 0,
             riskCount: 2,
@@ -1549,6 +1549,24 @@ public extension LocalAutomationCheckResponse {
                     detail: "1 preview workspace has branch alignment issues.",
                     count: 1,
                     action: "review-branches"
+                ),
+                LocalAutomationSignal(
+                    id: "worktree.check",
+                    kind: "worktree",
+                    severity: "warning",
+                    title: "Worktree 检查 / Worktree check",
+                    detail: "1 workspace-local worktree is missing.",
+                    count: 1,
+                    action: "review-worktrees"
+                ),
+                LocalAutomationSignal(
+                    id: "dirty-service.check",
+                    kind: "git",
+                    severity: "warning",
+                    title: "Git 状态检查 / Dirty services",
+                    detail: "1 service has uncommitted git changes.",
+                    count: 1,
+                    action: "review-dirty-services"
                 )
             ]
         )

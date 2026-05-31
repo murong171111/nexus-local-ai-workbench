@@ -44,7 +44,10 @@ pub fn widget_snapshot_from_dashboard(
             .iter()
             .map(|workspace| workspace.risk_count)
             .sum(),
-        dirty_service_count: all_git_rows.iter().filter(|row| row.worktree.dirty).count(),
+        dirty_service_count: all_git_rows
+            .iter()
+            .filter(|row| row.worktree.dirty || row.source.dirty)
+            .count(),
         missing_worktree_count: all_git_rows
             .iter()
             .filter(|row| !row.worktree.exists)

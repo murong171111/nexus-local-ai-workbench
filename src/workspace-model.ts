@@ -275,6 +275,10 @@ export function branchAlignmentRows(workspace: Workspace): BranchAlignmentRow[] 
     .filter((row) => row.actualBranch && row.actualBranch !== expectedBranch);
 }
 
+function gitRowHasDirtyService(row: GitRow) {
+  return row.worktree.dirty || row.source.dirty;
+}
+
 export function worktreeStatusSignal(row: GitRow, targetBranch: string): WorktreeStatusSignal {
   const expectedBranch = normalizeGitBranch(targetBranch);
   const actualBranch = normalizeGitBranch(row.worktree.branch);
@@ -367,7 +371,7 @@ export function workspaceMatchesFilter(workspace: Workspace, filter: WorkspaceFi
   if (archived) return false;
   if (filter === "risk") return workspace.riskCount > 0;
   if (filter === "branch") return branchAlignmentRows(workspace).length > 0;
-  if (filter === "dirty") return workspace.gitRows.some((row) => row.worktree.dirty);
+  if (filter === "dirty") return workspace.gitRows.some(gitRowHasDirtyService);
   if (filter === "missing") return workspace.gitRows.some((row) => !row.worktree.exists);
   return true;
 }
@@ -382,7 +386,7 @@ export function workspaceScore(workspace: Workspace) {
   const signals = workspaceWorktreeSignals(workspace);
   const missing = signals.filter((signal) => signal.kind === "missing").length;
   const mismatches = signals.filter((signal) => signal.kind === "branch-mismatch").length;
-  const dirty = signals.filter((signal) => signal.kind === "dirty").length;
+  const dirty = signals.filter((signal) => signal.kind === "dirty" || signal.kind === "source-dirty").length;
   return workspace.riskCount * 10 + missing * 6 + mismatches * 5 + dirty * 3;
 }
 
@@ -413,7 +417,7 @@ export function workspaceSessionActions(workspace: Workspace): WorkspaceSessionA
 
   const actions: WorkspaceSessionAction[] = [];
   const missingWorktrees = workspace.gitRows.filter((row) => !row.worktree.exists).map((row) => row.service);
-  const dirtyWorktrees = workspace.gitRows.filter((row) => row.worktree.dirty).map((row) => row.service);
+  const dirtyServices = workspace.gitRows.filter(gitRowHasDirtyService).map((row) => row.service);
   const mismatches = branchAlignmentRows(workspace).map((row) => `${row.service}(${row.actualBranch})`);
   const deliveryRisk = workspace.risks.find((risk) => risk.includes("交付") || risk.toLowerCase().includes("delivery"));
 
@@ -433,8 +437,8 @@ export function workspaceSessionActions(workspace: Workspace): WorkspaceSessionA
     actions.push(sessionAction("align-branches", "修正分支不一致 / Align branches", `分支不一致: ${mismatches.join(", ")}`, "high", "blocked", "git", "branches"));
   }
 
-  if (dirtyWorktrees.length) {
-    actions.push(sessionAction("review-dirty-worktrees", "复核未提交改动 / Review changes", `存在未提交改动: ${dirtyWorktrees.join(", ")}`, "medium", "recommended", "git", "status"));
+  if (dirtyServices.length) {
+    actions.push(sessionAction("review-dirty-services", "复核未提交服务 / Review changes", `存在未提交服务: ${dirtyServices.join(", ")}`, "medium", "recommended", "git", "status"));
   }
 
   if (deliveryRisk) {
@@ -486,7 +490,7 @@ export function widgetSnapshotFromDashboard(dashboard: DashboardData, activeFold
     activeWorkspaceFolder: activeWorkspace?.folder,
     workspaceCount: attentionWorkspaces.length,
     riskCount: attentionWorkspaces.reduce((sum, workspace) => sum + workspace.riskCount, 0),
-    dirtyServiceCount: attentionGitRows.filter((row) => row.worktree.dirty).length,
+    dirtyServiceCount: attentionGitRows.filter(gitRowHasDirtyService).length,
     missingWorktreeCount: attentionGitRows.filter((row) => !row.worktree.exists).length,
     topRisks: attentionWorkspaces.flatMap((workspace) => workspace.risks.map((risk) => `${workspace.name}: ${risk}`)).slice(0, 3),
     deepLink: activeWorkspace ? `nexus://workspace/${encodeURIComponent(activeWorkspace.folder)}` : "nexus://"

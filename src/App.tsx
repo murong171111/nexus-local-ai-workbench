@@ -41,9 +41,13 @@ import { Input } from "./components/ui/input";
 import { appendAuditEvent, checkEnvironment, createWorkspace, exportSettingsProfile, isDesktopApp, openExternalUrl, openPath as openPathInDesktop, readTextFile, rebuildSearchIndex, scanSourceRepos, scanWorkspaces, searchIndex, setupWorktrees, writeWidgetSnapshot, type EnvironmentHealth, type RebuildSearchIndexResponse, type SearchResult, type SourceRepo } from "./desktop";
 import { cn, riskTone } from "./lib";
 import { branchAlignmentRows, buildWorktreeCommand, createSettingsProfile, fallbackSearchResults, filterWorkspaces, groupSearchResults, hasConfirmedTargetBranch, localOperationErrorMessage, normalizeServiceList, orderedSearchResults, parseServiceInput, parseSettingsProfile, settingsProfileFilename, sortWorkspacesForAttention, todayString, widgetSnapshotFromDashboard, workspaceCreatePreflight, workspaceFolderFromName, workspaceIsArchived, workspaceSessionActions, type NexusSettingsProfile } from "./workspace-model";
-import type { DashboardData, Workspace, WorkspaceSessionAction } from "./types";
+import type { DashboardData, GitRow, Workspace, WorkspaceSessionAction } from "./types";
 
 const initialData = rawData as DashboardData;
+
+function gitRowHasDirtyService(row: GitRow) {
+  return row.worktree.dirty || row.source.dirty;
+}
 
 const stateLabels: Record<string, string> = {
   analyzing: "分析中 / Analyzing",
@@ -459,7 +463,7 @@ function TopBar({
   onMoveSearchSelection: (direction: 1 | -1) => void;
   onRebuildSearchIndex: () => void;
 }) {
-  const dirty = dashboard.workspaces.flatMap((workspace) => workspace.gitRows).filter((row) => row.worktree.dirty).length;
+  const dirty = dashboard.workspaces.flatMap((workspace) => workspace.gitRows).filter(gitRowHasDirtyService).length;
   const branchMismatches = dashboard.workspaces.reduce((sum, workspace) => sum + branchAlignmentRows(workspace).length, 0);
   const trimmedQuery = query.trim();
   const activeSearchId = trimmedQuery && searchResults.length ? `search-result-${selectedSearchIndex}` : undefined;
@@ -695,7 +699,7 @@ function WorkspaceCard({
   onOpenDrawer: () => void;
 }) {
   const missing = workspace.gitRows.filter((row) => !row.worktree.exists).length;
-  const dirty = workspace.gitRows.filter((row) => row.worktree.dirty).length;
+  const dirty = workspace.gitRows.filter(gitRowHasDirtyService).length;
   const branchMismatches = branchAlignmentRows(workspace);
   const serviceStatus = workspace.confirmedServices.length ? `${workspace.confirmedServices.length} 个已确认` : "待确认";
   const latestActivity = workspace.activities?.[0];
@@ -1224,7 +1228,7 @@ function WorkspaceDrawer({
   if (!workspace) return null;
 
   const missing = workspace.gitRows.filter((row) => !row.worktree.exists).length;
-  const dirty = workspace.gitRows.filter((row) => row.worktree.dirty).length;
+  const dirty = workspace.gitRows.filter(gitRowHasDirtyService).length;
   const branchMismatches = branchAlignmentRows(workspace);
   const sessionActions = workspaceSessionActions(workspace);
 

@@ -1989,10 +1989,6 @@ private struct WorktreeSetupResultView: View {
 private struct WorktreeSetupFollowUpCheckView: View {
     let check: LocalAutomationCheckResponse
 
-    private var worktreeIssueCount: Int {
-        check.missingWorktreeCount + check.dirtyServiceCount
-    }
-
     private var tone: Color {
         switch check.status {
         case "attention":
@@ -2053,9 +2049,9 @@ private struct WorktreeSetupFollowUpCheckView: View {
                 )
                 WorktreeSetupCheckMetric(
                     label: "WT",
-                    value: worktreeIssueCount,
-                    tone: worktreeIssueCount > 0 ? NexusPalette.warning : NexusPalette.success,
-                    help: "worktree 缺失或异常数量 / Worktree issue count"
+                    value: check.missingWorktreeCount,
+                    tone: check.missingWorktreeCount > 0 ? NexusPalette.warning : NexusPalette.success,
+                    help: "缺失 worktree 数量 / Missing worktree count"
                 )
                 WorktreeSetupCheckMetric(
                     label: "改动",
@@ -3024,7 +3020,7 @@ private struct AutomationActionCenterView: View {
                         }
                     }
                 } else {
-                    Text("运行本地检查后，这里会把风险、交付、任务和 worktree 信号转换成可执行动作。")
+                    Text("运行本地检查后，这里会把风险、交付、任务、worktree 和 git 信号转换成可执行动作。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -3088,9 +3084,10 @@ private struct AutomationActionCenterView: View {
 
 private struct AutomationCheckMetrics: View {
     let check: LocalAutomationCheckResponse
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 3)
 
     var body: some View {
-        HStack(spacing: 8) {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
             AutomationMetric(
                 label: "Risk",
                 value: check.riskCount,
@@ -3113,8 +3110,13 @@ private struct AutomationCheckMetrics: View {
             )
             AutomationMetric(
                 label: "WT",
-                value: worktreeIssueCount,
-                tone: worktreeIssueCount > 0 ? NexusPalette.warning : NexusPalette.success
+                value: check.missingWorktreeCount,
+                tone: check.missingWorktreeCount > 0 ? NexusPalette.warning : NexusPalette.success
+            )
+            AutomationMetric(
+                label: "Dirty",
+                value: check.dirtyServiceCount,
+                tone: check.dirtyServiceCount > 0 ? NexusPalette.warning : NexusPalette.success
             )
             AutomationMetric(
                 label: "Archive",
@@ -3124,9 +3126,6 @@ private struct AutomationCheckMetrics: View {
         }
     }
 
-    private var worktreeIssueCount: Int {
-        check.missingWorktreeCount + check.dirtyServiceCount
-    }
 }
 
 private struct AutomationMetric: View {
@@ -3156,11 +3155,6 @@ private struct LocalCheckReceiptView: View {
     let isRunning: Bool
     let contextLabel: String
     let copyAction: (LocalAutomationCheckResponse) -> Void
-
-    private var worktreeIssueCount: Int {
-        guard let check else { return 0 }
-        return check.missingWorktreeCount + check.dirtyServiceCount
-    }
 
     private var statusColor: Color {
         guard let check else {
@@ -3268,8 +3262,13 @@ private struct LocalCheckReceiptView: View {
                     )
                     AutomationMetric(
                         label: "WT",
-                        value: worktreeIssueCount,
-                        tone: worktreeIssueCount > 0 ? NexusPalette.warning : NexusPalette.success
+                        value: check.missingWorktreeCount,
+                        tone: check.missingWorktreeCount > 0 ? NexusPalette.warning : NexusPalette.success
+                    )
+                    AutomationMetric(
+                        label: "Dirty",
+                        value: check.dirtyServiceCount,
+                        tone: check.dirtyServiceCount > 0 ? NexusPalette.warning : NexusPalette.success
                     )
                 }
 
@@ -3370,6 +3369,8 @@ private struct AutomationSignalRow: View {
             "处理交付"
         case "review-worktrees":
             "Worktree"
+        case "review-dirty-services":
+            "服务交接"
         case "review-branches":
             "打开分支"
         case "review-tasks":
@@ -3391,6 +3392,8 @@ private struct AutomationSignalRow: View {
             "checklist"
         case "worktree":
             "terminal"
+        case "git":
+            "arrow.triangle.branch"
         case "branch":
             "arrow.triangle.branch"
         default:
@@ -3591,6 +3594,11 @@ private struct ServiceGitStatusSectionView: View {
                 || normalized.contains("modified")
                 || normalized.contains("uncommitted")
                 || normalized.contains("未提交")
+                || normalized.contains("有改动")
+                || normalized.contains("不是 git")
+                || normalized.contains("not git")
+                || normalized.contains("检查失败")
+                || normalized.contains("failed")
         }.count
     }
 
@@ -3739,6 +3747,11 @@ private struct ServiceGitStatusRow: View {
             || normalized.contains("modified")
             || normalized.contains("uncommitted")
             || normalized.contains("未提交")
+            || normalized.contains("有改动")
+            || normalized.contains("不是 git")
+            || normalized.contains("not git")
+            || normalized.contains("检查失败")
+            || normalized.contains("failed")
     }
 
     private var statusTone: Color {
@@ -7484,6 +7497,11 @@ private struct WorkflowStatusView: View {
                 || normalized.contains("modified")
                 || normalized.contains("uncommitted")
                 || normalized.contains("未提交")
+                || normalized.contains("有改动")
+                || normalized.contains("不是 git")
+                || normalized.contains("not git")
+                || normalized.contains("检查失败")
+                || normalized.contains("failed")
         }
     }
 

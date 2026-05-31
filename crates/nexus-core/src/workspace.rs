@@ -1394,7 +1394,7 @@ fn workspace_lifecycle(
             "developing",
             "开发中 / Developing",
             format!(
-                "{} 个进行中任务，{} 个服务有未提交 worktree 改动。",
+                "{} 个进行中任务，{} 个服务有未提交改动。",
                 task_counts.doing,
                 dirty_worktrees.len()
             ),
@@ -1520,12 +1520,12 @@ fn workspace_health_checks(
             "branches",
         ),
         health_check(
-            "dirty-worktree",
-            "未提交改动 / Dirty worktrees",
+            "dirty-service",
+            "未提交服务 / Dirty services",
             if dirty_worktrees.is_empty() {
-                "无未提交 worktree 改动".to_string()
+                "无未提交服务".to_string()
             } else {
-                format!("存在未提交改动: {}", dirty_worktrees.join(", "))
+                format!("存在未提交服务: {}", dirty_worktrees.join(", "))
             },
             if dirty_worktrees.is_empty() {
                 "pass"
@@ -1657,9 +1657,9 @@ fn workspace_session_actions(
 
     if !dirty_worktrees.is_empty() {
         actions.push(session_action(
-            "review-dirty-worktrees",
-            "复核未提交改动 / Review changes",
-            format!("存在未提交改动: {}", dirty_worktrees.join(", ")),
+            "review-dirty-services",
+            "复核未提交服务 / Review changes",
+            format!("存在未提交服务: {}", dirty_worktrees.join(", ")),
             "medium",
             "recommended",
             "git",
