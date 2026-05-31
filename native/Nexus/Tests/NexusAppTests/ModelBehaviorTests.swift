@@ -399,22 +399,132 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(WorkspaceWorkflowSummary(workspace: passedWorkspace).deliveryRoute, .openDelivery)
     }
 
+    @MainActor
+    func testAutomationDeliveryHandoffPromptPrioritizesSqlArtifactWorkspace() {
+        let genericDelivery = workspaceForWorkflowSummary(
+            stage: "delivery",
+            healthChecks: [
+                WorkspaceHealthCheck(
+                    id: "delivery-record",
+                    label: "交付记录",
+                    detail: "交付记录仍包含待补充内容",
+                    status: "warning",
+                    action: "delivery"
+                )
+            ]
+        )
+        let sqlWorkspace = workspaceForWorkflowSummary(
+            stage: "delivery",
+            id: "sql-delivery",
+            name: "SQL Delivery",
+            folder: "2026-05-31-sql-delivery",
+            path: "/tmp/workspaces/2026-05-31-sql-delivery",
+            healthChecks: [
+                WorkspaceHealthCheck(
+                    id: "sql-directory",
+                    label: "SQL 产物",
+                    detail: "交付记录包含 SQL 变更，但 sql/ 下缺少回滚 SQL 文件。",
+                    status: "fail",
+                    action: "sql"
+                )
+            ],
+            sqlFiles: [
+                WorkspaceSqlFile(
+                    relativePath: "pay_log.sql",
+                    path: "/tmp/workspaces/2026-05-31-sql-delivery/sql/pay_log.sql",
+                    kind: "formal"
+                )
+            ]
+        )
+        let appState = appStateForAutomationTests(workspaces: [genericDelivery, sqlWorkspace])
+        appState.selectedWorkspaceID = genericDelivery.id
+
+        let prompt = appState.automationSignalHandoffPrompt(for: deliverySignal())
+
+        XCTAssertTrue(prompt.contains("- 当前工作区: SQL Delivery"))
+        XCTAssertTrue(prompt.contains("- SQL 文件: pay_log.sql"))
+        XCTAssertTrue(prompt.contains("缺少回滚 SQL 文件"))
+        XCTAssertFalse(prompt.contains("- 当前工作区: Workflow Summary"))
+    }
+
+    @MainActor
+    func testAutomationDeliveryHandoffPromptFallsBackToDeliveryRecordIssue() {
+        let cleanWorkspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "clean-delivery",
+            name: "Clean Delivery",
+            folder: "2026-05-31-clean-delivery",
+            path: "/tmp/workspaces/2026-05-31-clean-delivery",
+            healthChecks: [
+                WorkspaceHealthCheck(
+                    id: "delivery-record",
+                    label: "交付记录",
+                    detail: "交付记录已存在且无明显占位内容",
+                    status: "pass",
+                    action: "delivery"
+                ),
+                WorkspaceHealthCheck(
+                    id: "sql-directory",
+                    label: "SQL 产物",
+                    detail: "交付记录未声明 SQL 变更，sql/ 可留空。",
+                    status: "pass",
+                    action: "sql"
+                )
+            ]
+        )
+        let missingDelivery = workspaceForWorkflowSummary(
+            stage: "delivery",
+            id: "missing-delivery",
+            name: "Missing Delivery",
+            folder: "2026-05-31-missing-delivery",
+            path: "/tmp/workspaces/2026-05-31-missing-delivery",
+            healthChecks: [
+                WorkspaceHealthCheck(
+                    id: "delivery-record",
+                    label: "交付记录",
+                    detail: "缺少工作区交付记录",
+                    status: "fail",
+                    action: "delivery"
+                )
+            ]
+        )
+        let appState = appStateForAutomationTests(workspaces: [cleanWorkspace, missingDelivery])
+        appState.selectedWorkspaceID = cleanWorkspace.id
+
+        let prompt = appState.automationSignalHandoffPrompt(for: deliverySignal())
+
+        XCTAssertTrue(prompt.contains("- 当前工作区: Missing Delivery"))
+        XCTAssertTrue(prompt.contains("- 交付记录: /tmp/workspaces/2026-05-31-missing-delivery/交付记录.md"))
+        XCTAssertTrue(prompt.contains("缺少工作区交付记录"))
+        XCTAssertFalse(prompt.contains("- 当前工作区: Clean Delivery"))
+    }
+
     private func workspaceForWorkflowSummary(
         stage: String,
+        id: String? = nil,
+        name: String = "Workflow Summary",
+        folder: String? = nil,
+        path: String? = nil,
         healthChecks: [WorkspaceHealthCheck] = [],
-        risks: [RiskAlert] = []
+        risks: [RiskAlert] = [],
+        sqlFiles: [WorkspaceSqlFile] = []
     ) -> WorkspaceSummary {
-        WorkspaceSummary(
-            id: "workflow-summary-\(stage)",
-            name: "Workflow Summary",
-            folder: "workflow-summary-\(stage)",
-            path: "~/ks_project/workspaces/workflow-summary-\(stage)",
+        let workspaceID = id ?? "workflow-summary-\(stage)"
+        let workspaceFolder = folder ?? workspaceID
+        let workspacePath = path ?? "~/ks_project/workspaces/\(workspaceFolder)"
+
+        return WorkspaceSummary(
+            id: workspaceID,
+            name: name,
+            folder: workspaceFolder,
+            path: workspacePath,
             branch: "feature/workflow-summary",
             state: .developing,
             riskLevel: risks.isEmpty ? .low : .medium,
             aiState: "Ready",
             worktreeState: "Ready",
-            documentLinks: ["delivery": "~/ks_project/workspaces/workflow-summary-\(stage)/交付记录.md"],
+            documentLinks: ["delivery": "\(workspacePath)/交付记录.md"],
+            sqlFiles: sqlFiles,
             services: [
                 ServiceStatus(name: "order", branch: "feature/workflow-summary", worktree: "ready", gitSummary: "clean", worktreeExists: true, sourceExists: true)
             ],
@@ -442,6 +552,32 @@ final class ModelBehaviorTests: XCTestCase {
                     sourceLine: nil
                 )
             ]
+        )
+    }
+
+    @MainActor
+    private func appStateForAutomationTests(workspaces: [WorkspaceSummary]) -> AppState {
+        let defaults = UserDefaults(suiteName: "NexusAppTests-\(UUID().uuidString)")!
+        return AppState(
+            workspaces: workspaces,
+            agentStatus: AgentStatus(title: "Ready", detail: "Tests", connectedTools: []),
+            bridge: PreviewNexusBridge(),
+            workspaceRoot: "/tmp/workspaces",
+            sourceReposRoot: "/tmp/source-repos",
+            docsRoot: "/tmp/docs",
+            defaults: defaults
+        )
+    }
+
+    private func deliverySignal() -> LocalAutomationSignal {
+        LocalAutomationSignal(
+            id: "delivery.check",
+            kind: "delivery",
+            severity: "warning",
+            title: "交付检查 / Delivery check",
+            detail: "2 workspaces need delivery-record attention.",
+            count: 2,
+            action: "update-delivery"
         )
     }
 }
