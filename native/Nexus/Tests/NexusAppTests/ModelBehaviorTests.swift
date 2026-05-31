@@ -248,6 +248,52 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(surface?.secondaryResponse?.payload.contains("Need more context") == true)
     }
 
+    func testAgentInboxSummaryPrioritizesActionRequiredEvents() {
+        let permission = AgentEvent(
+            id: "agent-permission",
+            timestamp: "2026-05-31T12:00:00Z",
+            source: "codex",
+            sessionId: "thread-1",
+            workspaceFolder: "demo",
+            kind: "permission",
+            title: "Permission requested",
+            summary: "Need git push approval.",
+            severity: "warning",
+            metadata: ["command": "git push"]
+        )
+        let status = AgentEvent(
+            id: "agent-status",
+            timestamp: "2026-05-31T12:01:00Z",
+            source: "codex",
+            sessionId: "thread-1",
+            workspaceFolder: "demo",
+            kind: "status",
+            title: "Build passed",
+            summary: "CI passed.",
+            severity: "info",
+            metadata: [:]
+        )
+        let error = AgentEvent(
+            id: "agent-error",
+            timestamp: "2026-05-31T12:02:00Z",
+            source: "codex",
+            sessionId: "thread-1",
+            workspaceFolder: "demo",
+            kind: "status",
+            title: "Hook failed",
+            summary: "Hook returned an error.",
+            severity: "error",
+            metadata: [:]
+        )
+
+        let inbox = AgentInboxSummary(events: [status, permission, error])
+
+        XCTAssertEqual(inbox.totalCount, 3)
+        XCTAssertEqual(inbox.actionRequired.map(\.id), ["agent-permission", "agent-error"])
+        XCTAssertEqual(inbox.recent.map(\.id), ["agent-status"])
+        XCTAssertEqual(inbox.pendingLabel, "2 pending")
+    }
+
     func testWorkspaceWorkflowSummaryCombinesTaskAndDeliverySignals() {
         let payLogSummary = WorkspaceWorkflowSummary(workspace: WorkspaceSummary.previewData[0])
 

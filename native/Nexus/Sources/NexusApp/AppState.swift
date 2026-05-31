@@ -287,6 +287,10 @@ final class AppState: ObservableObject {
         workspaces.first { $0.id == selectedWorkspaceID } ?? filteredWorkspaces.first
     }
 
+    var agentInboxSummary: AgentInboxSummary {
+        AgentInboxSummary(events: agentEvents)
+    }
+
     var pinnedWorkspaces: [WorkspaceSummary] {
         workspaces.filter { pinnedWorkspaceIDs.contains($0.id) }
     }
