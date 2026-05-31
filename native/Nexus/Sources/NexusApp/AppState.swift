@@ -693,8 +693,16 @@ final class AppState: ObservableObject {
     }
 
     func focusAgentTasks() {
+        focusAgentTask(sourceEventID: nil)
+    }
+
+    func focusAgentTask(sourceEventID: String?) {
         setTaskCenterFilter(.agent)
-        if let item = allTaskCenterItems.first(where: { TaskCenterFilter.agent.matches($0) }) {
+        let agentItems = allTaskCenterItems.filter { TaskCenterFilter.agent.matches($0) }
+        let matchedItem = sourceEventID.flatMap { sourceEventID in
+            agentItems.first { $0.task.sourceEventID == sourceEventID }
+        }
+        if let item = matchedItem ?? agentItems.first {
             selectTaskCenterItem(item)
         }
     }
@@ -2636,8 +2644,19 @@ final class AppState: ObservableObject {
                     actor: "Nexus Native"
                 )
             )
-            if response.appended {
+            if response.appended || response.alreadyExists {
                 await refreshFromBridge()
+                markLocalWriteFeedback(
+                    title: response.appended
+                        ? "Agent 任务已写入 / Agent task saved"
+                        : "Agent 任务已存在 / Agent task already exists",
+                    detail: "\(response.title)。Task Center 已可按 Agent 筛选继续定位、延期、完成或交接 Codex。",
+                    workspaceID: workspace.id,
+                    workspaceName: workspace.name,
+                    documentPath: response.path,
+                    documentLabel: "打开 tasks.md",
+                    systemImage: response.appended ? "text.badge.plus" : "doc.text"
+                )
             }
             return response
         } catch {

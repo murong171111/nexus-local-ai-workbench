@@ -10116,12 +10116,23 @@ private struct AgentEventDetailSheet: View {
                                     appendTaskDraft(to: workspace)
                                 }
                                 .disabled(!isTaskWriteConfirmed || isAppendingTaskDraft)
+                            }
 
-                                if let taskAppendResult {
-                                    Text(taskAppendResult.alreadyExists ? "Already exists" : "Added")
-                                        .font(.caption)
-                                        .foregroundStyle(taskAppendResult.appended ? NexusPalette.success : .secondary)
-                                }
+                            if let taskAppendResult {
+                                AgentTaskDraftResultView(
+                                    result: taskAppendResult,
+                                    focusAgentTask: {
+                                        appState.focusAgentTask(sourceEventID: taskAppendResult.sourceEventId)
+                                        dismiss()
+                                    },
+                                    openTasksDocument: {
+                                        appState.focusWorkspace(id: workspace.id)
+                                        Task {
+                                            await appState.loadDocument(path: taskAppendResult.path)
+                                        }
+                                        dismiss()
+                                    }
+                                )
                             }
                         } else {
                             Text("Select a matching workspace before writing this draft.")
@@ -10372,6 +10383,57 @@ private struct AgentActionSurfaceView: View {
                 Spacer()
             }
         }
+    }
+}
+
+private struct AgentTaskDraftResultView: View {
+    let result: AppendAgentTaskDraftResponse
+    let focusAgentTask: () -> Void
+    let openTasksDocument: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: result.appended ? "checkmark.circle" : "doc.text")
+                    .foregroundStyle(result.appended ? NexusPalette.success : .secondary)
+                    .frame(width: 16)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(result.appended ? "任务已写入 / Task added" : "任务已存在 / Already exists")
+                        .font(.caption.weight(.semibold))
+                    Text(result.title)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                    Text("下一步可从任务中心的 Agent 筛选继续处理，或打开 tasks.md 复查源文档。")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    focusAgentTask()
+                } label: {
+                    Label("查看 Agent 任务", systemImage: "line.3.horizontal.decrease.circle")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+
+                Button {
+                    openTasksDocument()
+                } label: {
+                    Label("打开 tasks.md", systemImage: "doc.text")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(NexusPalette.selected)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
