@@ -574,22 +574,12 @@ private struct SidebarView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
 
-            if !appState.agentEvents.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Agent 事件 / Events")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-
-                    ForEach(appState.agentEvents.prefix(3)) { event in
-                        Button {
-                            appState.selectedAgentEvent = event
-                        } label: {
-                            AgentEventRow(event: event)
-                        }
-                        .buttonStyle(.plain)
-                    }
+            AgentInboxSidebarView(
+                summary: appState.agentInboxSummary,
+                openEvent: { event in
+                    appState.selectedAgentEvent = event
                 }
-            }
+            )
 
             if appState.taskCenterTotalCount > 0 || recentTaskWriteback != nil {
                 VStack(alignment: .leading, spacing: 8) {
@@ -9743,8 +9733,120 @@ private struct Metric: View {
     }
 }
 
+private struct AgentInboxSidebarView: View {
+    let summary: AgentInboxSummary
+    let openEvent: (AgentEvent) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Agent Inbox / 事件")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(summary.pendingLabel)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(summary.actionRequired.isEmpty ? .secondary : NexusPalette.warning)
+            }
+
+            if summary.isEmpty {
+                AgentInboxEmptyView()
+            } else {
+                if !summary.actionRequired.isEmpty {
+                    AgentInboxGroupHeader(
+                        title: "需要处理 / Attention",
+                        detail: "\(summary.actionRequired.count) item(s)"
+                    )
+
+                    ForEach(summary.actionRequired.prefix(3)) { event in
+                        AgentInboxButton(
+                            event: event,
+                            badge: AgentInboxSidebarView.badge(for: event),
+                            openEvent: openEvent
+                        )
+                    }
+                }
+
+                if !summary.recent.isEmpty {
+                    AgentInboxGroupHeader(
+                        title: summary.actionRequired.isEmpty ? "最近事件 / Recent" : "其他最近 / Recent",
+                        detail: "\(summary.recent.count) item(s)"
+                    )
+
+                    ForEach(summary.recent.prefix(summary.actionRequired.isEmpty ? 3 : 2)) { event in
+                        AgentInboxButton(
+                            event: event,
+                            badge: nil,
+                            openEvent: openEvent
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private static func badge(for event: AgentEvent) -> String {
+        if let actionSurface = AgentActionSurface(event: event) {
+            return actionSurface.kind.statusLabel
+        }
+        return "错误 / error"
+    }
+}
+
+private struct AgentInboxButton: View {
+    let event: AgentEvent
+    let badge: String?
+    let openEvent: (AgentEvent) -> Void
+
+    var body: some View {
+        Button {
+            openEvent(event)
+        } label: {
+            AgentEventRow(event: event, badge: badge)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct AgentInboxGroupHeader: View {
+    let title: String
+    let detail: String
+
+    var body: some View {
+        HStack {
+            Text(title)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(detail)
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.top, 2)
+    }
+}
+
+private struct AgentInboxEmptyView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label("暂无待处理事件 / Clear", systemImage: "checkmark.circle")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(NexusPalette.success)
+            Text("Hook helper 写入的权限、问题和工具复核事件会优先出现在这里。")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(NexusPalette.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
 private struct AgentEventRow: View {
     let event: AgentEvent
+    var badge: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -9758,6 +9860,13 @@ private struct AgentEventRow: View {
                 Text(event.kind)
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(color)
+                if let badge {
+                    Spacer(minLength: 4)
+                    Text(badge)
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(color)
+                        .lineLimit(1)
+                }
             }
             Text(event.title)
                 .font(.caption.weight(.semibold))

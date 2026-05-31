@@ -505,6 +505,35 @@ struct AgentActionSurface: Hashable {
     }
 }
 
+struct AgentInboxSummary {
+    let actionRequired: [AgentEvent]
+    let recent: [AgentEvent]
+    let totalCount: Int
+
+    init(events: [AgentEvent]) {
+        totalCount = events.count
+        actionRequired = events.filter(Self.requiresAction)
+        let actionIDs = Set(actionRequired.map(\.id))
+        recent = events.filter { !actionIDs.contains($0.id) }
+    }
+
+    var isEmpty: Bool {
+        totalCount == 0
+    }
+
+    var pendingLabel: String {
+        actionRequired.isEmpty ? "0 pending" : "\(actionRequired.count) pending"
+    }
+
+    static func requiresAction(_ event: AgentEvent) -> Bool {
+        if AgentActionSurface(event: event) != nil {
+            return true
+        }
+
+        return event.severity.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "error"
+    }
+}
+
 enum AutomationNotificationMinimumStatus: String, CaseIterable, Identifiable {
     case review = "review"
     case attention = "attention"

@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Added
 
+- Native sidebar Agent Events are now an Agent Inbox with Attention and Recent groups, prioritizing permission, question, tool-review, and error events before informational events and showing an empty clear state when no events exist.
 - Native Agent Event detail now includes an Agent action surface for permission, question, and tool-review events, with copyable approve/deny/answer/review response templates, clipboard feedback, and audit records without executing command metadata.
 - Native Workflow delivery-readiness now groups actionable rows into Attention and Passed sections so delivery cleanup starts with blockers and review items before already-clear checks.
 - Native Workflow delivery-readiness rows are now actionable, routing branch, service/worktree, task, risk, delivery-record, SQL, and dirty-service checks to the nearest document, setup flow, local check, or Codex handoff.
