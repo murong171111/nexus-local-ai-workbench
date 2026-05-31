@@ -1080,21 +1080,24 @@ final class AppState: ObservableObject {
         switch signal.action {
         case "review-risk":
             setWorkspaceFilter(.risky)
-            if let workspace = firstWorkspaceWithRisk() {
+            if let workspace = workspaceForAutomationSignal(signal) {
                 selectedWorkspaceID = workspace.id
             }
         case "update-delivery":
             setWorkspaceFilter(.risky)
-            let workspace = firstWorkspaceWithDeliveryIssue() ?? selectedWorkspace
+            let workspace = workspaceForAutomationSignal(signal) ?? selectedWorkspace
             if let workspace {
                 selectedWorkspaceID = workspace.id
-                let path = workspace.documentLinks["delivery"]
-                    ?? workspace.documentLinks["handoff"]
-                    ?? "\(workspace.path)/交付记录.md"
-                await loadDocument(path: path)
+                if workspaceHasSqlDeliveryIssue(workspace) {
+                    await openDeliveryUpdateInCodex(workspace)
+                } else if workspaceMissingDeliveryRecord(workspace) {
+                    await loadDocument(path: deliveryDocumentPath(for: workspace))
+                } else {
+                    await openDeliveryUpdateInCodex(workspace)
+                }
             }
         case "review-worktrees":
-            if let workspace = firstWorkspaceWithMissingWorktrees() ?? firstWorkspaceWithDirtyServices() {
+            if let workspace = workspaceForAutomationSignal(signal) {
                 selectedWorkspaceID = workspace.id
                 if !missingWorktreeServices(in: workspace).isEmpty {
                     presentWorktreeSetup(for: workspace)
@@ -2046,16 +2049,28 @@ final class AppState: ObservableObject {
     }
 
     func automationSignalHandoffPrompt(for signal: LocalAutomationSignal) -> String {
-        let selected = selectedWorkspace
+        let selected = workspaceForAutomationSignal(signal) ?? selectedWorkspace
         let workspaceLines: [String]
         if let selected {
+            let deliveryAndSqlChecks = selected.healthChecks
+                .filter { check in
+                    check.id == "delivery-record"
+                        || check.id == "sql-directory"
+                        || check.action == "delivery"
+                        || check.action == "sql"
+                }
+                .map { "\($0.label) [\($0.status)]: \($0.detail)" }
+                .joined(separator: " | ")
             workspaceLines = [
                 "- 当前工作区: \(selected.name)",
                 "- 工作区目录: \(selected.path)",
                 "- 目标分支: \(selected.branch)",
                 "- 涉及服务: \(selected.serviceSummary.isEmpty ? "待确认" : selected.serviceSummary)",
                 "- 风险数: \(selected.risks.count)",
-                "- 未完成任务: \(selected.tasks.filter { !$0.isDone }.count)"
+                "- 未完成任务: \(selected.tasks.filter { !$0.isDone }.count)",
+                "- 交付记录: \(deliveryDocumentPath(for: selected))",
+                "- SQL 文件: \(selected.sqlFiles.isEmpty ? "未扫描到" : selected.sqlFiles.map(\.relativePath).joined(separator: ", "))",
+                "- 交付/SQL 检查: \(deliveryAndSqlChecks.isEmpty ? "未生成" : deliveryAndSqlChecks)"
             ]
         } else {
             workspaceLines = ["- 当前工作区: 未选择"]
@@ -2912,24 +2927,73 @@ final class AppState: ObservableObject {
         workspaces.filter { !$0.isArchived }
     }
 
+    private func workspaceForAutomationSignal(_ signal: LocalAutomationSignal) -> WorkspaceSummary? {
+        switch signal.action {
+        case "review-risk":
+            return firstWorkspaceWithRisk()
+        case "update-delivery":
+            return firstWorkspaceWithSqlDeliveryIssue()
+                ?? firstWorkspaceWithDeliveryIssue()
+        case "review-worktrees":
+            return firstWorkspaceWithMissingWorktrees()
+                ?? firstWorkspaceWithDirtyServices()
+        default:
+            return selectedWorkspace
+        }
+    }
+
     private func firstWorkspaceWithRisk() -> WorkspaceSummary? {
         activeSignalWorkspaces.first { workspace in
             workspace.riskLevel == .high || workspace.riskLevel == .medium || !workspace.risks.isEmpty
         }
     }
 
+    private func firstWorkspaceWithSqlDeliveryIssue() -> WorkspaceSummary? {
+        activeSignalWorkspaces.first { workspace in
+            workspaceHasSqlDeliveryIssue(workspace)
+        }
+    }
+
     private func firstWorkspaceWithDeliveryIssue() -> WorkspaceSummary? {
         activeSignalWorkspaces.first { workspace in
-            workspace.risks.contains { risk in
-                let normalized = "\(risk.title) \(risk.detail)".lowercased()
-                return normalized.contains("交付记录") || normalized.contains("delivery")
-            } || workspace.healthChecks.contains { check in
-                let normalizedStatus = check.status.lowercased()
-                return check.id == "delivery-record"
-                    && normalizedStatus != "pass"
-                    && normalizedStatus != "ok"
-            }
+            workspaceHasDeliveryRecordIssue(workspace) || workspaceHasSqlDeliveryIssue(workspace)
         }
+    }
+
+    private func workspaceHasDeliveryRecordIssue(_ workspace: WorkspaceSummary) -> Bool {
+        workspace.risks.contains { risk in
+            let normalized = "\(risk.title) \(risk.detail)".lowercased()
+            return normalized.contains("交付记录") || normalized.contains("delivery")
+        } || workspace.healthChecks.contains { check in
+            check.id == "delivery-record" && !Self.healthStatusIsPassing(check.status)
+        }
+    }
+
+    private func workspaceHasSqlDeliveryIssue(_ workspace: WorkspaceSummary) -> Bool {
+        workspace.risks.contains { risk in
+            let normalized = "\(risk.title) \(risk.detail)".lowercased()
+            return normalized.contains("sql") || normalized.contains("sql 变更")
+        } || workspace.healthChecks.contains { check in
+            (check.id == "sql-directory" || check.action == "sql")
+                && !Self.healthStatusIsPassing(check.status)
+        }
+    }
+
+    private func workspaceMissingDeliveryRecord(_ workspace: WorkspaceSummary) -> Bool {
+        workspace.healthChecks.contains { check in
+            check.id == "delivery-record"
+                && !Self.healthStatusIsPassing(check.status)
+                && check.detail.contains("缺少")
+        }
+    }
+
+    private func deliveryDocumentPath(for workspace: WorkspaceSummary) -> String {
+        workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md"
+    }
+
+    private static func healthStatusIsPassing(_ status: String) -> Bool {
+        let normalized = status.lowercased()
+        return normalized == "pass" || normalized == "ok" || normalized == "ready"
     }
 
     private func firstWorkspaceWithMissingWorktrees() -> WorkspaceSummary? {
