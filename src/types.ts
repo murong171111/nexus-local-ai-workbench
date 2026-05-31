@@ -46,6 +46,12 @@ export type WorkspaceLifecycle = {
   documentKey: string;
 };
 
+export type WorkspaceSqlFile = {
+  relativePath: string;
+  path: string;
+  kind: "formal" | "rollback" | string;
+};
+
 export type Workspace = {
   name: string;
   folder: string;
@@ -68,6 +74,7 @@ export type Workspace = {
   lifecycle?: WorkspaceLifecycle;
   updated: string;
   links: Record<string, string>;
+  sqlFiles?: WorkspaceSqlFile[];
   worktreeCommand: string;
   activities?: WorkspaceActivity[];
   healthChecks?: WorkspaceHealthCheck[];

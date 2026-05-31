@@ -69,6 +69,7 @@ enum WorkspaceFilter: String, CaseIterable, Identifiable {
             workspace.aiState,
             workspace.serviceSummary,
             workspace.worktreeState,
+            workspace.sqlFiles.map(\.relativePath).joined(separator: " "),
             workspace.tasks.map(\.title).joined(separator: " "),
             workspace.tasks.map(\.detail).joined(separator: " ")
         ]
@@ -898,6 +899,22 @@ struct WorkspaceSessionAction: Identifiable, Hashable {
     let documentKey: String
 }
 
+struct WorkspaceSqlFile: Identifiable, Hashable {
+    let relativePath: String
+    let path: String
+    let kind: String
+
+    var id: String { relativePath }
+
+    var fileName: String {
+        URL(fileURLWithPath: relativePath).lastPathComponent
+    }
+
+    var kindLabel: String {
+        kind == "rollback" ? "回滚 SQL / Rollback" : "正式 SQL / Formal"
+    }
+}
+
 struct WorkspaceLifecycle: Hashable {
     let stage: String
     let label: String
@@ -1156,6 +1173,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
     let aiState: String
     let worktreeState: String
     let documentLinks: [String: String]
+    let sqlFiles: [WorkspaceSqlFile]
     let services: [ServiceStatus]
     let activities: [ActivityEvent]
     let risks: [RiskAlert]
@@ -1202,6 +1220,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
         aiState: String,
         worktreeState: String,
         documentLinks: [String: String] = [:],
+        sqlFiles: [WorkspaceSqlFile] = [],
         services: [ServiceStatus],
         activities: [ActivityEvent],
         risks: [RiskAlert],
@@ -1220,6 +1239,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
         self.aiState = aiState
         self.worktreeState = worktreeState
         self.documentLinks = documentLinks
+        self.sqlFiles = sqlFiles
         self.services = services
         self.activities = activities
         self.risks = risks
@@ -1276,6 +1296,13 @@ struct WorkspaceSummary: Identifiable, Hashable {
                 documentKey: action.documentKey
             )
         }
+        let sqlFiles = (snapshot.sqlFiles ?? []).map { file in
+            WorkspaceSqlFile(
+                relativePath: file.relativePath,
+                path: file.path,
+                kind: file.kind
+            )
+        }
         let tasks = (snapshot.tasks ?? []).map { task in
             WorkspaceTask(
                 id: task.id,
@@ -1308,6 +1335,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
             aiState: snapshot.riskCount == 0 ? "Ready for Codex continuation" : "\(snapshot.riskCount) risks need review",
             worktreeState: worktreeState,
             documentLinks: snapshot.links,
+            sqlFiles: sqlFiles,
             services: services,
             activities: activities,
             risks: risks,
@@ -1330,6 +1358,18 @@ struct WorkspaceSummary: Identifiable, Hashable {
             aiState: "Needs delivery update",
             worktreeState: "3 services pending review",
             documentLinks: ["handoff": "~/ks_project/workspaces/2026-05-25-yibao-pay-log/handoff.md"],
+            sqlFiles: [
+                WorkspaceSqlFile(
+                    relativePath: "20260525_pay_log_backfill.sql",
+                    path: "~/ks_project/workspaces/2026-05-25-yibao-pay-log/sql/20260525_pay_log_backfill.sql",
+                    kind: "formal"
+                ),
+                WorkspaceSqlFile(
+                    relativePath: "20260525_pay_log_backfill_rollback.sql",
+                    path: "~/ks_project/workspaces/2026-05-25-yibao-pay-log/sql/20260525_pay_log_backfill_rollback.sql",
+                    kind: "rollback"
+                )
+            ],
             services: [
                 ServiceStatus(name: "order", branch: "feature/yibao-pay-log", worktree: "ready", gitSummary: "clean", worktreeExists: true, sourceExists: true),
                 ServiceStatus(name: "store-cashier", branch: "feature/yibao-pay-log", worktree: "ready", gitSummary: "dirty", worktreeExists: true, sourceExists: true),
@@ -1417,6 +1457,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
             aiState: aiState,
             worktreeState: worktreeState,
             documentLinks: documentLinks,
+            sqlFiles: sqlFiles,
             services: services,
             activities: Array(([activity] + activities).prefix(6)),
             risks: risks,

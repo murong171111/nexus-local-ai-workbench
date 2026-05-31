@@ -37,11 +37,20 @@ pub struct WorkspaceData {
     pub lifecycle: WorkspaceLifecycle,
     pub updated: String,
     pub links: BTreeMap<String, String>,
+    pub sql_files: Vec<WorkspaceSqlFile>,
     pub worktree_command: String,
     pub tasks: Vec<WorkspaceTask>,
     pub activities: Vec<WorkspaceActivity>,
     pub health_checks: Vec<WorkspaceHealthCheck>,
     pub session_actions: Vec<WorkspaceSessionAction>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceSqlFile {
+    pub relative_path: String,
+    pub path: String,
+    pub kind: String,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
@@ -1156,6 +1165,7 @@ fn collect_workspace(
         "sql".to_string(),
         path.join("sql").to_string_lossy().to_string(),
     );
+    let sql_files = workspace_sql_files(path);
 
     let risk_count = risks.len();
     let folder = folder_from_path(path);
@@ -1221,6 +1231,7 @@ fn collect_workspace(
         lifecycle,
         updated: generated_date(),
         links,
+        sql_files,
         worktree_command,
         tasks,
         activities,
@@ -2158,6 +2169,25 @@ fn collect_sql_files(sql_dir: &Path) -> Vec<(String, String)> {
     files
 }
 
+fn workspace_sql_files(workspace: &Path) -> Vec<WorkspaceSqlFile> {
+    let sql_dir = workspace.join("sql");
+    collect_sql_files(&sql_dir)
+        .into_iter()
+        .map(|(relative_path, content)| {
+            let kind = if is_rollback_sql_file(&relative_path, &content) {
+                "rollback"
+            } else {
+                "formal"
+            };
+            WorkspaceSqlFile {
+                path: sql_dir.join(&relative_path).to_string_lossy().to_string(),
+                relative_path,
+                kind: kind.to_string(),
+            }
+        })
+        .collect()
+}
+
 fn collect_sql_files_inner(dir: &Path, base: &Path, files: &mut Vec<(String, String)>) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
@@ -3052,6 +3082,14 @@ mod tests {
         assert_eq!(sql_check.status, "pass");
         assert!(sql_check.detail.contains("正式 SQL 1 个"));
         assert!(sql_check.detail.contains("回滚 SQL 1 个"));
+        assert_eq!(item.sql_files.len(), 2);
+        assert_eq!(item.sql_files[0].relative_path, "20260529_pay_log.sql");
+        assert_eq!(item.sql_files[0].kind, "formal");
+        assert_eq!(
+            item.sql_files[1].relative_path,
+            "20260529_pay_log_rollback.sql"
+        );
+        assert_eq!(item.sql_files[1].kind, "rollback");
         assert!(!item.risks.iter().any(|risk| risk.contains("SQL 变更")));
 
         fs::remove_dir_all(root).unwrap();

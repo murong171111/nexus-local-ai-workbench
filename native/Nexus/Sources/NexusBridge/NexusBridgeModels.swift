@@ -1033,6 +1033,7 @@ public struct WorkspaceSnapshot: Codable, Equatable, Sendable {
     public let lifecycle: WorkspaceLifecycleSnapshot?
     public let updated: String
     public let links: [String: String]
+    public let sqlFiles: [WorkspaceSqlFileSnapshot]?
     public let worktreeCommand: String
     public let tasks: [WorkspaceTaskSnapshot]?
     public let activities: [WorkspaceActivitySnapshot]?
@@ -1056,6 +1057,7 @@ public struct WorkspaceSnapshot: Codable, Equatable, Sendable {
         lifecycle: WorkspaceLifecycleSnapshot? = nil,
         updated: String,
         links: [String: String],
+        sqlFiles: [WorkspaceSqlFileSnapshot]? = nil,
         worktreeCommand: String,
         tasks: [WorkspaceTaskSnapshot]? = nil,
         activities: [WorkspaceActivitySnapshot]? = nil,
@@ -1078,11 +1080,24 @@ public struct WorkspaceSnapshot: Codable, Equatable, Sendable {
         self.lifecycle = lifecycle
         self.updated = updated
         self.links = links
+        self.sqlFiles = sqlFiles
         self.worktreeCommand = worktreeCommand
         self.tasks = tasks
         self.activities = activities
         self.healthChecks = healthChecks
         self.sessionActions = sessionActions
+    }
+}
+
+public struct WorkspaceSqlFileSnapshot: Codable, Equatable, Sendable {
+    public let relativePath: String
+    public let path: String
+    public let kind: String
+
+    public init(relativePath: String, path: String, kind: String) {
+        self.relativePath = relativePath
+        self.path = path
+        self.kind = kind
     }
 }
 

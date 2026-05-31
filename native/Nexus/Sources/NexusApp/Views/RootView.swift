@@ -5029,6 +5029,23 @@ private struct WorkspaceDocumentEntry: Identifiable {
     let description: String
     let systemImage: String
     let fallbackRelativePath: String
+    let canCreateMissing: Bool
+
+    init(
+        key: String,
+        label: String,
+        description: String,
+        systemImage: String,
+        fallbackRelativePath: String,
+        canCreateMissing: Bool = true
+    ) {
+        self.key = key
+        self.label = label
+        self.description = description
+        self.systemImage = systemImage
+        self.fallbackRelativePath = fallbackRelativePath
+        self.canCreateMissing = canCreateMissing
+    }
 
     var id: String { key }
 }
@@ -5105,11 +5122,29 @@ private struct WorkspaceDocumentsHubView: View {
     }
 
     private var documentEntries: [ResolvedWorkspaceDocumentEntry] {
+        standardDocumentEntries + sqlDocumentEntries
+    }
+
+    private var standardDocumentEntries: [ResolvedWorkspaceDocumentEntry] {
         standardEntries.map { entry in
             ResolvedWorkspaceDocumentEntry(
                 entry: entry,
                 path: workspace.documentLinks[entry.key] ?? "\(workspace.path)/\(entry.fallbackRelativePath)"
             )
+        }
+    }
+
+    private var sqlDocumentEntries: [ResolvedWorkspaceDocumentEntry] {
+        workspace.sqlFiles.map { file in
+            let entry = WorkspaceDocumentEntry(
+                key: "sql/\(file.relativePath)",
+                label: file.fileName,
+                description: file.kindLabel,
+                systemImage: file.kind == "rollback" ? "arrow.uturn.backward.circle" : "doc.plaintext",
+                fallbackRelativePath: "sql/\(file.relativePath)",
+                canCreateMissing: false
+            )
+            return ResolvedWorkspaceDocumentEntry(entry: entry, path: file.path)
         }
     }
 
@@ -5119,6 +5154,7 @@ private struct WorkspaceDocumentsHubView: View {
         }
         return documentEntries.first { entry in
             entry.path == error.path
+                && entry.entry.canCreateMissing
                 && entry.path == "\(workspace.path)/\(entry.entry.fallbackRelativePath)"
         }
     }
@@ -5126,22 +5162,21 @@ private struct WorkspaceDocumentsHubView: View {
     var body: some View {
         SectionBlock(title: "文档入口 / Documents") {
             VStack(alignment: .leading, spacing: 12) {
+                WorkspaceDocumentGroupHeader(title: "标准文档 / Standard", count: standardDocumentEntries.count)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 116), spacing: 8)], alignment: .leading, spacing: 8) {
-                    ForEach(documentEntries) { entry in
-                        Button {
-                            Task {
-                                await appState.loadDocument(path: entry.path)
-                            }
-                        } label: {
-                            WorkspaceDocumentEntryTile(
-                                entry: entry,
-                                isActive: entry.path == activeDocumentPath,
-                                isLoading: entry.path == activeLoadingPath
-                            )
+                    ForEach(standardDocumentEntries) { entry in
+                        documentButton(for: entry)
+                    }
+                }
+
+                WorkspaceDocumentGroupHeader(title: "SQL 产物 / SQL artifacts", count: sqlDocumentEntries.count)
+                if sqlDocumentEntries.isEmpty {
+                    WorkspaceSqlDocumentsEmptyState()
+                } else {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8)], alignment: .leading, spacing: 8) {
+                        ForEach(sqlDocumentEntries) { entry in
+                            documentButton(for: entry)
                         }
-                        .buttonStyle(.plain)
-                        .disabled(appState.isDocumentLoading)
-                        .help(entry.path)
                     }
                 }
 
@@ -5182,6 +5217,23 @@ private struct WorkspaceDocumentsHubView: View {
                 .environmentObject(appState)
         }
     }
+
+    private func documentButton(for entry: ResolvedWorkspaceDocumentEntry) -> some View {
+        Button {
+            Task {
+                await appState.loadDocument(path: entry.path)
+            }
+        } label: {
+            WorkspaceDocumentEntryTile(
+                entry: entry,
+                isActive: entry.path == activeDocumentPath,
+                isLoading: entry.path == activeLoadingPath
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(appState.isDocumentLoading)
+        .help(entry.path)
+    }
 }
 
 private struct ResolvedWorkspaceDocumentEntry: Identifiable {
@@ -5192,6 +5244,49 @@ private struct ResolvedWorkspaceDocumentEntry: Identifiable {
     var label: String { entry.label }
     var description: String { entry.description }
     var systemImage: String { entry.systemImage }
+}
+
+private struct WorkspaceDocumentGroupHeader: View {
+    let title: String
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+            Text("\(count)")
+                .font(.system(size: 10, design: .monospaced).weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(NexusPalette.badge)
+                .clipShape(Capsule())
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct WorkspaceSqlDocumentsEmptyState: View {
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "cylinder.split.1x2")
+                .foregroundStyle(.secondary)
+                .frame(width: 15)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("sql/ 下暂无可预览的 .sql 文件。")
+                    .font(.caption.weight(.semibold))
+                Text("如果交付记录声明 SQL 变更，本地检查会要求同时补正式 SQL 和回滚 SQL。")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
 }
 
 private struct WorkspaceDocumentEntryTile: View {
