@@ -7852,7 +7852,11 @@ private struct WorkflowStatusView: View {
                     )
                 }
 
-                DeliveryReadinessChecklistView(items: readinessItems)
+                DeliveryReadinessChecklistView(
+                    items: readinessItems,
+                    actionLabel: readinessActionLabel(for:),
+                    action: runReadinessAction(for:)
+                )
 
                 ValidationPrHandoffView(
                     localCheckStatus: appState.lastAutomationCheck?.status,
@@ -7947,6 +7951,93 @@ private struct WorkflowStatusView: View {
             lifecycleAction(.delivery)
         case .markDone:
             lifecycleAction(.done)
+        }
+    }
+
+    private func readinessActionLabel(for item: DeliveryReadinessItem) -> String {
+        switch item.id {
+        case "branch":
+            return "打开分支"
+        case "services":
+            return missingWorktreeServices.isEmpty ? "打开服务" : "创建 worktree"
+        case "tasks":
+            return "打开任务"
+        case "risks":
+            return workspace.risks.isEmpty ? "打开状态" : "风险交接"
+        case "delivery-record":
+            return item.status == .pass ? "打开交付" : "交付交接"
+        case "sql":
+            return item.status == .pass ? "打开交付" : "运行检查"
+        case "dirty-services":
+            return dirtyServices.isEmpty ? "查看服务" : "服务交接"
+        default:
+            return "处理"
+        }
+    }
+
+    private func runReadinessAction(for item: DeliveryReadinessItem) {
+        switch item.id {
+        case "branch":
+            Task {
+                await appState.loadDocument(path: documentPath(for: "branches", fallback: "branches.md"))
+            }
+        case "services":
+            if missingWorktreeServices.isEmpty {
+                Task {
+                    await appState.loadDocument(path: documentPath(for: "services", fallback: "services.md"))
+                }
+            } else {
+                appState.presentWorktreeSetup(for: workspace)
+            }
+        case "tasks":
+            Task {
+                await appState.loadDocument(path: tasksPath)
+            }
+        case "risks":
+            if workspace.risks.isEmpty {
+                Task {
+                    await appState.loadDocument(path: documentPath(for: "status", fallback: "STATUS.md"))
+                }
+            } else {
+                copyToPasteboard(appState.riskReviewPrompt(for: workspace))
+                Task {
+                    await appState.recordRiskReviewHandoffCopied(for: workspace)
+                }
+            }
+        case "delivery-record":
+            if item.status == .pass {
+                Task {
+                    await appState.loadDocument(path: deliveryPath)
+                }
+            } else {
+                Task {
+                    await appState.openDeliveryUpdateInCodex(workspace)
+                }
+            }
+        case "sql":
+            if item.status == .pass {
+                Task {
+                    await appState.loadDocument(path: deliveryPath)
+                }
+            } else {
+                Task {
+                    await appState.runLocalAutomationCheck(actor: "Nexus Workflow SQL")
+                }
+            }
+        case "dirty-services":
+            if let service = dirtyServices.first {
+                Task {
+                    await appState.openServiceInCodex(service, in: workspace)
+                }
+            } else {
+                Task {
+                    await appState.loadDocument(path: documentPath(for: "services", fallback: "services.md"))
+                }
+            }
+        default:
+            Task {
+                await appState.runLocalAutomationCheck(actor: "Nexus Workflow")
+            }
         }
     }
 
@@ -8072,6 +8163,8 @@ private struct DeliveryLifecycleRecommendationView: View {
 
 private struct DeliveryReadinessChecklistView: View {
     let items: [DeliveryReadinessItem]
+    let actionLabel: (DeliveryReadinessItem) -> String
+    let action: (DeliveryReadinessItem) -> Void
 
     private var blockerCount: Int {
         items.filter { $0.status == .blocker }.count
@@ -8118,7 +8211,12 @@ private struct DeliveryReadinessChecklistView: View {
 
             VStack(alignment: .leading, spacing: 7) {
                 ForEach(items) { item in
-                    DeliveryReadinessRow(item: item)
+                    DeliveryReadinessRow(
+                        item: item,
+                        actionLabel: actionLabel(item)
+                    ) {
+                        action(item)
+                    }
                 }
             }
         }
@@ -8185,33 +8283,46 @@ private struct ValidationPrHandoffView: View {
 
 private struct DeliveryReadinessRow: View {
     let item: DeliveryReadinessItem
+    let actionLabel: String
+    let action: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: item.systemImage)
-                .font(.caption)
-                .foregroundStyle(item.status.color)
-                .frame(width: 15)
+        Button {
+            action()
+        } label: {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: item.systemImage)
+                    .font(.caption)
+                    .foregroundStyle(item.status.color)
+                    .frame(width: 15)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.title)
-                    .font(.caption.weight(.semibold))
-                Text(item.detail)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.title)
+                        .font(.caption.weight(.semibold))
+                    Text(item.detail)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                    Text(actionLabel)
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(NexusPalette.accent)
+                }
+
+                Spacer()
+
+                Text(item.status.label)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(item.status.color)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(item.status.color.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             }
-
-            Spacer()
-
-            Text(item.status.label)
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .foregroundStyle(item.status.color)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .background(item.status.color.opacity(0.1))
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .help("\(item.title) · \(actionLabel)")
     }
 }
 
