@@ -1572,6 +1572,84 @@ final class AppState: ObservableObject {
         )
     }
 
+    func openServiceWorktreeInFinder(_ service: ServiceStatus, in workspace: WorkspaceSummary) async {
+        await openServicePathInFinder(
+            serviceWorktreePath(for: service, in: workspace),
+            service: service,
+            workspace: workspace,
+            action: "service.worktree.finder.opened",
+            summary: "Opened service worktree in Finder",
+            tool: "Finder"
+        )
+    }
+
+    func openServiceSourceInFinder(_ service: ServiceStatus, in workspace: WorkspaceSummary) async {
+        await openServicePathInFinder(
+            serviceSourcePath(for: service),
+            service: service,
+            workspace: workspace,
+            action: "service.source.finder.opened",
+            summary: "Opened service source repository in Finder",
+            tool: "Finder"
+        )
+    }
+
+    func openServiceWorktreeInIDE(_ service: ServiceStatus, in workspace: WorkspaceSummary) async {
+        await openServicePathInIDE(
+            serviceWorktreePath(for: service, in: workspace),
+            service: service,
+            workspace: workspace,
+            action: "service.worktree.ide.opened",
+            summary: "Opened service worktree in IDE"
+        )
+    }
+
+    func openServiceInCodex(_ service: ServiceStatus, in workspace: WorkspaceSummary) async {
+        let prompt = serviceHandoffPrompt(for: service, in: workspace)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(prompt, forType: .string)
+
+        let rawURL = codexURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? Self.defaultCodexURL
+            : codexURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let url = URL(string: rawURL) {
+            NSWorkspace.shared.open(url)
+            markCodexHandoff(
+                title: "服务上下文已复制 / Service copied",
+                detail: "\(workspace.name) · \(service.name) 的分支、worktree、source 和文档上下文已复制。",
+                systemImage: "square.stack.3d.up",
+                sectionTitle: "服务交接 / Service",
+                clipboardLabel: "Service handoff is on the clipboard"
+            )
+        } else {
+            lastError = "Invalid Codex URL: \(rawURL)"
+            markCodexHandoff(
+                title: "服务上下文已复制 / URL needs review",
+                detail: "\(workspace.name) · Codex URL 无效，请在 Settings 中修正。",
+                systemImage: "exclamationmark.triangle",
+                sectionTitle: "服务交接 / Service",
+                clipboardLabel: "Service handoff is on the clipboard"
+            )
+        }
+
+        await recordWorkspaceAction(
+            action: "codex_service_handoff.opened",
+            target: serviceWorktreePath(for: service, in: workspace),
+            summary: "Copied service handoff and opened Codex",
+            metadata: [
+                "tool": "Codex",
+                "codexUrl": rawURL,
+                "service": service.name,
+                "serviceBranch": service.branch,
+                "worktree": service.worktree,
+                "source": service.gitSummary,
+                "worktreeExists": "\(service.worktreeExists)",
+                "sourceExists": "\(service.sourceExists)"
+            ],
+            workspaceOverride: workspace
+        )
+    }
+
     func openWorkspaceInCodex(_ workspace: WorkspaceSummary) async {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(workspaceHandoffPrompt(for: workspace), forType: .string)
@@ -1608,6 +1686,126 @@ final class AppState: ObservableObject {
             ],
             workspaceOverride: workspace
         )
+    }
+
+    private func openServicePathInFinder(
+        _ path: String,
+        service: ServiceStatus,
+        workspace: WorkspaceSummary,
+        action: String,
+        summary: String,
+        tool: String
+    ) async {
+        lastError = nil
+        let url = Self.localFileURL(for: path)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            lastError = "Service path does not exist: \(url.path)"
+            return
+        }
+
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+        await recordWorkspaceAction(
+            action: action,
+            target: url.path,
+            summary: summary,
+            metadata: [
+                "tool": tool,
+                "service": service.name,
+                "serviceBranch": service.branch
+            ],
+            workspaceOverride: workspace
+        )
+    }
+
+    private func openServicePathInIDE(
+        _ path: String,
+        service: ServiceStatus,
+        workspace: WorkspaceSummary,
+        action: String,
+        summary: String
+    ) async {
+        lastError = nil
+        let url = Self.localFileURL(for: path)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            lastError = "Service worktree path does not exist: \(url.path)"
+            return
+        }
+
+        let rawTemplate = ideURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rawTemplate.isEmpty else {
+            lastError = "IDE URL template is empty. Configure it in Settings, for example \(Self.defaultIDEURL)."
+            return
+        }
+
+        let rawPath = url.path
+        let encodedPath = rawPath.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? rawPath
+        let rawURL = rawTemplate
+            .replacingOccurrences(of: "{path}", with: encodedPath)
+            .replacingOccurrences(of: "{rawPath}", with: rawPath)
+
+        guard let ideLaunchURL = URL(string: rawURL), NSWorkspace.shared.open(ideLaunchURL) else {
+            lastError = "IDE open failed. Check the IDE URL template in Settings: \(rawTemplate)"
+            return
+        }
+
+        await recordWorkspaceAction(
+            action: action,
+            target: rawPath,
+            summary: summary,
+            metadata: [
+                "tool": "IDE",
+                "ideUrl": rawURL,
+                "service": service.name,
+                "serviceBranch": service.branch
+            ],
+            workspaceOverride: workspace
+        )
+    }
+
+    private func serviceWorktreePath(for service: ServiceStatus, in workspace: WorkspaceSummary) -> String {
+        Self.localFileURL(for: workspace.path)
+            .appendingPathComponent("repos", isDirectory: true)
+            .appendingPathComponent(service.name, isDirectory: true)
+            .path
+    }
+
+    private func serviceSourcePath(for service: ServiceStatus) -> String {
+        Self.localFileURL(for: sourceReposRoot)
+            .appendingPathComponent(service.name, isDirectory: true)
+            .path
+    }
+
+    private func serviceHandoffPrompt(for service: ServiceStatus, in workspace: WorkspaceSummary) -> String {
+        [
+            "请继续处理 Nexus 工作区中的单个服务上下文。",
+            "",
+            "## 工作区",
+            "- 名称: \(workspace.name)",
+            "- 目录: \(workspace.path)",
+            "- 目标分支: \(workspace.branch)",
+            "",
+            "## 服务",
+            "- 服务名: \(service.name)",
+            "- worktree 路径: \(serviceWorktreePath(for: service, in: workspace))",
+            "- source repo 路径: \(serviceSourcePath(for: service))",
+            "- worktree 分支: \(service.branch)",
+            "- worktree 状态: \(service.worktree)",
+            "- source 状态: \(service.gitSummary)",
+            "- worktree 是否存在: \(service.worktreeExists ? "是" : "否")",
+            "- source repo 是否存在: \(service.sourceExists ? "是" : "否")",
+            "",
+            "## 相关文档",
+            "- services.md: \(workspace.documentLinks["services"] ?? "\(workspace.path)/services.md")",
+            "- branches.md: \(workspace.documentLinks["branches"] ?? "\(workspace.path)/branches.md")",
+            "- tasks.md: \(workspace.documentLinks["tasks"] ?? "\(workspace.path)/tasks.md")",
+            "- 交付记录.md: \(workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md")",
+            "",
+            "## 处理要求",
+            "- 先确认该服务是否应该在当前需求范围内。",
+            "- 如果 worktree 缺失，先回到 Nexus 执行确认后的 worktree 创建流程，不要直接在 source repo 切分支。",
+            "- 如果存在未提交或分支不一致，先说明风险，再决定是否继续开发、提交或调整文档。",
+            "- 涉及代码、SQL、业务逻辑、配置或验证变化时，同步更新交付记录和必要 SQL 产物。"
+        ].joined(separator: "\n")
     }
 
     func codexSessionLinks(for workspace: WorkspaceSummary) -> [CodexSessionLink] {

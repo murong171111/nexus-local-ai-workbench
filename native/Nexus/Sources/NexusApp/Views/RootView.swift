@@ -3482,24 +3482,8 @@ private struct WorkspaceDetailView: View {
             .environmentObject(appState)
             .id(WorkspaceDetailSection.workflow)
 
-            SectionBlock(title: "服务 Git 状态 / Services") {
-                ForEach(workspace.services) { service in
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack {
-                            Text(service.name)
-                                .font(.subheadline.weight(.medium))
-                            Spacer()
-                            Text(service.gitSummary)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Text("\(service.branch) · \(service.worktree)")
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.vertical, 4)
-                }
-            }
+            ServiceGitStatusSectionView(workspace: workspace)
+                .environmentObject(appState)
             .id(WorkspaceDetailSection.services)
 
             RiskReviewView(
@@ -3574,6 +3558,315 @@ private struct NextStepQueueView: View {
                 }
             }
         }
+    }
+}
+
+private struct ServiceGitStatusSectionView: View {
+    @EnvironmentObject private var appState: AppState
+    let workspace: WorkspaceSummary
+
+    private var missingWorktreeCount: Int {
+        workspace.services.filter { !$0.worktreeExists }.count
+    }
+
+    private var dirtyServiceCount: Int {
+        workspace.services.filter { service in
+            let normalized = "\(service.gitSummary) \(service.worktree)".lowercased()
+            return normalized.contains("dirty")
+                || normalized.contains("modified")
+                || normalized.contains("uncommitted")
+                || normalized.contains("未提交")
+        }.count
+    }
+
+    private var serviceDocPath: String {
+        workspace.documentLinks["services"] ?? "\(workspace.path)/services.md"
+    }
+
+    var body: some View {
+        SectionBlock(title: "服务 Git 状态 / Services") {
+            VStack(alignment: .leading, spacing: 11) {
+                HStack(alignment: .top, spacing: 9) {
+                    Image(systemName: "square.stack.3d.up")
+                        .foregroundStyle(statusTone)
+                        .frame(width: 15)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(statusTitle)
+                            .font(.subheadline.weight(.medium))
+                        Text(statusDetail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                HStack(spacing: 8) {
+                    WorkflowMetric(
+                        label: "Services",
+                        value: "\(workspace.services.count)",
+                        tone: workspace.services.isEmpty ? NexusPalette.warning : NexusPalette.accent
+                    )
+                    WorkflowMetric(
+                        label: "Missing WT",
+                        value: "\(missingWorktreeCount)",
+                        tone: missingWorktreeCount > 0 ? NexusPalette.warning : NexusPalette.success
+                    )
+                    WorkflowMetric(
+                        label: "Dirty",
+                        value: "\(dirtyServiceCount)",
+                        tone: dirtyServiceCount > 0 ? NexusPalette.warning : NexusPalette.success
+                    )
+                }
+
+                if workspace.services.isEmpty {
+                    ServiceEmptyStateView {
+                        Task {
+                            await appState.loadDocument(path: serviceDocPath)
+                        }
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(workspace.services) { service in
+                            ServiceGitStatusRow(
+                                service: service,
+                                workspace: workspace,
+                                servicesDocumentPath: serviceDocPath
+                            )
+                            .environmentObject(appState)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var statusTitle: String {
+        if workspace.services.isEmpty {
+            return "服务范围待确认 / Scope pending"
+        }
+        if missingWorktreeCount > 0 {
+            return "需要补齐 worktree / Worktree setup needed"
+        }
+        if dirtyServiceCount > 0 {
+            return "存在未提交服务 / Review local changes"
+        }
+        return "服务状态可用 / Services ready"
+    }
+
+    private var statusDetail: String {
+        if workspace.services.isEmpty {
+            return "先确认涉及服务，后续 worktree、风险、任务和交付检查才有明确范围。"
+        }
+        if missingWorktreeCount > 0 {
+            return "\(missingWorktreeCount) 个服务缺少 workspace-local worktree，可从对应服务行或 Command Center 进入确认创建流程。"
+        }
+        if dirtyServiceCount > 0 {
+            return "\(dirtyServiceCount) 个服务存在未提交状态。服务行可以直接交接 Codex 或打开对应 worktree。"
+        }
+        return "当前服务范围、worktree 和 source repo 都有可用入口。"
+    }
+
+    private var statusTone: Color {
+        if workspace.services.isEmpty {
+            return NexusPalette.warning
+        }
+        if missingWorktreeCount > 0 || dirtyServiceCount > 0 {
+            return NexusPalette.warning
+        }
+        return NexusPalette.success
+    }
+}
+
+private struct ServiceEmptyStateView: View {
+    let openServicesDocument: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: "doc.text")
+                .foregroundStyle(NexusPalette.warning)
+                .frame(width: 15)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("还没有确认服务 / No services yet")
+                    .font(.caption.weight(.semibold))
+                Text("打开 services.md 补齐涉及服务，也可以回到创建/工作区文档阶段先保持待确认。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer()
+
+            Button {
+                openServicesDocument()
+            } label: {
+                Label("打开服务", systemImage: "doc.text")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+        .padding(10)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct ServiceGitStatusRow: View {
+    @EnvironmentObject private var appState: AppState
+    let service: ServiceStatus
+    let workspace: WorkspaceSummary
+    let servicesDocumentPath: String
+
+    private var isDirty: Bool {
+        let normalized = "\(service.gitSummary) \(service.worktree)".lowercased()
+        return normalized.contains("dirty")
+            || normalized.contains("modified")
+            || normalized.contains("uncommitted")
+            || normalized.contains("未提交")
+    }
+
+    private var statusTone: Color {
+        if !service.sourceExists {
+            return NexusPalette.danger
+        }
+        if !service.worktreeExists || isDirty {
+            return NexusPalette.warning
+        }
+        return NexusPalette.success
+    }
+
+    private var statusLabel: String {
+        if !service.sourceExists {
+            return "source 缺失"
+        }
+        if !service.worktreeExists {
+            return "缺 worktree"
+        }
+        if isDirty {
+            return "需复核"
+        }
+        return "就绪"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .top, spacing: 9) {
+                Image(systemName: service.worktreeExists ? "checkmark.circle" : "arrow.triangle.branch")
+                    .foregroundStyle(statusTone)
+                    .frame(width: 15)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 7) {
+                        Text(service.name)
+                            .font(.subheadline.weight(.semibold))
+                            .lineLimit(1)
+
+                        Text(statusLabel)
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(statusTone)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2)
+                            .background(statusTone.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    }
+
+                    Text("\(service.branch) · \(service.worktree)")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+
+                    Text("source: \(service.gitSummary)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+            }
+
+            LazyVGrid(columns: actionColumns, alignment: .leading, spacing: 8) {
+                if service.worktreeExists {
+                    Button {
+                        Task {
+                            await appState.openServiceWorktreeInFinder(service, in: workspace)
+                        }
+                    } label: {
+                        Label("Worktree", systemImage: "folder")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("在 Finder 中打开该服务的 workspace-local worktree")
+
+                    Button {
+                        Task {
+                            await appState.openServiceWorktreeInIDE(service, in: workspace)
+                        }
+                    } label: {
+                        Label("IDE", systemImage: "curlybraces")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("使用 Settings 中的 IDE URL 模板打开该服务 worktree")
+                } else {
+                    Button {
+                        appState.presentWorktreeSetup(for: workspace)
+                    } label: {
+                        Label("创建 worktree", systemImage: "wrench.and.screwdriver")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(!appState.canSetupWorktrees(in: workspace))
+                    .help("进入确认后的 worktree 创建流程")
+                }
+
+                if service.sourceExists {
+                    Button {
+                        Task {
+                            await appState.openServiceSourceInFinder(service, in: workspace)
+                        }
+                    } label: {
+                        Label("源仓库", systemImage: "externaldrive")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("在 Finder 中打开 source repo，只用于查看或确认状态")
+                } else {
+                    Button {
+                        Task {
+                            await appState.loadDocument(path: servicesDocumentPath)
+                        }
+                    } label: {
+                        Label("服务文档", systemImage: "doc.text")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("打开 services.md 复核服务范围")
+                }
+
+                Button {
+                    Task {
+                        await appState.openServiceInCodex(service, in: workspace)
+                    }
+                } label: {
+                    Label("服务交接", systemImage: "point.3.connected.trianglepath.dotted")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help("复制该服务的分支、worktree、source 和文档上下文，并打开 Codex")
+            }
+        }
+        .padding(10)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(statusTone.opacity(0.16))
+        }
+    }
+
+    private var actionColumns: [GridItem] {
+        [GridItem(.adaptive(minimum: 106), spacing: 8, alignment: .leading)]
     }
 }
 
