@@ -3416,6 +3416,12 @@ private struct WorkspaceDetailView: View {
             WorkspaceCommandCenterView(workspace: workspace)
                 .environmentObject(appState)
 
+            if !workspace.sessionActions.isEmpty {
+                NextStepQueueView(actions: workspace.sessionActions) { action in
+                    run(action)
+                }
+            }
+
             CodexSessionLinksView(workspace: workspace)
                 .environmentObject(appState)
 
@@ -3490,16 +3496,6 @@ private struct WorkspaceDetailView: View {
             )
             .environmentObject(appState)
 
-            if !workspace.sessionActions.isEmpty {
-                SectionBlock(title: "建议动作 / Suggested actions") {
-                    ForEach(workspace.sessionActions) { action in
-                        SessionActionRow(action: action) {
-                            run(action)
-                        }
-                    }
-                }
-            }
-
             WorkspaceDocumentsHubView(workspace: workspace)
                 .environmentObject(appState)
 
@@ -3534,6 +3530,28 @@ private struct WorkspaceDetailView: View {
     private var riskReviewChecks: [WorkspaceHealthCheck] {
         workspace.healthChecks.filter { check in
             check.id != "delivery-record" && check.action != "delivery"
+        }
+    }
+}
+
+private struct NextStepQueueView: View {
+    let actions: [WorkspaceSessionAction]
+    let runAction: (WorkspaceSessionAction) -> Void
+
+    var body: some View {
+        SectionBlock(title: "下一步队列 / Next-step queue") {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("这里收纳由本地工作区证据生成的后续动作。Command Center 决定当前主路径；队列保留可以并行查看或稍后处理的文档、worktree 和交接入口。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                ForEach(actions) { action in
+                    SessionActionRow(action: action) {
+                        runAction(action)
+                    }
+                }
+            }
         }
     }
 }
@@ -6175,20 +6193,22 @@ private struct SessionActionRow: View {
     private var actionButtonLabel: String {
         switch action.instructionType {
         case "worktree":
-            "Setup"
+            "创建"
+        case "continue":
+            "交接"
         default:
-            "Open"
+            "打开"
         }
     }
 
     private var statusLabel: String {
         switch action.status {
         case "blocked":
-            "block"
+            "阻塞"
         case "recommended":
-            "next"
+            "下一步"
         default:
-            "later"
+            "稍后"
         }
     }
 
