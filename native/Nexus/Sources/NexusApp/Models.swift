@@ -202,6 +202,26 @@ enum WorkflowPathStatus: String, CaseIterable, Hashable {
     }
 }
 
+enum WorkflowDeliveryRoute: String, Hashable {
+    case runLocalCheck
+    case updateDelivery
+    case validationHandoff
+    case openDelivery
+
+    var displayLabel: String {
+        switch self {
+        case .runLocalCheck:
+            "运行检查"
+        case .updateDelivery:
+            "交付交接"
+        case .validationHandoff:
+            "PR 交接"
+        case .openDelivery:
+            "打开文档"
+        }
+    }
+}
+
 struct WorkspaceWorkflowSummary: Hashable {
     let openTaskCount: Int
     let blockedTaskCount: Int
@@ -210,6 +230,7 @@ struct WorkspaceWorkflowSummary: Hashable {
     let deliveryValue: String
     let deliveryStatus: WorkflowPathStatus
     let deliveryDetail: String
+    let deliveryRoute: WorkflowDeliveryRoute
 
     init(workspace: WorkspaceSummary) {
         let openTasks = workspace.tasks.filter { !$0.isDone }
@@ -232,14 +253,17 @@ struct WorkspaceWorkflowSummary: Hashable {
             deliveryValue = "已归档"
             deliveryStatus = .archived
             deliveryDetail = "工作区已退出活跃交付流。"
+            deliveryRoute = .openDelivery
         } else if workspace.lifecycle.stage == "done" {
             deliveryValue = "已完成"
             deliveryStatus = .ready
             deliveryDetail = "生命周期已标记完成。"
+            deliveryRoute = .validationHandoff
         } else if workspace.lifecycle.stage == "delivery" {
             deliveryValue = "整理中"
             deliveryStatus = .review
             deliveryDetail = "工作区处于交付整理阶段。"
+            deliveryRoute = .updateDelivery
         } else if let deliveryCheck = Self.deliveryCheck(in: workspace) {
             let normalizedStatus = deliveryCheck.status.lowercased()
             deliveryDetail = deliveryCheck.detail
@@ -247,21 +271,26 @@ struct WorkspaceWorkflowSummary: Hashable {
             case "pass", "ok":
                 deliveryValue = "记录可用"
                 deliveryStatus = .ready
+                deliveryRoute = .openDelivery
             case "warning", "review":
                 deliveryValue = "需补充"
                 deliveryStatus = .review
+                deliveryRoute = .updateDelivery
             default:
                 deliveryValue = "阻塞"
                 deliveryStatus = .blocked
+                deliveryRoute = .updateDelivery
             }
         } else if let deliveryRisk = Self.deliveryRisk(in: workspace) {
             deliveryValue = "需复核"
             deliveryStatus = .review
             deliveryDetail = deliveryRisk.detail
+            deliveryRoute = .updateDelivery
         } else {
             deliveryValue = "待检查"
             deliveryStatus = .pending
             deliveryDetail = "尚未生成交付记录检查结果。"
+            deliveryRoute = .runLocalCheck
         }
     }
 
