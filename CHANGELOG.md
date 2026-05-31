@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Added
 
+- Native Automation Action Center delivery signals now target the relevant workspace, prefer SQL delivery issues first, route into SQL-aware delivery handoff or missing-delivery review, and include delivery/SQL checks in copied Codex prompts.
 - Native Workflow and Risk Review SQL readiness actions now route to SQL artifact review or SQL-aware delivery handoff instead of only rerunning checks.
 - Native Documents Hub now lists scanned `sql/*.sql` artifacts in a dedicated SQL section, so formal and rollback SQL files can be opened in-app beside the standard workspace documents.
 - Native Agent Event task-draft writebacks now show a result card with Agent Task focus and `tasks.md` review actions, plus shared local-write feedback for appended or already-existing tasks.

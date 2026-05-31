@@ -3355,7 +3355,7 @@ private struct AutomationSignalRow: View {
         case "review-risk":
             "Focus"
         case "update-delivery":
-            "Delivery"
+            "处理交付"
         case "review-worktrees":
             "Worktree"
         case "review-tasks":

@@ -88,6 +88,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added optional local macOS notifications for automation checks that return review or attention status.
 - Added automation notification preferences for cooldown, minimum status, and signal types.
 - Added a native Automation Action Center that turns local check signals into focus, delivery, task, worktree, and Codex handoff actions.
+- Refined native Automation Action Center delivery routing so delivery signals target the relevant workspace, prefer SQL artifact issues, and include delivery/SQL check evidence in copied Codex prompts.
 - Added inline local-check receipts in Command Center and Risk Review so manual checks leave visible status, metric, audit, and copy-summary feedback near the workflow that triggered them.
 - Added a compact native workspace-detail status overview for lifecycle, branch, services, risk, tasks, delivery, Codex sessions, and latest local-check state.
 - Added SwiftPM unit coverage for native model behavior, starting with menu-bar status priority, lifecycle fallback stages, and Task Center filters.
