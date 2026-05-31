@@ -40,7 +40,7 @@ import { Card } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { appendAuditEvent, checkEnvironment, createWorkspace, exportSettingsProfile, isDesktopApp, openExternalUrl, openPath as openPathInDesktop, readTextFile, rebuildSearchIndex, scanSourceRepos, scanWorkspaces, searchIndex, setupWorktrees, writeWidgetSnapshot, type EnvironmentHealth, type RebuildSearchIndexResponse, type SearchResult, type SourceRepo } from "./desktop";
 import { cn, riskTone } from "./lib";
-import { branchAlignmentRows, buildWorktreeCommand, createSettingsProfile, fallbackSearchResults, groupSearchResults, hasConfirmedTargetBranch, normalizeServiceList, orderedSearchResults, parseServiceInput, parseSettingsProfile, settingsProfileFilename, sortWorkspacesForAttention, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceSessionActions, type NexusSettingsProfile } from "./workspace-model";
+import { branchAlignmentRows, buildWorktreeCommand, createSettingsProfile, fallbackSearchResults, filterWorkspaces, groupSearchResults, hasConfirmedTargetBranch, normalizeServiceList, orderedSearchResults, parseServiceInput, parseSettingsProfile, settingsProfileFilename, sortWorkspacesForAttention, todayString, widgetSnapshotFromDashboard, workspaceFolderFromName, workspaceIsArchived, workspaceSessionActions, type NexusSettingsProfile } from "./workspace-model";
 import type { DashboardData, Workspace, WorkspaceSessionAction } from "./types";
 
 const initialData = rawData as DashboardData;
@@ -70,11 +70,6 @@ const statLabels: Record<string, { title: string; desc: string }> = {
   branch: { title: "分支不一致", desc: "Branch mismatch" },
   missing: { title: "缺失 Worktree", desc: "Missing worktree" }
 };
-
-function workspaceIsArchived(workspace: Workspace) {
-  const normalized = `${workspace.state} ${workspace.lifecycle?.stage ?? ""}`.toLowerCase();
-  return normalized.includes("archived") || normalized.includes("archive") || normalized.includes("归档");
-}
 
 const auditActionLabels: Record<string, string> = {
   "codex.opened": "Codex 已打开 / Codex opened",
@@ -2545,32 +2540,7 @@ export function App() {
   }, [dashboard, active]);
 
   const sorted = useMemo(() => sortWorkspacesForAttention(dashboard.workspaces, pinnedFolders), [dashboard.workspaces, pinnedFolders]);
-  const visible = useMemo(() => {
-    const lower = query.trim().toLowerCase();
-    return sorted.filter((workspace) => {
-      const haystack = [
-        workspace.name,
-        workspace.folder,
-        workspace.targetBranch,
-        workspace.sourceRoot,
-        ...workspace.confirmedServices,
-        ...workspace.candidateServices,
-        ...workspace.risks
-      ]
-        .join(" ")
-        .toLowerCase();
-      const matchesQuery = !lower || haystack.includes(lower);
-      const archived = workspaceIsArchived(workspace);
-      const matchesFilter =
-        filter === "all" ||
-        (filter === "risk" && !archived && workspace.riskCount > 0) ||
-        (filter === "branch" && !archived && branchAlignmentRows(workspace).length > 0) ||
-        (filter === "dirty" && !archived && workspace.gitRows.some((row) => row.worktree.dirty)) ||
-        (filter === "missing" && !archived && workspace.gitRows.some((row) => !row.worktree.exists)) ||
-        (filter === "archived" && archived);
-      return matchesQuery && matchesFilter;
-    });
-  }, [filter, query, sorted]);
+  const visible = useMemo(() => filterWorkspaces(sorted, { filter, query }), [filter, query, sorted]);
 
   const current = visible.find((workspace) => workspace.folder === active) ?? visible[0];
   const drawerWorkspace = dashboard.workspaces.find((workspace) => workspace.folder === drawerFolder);
