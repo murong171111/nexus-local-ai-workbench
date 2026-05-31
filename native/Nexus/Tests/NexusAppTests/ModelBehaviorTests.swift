@@ -185,4 +185,13 @@ final class ModelBehaviorTests: XCTestCase {
             ["2026-05-25-multi-price"]
         )
     }
+
+    func testWorkflowPathStatusLabelsStayChineseFirst() {
+        XCTAssertEqual(WorkflowPathStatus.ready.displayLabel, "就绪 / ready")
+        XCTAssertEqual(WorkflowPathStatus.review.displayLabel, "复核 / review")
+        XCTAssertEqual(WorkflowPathStatus.blocked.displayLabel, "阻塞 / block")
+        XCTAssertEqual(WorkflowPathStatus.pending.displayLabel, "待确认 / pending")
+        XCTAssertEqual(WorkflowPathStatus.next.displayLabel, "下一步 / next")
+        XCTAssertEqual(WorkflowPathStatus.archived.displayLabel, "归档 / archive")
+    }
 }
