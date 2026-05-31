@@ -47,6 +47,7 @@ Each line is a standalone JSON object:
 - `codex_validation_pr_handoff.opened`: written when Nexus copies a validation/PR handoff pack and opens Codex from the native Workflow section.
 - `codex_agent_event.copied`: written when an Agent Event Codex continuation prompt is copied from native event detail.
 - `codex_agent_event.opened`: written when Nexus copies an Agent Event continuation prompt and opens Codex in one action.
+- `agent_event_response.copied`: written when Nexus copies an Agent Event approve, deny, answer, or review response template from the native Agent action surface.
 - `codex_session_link.bound`: written when a workspace Codex session deep link is bound locally, including bindings accepted from Agent Event suggestions.
 - `codex_session_link.updated`: written when binding the same Codex session URL updates the local title or note.
 - `codex_session_link.opened`: written when Nexus opens a saved workspace Codex session link.

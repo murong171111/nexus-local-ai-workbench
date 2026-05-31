@@ -2464,6 +2464,32 @@ final class AppState: ObservableObject {
         )
     }
 
+    func copyAgentEventActionResponse(label: String, payload: String, for event: AgentEvent) async {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(payload, forType: .string)
+
+        let target = event.workspaceFolder ?? event.id
+        markCodexHandoff(
+            title: "Agent 回应已复制 / Response copied",
+            detail: "\(event.title) · \(label)",
+            systemImage: "text.bubble",
+            sectionTitle: "Agent 回应 / Agent response",
+            clipboardLabel: "Response template is on the clipboard",
+            guidance: "先复核模板内容，再粘贴给当前 Agent 或 Codex；Nexus 不会自动批准或执行命令。"
+        )
+
+        await recordAgentEventCodexAction(
+            event,
+            action: "agent_event_response.copied",
+            target: target,
+            summary: "Copied Agent Event response template",
+            metadata: [
+                "responseLabel": label,
+                "responseLength": "\(payload.count)"
+            ]
+        )
+    }
+
     func openAgentEventInCodex(_ event: AgentEvent) async {
         let prompt = await agentEventHandoffPrompt(for: event)
         NSPasteboard.general.clearContents()
@@ -3045,6 +3071,8 @@ final class AppState: ObservableObject {
             return "Agent 事件已复制 / Agent event copied"
         case "codex_agent_event.opened":
             return "Agent 事件 Codex 已打开 / Agent event opened"
+        case "agent_event_response.copied":
+            return "Agent 回应已复制 / Agent response copied"
         case "codex_session_link.bound":
             return "Codex 会话已绑定 / Session bound"
         case "codex_session_link.updated":

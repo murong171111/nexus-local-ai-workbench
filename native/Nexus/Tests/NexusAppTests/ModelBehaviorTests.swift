@@ -1,4 +1,5 @@
 import XCTest
+import NexusBridge
 @testable import NexusApp
 
 final class ModelBehaviorTests: XCTestCase {
@@ -200,6 +201,51 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(WorkflowDeliveryRoute.updateDelivery.displayLabel, "交付交接")
         XCTAssertEqual(WorkflowDeliveryRoute.validationHandoff.displayLabel, "PR 交接")
         XCTAssertEqual(WorkflowDeliveryRoute.openDelivery.displayLabel, "打开文档")
+    }
+
+    func testAgentActionSurfaceBuildsApprovalResponsesWithoutExecutingCommands() {
+        let event = AgentEvent(
+            id: "agent-approval",
+            timestamp: "2026-05-31T12:00:00Z",
+            source: "codex",
+            sessionId: "thread-1",
+            workspaceFolder: "2026-05-31-demo",
+            kind: "permission",
+            title: "Permission requested",
+            summary: "Codex wants to push a branch.",
+            severity: "warning",
+            metadata: ["command": "git push"]
+        )
+
+        let surface = AgentActionSurface(event: event)
+
+        XCTAssertEqual(surface?.kind, .approval)
+        XCTAssertEqual(surface?.kind.statusLabel, "需确认 / approval")
+        XCTAssertTrue(surface?.safetyNote.contains("不会执行") == true)
+        XCTAssertTrue(surface?.primaryResponse.payload.contains("Approved by user") == true)
+        XCTAssertTrue(surface?.primaryResponse.payload.contains("git push") == true)
+        XCTAssertTrue(surface?.secondaryResponse?.payload.contains("Not approved") == true)
+    }
+
+    func testAgentActionSurfaceBuildsQuestionAnswerTemplate() {
+        let event = AgentEvent(
+            id: "agent-question",
+            timestamp: "2026-05-31T12:05:00Z",
+            source: "codex",
+            sessionId: "thread-2",
+            workspaceFolder: nil,
+            kind: "question",
+            title: "Need service scope",
+            summary: "Which service owns this change?",
+            severity: "info",
+            metadata: [:]
+        )
+
+        let surface = AgentActionSurface(event: event)
+
+        XCTAssertEqual(surface?.kind, .answer)
+        XCTAssertTrue(surface?.primaryResponse.payload.contains("Answer: <fill in the answer before sending>") == true)
+        XCTAssertTrue(surface?.secondaryResponse?.payload.contains("Need more context") == true)
     }
 
     func testWorkspaceWorkflowSummaryCombinesTaskAndDeliverySignals() {

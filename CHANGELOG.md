@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Added
 
+- Native Agent Event detail now includes an Agent action surface for permission, question, and tool-review events, with copyable approve/deny/answer/review response templates, clipboard feedback, and audit records without executing command metadata.
 - Native Workflow delivery-readiness now groups actionable rows into Attention and Passed sections so delivery cleanup starts with blockers and review items before already-clear checks.
 - Native Workflow delivery-readiness rows are now actionable, routing branch, service/worktree, task, risk, delivery-record, SQL, and dirty-service checks to the nearest document, setup flow, local check, or Codex handoff.
 - Native workspace detail Services now acts as a service-level operations hub with per-service worktree, source-repo, IDE, confirmed worktree setup, and Codex handoff actions.
