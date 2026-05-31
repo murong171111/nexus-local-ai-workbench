@@ -534,6 +534,48 @@ struct AgentInboxSummary {
     }
 }
 
+struct AgentWorkflowSummary: Hashable {
+    let pendingEventCount: Int
+    let recentEventCount: Int
+    let agentTaskCount: Int
+    let openTaskCount: Int
+
+    init(inbox: AgentInboxSummary, agentTaskCount: Int, openTaskCount: Int) {
+        pendingEventCount = inbox.actionRequired.count
+        recentEventCount = inbox.recent.count
+        self.agentTaskCount = agentTaskCount
+        self.openTaskCount = openTaskCount
+    }
+
+    var shouldShow: Bool {
+        pendingEventCount > 0 || agentTaskCount > 0
+    }
+
+    var title: String {
+        if pendingEventCount > 0 && agentTaskCount > 0 {
+            return "事件与任务待跟进 / Active flow"
+        }
+        if pendingEventCount > 0 {
+            return "先处理 Agent 事件 / Review inbox"
+        }
+        return "Agent 任务待跟进 / Agent tasks"
+    }
+
+    var detail: String {
+        if pendingEventCount > 0 && agentTaskCount > 0 {
+            return "先处理审批、问题或工具复核；已写入 tasks.md 的 Agent 任务从任务中心继续。"
+        }
+        if pendingEventCount > 0 {
+            return "打开 Inbox 中的事件，复制回应模板或确认写入任务草稿。"
+        }
+        return "这些任务来自 Agent 事件，继续从 Task Center 处理、定位或交接 Codex。"
+    }
+
+    var metricLabel: String {
+        "\(pendingEventCount) inbox / \(agentTaskCount) tasks"
+    }
+}
+
 enum AutomationNotificationMinimumStatus: String, CaseIterable, Identifiable {
     case review = "review"
     case attention = "attention"

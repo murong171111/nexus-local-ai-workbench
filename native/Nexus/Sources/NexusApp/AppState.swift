@@ -291,6 +291,14 @@ final class AppState: ObservableObject {
         AgentInboxSummary(events: agentEvents)
     }
 
+    var agentWorkflowSummary: AgentWorkflowSummary {
+        AgentWorkflowSummary(
+            inbox: agentInboxSummary,
+            agentTaskCount: taskCenterCount(for: .agent),
+            openTaskCount: taskCenterTotalCount
+        )
+    }
+
     var pinnedWorkspaces: [WorkspaceSummary] {
         workspaces.filter { pinnedWorkspaceIDs.contains($0.id) }
     }
@@ -682,6 +690,13 @@ final class AppState: ObservableObject {
     func setTaskCenterFilter(_ filter: TaskCenterFilter) {
         selectedTaskCenterFilter = filter
         defaults.set(filter.rawValue, forKey: DefaultsKey.selectedTaskCenterFilter)
+    }
+
+    func focusAgentTasks() {
+        setTaskCenterFilter(.agent)
+        if let item = allTaskCenterItems.first(where: { TaskCenterFilter.agent.matches($0) }) {
+            selectTaskCenterItem(item)
+        }
     }
 
     func persistLocalPaths() {

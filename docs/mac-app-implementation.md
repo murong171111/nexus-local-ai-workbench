@@ -65,7 +65,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added locally persisted pinned workspaces in the native SwiftUI shell, including card-level pin actions and a sidebar pinned section.
 - Added a native Settings sheet from the sidebar with persisted local roots, save-and-reload, and reset-defaults actions.
 - Added actionable native session rows for document follow-ups and confirmed worktree setup, including a local-write confirmation sheet and created/skipped/failed result summary.
-- Added Rust Core and Swift/Rust bridge support for append-only agent event JSONL, plus a native Agent Inbox sidebar feed that groups action-required events before recent informational events and shows a clear empty state.
+- Added Rust Core and Swift/Rust bridge support for append-only agent event JSONL, plus a native Agent Inbox sidebar feed that groups action-required events before recent informational events, shows a clear empty state, and bridges event handling to Agent-sourced Task Center follow-up.
 - Added native agent event detail inspection with metadata and JSON copy support.
 - Added safe native agent event actions for selecting matching workspaces, opening local paths and links, copying Codex continuation context, and copying that context while opening Codex in one action.
 - Added native Agent Event action surfaces for permission, question, and tool-review events, with copyable approve/deny/answer/review templates, clipboard feedback, and local audit records while keeping command metadata review-only.
