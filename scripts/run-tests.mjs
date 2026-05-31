@@ -8,6 +8,7 @@ const tsc = path.join(root, "node_modules", ".bin", process.platform === "win32"
 
 rmSync(path.join(root, ".tmp-tests"), { recursive: true, force: true });
 execFileSync(process.execPath, ["scripts/check-public-data.mjs"], { cwd: root, stdio: "inherit" });
+execFileSync(process.execPath, ["scripts/check-dashboard-samples.mjs"], { cwd: root, stdio: "inherit" });
 execFileSync(tsc, ["-p", "tsconfig.test.json"], { cwd: root, stdio: "inherit" });
 
 const testFiles = readdirSync(path.join(root, "tests"))
