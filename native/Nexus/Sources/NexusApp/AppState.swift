@@ -2937,6 +2937,9 @@ final class AppState: ObservableObject {
         case "review-worktrees":
             return firstWorkspaceWithMissingWorktrees()
                 ?? firstWorkspaceWithDirtyServices()
+        case "review-tasks":
+            return firstWorkspaceWithHighPriorityTask()
+                ?? firstWorkspaceWithOpenTask()
         default:
             return selectedWorkspace
         }
@@ -3008,6 +3011,20 @@ final class AppState: ObservableObject {
                 let normalized = "\(service.gitSummary) \(service.worktree)".lowercased()
                 return normalized.contains("dirty") || normalized.contains("未提交")
             }
+        }
+    }
+
+    private func firstWorkspaceWithHighPriorityTask() -> WorkspaceSummary? {
+        activeSignalWorkspaces.first { workspace in
+            workspace.tasks.contains { task in
+                !task.isDone && task.priorityRank == 0
+            }
+        }
+    }
+
+    private func firstWorkspaceWithOpenTask() -> WorkspaceSummary? {
+        activeSignalWorkspaces.first { workspace in
+            workspace.tasks.contains { !$0.isDone }
         }
     }
 

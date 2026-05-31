@@ -499,6 +499,44 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertFalse(prompt.contains("- 当前工作区: Clean Delivery"))
     }
 
+    @MainActor
+    func testAutomationTaskHandoffPromptTargetsHighPriorityTaskWorkspace() {
+        let selectedCleanWorkspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "selected-clean",
+            name: "Selected Clean",
+            folder: "2026-05-31-selected-clean",
+            path: "/tmp/workspaces/2026-05-31-selected-clean"
+        )
+        let taskWorkspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "task-workspace",
+            name: "Task Workspace",
+            folder: "2026-05-31-task-workspace",
+            path: "/tmp/workspaces/2026-05-31-task-workspace",
+            tasks: [
+                WorkspaceTask(
+                    id: "task-high",
+                    title: "补齐交付检查",
+                    status: "todo",
+                    detail: "需要先处理高优先任务。",
+                    priority: "high",
+                    source: "workspace",
+                    sourceEventID: nil,
+                    sourceLine: 12
+                )
+            ]
+        )
+        let appState = appStateForAutomationTests(workspaces: [selectedCleanWorkspace, taskWorkspace])
+        appState.selectedWorkspaceID = selectedCleanWorkspace.id
+
+        let prompt = appState.automationSignalHandoffPrompt(for: taskSignal())
+
+        XCTAssertTrue(prompt.contains("- 当前工作区: Task Workspace"))
+        XCTAssertTrue(prompt.contains("- 未完成任务: 1"))
+        XCTAssertFalse(prompt.contains("- 当前工作区: Selected Clean"))
+    }
+
     private func workspaceForWorkflowSummary(
         stage: String,
         id: String? = nil,
@@ -507,7 +545,8 @@ final class ModelBehaviorTests: XCTestCase {
         path: String? = nil,
         healthChecks: [WorkspaceHealthCheck] = [],
         risks: [RiskAlert] = [],
-        sqlFiles: [WorkspaceSqlFile] = []
+        sqlFiles: [WorkspaceSqlFile] = [],
+        tasks: [WorkspaceTask]? = nil
     ) -> WorkspaceSummary {
         let workspaceID = id ?? "workflow-summary-\(stage)"
         let workspaceFolder = folder ?? workspaceID
@@ -540,7 +579,7 @@ final class ModelBehaviorTests: XCTestCase {
                 nextAction: "Continue",
                 documentKey: "delivery"
             ),
-            tasks: [
+            tasks: tasks ?? [
                 WorkspaceTask(
                     id: "done-task",
                     title: "Done",
@@ -578,6 +617,18 @@ final class ModelBehaviorTests: XCTestCase {
             detail: "2 workspaces need delivery-record attention.",
             count: 2,
             action: "update-delivery"
+        )
+    }
+
+    private func taskSignal() -> LocalAutomationSignal {
+        LocalAutomationSignal(
+            id: "task.check",
+            kind: "task",
+            severity: "warning",
+            title: "任务检查 / Task check",
+            detail: "1 open tasks, 1 high priority.",
+            count: 1,
+            action: "review-tasks"
         )
     }
 }
