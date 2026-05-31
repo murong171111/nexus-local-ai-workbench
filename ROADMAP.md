@@ -44,7 +44,7 @@ This roadmap describes the next product and engineering steps for Nexus. The cur
 - Add a workspace detail Command Center so the native shell has one primary path before deeper Workflow, Risk Review, Documents, and Activity sections. `[started in native SwiftUI shell with detail status overview, primary-path guidance, a compact session path for scope, worktree, risk, tasks, delivery, Codex sessions, and handoff, grouped quick actions, workspace link copy, plus local-check receipts]`
 - Add actionable empty states and recovery feedback for first-run setup, empty filters, missing workspace selection, and local operation errors. `[started in native SwiftUI shell with team-profile -> environment-check -> workspace-create setup guidance and shared setup action groups]`
 - Add archived workspace filtering and keep archived contexts out of active risk/task/worktree attention signals. `[started in Rust Core, shared preview/widget model, Tauri preview UI, and native SwiftUI shell]`
-- Add explicit confirmation flows for local write operations. `[started for native workspace creation with source-repo service selection, filtering, pending scope, preflight review, confirmation summary, initialization receipt, and post-create next steps]`
+- Add explicit confirmation flows for local write operations. `[started for native workspace creation with source-repo service selection, filtering, pending scope, shared preflight model, confirmation summary, initialization receipt, and post-create next steps]`
 - Add local audit logs for workspace creation and file writes. `[started for workspace creation, settings profile export, confirmed worktree setup, document opens, Codex handoffs, copied prompts, and dashboard activity timelines]`
 
 ## 0.4.x: Search And Local Index
