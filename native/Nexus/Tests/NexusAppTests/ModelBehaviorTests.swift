@@ -537,6 +537,45 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertFalse(prompt.contains("- 当前工作区: Selected Clean"))
     }
 
+    @MainActor
+    func testAutomationBranchHandoffPromptTargetsBranchMismatchWorkspace() {
+        let selectedCleanWorkspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "selected-clean-branch",
+            name: "Selected Clean Branch",
+            folder: "2026-05-31-selected-clean-branch",
+            path: "/tmp/workspaces/2026-05-31-selected-clean-branch"
+        )
+        let branchWorkspace = workspaceForWorkflowSummary(
+            stage: "blocked",
+            id: "branch-workspace",
+            name: "Branch Workspace",
+            folder: "2026-05-31-branch-workspace",
+            path: "/tmp/workspaces/2026-05-31-branch-workspace",
+            healthChecks: [
+                WorkspaceHealthCheck(
+                    id: "branch-alignment",
+                    label: "分支一致",
+                    detail: "不一致: order(chen/old-branch)",
+                    status: "fail",
+                    action: "branches"
+                )
+            ],
+            risks: [
+                RiskAlert(title: "分支不一致", detail: "order(chen/old-branch)")
+            ]
+        )
+        let appState = appStateForAutomationTests(workspaces: [selectedCleanWorkspace, branchWorkspace])
+        appState.selectedWorkspaceID = selectedCleanWorkspace.id
+
+        let prompt = appState.automationSignalHandoffPrompt(for: branchSignal())
+
+        XCTAssertTrue(prompt.contains("- 当前工作区: Branch Workspace"))
+        XCTAssertTrue(prompt.contains("- 分支记录: /tmp/workspaces/2026-05-31-branch-workspace/branches.md"))
+        XCTAssertTrue(prompt.contains("order(chen/old-branch)"))
+        XCTAssertFalse(prompt.contains("- 当前工作区: Selected Clean Branch"))
+    }
+
     private func workspaceForWorkflowSummary(
         stage: String,
         id: String? = nil,
@@ -629,6 +668,18 @@ final class ModelBehaviorTests: XCTestCase {
             detail: "1 open tasks, 1 high priority.",
             count: 1,
             action: "review-tasks"
+        )
+    }
+
+    private func branchSignal() -> LocalAutomationSignal {
+        LocalAutomationSignal(
+            id: "branch.check",
+            kind: "branch",
+            severity: "warning",
+            title: "分支检查 / Branch check",
+            detail: "1 workspaces have branch alignment issues.",
+            count: 1,
+            action: "review-branches"
         )
     }
 }

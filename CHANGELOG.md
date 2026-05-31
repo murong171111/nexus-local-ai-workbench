@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Added
 
+- Native local automation checks now emit branch-alignment signals, surface branch issue counts, and route Action Center branch actions to the relevant workspace `branches.md` context.
 - Native Automation Action Center task signals now target the workspace with high-priority or open tasks when building copied Codex prompts, instead of falling back to whichever workspace was selected.
 - Native Automation Action Center delivery signals now target the relevant workspace, prefer SQL delivery issues first, route into SQL-aware delivery handoff or missing-delivery review, and include delivery/SQL checks in copied Codex prompts.
 - Native Workflow and Risk Review SQL readiness actions now route to SQL artifact review or SQL-aware delivery handoff instead of only rerunning checks.

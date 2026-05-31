@@ -1103,6 +1103,12 @@ final class AppState: ObservableObject {
                     presentWorktreeSetup(for: workspace)
                 }
             }
+        case "review-branches":
+            setWorkspaceFilter(.risky)
+            if let workspace = workspaceForAutomationSignal(signal) {
+                selectedWorkspaceID = workspace.id
+                await loadDocument(path: branchesDocumentPath(for: workspace))
+            }
         case "review-tasks":
             if highPriorityTaskCount(from: lastAutomationCheck) > 0 {
                 setTaskCenterFilter(.high)
@@ -1237,6 +1243,7 @@ final class AppState: ObservableObject {
             "- 摘要: \(check.summary)",
             "- 风险: \(check.riskCount)",
             "- 交付问题: \(check.deliveryIssueCount)",
+            "- 分支问题: \(check.branchMismatchCount)",
             "- 开放任务: \(check.openTaskCount)（高优先级 \(check.highPriorityTaskCount)）",
             "- worktree 问题: 缺失 \(check.missingWorktreeCount)，未提交 \(check.dirtyServiceCount)",
             check.auditError.map { "- 审计写入失败: \($0)" } ?? "- 审计: \(check.auditEventId == nil ? "未写入" : "已写入")"
@@ -2061,6 +2068,14 @@ final class AppState: ObservableObject {
                 }
                 .map { "\($0.label) [\($0.status)]: \($0.detail)" }
                 .joined(separator: " | ")
+            let branchChecks = selected.healthChecks
+                .filter { check in
+                    check.id == "target-branch"
+                        || check.id == "branch-alignment"
+                        || check.action == "branches"
+                }
+                .map { "\($0.label) [\($0.status)]: \($0.detail)" }
+                .joined(separator: " | ")
             workspaceLines = [
                 "- 当前工作区: \(selected.name)",
                 "- 工作区目录: \(selected.path)",
@@ -2068,6 +2083,8 @@ final class AppState: ObservableObject {
                 "- 涉及服务: \(selected.serviceSummary.isEmpty ? "待确认" : selected.serviceSummary)",
                 "- 风险数: \(selected.risks.count)",
                 "- 未完成任务: \(selected.tasks.filter { !$0.isDone }.count)",
+                "- 分支记录: \(branchesDocumentPath(for: selected))",
+                "- 分支检查: \(branchChecks.isEmpty ? "未生成" : branchChecks)",
                 "- 交付记录: \(deliveryDocumentPath(for: selected))",
                 "- SQL 文件: \(selected.sqlFiles.isEmpty ? "未扫描到" : selected.sqlFiles.map(\.relativePath).joined(separator: ", "))",
                 "- 交付/SQL 检查: \(deliveryAndSqlChecks.isEmpty ? "未生成" : deliveryAndSqlChecks)"
@@ -2937,6 +2954,8 @@ final class AppState: ObservableObject {
         case "review-worktrees":
             return firstWorkspaceWithMissingWorktrees()
                 ?? firstWorkspaceWithDirtyServices()
+        case "review-branches":
+            return firstWorkspaceWithBranchIssue()
         case "review-tasks":
             return firstWorkspaceWithHighPriorityTask()
                 ?? firstWorkspaceWithOpenTask()
@@ -2994,6 +3013,10 @@ final class AppState: ObservableObject {
         workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md"
     }
 
+    private func branchesDocumentPath(for workspace: WorkspaceSummary) -> String {
+        workspace.documentLinks["branches"] ?? "\(workspace.path)/branches.md"
+    }
+
     private static func healthStatusIsPassing(_ status: String) -> Bool {
         let normalized = status.lowercased()
         return normalized == "pass" || normalized == "ok" || normalized == "ready"
@@ -3011,6 +3034,21 @@ final class AppState: ObservableObject {
                 let normalized = "\(service.gitSummary) \(service.worktree)".lowercased()
                 return normalized.contains("dirty") || normalized.contains("未提交")
             }
+        }
+    }
+
+    private func firstWorkspaceWithBranchIssue() -> WorkspaceSummary? {
+        activeSignalWorkspaces.first { workspace in
+            workspaceHasBranchIssue(workspace)
+        }
+    }
+
+    private func workspaceHasBranchIssue(_ workspace: WorkspaceSummary) -> Bool {
+        workspace.risks.contains { risk in
+            let normalized = "\(risk.title) \(risk.detail)".lowercased()
+            return normalized.contains("分支不一致") || normalized.contains("branch mismatch")
+        } || workspace.healthChecks.contains { check in
+            check.id == "branch-alignment" && !Self.healthStatusIsPassing(check.status)
         }
     }
 
