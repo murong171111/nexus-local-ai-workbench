@@ -2576,56 +2576,65 @@ private struct InspectorView: View {
     @Binding var isSettingsPresented: Bool
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                if let error = appState.lastError {
-                    OperationFeedbackView(
-                        error: error,
-                        settingsAction: {
-                            isSettingsPresented = true
-                        },
-                        dismissAction: {
-                            appState.clearLastError()
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    if let error = appState.lastError {
+                        OperationFeedbackView(
+                            error: error,
+                            settingsAction: {
+                                isSettingsPresented = true
+                            },
+                            dismissAction: {
+                                appState.clearLastError()
+                            }
+                        )
+                        .environmentObject(appState)
+                    }
+
+                    if let feedback = appState.codexHandoffFeedback {
+                        CodexHandoffFeedbackView(feedback: feedback) {
+                            appState.clearCodexHandoffFeedback()
                         }
-                    )
-                    .environmentObject(appState)
-                }
-
-                if let feedback = appState.codexHandoffFeedback {
-                    CodexHandoffFeedbackView(feedback: feedback) {
-                        appState.clearCodexHandoffFeedback()
                     }
-                }
 
-                if let feedback = appState.workspaceLinkFeedback {
-                    WorkspaceLinkFeedbackView(feedback: feedback) {
-                        appState.clearWorkspaceLinkFeedback()
+                    if let feedback = appState.workspaceLinkFeedback {
+                        WorkspaceLinkFeedbackView(feedback: feedback) {
+                            appState.clearWorkspaceLinkFeedback()
+                        }
+                        .environmentObject(appState)
                     }
-                    .environmentObject(appState)
-                }
 
-                if let feedback = appState.localWriteFeedback {
-                    LocalWriteFeedbackView(feedback: feedback) {
-                        appState.clearLocalWriteFeedback()
+                    if let feedback = appState.localWriteFeedback {
+                        LocalWriteFeedbackView(feedback: feedback) {
+                            appState.clearLocalWriteFeedback()
+                        }
+                        .environmentObject(appState)
                     }
-                    .environmentObject(appState)
-                }
 
-                AutomationActionCenterView()
+                    AutomationActionCenterView()
 
-                if let workspace = appState.selectedWorkspace {
-                    WorkspaceDetailView(workspace: workspace)
+                    if let workspace = appState.selectedWorkspace {
+                        WorkspaceDetailView(
+                            workspace: workspace,
+                            scrollToSection: { section in
+                                withAnimation(.easeInOut(duration: 0.18)) {
+                                    proxy.scrollTo(section, anchor: .top)
+                                }
+                            }
+                        )
                         .frame(maxWidth: .infinity, alignment: .leading)
-                } else {
-                    InspectorEmptyStateView(
-                        isCreateWorkspacePresented: $isCreateWorkspacePresented,
-                        isSettingsPresented: $isSettingsPresented
-                    )
+                    } else {
+                        InspectorEmptyStateView(
+                            isCreateWorkspacePresented: $isCreateWorkspacePresented,
+                            isSettingsPresented: $isSettingsPresented
+                        )
+                    }
                 }
             }
+            .padding(18)
+            .background(NexusPalette.inspector)
         }
-        .padding(18)
-        .background(NexusPalette.inspector)
     }
 }
 
@@ -3389,6 +3398,7 @@ private struct AutomationSignalRow: View {
 private struct WorkspaceDetailView: View {
     @EnvironmentObject private var appState: AppState
     let workspace: WorkspaceSummary
+    let scrollToSection: (WorkspaceDetailSection) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -3404,10 +3414,15 @@ private struct WorkspaceDetailView: View {
                     .lineLimit(2)
             }
 
+            WorkspaceDetailMapView(workspace: workspace) { section in
+                scrollToSection(section)
+            }
+
             WorkspaceDetailOverviewView(
                 workspace: workspace,
                 lastCheck: appState.lastAutomationCheck
             )
+            .id(WorkspaceDetailSection.overview)
 
             if appState.lastCreatedWorkspace?.folder == workspace.folder {
                 WorkspaceCreationNextStepsView(workspace: workspace)
@@ -3415,6 +3430,7 @@ private struct WorkspaceDetailView: View {
 
             WorkspaceCommandCenterView(workspace: workspace)
                 .environmentObject(appState)
+                .id(WorkspaceDetailSection.command)
 
             if !workspace.sessionActions.isEmpty {
                 NextStepQueueView(actions: workspace.sessionActions) { action in
@@ -3464,6 +3480,7 @@ private struct WorkspaceDetailView: View {
                 }
             )
             .environmentObject(appState)
+            .id(WorkspaceDetailSection.workflow)
 
             SectionBlock(title: "服务 Git 状态 / Services") {
                 ForEach(workspace.services) { service in
@@ -3483,6 +3500,7 @@ private struct WorkspaceDetailView: View {
                     .padding(.vertical, 4)
                 }
             }
+            .id(WorkspaceDetailSection.services)
 
             RiskReviewView(
                 workspace: workspace,
@@ -3495,13 +3513,16 @@ private struct WorkspaceDetailView: View {
                 }
             )
             .environmentObject(appState)
+            .id(WorkspaceDetailSection.risk)
 
             WorkspaceDocumentsHubView(workspace: workspace)
                 .environmentObject(appState)
+                .id(WorkspaceDetailSection.documents)
 
             SectionBlock(title: "最近活动 / Activity") {
                 ActivityTimelineView(events: workspace.activities)
             }
+            .id(WorkspaceDetailSection.activity)
 
             Spacer()
         }
@@ -3553,6 +3574,218 @@ private struct NextStepQueueView: View {
                 }
             }
         }
+    }
+}
+
+private enum WorkspaceDetailSection: String, CaseIterable, Identifiable {
+    case overview
+    case command
+    case workflow
+    case services
+    case risk
+    case documents
+    case activity
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .overview:
+            "概览 / Overview"
+        case .command:
+            "工作台 / Command"
+        case .workflow:
+            "任务交付 / Workflow"
+        case .services:
+            "服务 / Services"
+        case .risk:
+            "风险 / Risk"
+        case .documents:
+            "文档 / Docs"
+        case .activity:
+            "活动 / Activity"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .overview:
+            "rectangle.grid.2x2"
+        case .command:
+            "point.3.connected.trianglepath.dotted"
+        case .workflow:
+            "checklist"
+        case .services:
+            "square.stack.3d.up"
+        case .risk:
+            "exclamationmark.triangle"
+        case .documents:
+            "doc.text"
+        case .activity:
+            "clock"
+        }
+    }
+}
+
+private struct WorkspaceDetailMapView: View {
+    let workspace: WorkspaceSummary
+    let action: (WorkspaceDetailSection) -> Void
+
+    private var openTaskCount: Int {
+        workspace.tasks.filter { !$0.isDone }.count
+    }
+
+    private var blockedTaskCount: Int {
+        workspace.tasks.filter { !$0.isDone && $0.isBlocked }.count
+    }
+
+    private var missingWorktreeCount: Int {
+        workspace.services.filter { !$0.worktreeExists }.count
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 8) {
+                Label("详情导航 / Detail map", systemImage: "map")
+                    .font(.caption.weight(.semibold))
+                Spacer()
+                Text("\(WorkspaceDetailSection.allCases.count) 区块")
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
+                ForEach(WorkspaceDetailSection.allCases) { section in
+                    Button {
+                        action(section)
+                    } label: {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: section.systemImage)
+                                .font(.caption)
+                                .foregroundStyle(tone(for: section))
+                                .frame(width: 15)
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(section.title)
+                                    .font(.caption.weight(.semibold))
+                                    .lineLimit(1)
+                                Text(detail(for: section))
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(8)
+                        .background(NexusPalette.panel)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(tone(for: section).opacity(0.14))
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .help(section.title)
+                }
+            }
+        }
+        .padding(10)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var columns: [GridItem] {
+        [GridItem(.adaptive(minimum: 118), spacing: 8, alignment: .leading)]
+    }
+
+    private func detail(for section: WorkspaceDetailSection) -> String {
+        switch section {
+        case .overview:
+            workspace.lifecycle.label
+        case .command:
+            primaryPathDetail
+        case .workflow:
+            blockedTaskCount > 0 ? "\(blockedTaskCount) 阻塞" : "\(openTaskCount) 开放"
+        case .services:
+            workspace.services.isEmpty ? "待确认" : "\(workspace.services.count) 服务 / 缺 \(missingWorktreeCount)"
+        case .risk:
+            workspace.risks.isEmpty ? "暂无风险" : "\(workspace.risks.count) 信号"
+        case .documents:
+            "\(workspace.documentLinks.count) 文档"
+        case .activity:
+            workspace.activities.isEmpty ? "无活动" : "\(workspace.activities.count) 活动"
+        }
+    }
+
+    private func tone(for section: WorkspaceDetailSection) -> Color {
+        switch section {
+        case .overview:
+            return workspace.isArchived ? .secondary : NexusPalette.accent
+        case .command:
+            return commandTone
+        case .workflow:
+            if blockedTaskCount > 0 {
+                return NexusPalette.danger
+            }
+            return openTaskCount > 0 ? NexusPalette.warning : NexusPalette.success
+        case .services:
+            if workspace.services.isEmpty {
+                return NexusPalette.warning
+            }
+            return missingWorktreeCount > 0 ? NexusPalette.warning : NexusPalette.success
+        case .risk:
+            return workspace.risks.isEmpty ? NexusPalette.success : NexusPalette.warning
+        case .documents:
+            return NexusPalette.accent
+        case .activity:
+            return .secondary
+        }
+    }
+
+    private var commandTone: Color {
+        if workspace.isArchived {
+            return .secondary
+        }
+        if !hasConfirmedTargetBranch(workspace.branch) || workspace.services.isEmpty {
+            return NexusPalette.danger
+        }
+        if missingWorktreeCount > 0 || !workspace.risks.isEmpty || openTaskCount > 0 {
+            return NexusPalette.warning
+        }
+        return NexusPalette.success
+    }
+
+    private var primaryPathDetail: String {
+        if workspace.isArchived {
+            return "已归档"
+        }
+        if !hasConfirmedTargetBranch(workspace.branch) {
+            return "分支"
+        }
+        if workspace.services.isEmpty {
+            return "服务"
+        }
+        if missingWorktreeCount > 0 {
+            return "worktree"
+        }
+        if !workspace.risks.isEmpty {
+            return "风险"
+        }
+        if openTaskCount > 0 {
+            return "任务"
+        }
+        return "就绪"
+    }
+
+    private func hasConfirmedTargetBranch(_ branch: String) -> Bool {
+        let normalized = branch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return false }
+        return !normalized.contains("待确认")
+            && !normalized.contains("未确认")
+            && !normalized.contains("pending")
+            && !normalized.contains("tbd")
+            && !normalized.contains("todo")
+            && normalized != "-"
     }
 }
 

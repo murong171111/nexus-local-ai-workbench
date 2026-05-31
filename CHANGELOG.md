@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Added
 
+- Native workspace detail now includes a compact Detail map for jumping between Overview, Command Center, Workflow, Services, Risk Review, Documents, and Activity without turning the page into another flat button stack.
 - Native Command Center workflow path cards now show compact action labels and route delivery status to the right next step: local check for pending delivery evidence, delivery Codex handoff for review/blockers, validation/PR handoff after completion, or the delivery document when evidence is already usable.
 - Native workspace detail overview tiles are now actionable, routing lifecycle, branch, service/worktree, risk, task, delivery, Codex session, and local-check states to their matching document, setup, handoff, session, or check action from the first screen.
 - Native workspace session actions now appear as a Chinese-first next-step queue directly under Command Center, making Rust Core recommended actions a secondary queue for the primary path instead of a separate late-page section.
