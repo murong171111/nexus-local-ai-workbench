@@ -68,6 +68,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added Rust Core and Swift/Rust bridge support for append-only agent event JSONL, plus a native sidebar feed for recent agent events.
 - Added native agent event detail inspection with metadata and JSON copy support.
 - Added safe native agent event actions for selecting matching workspaces, opening local paths and links, copying Codex continuation context, and copying that context while opening Codex in one action.
+- Added native Agent Event action surfaces for permission, question, and tool-review events, with copyable approve/deny/answer/review templates, clipboard feedback, and local audit records while keeping command metadata review-only.
 - Added shared Rust Core, FFI, and Swift bridge generation for Codex handoff prompts from agent events.
 - Added shared Rust Core, FFI, and native SwiftUI task drafts derived from agent events, including category, priority, prompt, and related targets.
 - Added confirmed Rust Core, FFI, and native SwiftUI writeback from agent task drafts into workspace `tasks.md`, with audit logging.

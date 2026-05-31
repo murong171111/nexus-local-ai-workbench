@@ -9809,6 +9809,7 @@ private struct AgentEventDetailSheet: View {
     @State private var taskAppendResult: AppendAgentTaskDraftResponse?
     @State private var isOpeningCodex = false
     @State private var isCopyingCodexContext = false
+    @State private var copiedActionResponseID: AgentActionResponse.ID?
 
     private var metadataRows: [(String, String)] {
         event.metadata
@@ -9818,6 +9819,10 @@ private struct AgentEventDetailSheet: View {
 
     private var displayedTaskDraft: AgentEventTaskDraftResponse {
         taskDraft ?? event.fallbackTaskDraft
+    }
+
+    private var actionSurface: AgentActionSurface? {
+        AgentActionSurface(event: event)
     }
 
     private var workspaceMatch: WorkspaceSummary? {
@@ -9886,6 +9891,17 @@ private struct AgentEventDetailSheet: View {
                     AgentEventField(label: "Session", value: event.sessionId)
                     AgentEventField(label: "Workspace", value: event.workspaceFolder ?? "No workspace")
                     AgentEventField(label: "Event ID", value: event.id)
+                }
+
+                if let actionSurface {
+                    SectionBlock(title: "Agent 动作面 / Action surface") {
+                        AgentActionSurfaceView(
+                            surface: actionSurface,
+                            copiedResponseID: copiedActionResponseID
+                        ) { response in
+                            copyActionResponse(response)
+                        }
+                    }
                 }
 
                 SectionBlock(title: "任务草稿 / Task draft") {
@@ -10095,6 +10111,17 @@ private struct AgentEventDetailSheet: View {
         }
     }
 
+    private func copyActionResponse(_ response: AgentActionResponse) {
+        copiedActionResponseID = response.id
+        Task {
+            await appState.copyAgentEventActionResponse(
+                label: response.label,
+                payload: response.payload,
+                for: event
+            )
+        }
+    }
+
     private func loadTaskDraft() async {
         isTaskDraftLoading = true
         taskDraft = await appState.agentEventTaskDraft(for: event)
@@ -10127,6 +10154,74 @@ private struct AgentEventDetailSheet: View {
     private func openURL(_ rawURL: String) {
         guard let url = URL(string: rawURL.trimmingCharacters(in: .whitespacesAndNewlines)) else { return }
         NSWorkspace.shared.open(url)
+    }
+}
+
+private struct AgentActionSurfaceView: View {
+    let surface: AgentActionSurface
+    let copiedResponseID: AgentActionResponse.ID?
+    let onCopy: (AgentActionResponse) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: surface.kind.systemImage)
+                    .font(.body)
+                    .foregroundStyle(NexusPalette.accent)
+                    .frame(width: 20)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 8) {
+                        Text(surface.title)
+                            .font(.subheadline.weight(.semibold))
+                        Pill(label: surface.kind.statusLabel, systemImage: "clock.badge.exclamationmark")
+                    }
+                    Text(surface.detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(surface.safetyNote)
+                        .font(.caption)
+                        .foregroundStyle(NexusPalette.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            HStack(spacing: 8) {
+                AgentResponseCopyButton(
+                    response: surface.primaryResponse,
+                    isCopied: copiedResponseID == surface.primaryResponse.id,
+                    onCopy: onCopy
+                )
+
+                if let secondaryResponse = surface.secondaryResponse {
+                    AgentResponseCopyButton(
+                        response: secondaryResponse,
+                        isCopied: copiedResponseID == secondaryResponse.id,
+                        onCopy: onCopy
+                    )
+                }
+
+                Spacer()
+            }
+        }
+    }
+}
+
+private struct AgentResponseCopyButton: View {
+    let response: AgentActionResponse
+    let isCopied: Bool
+    let onCopy: (AgentActionResponse) -> Void
+
+    var body: some View {
+        Button {
+            onCopy(response)
+        } label: {
+            Label(isCopied ? "已复制 / Copied" : response.label, systemImage: isCopied ? "checkmark" : response.systemImage)
+                .lineLimit(1)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
     }
 }
 
