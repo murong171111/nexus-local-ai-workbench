@@ -7867,7 +7867,12 @@ private struct RiskReviewView: View {
                         if !visibleChecks.isEmpty {
                             Divider()
                             ForEach(visibleChecks) { check in
-                                HealthCheckRow(check: check)
+                                HealthCheckRow(
+                                    check: check,
+                                    actionLabel: riskCheckActionLabel(for: check)
+                                ) {
+                                    runRiskCheckAction(for: check)
+                                }
                             }
                         }
                     }
@@ -7893,6 +7898,53 @@ private struct RiskReviewView: View {
                 workspace: workspace
             )
         )
+    }
+
+    private func riskCheckActionLabel(for check: WorkspaceHealthCheck) -> String {
+        switch check.action {
+        case "services":
+            "打开服务"
+        case "branches":
+            "打开分支"
+        case "worktreeScript":
+            "创建 worktree"
+        case "status":
+            "打开状态"
+        case "tasks":
+            "打开任务"
+        case "sql":
+            "打开交付"
+        default:
+            "重新检查"
+        }
+    }
+
+    private func runRiskCheckAction(for check: WorkspaceHealthCheck) {
+        switch check.action {
+        case "services":
+            openDocument(key: "services", fallback: "services.md")
+        case "branches":
+            openDocument(key: "branches", fallback: "branches.md")
+        case "worktreeScript":
+            appState.presentWorktreeSetup(for: workspace)
+        case "status":
+            openDocument(key: "status", fallback: "STATUS.md")
+        case "tasks":
+            openDocument(key: "tasks", fallback: "tasks.md")
+        case "sql":
+            openDocument(key: "delivery", fallback: "交付记录.md")
+        default:
+            Task {
+                await appState.runLocalAutomationCheck(actor: "Nexus Risk Review")
+            }
+        }
+    }
+
+    private func openDocument(key: String, fallback: String) {
+        let path = workspace.documentLinks[key] ?? "\(workspace.path)/\(fallback)"
+        Task {
+            await appState.loadDocument(path: path)
+        }
     }
 
     private static func statusKind(_ status: String) -> String {
@@ -7955,48 +8007,58 @@ private struct WorkflowMetric: View {
 
 private struct HealthCheckRow: View {
     let check: WorkspaceHealthCheck
+    let actionLabel: String
+    let action: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 9) {
-            Image(systemName: symbol)
-                .foregroundStyle(color)
-                .frame(width: 15)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(check.label)
-                    .font(.subheadline.weight(.medium))
-                    .lineLimit(1)
-                Text(check.detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 9) {
+                Image(systemName: symbol)
+                    .foregroundStyle(color)
+                    .frame(width: 15)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(check.label)
+                        .font(.subheadline.weight(.medium))
+                        .lineLimit(1)
+                    Text(check.detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                    Text(actionLabel)
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(NexusPalette.accent)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Text(statusLabel)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(color)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(color.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             }
-            Spacer()
-            Text(statusLabel)
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .foregroundStyle(color)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .background(color.opacity(0.1))
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
+        .buttonStyle(.plain)
+        .help("\(check.detail) · \(actionLabel)")
     }
 
     private var statusLabel: String {
-        switch check.status {
-        case "pass":
-            "pass"
-        case "warning":
-            "warn"
+        switch check.status.lowercased() {
+        case "pass", "ok", "ready":
+            "通过"
+        case "warning", "warn", "review":
+            "复核"
         default:
-            "block"
+            "阻塞"
         }
     }
 
     private var symbol: String {
-        switch check.status {
-        case "pass":
+        switch check.status.lowercased() {
+        case "pass", "ok", "ready":
             "checkmark.circle"
-        case "warning":
+        case "warning", "warn", "review":
             "exclamationmark.circle"
         default:
             "xmark.octagon"
@@ -8004,10 +8066,10 @@ private struct HealthCheckRow: View {
     }
 
     private var color: Color {
-        switch check.status {
-        case "pass":
+        switch check.status.lowercased() {
+        case "pass", "ok", "ready":
             NexusPalette.success
-        case "warning":
+        case "warning", "warn", "review":
             NexusPalette.warning
         default:
             NexusPalette.danger

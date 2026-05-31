@@ -11,6 +11,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Native Command Center workflow path cards now show compact action labels and route delivery status to the right next step: local check for pending delivery evidence, delivery Codex handoff for review/blockers, validation/PR handoff after completion, or the delivery document when evidence is already usable.
 - Native workspace detail overview tiles are now actionable, routing lifecycle, branch, service/worktree, risk, task, delivery, Codex session, and local-check states to their matching document, setup, handoff, session, or check action from the first screen.
 - Native workspace session actions now appear as a Chinese-first next-step queue directly under Command Center, making Rust Core recommended actions a secondary queue for the primary path instead of a separate late-page section.
+- Native Risk Review readiness rows are now actionable, routing service, branch, worktree, status, task, and SQL findings to the matching document, worktree setup, or delivery record action with Chinese-first status labels.
 - `nexus-core` Rust crate foundation for reusable git, source-repository, workspace scanning, document parsing, and risk detection logic.
 - Reusable Rust Core support for settings profile export and standard workspace skeleton creation.
 - SwiftUI/AppKit native Mac shell scaffold with sample workspace navigation and CI build validation.
