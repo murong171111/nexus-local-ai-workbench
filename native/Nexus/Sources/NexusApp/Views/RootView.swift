@@ -581,6 +581,15 @@ private struct SidebarView: View {
                 }
             )
 
+            if appState.agentWorkflowSummary.shouldShow {
+                AgentWorkflowBridgeView(
+                    summary: appState.agentWorkflowSummary,
+                    focusAgentTasks: {
+                        appState.focusAgentTasks()
+                    }
+                )
+            }
+
             if appState.taskCenterTotalCount > 0 || recentTaskWriteback != nil {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
@@ -9836,6 +9845,55 @@ private struct AgentInboxEmptyView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(NexusPalette.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct AgentWorkflowBridgeView: View {
+    let summary: AgentWorkflowSummary
+    let focusAgentTasks: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 8) {
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.caption)
+                    .foregroundStyle(NexusPalette.accent)
+                    .frame(width: 16)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Agent Workflow / 流转")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(summary.title)
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
+                }
+                Spacer()
+                Text(summary.metricLabel)
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(summary.pendingEventCount > 0 ? NexusPalette.warning : NexusPalette.accent)
+            }
+
+            Text(summary.detail)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if summary.agentTaskCount > 0 {
+                Button {
+                    focusAgentTasks()
+                } label: {
+                    Label("查看 Agent 任务 / Agent tasks", systemImage: "line.3.horizontal.decrease.circle")
+                        .font(.caption.weight(.medium))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.borderless)
+                .help("切换任务中心到 Agent 筛选，并聚焦第一条 Agent 任务。")
+            }
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)

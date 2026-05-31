@@ -294,6 +294,31 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(inbox.pendingLabel, "2 pending")
     }
 
+    func testAgentWorkflowSummaryExplainsInboxToTaskFlow() {
+        let event = AgentEvent(
+            id: "agent-question",
+            timestamp: "2026-05-31T12:10:00Z",
+            source: "codex",
+            sessionId: "thread-3",
+            workspaceFolder: "demo",
+            kind: "question",
+            title: "Need decision",
+            summary: "Should this be turned into a task?",
+            severity: "info",
+            metadata: [:]
+        )
+        let inbox = AgentInboxSummary(events: [event])
+
+        let activeFlow = AgentWorkflowSummary(inbox: inbox, agentTaskCount: 2, openTaskCount: 5)
+        XCTAssertTrue(activeFlow.shouldShow)
+        XCTAssertEqual(activeFlow.metricLabel, "1 inbox / 2 tasks")
+        XCTAssertTrue(activeFlow.title.contains("Active flow"))
+        XCTAssertTrue(activeFlow.detail.contains("tasks.md"))
+
+        let noFlow = AgentWorkflowSummary(inbox: AgentInboxSummary(events: []), agentTaskCount: 0, openTaskCount: 0)
+        XCTAssertFalse(noFlow.shouldShow)
+    }
+
     func testWorkspaceWorkflowSummaryCombinesTaskAndDeliverySignals() {
         let payLogSummary = WorkspaceWorkflowSummary(workspace: WorkspaceSummary.previewData[0])
 
