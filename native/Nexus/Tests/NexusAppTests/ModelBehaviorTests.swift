@@ -185,6 +185,49 @@ final class ModelBehaviorTests: XCTestCase {
             workspaces.filter { WorkspaceFilter.active.matches($0, query: "pricing") }.map(\.id),
             ["2026-05-25-multi-price"]
         )
+        XCTAssertEqual(
+            workspaces.filter { WorkspaceFilter.all.matches($0, query: "backfill_rollback") }.map(\.id),
+            ["2026-05-25-yibao-pay-log"]
+        )
+    }
+
+    func testWorkspaceSummaryMapsSqlFilesFromBridgeSnapshot() {
+        let snapshot = WorkspaceSnapshot(
+            name: "SQL Workspace",
+            folder: "2026-05-31-sql-workspace",
+            path: "/tmp/workspaces/2026-05-31-sql-workspace",
+            state: "delivery",
+            targetBranch: "chen/sql-workspace",
+            sourceRoot: "/tmp/source-repos",
+            confirmedServices: [],
+            candidateServices: [],
+            taskCounts: TaskCountsSnapshot(done: 0, doing: 0, todo: 0, blocked: 0),
+            decisionCount: 0,
+            gitRows: [],
+            risks: [],
+            riskCount: 0,
+            updated: "2026-05-31",
+            links: [:],
+            sqlFiles: [
+                WorkspaceSqlFileSnapshot(
+                    relativePath: "pay_log.sql",
+                    path: "/tmp/workspaces/2026-05-31-sql-workspace/sql/pay_log.sql",
+                    kind: "formal"
+                ),
+                WorkspaceSqlFileSnapshot(
+                    relativePath: "pay_log_rollback.sql",
+                    path: "/tmp/workspaces/2026-05-31-sql-workspace/sql/pay_log_rollback.sql",
+                    kind: "rollback"
+                )
+            ],
+            worktreeCommand: ""
+        )
+
+        let workspace = WorkspaceSummary(snapshot: snapshot)
+
+        XCTAssertEqual(workspace.sqlFiles.map(\.relativePath), ["pay_log.sql", "pay_log_rollback.sql"])
+        XCTAssertEqual(workspace.sqlFiles.map(\.kindLabel), ["正式 SQL / Formal", "回滚 SQL / Rollback"])
+        XCTAssertEqual(workspace.sqlFiles.first?.fileName, "pay_log.sql")
     }
 
     func testWorkflowPathStatusLabelsStayChineseFirst() {
