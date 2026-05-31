@@ -7186,6 +7186,7 @@ private enum DeliveryFocusAction {
     case runCheck
     case openCodex
     case deliveryHandoff
+    case sqlHandoff
     case validationPrHandoff
     case enterDelivery
     case markDone
@@ -7608,9 +7609,9 @@ private struct WorkflowStatusView: View {
                 statusLabel: "review",
                 tone: NexusPalette.warning,
                 systemImage: "cylinder.split.1x2",
-                actionLabel: "运行检查",
-                actionSystemImage: "checklist.checked",
-                action: .runCheck
+                actionLabel: "SQL 交接",
+                actionSystemImage: "point.3.connected.trianglepath.dotted",
+                action: .sqlHandoff
             )
         }
 
@@ -8037,6 +8038,10 @@ private struct WorkflowStatusView: View {
             Task {
                 await appState.openDeliveryUpdateInCodex(workspace)
             }
+        case .sqlHandoff:
+            Task {
+                await appState.openDeliveryUpdateInCodex(workspace)
+            }
         case .validationPrHandoff:
             Task {
                 await appState.openValidationPrHandoffInCodex(workspace)
@@ -8061,7 +8066,7 @@ private struct WorkflowStatusView: View {
         case "delivery-record":
             return item.status == .pass ? "打开交付" : "交付交接"
         case "sql":
-            return item.status == .pass ? "打开交付" : "运行检查"
+            return item.status == .pass ? "复查 SQL" : "SQL 交接"
         case "dirty-services":
             return dirtyServices.isEmpty ? "查看服务" : "服务交接"
         default:
@@ -8111,11 +8116,11 @@ private struct WorkflowStatusView: View {
         case "sql":
             if item.status == .pass {
                 Task {
-                    await appState.loadDocument(path: deliveryPath)
+                    await appState.openSqlReviewDocument(in: workspace)
                 }
             } else {
                 Task {
-                    await appState.runLocalAutomationCheck(actor: "Nexus Workflow SQL")
+                    await appState.openDeliveryUpdateInCodex(workspace)
                 }
             }
         case "dirty-services":
@@ -8705,7 +8710,7 @@ private struct RiskReviewView: View {
         case "tasks":
             "打开任务"
         case "sql":
-            "打开交付"
+            "复查 SQL"
         default:
             "重新检查"
         }
@@ -8724,7 +8729,9 @@ private struct RiskReviewView: View {
         case "tasks":
             openDocument(key: "tasks", fallback: "tasks.md")
         case "sql":
-            openDocument(key: "delivery", fallback: "交付记录.md")
+            Task {
+                await appState.openSqlReviewDocument(in: workspace)
+            }
         default:
             Task {
                 await appState.runLocalAutomationCheck(actor: "Nexus Risk Review")
