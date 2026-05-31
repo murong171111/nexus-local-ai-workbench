@@ -79,6 +79,13 @@ export type WorkspaceCreatePreflightReport = {
   issues: WorkspaceCreatePreflightIssue[];
 };
 
+export type LocalOperationErrorInput = {
+  operation: string;
+  error: unknown;
+  targetPath?: string;
+  recovery?: string;
+};
+
 export function slugify(value: string) {
   return value
     .trim()
@@ -549,6 +556,23 @@ export function orderedSearchResults(results: WorkspaceSearchResult[]) {
   return groupSearchResults(results).flatMap((group) => group.results);
 }
 
+export function localOperationErrorMessage(input: LocalOperationErrorInput) {
+  const operation = input.operation.trim() || "本地操作";
+  const reason = operationErrorReason(input.error);
+  const target = input.targetPath?.trim();
+  const recovery = input.recovery?.trim() || (
+    target
+      ? "请确认目标路径存在且可访问，必要时到 Settings 更新本机路径后重试。"
+      : "请检查 Settings 中的本机路径配置，或刷新工作区数据后重试。"
+  );
+
+  return [
+    `${operation}失败：${reason}`,
+    target ? `目标：${target}` : "",
+    `建议：${recovery}`
+  ].filter(Boolean).join(" · ");
+}
+
 function searchResultGroupForKind(kind: string) {
   if (kind === "workspace") return { id: "workspace", label: "工作区 / Workspace" };
   if (kind === "sql") return { id: "sql", label: "SQL 与数据变更 / SQL" };
@@ -582,6 +606,12 @@ function fallbackSearchRank(result: WorkspaceSearchResult, query: string) {
   if (name.includes(query) || folder.includes(query)) return 2;
   if (snippet.includes(query)) return 3;
   return 4;
+}
+
+function operationErrorReason(error: unknown) {
+  if (error instanceof Error && error.message.trim()) return error.message.trim();
+  if (typeof error === "string" && error.trim()) return error.trim();
+  return "未知错误";
 }
 
 export function compactSearchSnippet(content: string, query: string, radius = 72) {

@@ -187,6 +187,9 @@ export async function openCodex() {
 export async function readTextFile(path: string) {
   if (!isDesktopApp()) {
     const response = await fetch(`file://${path}`);
+    if (!response.ok) {
+      throw new Error(`file://${path} returned ${response.status}`);
+    }
     return response.text();
   }
   return (await tauriInvoke<string>("read_text_file", { path })) ?? "";

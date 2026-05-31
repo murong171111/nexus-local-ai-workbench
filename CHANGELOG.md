@@ -88,6 +88,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Native local-write feedback can now focus the affected workspace, clearing search and filters before the user reviews the refreshed Workflow state.
 - Native local-write feedback actions now use a compact wrapping layout, and document/check actions also focus the affected workspace first.
 - Native inspector now surfaces a unified operation feedback card for local errors, with dismiss, copy-error, refresh, environment-check, and Settings recovery actions.
+- Browser-preview operation failures now include the operation name, target path when available, and recovery guidance for document opens, index rebuilds, workspace creation, settings import/export, and worktree setup.
 - Native shell now handles `nexus://workspace/<workspace-folder>` deep links by clearing filters/search, focusing the target workspace, refreshing widget state, and recording a local audit event.
 - Native Workflow delivery summary now recommends lifecycle writebacks from delivery readiness, routing users into the existing confirmation flow for entering delivery or marking done.
 - Native Workflow action labels now use Chinese-first wording and hover help for task documents, delivery records, local checks, and workspace Codex handoff.
