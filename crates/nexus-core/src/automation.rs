@@ -173,25 +173,33 @@ fn automation_response_from_workspaces(
             kind: "branch".to_string(),
             severity: "warning".to_string(),
             title: "分支检查 / Branch check".to_string(),
-            detail: format!(
-                "{branch_mismatch_count} workspaces have branch alignment issues."
-            ),
+            detail: format!("{branch_mismatch_count} workspaces have branch alignment issues."),
             count: branch_mismatch_count,
             action: "review-branches".to_string(),
         });
     }
 
-    if missing_worktree_count > 0 || dirty_service_count > 0 {
+    if missing_worktree_count > 0 {
         signals.push(LocalAutomationSignal {
             id: "worktree.check".to_string(),
             kind: "worktree".to_string(),
             severity: "warning".to_string(),
             title: "Worktree 检查 / Worktree check".to_string(),
-            detail: format!(
-                "{missing_worktree_count} missing worktrees, {dirty_service_count} dirty services."
-            ),
-            count: missing_worktree_count + dirty_service_count,
+            detail: format!("{missing_worktree_count} workspace-local worktrees are missing."),
+            count: missing_worktree_count,
             action: "review-worktrees".to_string(),
+        });
+    }
+
+    if dirty_service_count > 0 {
+        signals.push(LocalAutomationSignal {
+            id: "dirty-service.check".to_string(),
+            kind: "git".to_string(),
+            severity: "warning".to_string(),
+            title: "Git 状态检查 / Dirty services".to_string(),
+            detail: format!("{dirty_service_count} services have uncommitted git changes."),
+            count: dirty_service_count,
+            action: "review-dirty-services".to_string(),
         });
     }
 
@@ -220,7 +228,8 @@ fn automation_response_from_workspaces(
             kind: "workspace".to_string(),
             severity: "info".to_string(),
             title: "状态清洁 / Clean state".to_string(),
-            detail: "No active risk, delivery, worktree, or task attention signals.".to_string(),
+            detail: "No active risk, delivery, git, worktree, or task attention signals."
+                .to_string(),
             count: active_workspace_count,
             action: "none".to_string(),
         });
@@ -240,7 +249,7 @@ fn automation_response_from_workspaces(
             "Automation check found {risk_count} risks and {high_priority_task_count} high-priority tasks."
         ),
         "review" => format!(
-            "Automation check found {risk_count} risks, {delivery_issue_count} delivery issues, {branch_mismatch_count} branch issues, and {open_task_count} open tasks."
+            "Automation check found {risk_count} risks, {delivery_issue_count} delivery issues, {branch_mismatch_count} branch issues, {missing_worktree_count} missing worktrees, {dirty_service_count} dirty services, and {open_task_count} open tasks."
         ),
         _ => format!("Automation check passed for {active_workspace_count} active workspaces."),
     };
@@ -483,10 +492,69 @@ mod tests {
 
         assert_eq!(response.branch_mismatch_count, 1);
         assert!(response.signals.iter().any(|signal| {
-            signal.id == "branch.check"
-                && signal.action == "review-branches"
+            signal.id == "branch.check" && signal.action == "review-branches" && signal.count == 1
+        }));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn local_automation_check_reports_dirty_service_signal() {
+        let root = std::env::temp_dir().join(format!(
+            "nexus-core-automation-dirty-{}",
+            std::process::id()
+        ));
+        let workspace = root.join("2026-05-31-dirty-demo");
+        let worktree = workspace.join("repos").join("order");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(workspace.join("sql")).unwrap();
+        fs::create_dir_all(&worktree).unwrap();
+        fs::write(
+            workspace.join("workspace.md"),
+            "# Dirty Demo\n\n- 需求名称: Dirty Demo\n- 当前状态: developing\n- 目标分支: chen/dirty-service\n- 源仓库集合: ~/source-repos\n",
+        )
+        .unwrap();
+        fs::write(
+            workspace.join("services.md"),
+            "# Services\n\n## 已确认相关\n\n| 服务 | 源仓库 | 说明 |\n| --- | --- | --- |\n| order | ~/source-repos/order | core |\n",
+        )
+        .unwrap();
+        fs::write(workspace.join("tasks.md"), "# Tasks\n").unwrap();
+        fs::write(
+            workspace.join("交付记录.md"),
+            "# 交付记录\n\n## SQL 变更\n\n- 是否有 SQL 变更：否\n",
+        )
+        .unwrap();
+        let init_status = Command::new("git")
+            .args(["init", "-b", "chen/dirty-service"])
+            .current_dir(&worktree)
+            .status()
+            .unwrap();
+        assert!(init_status.success());
+        fs::write(worktree.join("dirty.txt"), "uncommitted\n").unwrap();
+
+        let response = local_automation_check(LocalAutomationCheckRequest {
+            workspaces_root: root.to_string_lossy().to_string(),
+            source_repos_root: "~/source-repos".to_string(),
+            docs_root: "~/docs".to_string(),
+            audit_root: None,
+            actor: None,
+            generated_at: "2026-05-31T10:00:00Z".to_string(),
+        })
+        .unwrap();
+
+        assert_eq!(response.missing_worktree_count, 0);
+        assert_eq!(response.dirty_service_count, 1);
+        assert!(response.signals.iter().any(|signal| {
+            signal.id == "dirty-service.check"
+                && signal.kind == "git"
+                && signal.action == "review-dirty-services"
                 && signal.count == 1
         }));
+        assert!(!response
+            .signals
+            .iter()
+            .any(|signal| signal.id == "worktree.check"));
 
         fs::remove_dir_all(root).unwrap();
     }
@@ -543,7 +611,11 @@ mod tests {
         assert_eq!(response.status, "clean");
         assert!(!response.signals.iter().any(|signal| matches!(
             signal.id.as_str(),
-            "risk.scan" | "delivery.check" | "task.check" | "worktree.check"
+            "risk.scan"
+                | "delivery.check"
+                | "task.check"
+                | "worktree.check"
+                | "dirty-service.check"
         )));
 
         fs::remove_dir_all(root).unwrap();

@@ -287,7 +287,7 @@ test("workspaceSessionActions builds a startup flow from workspace state", () =>
     [
       "confirm-target-branch",
       "create-worktrees",
-      "review-dirty-worktrees",
+      "review-dirty-services",
       "update-delivery-record",
       "resolve-blocked-tasks",
       "start-codex-session"

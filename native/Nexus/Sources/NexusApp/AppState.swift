@@ -371,10 +371,7 @@ final class AppState: ObservableObject {
         }.count
         let archivedWorkspaceCount = workspaces.filter(\.isArchived).count
         let services = signalWorkspaces.flatMap(\.services)
-        let dirtyServiceCount = services.filter { service in
-            let normalized = "\(service.gitSummary) \(service.worktree)".lowercased()
-            return normalized.contains("dirty") || normalized.contains("未提交")
-        }.count
+        let dirtyServiceCount = services.filter(Self.serviceHasDirtyGit).count
         let missingWorktreeCount = services.filter { !$0.worktreeExists }.count
 
         return MenuBarStatusSummary(
@@ -1101,6 +1098,13 @@ final class AppState: ObservableObject {
                 selectedWorkspaceID = workspace.id
                 if !missingWorktreeServices(in: workspace).isEmpty {
                     presentWorktreeSetup(for: workspace)
+                }
+            }
+        case "review-dirty-services":
+            if let workspace = workspaceForAutomationSignal(signal) {
+                selectedWorkspaceID = workspace.id
+                if let service = dirtyServices(in: workspace).first {
+                    await openServiceInCodex(service, in: workspace)
                 }
             }
         case "review-branches":
@@ -2076,6 +2080,11 @@ final class AppState: ObservableObject {
                 }
                 .map { "\($0.label) [\($0.status)]: \($0.detail)" }
                 .joined(separator: " | ")
+            let dirtyServiceDetails = dirtyServices(in: selected)
+                .map { service in
+                    "\(service.name): worktree=\(service.worktree), source=\(service.gitSummary)"
+                }
+                .joined(separator: " | ")
             workspaceLines = [
                 "- 当前工作区: \(selected.name)",
                 "- 工作区目录: \(selected.path)",
@@ -2083,6 +2092,7 @@ final class AppState: ObservableObject {
                 "- 涉及服务: \(selected.serviceSummary.isEmpty ? "待确认" : selected.serviceSummary)",
                 "- 风险数: \(selected.risks.count)",
                 "- 未完成任务: \(selected.tasks.filter { !$0.isDone }.count)",
+                "- Dirty 服务: \(dirtyServiceDetails.isEmpty ? "无" : dirtyServiceDetails)",
                 "- 分支记录: \(branchesDocumentPath(for: selected))",
                 "- 分支检查: \(branchChecks.isEmpty ? "未生成" : branchChecks)",
                 "- 交付记录: \(deliveryDocumentPath(for: selected))",
@@ -2953,7 +2963,8 @@ final class AppState: ObservableObject {
                 ?? firstWorkspaceWithDeliveryIssue()
         case "review-worktrees":
             return firstWorkspaceWithMissingWorktrees()
-                ?? firstWorkspaceWithDirtyServices()
+        case "review-dirty-services":
+            return firstWorkspaceWithDirtyServices()
         case "review-branches":
             return firstWorkspaceWithBranchIssue()
         case "review-tasks":
@@ -3030,11 +3041,23 @@ final class AppState: ObservableObject {
 
     private func firstWorkspaceWithDirtyServices() -> WorkspaceSummary? {
         activeSignalWorkspaces.first { workspace in
-            workspace.services.contains { service in
-                let normalized = "\(service.gitSummary) \(service.worktree)".lowercased()
-                return normalized.contains("dirty") || normalized.contains("未提交")
-            }
+            !dirtyServices(in: workspace).isEmpty
         }
+    }
+
+    private func dirtyServices(in workspace: WorkspaceSummary) -> [ServiceStatus] {
+        workspace.services.filter(Self.serviceHasDirtyGit)
+    }
+
+    private static func serviceHasDirtyGit(_ service: ServiceStatus) -> Bool {
+        let normalized = "\(service.gitSummary) \(service.worktree)".lowercased()
+        return normalized.contains("dirty")
+            || normalized.contains("未提交")
+            || normalized.contains("有改动")
+            || normalized.contains("不是 git")
+            || normalized.contains("not git")
+            || normalized.contains("检查失败")
+            || normalized.contains("failed")
     }
 
     private func firstWorkspaceWithBranchIssue() -> WorkspaceSummary? {

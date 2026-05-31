@@ -617,6 +617,7 @@ enum AutomationNotificationSignalKind: String, CaseIterable, Identifiable {
     case delivery = "delivery"
     case task = "task"
     case worktree = "worktree"
+    case git = "git"
 
     var id: String { rawValue }
 
@@ -630,6 +631,8 @@ enum AutomationNotificationSignalKind: String, CaseIterable, Identifiable {
             "任务 / Task"
         case .worktree:
             "Worktree"
+        case .git:
+            "未提交服务 / Dirty"
         }
     }
 }

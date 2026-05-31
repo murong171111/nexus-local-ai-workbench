@@ -576,6 +576,50 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertFalse(prompt.contains("- 当前工作区: Selected Clean Branch"))
     }
 
+    @MainActor
+    func testAutomationDirtyServiceHandoffPromptTargetsDirtyWorkspace() {
+        let selectedCleanWorkspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "selected-clean-dirty",
+            name: "Selected Clean Dirty",
+            folder: "2026-05-31-selected-clean-dirty",
+            path: "/tmp/workspaces/2026-05-31-selected-clean-dirty"
+        )
+        let dirtyWorkspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "dirty-workspace",
+            name: "Dirty Workspace",
+            folder: "2026-05-31-dirty-workspace",
+            path: "/tmp/workspaces/2026-05-31-dirty-workspace",
+            services: [
+                ServiceStatus(
+                    name: "order",
+                    branch: "feature/workflow-summary",
+                    worktree: "有未提交改动",
+                    gitSummary: "干净",
+                    worktreeExists: true,
+                    sourceExists: true
+                ),
+                ServiceStatus(
+                    name: "store-cashier",
+                    branch: "feature/workflow-summary",
+                    worktree: "干净",
+                    gitSummary: "干净",
+                    worktreeExists: true,
+                    sourceExists: true
+                )
+            ]
+        )
+        let appState = appStateForAutomationTests(workspaces: [selectedCleanWorkspace, dirtyWorkspace])
+        appState.selectedWorkspaceID = selectedCleanWorkspace.id
+
+        let prompt = appState.automationSignalHandoffPrompt(for: dirtySignal())
+
+        XCTAssertTrue(prompt.contains("- 当前工作区: Dirty Workspace"))
+        XCTAssertTrue(prompt.contains("- Dirty 服务: order: worktree=有未提交改动, source=干净"))
+        XCTAssertFalse(prompt.contains("- 当前工作区: Selected Clean Dirty"))
+    }
+
     private func workspaceForWorkflowSummary(
         stage: String,
         id: String? = nil,
@@ -585,6 +629,7 @@ final class ModelBehaviorTests: XCTestCase {
         healthChecks: [WorkspaceHealthCheck] = [],
         risks: [RiskAlert] = [],
         sqlFiles: [WorkspaceSqlFile] = [],
+        services: [ServiceStatus]? = nil,
         tasks: [WorkspaceTask]? = nil
     ) -> WorkspaceSummary {
         let workspaceID = id ?? "workflow-summary-\(stage)"
@@ -603,7 +648,7 @@ final class ModelBehaviorTests: XCTestCase {
             worktreeState: "Ready",
             documentLinks: ["delivery": "\(workspacePath)/交付记录.md"],
             sqlFiles: sqlFiles,
-            services: [
+            services: services ?? [
                 ServiceStatus(name: "order", branch: "feature/workflow-summary", worktree: "ready", gitSummary: "clean", worktreeExists: true, sourceExists: true)
             ],
             activities: [],
@@ -680,6 +725,18 @@ final class ModelBehaviorTests: XCTestCase {
             detail: "1 workspaces have branch alignment issues.",
             count: 1,
             action: "review-branches"
+        )
+    }
+
+    private func dirtySignal() -> LocalAutomationSignal {
+        LocalAutomationSignal(
+            id: "dirty-service.check",
+            kind: "git",
+            severity: "warning",
+            title: "Git 状态检查 / Dirty services",
+            detail: "1 services have uncommitted git changes.",
+            count: 1,
+            action: "review-dirty-services"
         )
     }
 }
