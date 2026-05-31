@@ -3406,8 +3406,7 @@ private struct WorkspaceDetailView: View {
 
             WorkspaceDetailOverviewView(
                 workspace: workspace,
-                lastCheck: appState.lastAutomationCheck,
-                codexSessionCount: appState.codexSessionLinks(for: workspace).count
+                lastCheck: appState.lastAutomationCheck
             )
 
             if appState.lastCreatedWorkspace?.folder == workspace.folder {
@@ -3545,6 +3544,19 @@ private enum DetailOverviewStatus {
     case blocked
     case pending
 
+    init(workflowStatus: WorkflowPathStatus) {
+        switch workflowStatus {
+        case .ready, .archived:
+            self = .ready
+        case .review, .next:
+            self = .review
+        case .blocked:
+            self = .blocked
+        case .pending:
+            self = .pending
+        }
+    }
+
     var color: Color {
         switch self {
         case .ready:
@@ -3578,12 +3590,25 @@ private struct DetailOverviewItem: Identifiable {
     let value: String
     let detail: String
     let status: DetailOverviewStatus
+    let actionLabel: String
+    let action: DetailOverviewAction
+}
+
+private enum DetailOverviewAction {
+    case document(String)
+    case setupWorktrees
+    case riskHandoff
+    case runLocalCheck
+    case delivery(WorkflowDeliveryRoute)
+    case openCodexSession(CodexSessionLink)
+    case bindCodexSession
 }
 
 private struct WorkspaceDetailOverviewView: View {
+    @EnvironmentObject private var appState: AppState
+    @State private var isCodexSessionBindPresented = false
     let workspace: WorkspaceSummary
     let lastCheck: LocalAutomationCheckResponse?
-    let codexSessionCount: Int
 
     private var items: [DetailOverviewItem] {
         [
@@ -3596,6 +3621,18 @@ private struct WorkspaceDetailOverviewView: View {
             sessionItem,
             checkItem
         ]
+    }
+
+    private var workflowSummary: WorkspaceWorkflowSummary {
+        WorkspaceWorkflowSummary(workspace: workspace)
+    }
+
+    private var codexSessionLinks: [CodexSessionLink] {
+        appState.codexSessionLinks(for: workspace)
+    }
+
+    private var latestCodexSessionLink: CodexSessionLink? {
+        codexSessionLinks.first
     }
 
     private var openTasks: [WorkspaceTask] {
@@ -3628,7 +3665,9 @@ private struct WorkspaceDetailOverviewView: View {
             label: "阶段",
             value: workspace.lifecycle.label,
             detail: "\(workspace.lifecycle.progress)%",
-            status: status
+            status: status,
+            actionLabel: lifecycleActionLabel,
+            action: .document(workspace.lifecycle.documentKey)
         )
     }
 
@@ -3639,7 +3678,9 @@ private struct WorkspaceDetailOverviewView: View {
             label: "分支",
             value: branchReady ? shortBranch : "待确认",
             detail: branchReady ? "目标分支" : "branches.md",
-            status: branchReady ? .ready : .blocked
+            status: branchReady ? .ready : .blocked,
+            actionLabel: "打开分支",
+            action: .document("branches")
         )
     }
 
@@ -3650,7 +3691,9 @@ private struct WorkspaceDetailOverviewView: View {
                 label: "服务",
                 value: "待确认",
                 detail: "services.md",
-                status: .blocked
+                status: .blocked,
+                actionLabel: "打开服务",
+                action: .document("services")
             )
         }
 
@@ -3660,7 +3703,9 @@ private struct WorkspaceDetailOverviewView: View {
                 label: "服务",
                 value: "\(workspace.services.count) 个",
                 detail: "缺 \(missingWorktreeCount) 个 worktree",
-                status: .review
+                status: .review,
+                actionLabel: "创建 worktree",
+                action: .setupWorktrees
             )
         }
 
@@ -3669,7 +3714,9 @@ private struct WorkspaceDetailOverviewView: View {
             label: "服务",
             value: "\(workspace.services.count) 个",
             detail: "worktree 就绪",
-            status: .ready
+            status: .ready,
+            actionLabel: "打开服务",
+            action: .document("services")
         )
     }
 
@@ -3680,7 +3727,9 @@ private struct WorkspaceDetailOverviewView: View {
                 label: "风险",
                 value: "清晰",
                 detail: workspace.riskLevel.label,
-                status: .ready
+                status: .ready,
+                actionLabel: "打开状态",
+                action: .document("status")
             )
         }
 
@@ -3689,97 +3738,46 @@ private struct WorkspaceDetailOverviewView: View {
             label: "风险",
             value: "\(workspace.risks.count) 个",
             detail: workspace.riskLevel.label,
-            status: workspace.riskLevel == .high ? .blocked : .review
+            status: workspace.riskLevel == .high ? .blocked : .review,
+            actionLabel: "风险交接",
+            action: .riskHandoff
         )
     }
 
     private var taskItem: DetailOverviewItem {
-        if blockedTaskCount > 0 {
-            return DetailOverviewItem(
-                id: "tasks",
-                label: "任务",
-                value: "\(blockedTaskCount) 阻塞",
-                detail: "\(openTasks.count) 开放",
-                status: .blocked
-            )
-        }
-
-        if !openTasks.isEmpty {
-            return DetailOverviewItem(
-                id: "tasks",
-                label: "任务",
-                value: "\(openTasks.count) 开放",
-                detail: "tasks.md",
-                status: .review
-            )
-        }
-
-        return DetailOverviewItem(
+        DetailOverviewItem(
             id: "tasks",
             label: "任务",
-            value: "已清理",
-            detail: "无开放任务",
-            status: .ready
+            value: workflowSummary.taskValue,
+            detail: blockedTaskCount > 0 ? "\(openTasks.count) 开放" : openTasks.isEmpty ? "无开放任务" : "tasks.md",
+            status: DetailOverviewStatus(workflowStatus: workflowSummary.taskStatus),
+            actionLabel: "打开任务",
+            action: .document("tasks")
         )
     }
 
     private var deliveryItem: DetailOverviewItem {
-        if workspace.lifecycle.stage == "done" {
-            return DetailOverviewItem(
-                id: "delivery",
-                label: "交付",
-                value: "完成",
-                detail: "已完成",
-                status: .ready
-            )
-        }
-
-        if let deliveryCheck = workspace.healthChecks.first(where: { $0.id == "delivery-record" || $0.action == "delivery" }) {
-            switch deliveryCheck.status.lowercased() {
-            case "pass", "ok", "ready":
-                return DetailOverviewItem(
-                    id: "delivery",
-                    label: "交付",
-                    value: "可用",
-                    detail: "记录可用",
-                    status: .ready
-                )
-            case "warning", "warn", "review":
-                return DetailOverviewItem(
-                    id: "delivery",
-                    label: "交付",
-                    value: "复核",
-                    detail: "记录复核",
-                    status: .review
-                )
-            default:
-                return DetailOverviewItem(
-                    id: "delivery",
-                    label: "交付",
-                    value: "阻塞",
-                    detail: "记录阻塞",
-                    status: .blocked
-                )
-            }
-        }
-
-        return DetailOverviewItem(
+        DetailOverviewItem(
             id: "delivery",
             label: "交付",
-            value: workspace.lifecycle.stage == "delivery" ? "整理中" : "待检查",
-            detail: "交付记录",
-            status: workspace.lifecycle.stage == "delivery" ? .review : .pending
+            value: workflowSummary.deliveryValue,
+            detail: workflowSummary.deliveryDetail,
+            status: DetailOverviewStatus(workflowStatus: workflowSummary.deliveryStatus),
+            actionLabel: workflowSummary.deliveryRoute.displayLabel,
+            action: .delivery(workflowSummary.deliveryRoute)
         )
     }
 
     private var sessionItem: DetailOverviewItem {
-        if codexSessionCount > 0 {
+        if let latestCodexSessionLink {
             return DetailOverviewItem(
                 id: "sessions",
                 label: "会话",
-                value: "\(codexSessionCount) 个",
+                value: "\(codexSessionLinks.count) 个",
                 detail: "Codex links",
-                status: .ready
+                status: .ready,
+                actionLabel: "打开会话",
+                action: .openCodexSession(latestCodexSessionLink)
             )
         }
 
@@ -3788,7 +3786,9 @@ private struct WorkspaceDetailOverviewView: View {
             label: "会话",
             value: "未绑定",
             detail: "可绑定",
-            status: .pending
+            status: .pending,
+            actionLabel: "绑定会话",
+            action: .bindCodexSession
         )
     }
 
@@ -3799,7 +3799,9 @@ private struct WorkspaceDetailOverviewView: View {
                 label: "检查",
                 value: "未运行",
                 detail: "本地检查",
-                status: .pending
+                status: .pending,
+                actionLabel: "运行检查",
+                action: .runLocalCheck
             )
         }
 
@@ -3819,19 +3821,27 @@ private struct WorkspaceDetailOverviewView: View {
             label: "检查",
             value: Self.checkStatusLabel(normalizedStatus),
             detail: lastCheck.generatedAt,
-            status: status
+            status: status,
+            actionLabel: "重新检查",
+            action: .runLocalCheck
         )
     }
 
     var body: some View {
         LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
             ForEach(items) { item in
-                DetailOverviewTile(item: item)
+                DetailOverviewTile(item: item) {
+                    runOverviewAction(item.action)
+                }
             }
         }
         .padding(10)
         .background(NexusPalette.badge)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .sheet(isPresented: $isCodexSessionBindPresented) {
+            CodexSessionBindSheet(workspace: workspace)
+                .environmentObject(appState)
+        }
     }
 
     private var columns: [GridItem] {
@@ -3844,6 +3854,101 @@ private struct WorkspaceDetailOverviewView: View {
             return branch.isEmpty ? "待确认" : branch
         }
         return "\(branch.prefix(13))..."
+    }
+
+    private var lifecycleActionLabel: String {
+        switch workspace.lifecycle.documentKey {
+        case "worktreeScript":
+            "打开脚本"
+        case "delivery":
+            "打开交付"
+        case "tasks":
+            "打开任务"
+        case "branches":
+            "打开分支"
+        case "services":
+            "打开服务"
+        case "status":
+            "打开状态"
+        default:
+            "打开文档"
+        }
+    }
+
+    private func runOverviewAction(_ action: DetailOverviewAction) {
+        switch action {
+        case .document(let key):
+            Task {
+                await appState.loadDocument(path: documentPath(for: key))
+            }
+        case .setupWorktrees:
+            appState.presentWorktreeSetup(for: workspace)
+        case .riskHandoff:
+            copyToPasteboard(appState.riskReviewPrompt(for: workspace))
+            Task {
+                await appState.recordRiskReviewHandoffCopied(for: workspace)
+            }
+        case .runLocalCheck:
+            Task {
+                await appState.runLocalAutomationCheck(actor: "Nexus Overview")
+            }
+        case .delivery(let route):
+            runDeliveryOverviewAction(route)
+        case .openCodexSession(let link):
+            Task {
+                await appState.openCodexSessionLink(link, in: workspace)
+            }
+        case .bindCodexSession:
+            isCodexSessionBindPresented = true
+        }
+    }
+
+    private func runDeliveryOverviewAction(_ route: WorkflowDeliveryRoute) {
+        switch route {
+        case .runLocalCheck:
+            Task {
+                await appState.runLocalAutomationCheck(actor: "Nexus Overview")
+            }
+        case .updateDelivery:
+            Task {
+                await appState.openDeliveryUpdateInCodex(workspace)
+            }
+        case .validationHandoff:
+            Task {
+                await appState.openValidationPrHandoffInCodex(workspace)
+            }
+        case .openDelivery:
+            Task {
+                await appState.loadDocument(path: documentPath(for: "delivery"))
+            }
+        }
+    }
+
+    private func documentPath(for key: String) -> String {
+        if let path = workspace.documentLinks[key] {
+            return path
+        }
+
+        switch key {
+        case "workspace":
+            return "\(workspace.path)/workspace.md"
+        case "status":
+            return "\(workspace.path)/STATUS.md"
+        case "services":
+            return "\(workspace.path)/services.md"
+        case "branches":
+            return "\(workspace.path)/branches.md"
+        case "tasks":
+            return "\(workspace.path)/tasks.md"
+        case "delivery":
+            return "\(workspace.path)/交付记录.md"
+        case "handoff":
+            return "\(workspace.path)/handoff.md"
+        case "worktreeScript":
+            return "\(workspace.path)/scripts/worktree-commands.sh"
+        default:
+            return workspace.documentLinks["handoff"] ?? "\(workspace.path)/handoff.md"
+        }
     }
 
     private static func hasConfirmedTargetBranch(_ branch: String) -> Bool {
@@ -3871,35 +3976,45 @@ private struct WorkspaceDetailOverviewView: View {
 
 private struct DetailOverviewTile: View {
     let item: DetailOverviewItem
+    let action: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 5) {
-                Image(systemName: item.status.symbol)
-                    .font(.caption2)
-                    .foregroundStyle(item.status.color)
-                    .frame(width: 12)
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 5) {
+                    Image(systemName: item.status.symbol)
+                        .font(.caption2)
+                        .foregroundStyle(item.status.color)
+                        .frame(width: 12)
 
-                Text(item.label)
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    Text(item.label)
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Text(item.value)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(item.status.color)
+                    .lineLimit(1)
+
+                Text(item.detail)
+                    .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+
+                Text(item.actionLabel)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(NexusPalette.accent)
+                    .lineLimit(1)
             }
-
-            Text(item.value)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(item.status.color)
-                .lineLimit(1)
-
-            Text(item.detail)
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(8)
+            .background(NexusPalette.panel)
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(8)
-        .background(NexusPalette.panel)
-        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .buttonStyle(.plain)
+        .help("\(item.detail) · \(item.actionLabel)")
     }
 }
 
