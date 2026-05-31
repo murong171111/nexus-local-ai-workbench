@@ -39,6 +39,44 @@ enum WorkspaceFilter: String, CaseIterable, Identifiable {
             "archivebox"
         }
     }
+
+    func matches(_ workspace: WorkspaceSummary, query: String = "") -> Bool {
+        let matchesFilter: Bool
+        switch self {
+        case .all:
+            matchesFilter = true
+        case .active:
+            matchesFilter = !workspace.isArchived
+                && (workspace.state == .developing || workspace.state == .analyzing)
+        case .risky:
+            matchesFilter = !workspace.isArchived
+                && (workspace.riskLevel == .high || workspace.riskLevel == .medium)
+        case .blocked:
+            matchesFilter = !workspace.isArchived && workspace.state == .blocked
+        case .archived:
+            matchesFilter = workspace.isArchived
+        }
+
+        guard matchesFilter else { return false }
+
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !trimmedQuery.isEmpty else { return true }
+
+        let haystack = [
+            workspace.name,
+            workspace.folder,
+            workspace.branch,
+            workspace.aiState,
+            workspace.serviceSummary,
+            workspace.worktreeState,
+            workspace.tasks.map(\.title).joined(separator: " "),
+            workspace.tasks.map(\.detail).joined(separator: " ")
+        ]
+        .joined(separator: " ")
+        .lowercased()
+
+        return haystack.contains(trimmedQuery)
+    }
 }
 
 enum SearchScope: String, CaseIterable, Identifiable {

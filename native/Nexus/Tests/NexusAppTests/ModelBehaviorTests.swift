@@ -162,4 +162,27 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(TaskCenterFilter.deferred.matches(agentDeferred))
         XCTAssertFalse(TaskCenterFilter.agent.matches(blocked))
     }
+
+    func testWorkspaceFiltersMatchLifecycleRiskAndSearchQuery() {
+        let workspaces = WorkspaceSummary.previewData
+
+        XCTAssertEqual(workspaces.filter { WorkspaceFilter.all.matches($0) }.count, 2)
+        XCTAssertEqual(workspaces.filter { WorkspaceFilter.active.matches($0) }.count, 2)
+        XCTAssertEqual(workspaces.filter { WorkspaceFilter.risky.matches($0) }.count, 1)
+        XCTAssertEqual(workspaces.filter { WorkspaceFilter.blocked.matches($0) }.count, 0)
+        XCTAssertEqual(workspaces.filter { WorkspaceFilter.archived.matches($0) }.count, 0)
+
+        XCTAssertEqual(
+            workspaces.filter { WorkspaceFilter.all.matches($0, query: "pay_log") }.map(\.id),
+            ["2026-05-25-yibao-pay-log"]
+        )
+        XCTAssertEqual(
+            workspaces.filter { WorkspaceFilter.risky.matches($0, query: "pricing") }.map(\.id),
+            []
+        )
+        XCTAssertEqual(
+            workspaces.filter { WorkspaceFilter.active.matches($0, query: "pricing") }.map(\.id),
+            ["2026-05-25-multi-price"]
+        )
+    }
 }
