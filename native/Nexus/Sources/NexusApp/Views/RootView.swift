@@ -8174,6 +8174,14 @@ private struct DeliveryReadinessChecklistView: View {
         items.filter { $0.status == .warning }.count
     }
 
+    private var attentionItems: [DeliveryReadinessItem] {
+        items.filter { $0.status != .pass }
+    }
+
+    private var passedItems: [DeliveryReadinessItem] {
+        items.filter { $0.status == .pass }
+    }
+
     private var headline: String {
         if blockerCount > 0 {
             return "交付前还有 \(blockerCount) 个阻塞项。"
@@ -8209,20 +8217,73 @@ private struct DeliveryReadinessChecklistView: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 7) {
-                ForEach(items) { item in
-                    DeliveryReadinessRow(
-                        item: item,
-                        actionLabel: actionLabel(item)
-                    ) {
-                        action(item)
-                    }
+            VStack(alignment: .leading, spacing: 10) {
+                if !attentionItems.isEmpty {
+                    DeliveryReadinessGroupView(
+                        title: "需要处理 / Attention",
+                        detail: "\(blockerCount) 阻塞 / \(warningCount) 复核",
+                        tone: blockerCount > 0 ? NexusPalette.danger : NexusPalette.warning,
+                        items: attentionItems,
+                        actionLabel: actionLabel,
+                        action: action
+                    )
+                }
+
+                if !passedItems.isEmpty {
+                    DeliveryReadinessGroupView(
+                        title: attentionItems.isEmpty ? "全部通过 / Passed" : "已通过 / Passed",
+                        detail: "\(passedItems.count) 项已通过",
+                        tone: NexusPalette.success,
+                        items: passedItems,
+                        actionLabel: actionLabel,
+                        action: action
+                    )
+                }
+
+                if items.isEmpty {
+                    Label("暂未生成交付前检查。运行本地检查后，Nexus 会汇总分支、服务、任务、风险、SQL 和 Git 状态。", systemImage: "info.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
         }
         .padding(10)
         .background(NexusPalette.badge)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct DeliveryReadinessGroupView: View {
+    let title: String
+    let detail: String
+    let tone: Color
+    let items: [DeliveryReadinessItem]
+    let actionLabel: (DeliveryReadinessItem) -> String
+    let action: (DeliveryReadinessItem) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 7) {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                Text(detail)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(tone)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(tone.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            }
+
+            ForEach(items) { item in
+                DeliveryReadinessRow(
+                    item: item,
+                    actionLabel: actionLabel(item)
+                ) {
+                    action(item)
+                }
+            }
+        }
     }
 }
 
