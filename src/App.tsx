@@ -53,6 +53,14 @@ function fileNameFromPath(path: string) {
   return path.split(/[\\/]/).filter(Boolean).pop() || path;
 }
 
+function workspaceStandardDocumentPath(workspace: Workspace, linkKey: string, relativePath: string) {
+  const scannedPath = workspace.links[linkKey];
+  if (scannedPath) return scannedPath;
+  const workspacePath = workspace.path || workspace.links.folder;
+  if (!workspacePath) return "";
+  return `${workspacePath.replace(/\/+$/, "")}/${relativePath}`;
+}
+
 function sqlKindLabel(kind: string) {
   return kind === "rollback" ? "回滚 SQL / Rollback" : "正式 SQL / Formal";
 }
@@ -1253,16 +1261,16 @@ function WorkspaceDrawer({
       ? [{ relativePath: fileNameFromPath(workspace.links.sqlGuide), path: workspace.links.sqlGuide, kind: "markdown" }]
       : [];
   const documentEntries = [
-    ["状态", "STATUS.md", workspace.links.status],
-    ["服务", "services.md", workspace.links.services],
-    ["分支", "branches.md", workspace.links.branches],
-    ["规则", "requirements.md", workspace.links.requirements],
-    ["验收", "acceptance.md", workspace.links.acceptance],
-    ["变更", "changes.md", workspace.links.changes],
-    ["任务", "tasks.md", workspace.links.tasks],
-    ["交付", "交付记录.md", workspace.links.delivery],
-    ["报告", "bootstrap-report.md", workspace.links.bootstrap],
-    ["Worktree", "worktree-commands.sh", workspace.links.worktreeScript]
+    ["状态", "STATUS.md", workspaceStandardDocumentPath(workspace, "status", "STATUS.md")],
+    ["服务", "services.md", workspaceStandardDocumentPath(workspace, "services", "services.md")],
+    ["分支", "branches.md", workspaceStandardDocumentPath(workspace, "branches", "branches.md")],
+    ["规则", "requirements.md", workspaceStandardDocumentPath(workspace, "requirements", "requirements.md")],
+    ["验收", "acceptance.md", workspaceStandardDocumentPath(workspace, "acceptance", "acceptance.md")],
+    ["变更", "changes.md", workspaceStandardDocumentPath(workspace, "changes", "changes.md")],
+    ["任务", "tasks.md", workspaceStandardDocumentPath(workspace, "tasks", "tasks.md")],
+    ["交付", "交付记录.md", workspaceStandardDocumentPath(workspace, "delivery", "交付记录.md")],
+    ["报告", "bootstrap-report.md", workspaceStandardDocumentPath(workspace, "bootstrap", "bootstrap-report.md")],
+    ["Worktree", "worktree-commands.sh", workspaceStandardDocumentPath(workspace, "worktreeScript", "scripts/worktree-commands.sh")]
   ].filter((entry): entry is [string, string, string] => Boolean(entry[2]));
 
   return (
