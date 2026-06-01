@@ -262,16 +262,16 @@ function codexInstruction(workspace: Workspace, action: "continue" | "git" | "de
     const actions = workspaceSessionActions(workspace)
       .map((sessionAction) => `- ${sessionPriorityLabel(sessionAction.priority)} ${sessionAction.label}: ${sessionAction.detail}`)
       .join("\n");
-    return `继续工作区：${workspace.folder}\n需求：${workspace.name}\n目标分支：${workspace.targetBranch}\n涉及服务：${workspace.confirmedServices.join(", ") || "待确认"}\n\n请先读取该工作区的 AGENTS.md、STATUS.md、services.md、branches.md、tasks.md 和交付记录.md，然后总结当前状态、风险和下一步建议。\n\n当前就绪检查：\n${checks}\n\n建议会话动作：\n${actions}`;
+    return `继续工作区：${workspace.folder}\n需求：${workspace.name}\n目标分支：${workspace.targetBranch}\n涉及服务：${workspace.confirmedServices.join(", ") || "待确认"}\n\n请先读取该工作区的 AGENTS.md、requirements.md、acceptance.md、changes.md、STATUS.md、services.md、branches.md、tasks.md 和交付记录.md，然后总结当前状态、风险和下一步建议。\n\n当前就绪检查：\n${checks}\n\n建议会话动作：\n${actions}`;
   }
   if (action === "git") {
     return `检查工作区 ${workspace.folder} 的所有相关服务 git 状态。\n请重点检查 workspaces/${workspace.folder}/repos 下的 worktree 是否存在、分支是否匹配、是否有未提交改动，并给出处理建议。`;
   }
   if (action === "delivery") {
-    return `更新工作区 ${workspace.folder} 的交付记录。\n请根据本次代码/SQL/逻辑变更，补充交付记录.md，包含涉及服务、分支、变更点、SQL、验证结果和遗留风险。\n如果交付记录.md 任意位置记录实际 SQL 变更，或 SQL 段落出现“变更类型：DDL/DML”、影响表、新增字段、回填脚本、数据修复等变更元数据，必须在 sql/ 下同步正式 SQL 文件和回滚 SQL 文件。`;
+    return `更新工作区 ${workspace.folder} 的交付记录。\n请先对齐 requirements.md、acceptance.md 和 changes.md，再根据本次代码/SQL/逻辑变更补充交付记录.md，包含涉及服务、分支、变更点、SQL、验证结果和遗留风险。\n如果交付记录.md 任意位置记录实际 SQL 变更，或 SQL 段落出现“变更类型：DDL/DML”、影响表、新增字段、回填脚本、数据修复等变更元数据，必须在 sql/ 下同步正式 SQL 文件和回滚 SQL 文件。`;
   }
   if (action === "task") {
-    return `继续处理工作区 ${workspace.folder} 的活跃任务。\n请先读取 tasks.md、STATUS.md、services.md、branches.md 和交付记录.md，按 tasks.md 中“进行中/待办”的任务顺序给出下一步处理建议。处理完成或延期后，同步更新 tasks.md；如果涉及代码、SQL、逻辑、配置或验证变化，同步更新交付记录.md，SQL 变更还必须补齐 sql/ 下正式 SQL 和回滚 SQL 文件。`;
+    return `继续处理工作区 ${workspace.folder} 的活跃任务。\n请先读取 requirements.md、acceptance.md、changes.md、tasks.md、STATUS.md、services.md、branches.md 和交付记录.md，按 tasks.md 中“进行中/待办”的任务顺序给出下一步处理建议。处理完成或延期后，同步更新 tasks.md；如果涉及代码、SQL、逻辑、配置或验证变化，同步更新 changes.md 和交付记录.md，SQL 变更还必须补齐 sql/ 下正式 SQL 和回滚 SQL 文件。`;
   }
   if (action === "worktree") {
     return workspace.worktreeCommand;
@@ -1256,6 +1256,9 @@ function WorkspaceDrawer({
     ["状态", "STATUS.md", workspace.links.status],
     ["服务", "services.md", workspace.links.services],
     ["分支", "branches.md", workspace.links.branches],
+    ["规则", "requirements.md", workspace.links.requirements],
+    ["验收", "acceptance.md", workspace.links.acceptance],
+    ["变更", "changes.md", workspace.links.changes],
     ["任务", "tasks.md", workspace.links.tasks],
     ["交付", "交付记录.md", workspace.links.delivery],
     ["报告", "bootstrap-report.md", workspace.links.bootstrap],
@@ -2964,6 +2967,9 @@ export function App() {
         status: `${path}/STATUS.md`,
         services: `${path}/services.md`,
         branches: `${path}/branches.md`,
+        requirements: `${path}/requirements.md`,
+        acceptance: `${path}/acceptance.md`,
+        changes: `${path}/changes.md`,
         tasks: `${path}/tasks.md`,
         delivery: `${path}/交付记录.md`,
         handoff: `${path}/handoff.md`,
@@ -2985,7 +2991,7 @@ export function App() {
         sourceRoot: settings.sourceReposRoot,
         confirmedServices: input.services,
         candidateServices: [],
-        taskCounts: { done: 0, doing: 0, todo: 5, blocked: 0, deferred: 0 },
+        taskCounts: { done: 0, doing: 0, todo: 7, blocked: 0, deferred: 0 },
         decisionCount: 0,
         gitRows: input.services.map((service) => ({
           service,
@@ -3028,6 +3034,27 @@ export function App() {
             detail: input.services.length ? `缺少: ${input.services.join(", ")}` : "服务确认后再创建 worktree",
             status: "fail",
             action: "worktreeScript"
+          },
+          {
+            id: "requirements",
+            label: "需求规则 / Requirements",
+            detail: "requirements.md 仍包含待补充内容",
+            status: "warning",
+            action: "requirements"
+          },
+          {
+            id: "acceptance",
+            label: "验收清单 / Acceptance",
+            detail: "acceptance.md 仍包含待补充内容",
+            status: "warning",
+            action: "acceptance"
+          },
+          {
+            id: "changes",
+            label: "变更日志 / Changes",
+            detail: "changes.md 已创建，开发变更后追加记录",
+            status: "warning",
+            action: "changes"
           },
           {
             id: "delivery-record",

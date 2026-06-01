@@ -421,6 +421,9 @@ export function workspaceSessionActions(workspace: Workspace): WorkspaceSessionA
   const mismatches = branchAlignmentRows(workspace).map((row) => `${row.service}(${row.actualBranch})`);
   const deliveryRisk = workspace.risks.find((risk) => risk.includes("交付") || risk.toLowerCase().includes("delivery"));
   const activeTasks = workspace.taskCounts.doing + workspace.taskCounts.todo;
+  const workspaceDocChecks = (workspace.healthChecks ?? []).filter((check) =>
+    ["requirements", "acceptance", "changes"].includes(check.action) && check.status !== "pass"
+  );
 
   if (!workspace.confirmedServices.length) {
     actions.push(sessionAction("confirm-services", "确认服务范围 / Confirm services", "先补齐已确认服务，后续 worktree 和风险检查才有可靠目标。", "high", "blocked", "risk", "services"));
@@ -444,6 +447,18 @@ export function workspaceSessionActions(workspace: Workspace): WorkspaceSessionA
 
   if (activeTasks > 0) {
     actions.push(sessionAction("continue-active-tasks", "继续活跃任务 / Continue tasks", `tasks.md 中还有 ${activeTasks} 个活跃任务（${workspace.taskCounts.doing} 进行中、${workspace.taskCounts.todo} 待办）。`, "medium", "recommended", "task", "tasks"));
+  }
+
+  for (const check of workspaceDocChecks) {
+    actions.push(sessionAction(
+      `update-${check.action}`,
+      check.label,
+      check.detail,
+      check.action === "requirements" ? "high" : "medium",
+      check.action === "requirements" ? "blocked" : "recommended",
+      "task",
+      check.action
+    ));
   }
 
   if (deliveryRisk) {
