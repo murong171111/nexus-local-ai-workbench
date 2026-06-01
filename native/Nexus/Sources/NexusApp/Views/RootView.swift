@@ -3436,6 +3436,11 @@ private struct WorkspaceDetailView: View {
                 scrollToSection(section)
             }
 
+            WorkspaceActiveDocumentBanner(workspace: workspace) {
+                scrollToSection(.documents)
+            }
+            .environmentObject(appState)
+
             WorkspaceDetailOverviewView(
                 workspace: workspace,
                 lastCheck: appState.lastAutomationCheck
@@ -3902,6 +3907,179 @@ private struct ServiceGitStatusRow: View {
 
     private var actionColumns: [GridItem] {
         [GridItem(.adaptive(minimum: 106), spacing: 8, alignment: .leading)]
+    }
+}
+
+private struct WorkspaceActiveDocumentBanner: View {
+    @EnvironmentObject private var appState: AppState
+    let workspace: WorkspaceSummary
+    let openDocumentsAction: () -> Void
+
+    private enum StateKind {
+        case loading
+        case error
+        case ready
+    }
+
+    private var activePath: String? {
+        if let path = appState.documentLoadingPath, belongsToWorkspace(path) {
+            return path
+        }
+        if let error = appState.documentLoadError, belongsToWorkspace(error.path) {
+            return error.path
+        }
+        if let document = appState.documentPreview, belongsToWorkspace(document.path) {
+            return document.path
+        }
+        return nil
+    }
+
+    private var stateKind: StateKind? {
+        guard let activePath else {
+            return nil
+        }
+        if appState.documentLoadingPath == activePath {
+            return .loading
+        }
+        if appState.documentLoadError?.path == activePath {
+            return .error
+        }
+        return .ready
+    }
+
+    private var documentName: String {
+        guard let activePath else {
+            return "Document"
+        }
+        if let document = appState.documentPreview, document.path == activePath {
+            return document.name
+        }
+        return URL(fileURLWithPath: activePath).lastPathComponent
+    }
+
+    private var detail: String {
+        guard let activePath else {
+            return ""
+        }
+        if let error = appState.documentLoadError, error.path == activePath {
+            return error.message
+        }
+        if let hint = appState.documentFocusHint, hint.path == activePath {
+            return "\(hint.lineLabel) · \(hint.title)"
+        }
+        return activePath
+    }
+
+    private var title: String {
+        switch stateKind {
+        case .loading:
+            return "正在打开文档 / Opening document"
+        case .error:
+            return "文档需要处理 / Document attention"
+        case .ready:
+            return "当前文档 / Active document"
+        case nil:
+            return ""
+        }
+    }
+
+    private var symbol: String {
+        switch stateKind {
+        case .loading:
+            return "arrow.clockwise"
+        case .error:
+            return "exclamationmark.triangle"
+        case .ready:
+            return "doc.richtext"
+        case nil:
+            return "doc.text"
+        }
+    }
+
+    private var tone: Color {
+        switch stateKind {
+        case .loading:
+            return NexusPalette.accent
+        case .error:
+            return NexusPalette.warning
+        case .ready:
+            return NexusPalette.accent
+        case nil:
+            return .secondary
+        }
+    }
+
+    var body: some View {
+        if let activePath, let stateKind {
+            HStack(alignment: .top, spacing: 9) {
+                if stateKind == .loading {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(width: 16, height: 16)
+                        .padding(.top, 1)
+                } else {
+                    Image(systemName: symbol)
+                        .foregroundStyle(tone)
+                        .frame(width: 16)
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(title)
+                            .font(.caption.weight(.semibold))
+                        Text(documentName)
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(tone)
+                            .lineLimit(1)
+                    }
+
+                    Text(detail)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+
+                Spacer(minLength: 8)
+
+                HStack(spacing: 6) {
+                    Button {
+                        openDocumentsAction()
+                    } label: {
+                        Label("查看", systemImage: "doc.text.magnifyingglass")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+
+                    Button {
+                        copyToPasteboard(activePath)
+                    } label: {
+                        Label("路径", systemImage: "doc.on.doc")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+
+                    Button {
+                        appState.clearDocumentPreview()
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.mini)
+                    .help("只关闭文档预览，不关闭工作区详情 / Close document preview only")
+                }
+            }
+            .padding(10)
+            .background(tone.opacity(0.07))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(tone.opacity(0.18))
+            }
+        }
+    }
+
+    private func belongsToWorkspace(_ path: String) -> Bool {
+        path == workspace.path || path.hasPrefix("\(workspace.path)/")
     }
 }
 
