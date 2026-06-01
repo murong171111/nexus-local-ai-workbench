@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Added
 
+- Native post-create workspace guidance now shows a step-by-step service, branch, worktree, handoff, and local-check checklist with actions that open the nearest document or setup flow.
 - Deferred tasks now stay visible in Task Center but no longer trigger task automation warnings, high-priority task routing, menu-bar task attention, or active workflow blockers.
 - Native automation handoff prompts now include Nexus recommended next-step actions, so Codex receives branch/service confirmation blockers alongside the signal evidence.
 - Native Automation Action Center risk signals now select the risky workspace and copy the risk-review Codex handoff directly, so risk checks land on a concrete next step.
