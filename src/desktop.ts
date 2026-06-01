@@ -1,4 +1,5 @@
 import type { NexusSettingsProfile, WorkspaceSearchResult } from "./workspace-model";
+import type { WorkspaceTask } from "./types";
 
 async function tauriInvoke<T>(command: string, args?: Record<string, unknown>) {
   if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) {
@@ -42,6 +43,21 @@ export type SetupWorktreesResponse = {
   created: WorktreeSetupResult[];
   skipped: WorktreeSetupResult[];
   failed: WorktreeSetupResult[];
+};
+
+export type UpdateWorkspaceTaskPayload = {
+  workspacePath: string;
+  taskId: string;
+  status: string;
+  detail?: string;
+  confirmed: boolean;
+};
+
+export type UpdateWorkspaceTaskResponse = {
+  path: string;
+  task: WorkspaceTask;
+  previousStatus: string;
+  updated: boolean;
 };
 
 export type AuditEventPayload = {
@@ -274,6 +290,21 @@ export async function setupWorktrees(payload: SetupWorktreesPayload) {
       sourceReposRoot: payload.sourceReposRoot,
       services: payload.services,
       targetBranch: payload.targetBranch,
+      confirmed: payload.confirmed
+    }
+  });
+}
+
+export async function updateWorkspaceTask(payload: UpdateWorkspaceTaskPayload) {
+  if (!isDesktopApp()) {
+    throw new Error("更新任务需要在 Nexus Mac App 中使用");
+  }
+  return tauriInvoke<UpdateWorkspaceTaskResponse>("update_workspace_task", {
+    request: {
+      workspacePath: payload.workspacePath,
+      taskId: payload.taskId,
+      status: payload.status,
+      detail: payload.detail,
       confirmed: payload.confirmed
     }
   });

@@ -3,10 +3,11 @@ use nexus_core::{
     expand_user_path, export_settings_profile as export_settings_profile_core,
     rebuild_search_index as rebuild_search_index_core, scan_source_repos as scan_source_repos_core,
     scan_workspaces_with_audit as scan_workspaces_core, search_index as search_index_core,
-    setup_worktrees as setup_worktrees_core, AuditEventInput, CreateWorkspaceRequest,
-    CreateWorkspaceResponse, DashboardData, ExportSettingsProfileResponse,
-    RebuildSearchIndexResponse, SearchResult, SettingsProfile, SetupWorktreesRequest,
-    SetupWorktreesResponse, SourceRepo, WidgetSnapshot, DEFAULT_INDEX_FILE,
+    setup_worktrees as setup_worktrees_core, update_workspace_task as update_workspace_task_core,
+    AuditEventInput, CreateWorkspaceRequest, CreateWorkspaceResponse, DashboardData,
+    ExportSettingsProfileResponse, RebuildSearchIndexResponse, SearchResult, SettingsProfile,
+    SetupWorktreesRequest, SetupWorktreesResponse, SourceRepo, UpdateWorkspaceTaskRequest,
+    UpdateWorkspaceTaskResponse, WidgetSnapshot, DEFAULT_INDEX_FILE,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -414,6 +415,38 @@ fn setup_worktrees(
     Ok(response)
 }
 
+#[tauri::command]
+fn update_workspace_task(
+    app: tauri::AppHandle,
+    request: UpdateWorkspaceTaskRequest,
+) -> Result<UpdateWorkspaceTaskResponse, String> {
+    if !request.confirmed {
+        return Err("workspace task update requires explicit confirmation".to_string());
+    }
+
+    let response = update_workspace_task_core(request.clone())?;
+    record_audit_event(
+        &app,
+        AuditEventInput {
+            actor: "Nexus App".to_string(),
+            action: "workspace.task.updated".to_string(),
+            target: response.path.clone(),
+            summary: format!(
+                "Updated task {} from {} to {}",
+                response.task.title, response.previous_status, response.task.status
+            ),
+            metadata: audit_metadata(&[
+                ("workspace", request.workspace_path),
+                ("taskId", request.task_id),
+                ("previousStatus", response.previous_status.clone()),
+                ("status", response.task.status.clone()),
+                ("updated", response.updated.to_string()),
+            ]),
+        },
+    );
+    Ok(response)
+}
+
 fn open_with_system(target: &str) -> Result<(), String> {
     Command::new("open")
         .arg(target)
@@ -575,7 +608,8 @@ pub fn run() {
             export_settings_profile,
             append_audit_event,
             create_workspace,
-            setup_worktrees
+            setup_worktrees,
+            update_workspace_task
         ])
         .run(tauri::generate_context!())
         .expect("error while running Nexus");

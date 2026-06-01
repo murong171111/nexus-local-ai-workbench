@@ -38,10 +38,10 @@ import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { Card } from "./components/ui/card";
 import { Input } from "./components/ui/input";
-import { appendAuditEvent, checkEnvironment, createWorkspace, exportSettingsProfile, isDesktopApp, openExternalUrl, openPath as openPathInDesktop, readTextFile, rebuildSearchIndex, scanSourceRepos, scanWorkspaces, searchIndex, setupWorktrees, writeWidgetSnapshot, type EnvironmentHealth, type RebuildSearchIndexResponse, type SearchResult, type SourceRepo } from "./desktop";
+import { appendAuditEvent, checkEnvironment, createWorkspace, exportSettingsProfile, isDesktopApp, openExternalUrl, openPath as openPathInDesktop, readTextFile, rebuildSearchIndex, scanSourceRepos, scanWorkspaces, searchIndex, setupWorktrees, updateWorkspaceTask, writeWidgetSnapshot, type EnvironmentHealth, type RebuildSearchIndexResponse, type SearchResult, type SourceRepo } from "./desktop";
 import { cn, riskTone } from "./lib";
 import { branchAlignmentRows, buildWorktreeCommand, createSettingsProfile, fallbackSearchResults, filterWorkspaces, groupSearchResults, hasConfirmedTargetBranch, localOperationErrorMessage, normalizeServiceList, orderedSearchResults, parseServiceInput, parseSettingsProfile, settingsProfileFilename, sortWorkspacesForAttention, todayString, widgetSnapshotFromDashboard, workspaceCreatePreflight, workspaceFolderFromName, workspaceIsArchived, workspaceSessionActions, type NexusSettingsProfile } from "./workspace-model";
-import type { DashboardData, GitRow, Workspace, WorkspaceSessionAction } from "./types";
+import type { DashboardData, GitRow, Workspace, WorkspaceSessionAction, WorkspaceTask } from "./types";
 
 const initialData = rawData as DashboardData;
 
@@ -114,7 +114,10 @@ const auditActionLabels: Record<string, string> = {
   "codex_handoff.opened": "Codex 交接已打开 / Codex handoff",
   "document.opened": "文档已打开 / Document opened",
   "risk_instruction.copied": "风险指令已复制 / Risk instruction",
+  "task_handoff.opened": "任务交接已打开 / Task handoff",
+  "task_instruction.copied": "任务接力已复制 / Task instruction",
   "workspace.created": "工作区已创建 / Workspace created",
+  "workspace.task.updated": "任务状态已更新 / Task updated",
   "worktree.command.copied": "Worktree 命令已复制 / Worktree command",
   "worktree.setup.executed": "Worktree 已创建 / Worktree setup"
 };
@@ -155,6 +158,36 @@ function sessionStatusLabel(status: string) {
   if (status === "blocked") return "block";
   if (status === "recommended") return "next";
   return "later";
+}
+
+function taskIsDone(task: WorkspaceTask) {
+  const normalized = task.status.toLowerCase();
+  return normalized.includes("完成") || normalized.includes("已确认") || normalized.includes("已创建") || normalized.includes("done") || normalized.includes("closed") || normalized.includes("ready");
+}
+
+function taskIsDeferred(task: WorkspaceTask) {
+  const normalized = task.status.toLowerCase();
+  return normalized.includes("延期") || normalized.includes("defer");
+}
+
+function taskIsActive(task: WorkspaceTask) {
+  return !taskIsDone(task) && !taskIsDeferred(task);
+}
+
+function taskStatusTone(task: WorkspaceTask) {
+  const normalized = task.status.toLowerCase();
+  if (task.status.includes("阻塞") || normalized.includes("blocked")) return "text-red-700 bg-red-50 border-red-200";
+  if (taskIsDone(task)) return "text-emerald-700 bg-emerald-50 border-emerald-200";
+  if (taskIsDeferred(task)) return "text-neutral-600 bg-neutral-50 border-neutral-200";
+  if (task.status.includes("进行中") || normalized.includes("doing")) return "text-blue-700 bg-blue-50 border-blue-200";
+  return "text-amber-800 bg-amber-50 border-amber-200";
+}
+
+function taskPriorityLabel(priority: string) {
+  if (priority === "high") return "P0";
+  if (priority === "medium") return "P1";
+  if (priority === "low") return "P3";
+  return "P2";
 }
 
 function instructionType(action: WorkspaceSessionAction): "continue" | "git" | "delivery" | "risk" | "worktree" | "task" {
@@ -302,6 +335,31 @@ function codexInstruction(workspace: Workspace, action: "continue" | "git" | "de
     return workspace.worktreeCommand;
   }
   return `分析工作区 ${workspace.folder} 的风险项。\n当前风险：\n${workspace.risks.map((risk) => `- ${risk}`).join("\n") || "- 暂无"}\n请逐项解释原因、影响范围和建议处理动作。`;
+}
+
+function taskCodexInstruction(workspace: Workspace, task: WorkspaceTask) {
+  return `继续处理 Nexus 工作区任务。
+
+工作区：
+- 名称：${workspace.name}
+- 目录：${workspace.folder}
+- 路径：${workspace.path}
+- 目标分支：${workspace.targetBranch}
+- 涉及服务：${workspace.confirmedServices.join(", ") || "待确认"}
+
+任务：
+- ID：${task.id}
+- 标题：${task.title}
+- 状态：${task.status}
+- 优先级：${task.priority}
+- 来源：${task.source}${task.sourceEventId ? ` / ${task.sourceEventId}` : ""}
+- 行号：${task.sourceLine ?? "未知"}
+
+任务说明：
+${task.detail || "无"}
+
+请先读取 requirements.md、acceptance.md、changes.md、tasks.md、STATUS.md、services.md、branches.md 和交付记录.md，再检查相关 repos/<service> worktree。
+处理完成或延期后，同步更新 tasks.md；如果涉及代码、SQL、逻辑、接口、DTO、配置或验证变化，同步更新 changes.md 和交付记录.md。SQL 变更必须补齐 sql/ 下正式 SQL 和回滚 SQL 文件。`;
 }
 
 function riskInstruction(workspace: Workspace, risk: string) {
@@ -1254,16 +1312,24 @@ function WorkspaceDrawer({
   workspace,
   onClose,
   onCopyRiskInstruction,
+  onCopyTaskInstruction,
+  onCopyAndOpenTaskCodex,
+  onUpdateTask,
   onRunSessionAction,
   onOpenDocument,
-  onOpenPath
+  onOpenPath,
+  taskUpdatingId
 }: {
   workspace?: Workspace;
   onClose: () => void;
   onCopyRiskInstruction: (workspace: Workspace, risk: string) => void;
+  onCopyTaskInstruction: (workspace: Workspace, task: WorkspaceTask) => void;
+  onCopyAndOpenTaskCodex: (workspace: Workspace, task: WorkspaceTask) => void;
+  onUpdateTask: (workspace: Workspace, task: WorkspaceTask, status: "已完成" | "延期") => void;
   onRunSessionAction: (workspace: Workspace, action: WorkspaceSessionAction) => void;
   onOpenDocument: (title: string, path: string) => void;
   onOpenPath: (path: string) => void;
+  taskUpdatingId: string;
 }) {
   if (!workspace) return null;
 
@@ -1271,6 +1337,8 @@ function WorkspaceDrawer({
   const dirty = workspace.gitRows.filter(gitRowHasDirtyService).length;
   const branchMismatches = branchAlignmentRows(workspace);
   const sessionActions = workspaceSessionActions(workspace);
+  const tasks = workspace.tasks ?? [];
+  const activeTasks = tasks.filter(taskIsActive);
   const sqlDirectoryPath = workspaceStandardDocumentPath(workspace, "sql");
   const sqlFiles = workspace.sqlFiles ?? [];
   const sqlDocuments = workspace.sqlDocuments?.length
@@ -1278,18 +1346,22 @@ function WorkspaceDrawer({
     : workspace.links.sqlGuide
       ? [{ relativePath: fileNameFromPath(workspace.links.sqlGuide), path: workspace.links.sqlGuide, kind: "markdown" }]
       : [];
-  const documentEntries = [
-    ["状态", "STATUS.md", workspaceStandardDocumentPath(workspace, "status")],
-    ["服务", "services.md", workspaceStandardDocumentPath(workspace, "services")],
-    ["分支", "branches.md", workspaceStandardDocumentPath(workspace, "branches")],
-    ["规则", "requirements.md", workspaceStandardDocumentPath(workspace, "requirements")],
-    ["验收", "acceptance.md", workspaceStandardDocumentPath(workspace, "acceptance")],
-    ["变更", "changes.md", workspaceStandardDocumentPath(workspace, "changes")],
-    ["任务", "tasks.md", workspaceStandardDocumentPath(workspace, "tasks")],
-    ["交付", "交付记录.md", workspaceStandardDocumentPath(workspace, "delivery")],
-    ["报告", "bootstrap-report.md", workspaceStandardDocumentPath(workspace, "bootstrap")],
-    ["Worktree", "worktree-commands.sh", workspaceStandardDocumentPath(workspace, "worktreeScript")]
-  ].filter((entry): entry is [string, string, string] => Boolean(entry[2]));
+  const coreDocumentEntries = [
+    { label: "总览", title: "workspace.md", description: "工作区约定 / Workspace", path: workspaceStandardDocumentPath(workspace, "workspace") },
+    { label: "需求规则", title: "requirements.md", description: "规则、边界、待确认项 / Requirements", path: workspaceStandardDocumentPath(workspace, "requirements") },
+    { label: "验收清单", title: "acceptance.md", description: "验收方式与证据 / Acceptance", path: workspaceStandardDocumentPath(workspace, "acceptance") },
+    { label: "变更记录", title: "changes.md", description: "代码、SQL、逻辑变化 / Changes", path: workspaceStandardDocumentPath(workspace, "changes") },
+    { label: "任务", title: "tasks.md", description: "待办、阻塞、延期 / Tasks", path: workspaceStandardDocumentPath(workspace, "tasks") },
+    { label: "交接", title: "handoff.md", description: "下一轮 Codex 上下文 / Handoff", path: workspaceStandardDocumentPath(workspace, "handoff") }
+  ].filter((entry): entry is { label: string; title: string; description: string; path: string } => Boolean(entry.path));
+  const deliveryDocumentEntries = [
+    { label: "状态", title: "STATUS.md", description: "当前阶段与焦点 / Status", path: workspaceStandardDocumentPath(workspace, "status") },
+    { label: "服务", title: "services.md", description: "涉及服务范围 / Services", path: workspaceStandardDocumentPath(workspace, "services") },
+    { label: "分支", title: "branches.md", description: "目标分支与 worktree / Branches", path: workspaceStandardDocumentPath(workspace, "branches") },
+    { label: "交付", title: "交付记录.md", description: "交付说明与验证 / Delivery", path: workspaceStandardDocumentPath(workspace, "delivery") },
+    { label: "报告", title: "bootstrap-report.md", description: "初始化报告 / Bootstrap", path: workspaceStandardDocumentPath(workspace, "bootstrap") },
+    { label: "Worktree", title: "worktree-commands.sh", description: "创建命令脚本 / Script", path: workspaceStandardDocumentPath(workspace, "worktreeScript") }
+  ].filter((entry): entry is { label: string; title: string; description: string; path: string } => Boolean(entry.path));
 
   return (
     <div className="fixed inset-0 bg-neutral-950/10" style={{ zIndex: 1000 }} onMouseDown={onClose}>
@@ -1368,6 +1440,84 @@ function WorkspaceDrawer({
           ) : null}
 
           <section className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-sm font-medium text-neutral-900">
+                <ListChecks className="h-4 w-4 text-blue-600" />
+                任务闭环 / Tasks
+              </div>
+              <span className="mono text-[11px] text-neutral-500">
+                {activeTasks.length ? `${activeTasks.length} active` : "clear"}
+              </span>
+            </div>
+            {tasks.length ? (
+              <div className="grid gap-2">
+                {tasks.slice(0, 8).map((task) => {
+                  const updating = taskUpdatingId === task.id;
+                  const done = taskIsDone(task);
+                  const deferred = taskIsDeferred(task);
+                  return (
+                    <div key={task.id} className="rounded-md border border-neutral-200 bg-white px-3 py-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-medium text-neutral-950">{task.title}</span>
+                            <span className={cn("mono rounded border px-1.5 py-0.5 text-[10px]", taskStatusTone(task))}>{task.status}</span>
+                            <span className="mono rounded border border-neutral-200 bg-neutral-50 px-1.5 py-0.5 text-[10px] text-neutral-500">{taskPriorityLabel(task.priority)}</span>
+                            {task.source === "agent" && <span className="mono rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] text-blue-700">agent</span>}
+                          </div>
+                          {task.detail && <div className="mt-1 text-xs leading-5 text-neutral-500">{task.detail}</div>}
+                          <div className="mono mt-1 text-[11px] text-neutral-400">tasks.md{task.sourceLine ? `:${task.sourceLine}` : ""}</div>
+                        </div>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button className="rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50" onClick={() => onOpenDocument("tasks.md", workspaceStandardDocumentPath(workspace, "tasks"))}>
+                          打开任务文档
+                        </button>
+                        <button className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs text-blue-700 hover:bg-blue-100" onClick={() => onCopyTaskInstruction(workspace, task)}>
+                          复制任务接力
+                        </button>
+                        <button className="rounded-md border border-blue-200 bg-white px-2 py-1 text-xs text-blue-700 hover:bg-blue-50" onClick={() => onCopyAndOpenTaskCodex(workspace, task)}>
+                          打开 Codex
+                        </button>
+                        {!done && (
+                          <button
+                            className="rounded-md border border-emerald-200 bg-white px-2 py-1 text-xs text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            disabled={updating}
+                            onClick={() => onUpdateTask(workspace, task, "已完成")}
+                          >
+                            {updating ? "写入中" : "完成"}
+                          </button>
+                        )}
+                        {!deferred && !done && (
+                          <button
+                            className="rounded-md border border-neutral-200 bg-white px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            disabled={updating}
+                            onClick={() => onUpdateTask(workspace, task, "延期")}
+                          >
+                            延期
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+                {tasks.length > 8 && (
+                  <button className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-50" onClick={() => onOpenDocument("tasks.md", workspaceStandardDocumentPath(workspace, "tasks"))}>
+                    还有 {tasks.length - 8} 个任务，打开 tasks.md 查看全部
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-500">
+                暂未从 tasks.md 扫描到任务。可以先打开任务文档补充任务清单。
+                <button className="ml-2 text-blue-600 hover:text-blue-700" onClick={() => onOpenDocument("tasks.md", workspaceStandardDocumentPath(workspace, "tasks"))}>
+                  打开 tasks.md
+                </button>
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
             <div className="mb-3 flex items-center gap-2 text-sm font-medium text-neutral-900">
               <Sparkles className="h-4 w-4 text-blue-600" />
               会话启动 / Session actions
@@ -1405,12 +1555,29 @@ function WorkspaceDrawer({
 
           <section>
             <div className="mb-2 text-sm font-medium text-neutral-900">文档入口 / Documents</div>
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              {documentEntries.map(([label, title, href]) => (
-                <button key={label} className="rounded-md border border-neutral-200 px-3 py-2 text-left text-neutral-700 hover:bg-neutral-50" onClick={() => onOpenDocument(title, href)}>
-                  {label}
-                </button>
-              ))}
+            <div className="grid gap-3">
+              <div>
+                <div className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-neutral-400">核心文档 / Core</div>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  {coreDocumentEntries.map((entry) => (
+                    <button key={entry.label} className="rounded-md border border-neutral-200 px-3 py-2 text-left hover:bg-neutral-50" onClick={() => onOpenDocument(entry.title, entry.path)}>
+                      <span className="block text-neutral-800">{entry.label}</span>
+                      <span className="mono mt-1 block truncate text-[11px] text-neutral-400">{entry.description}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-neutral-400">交付资料 / Delivery</div>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  {deliveryDocumentEntries.map((entry) => (
+                    <button key={entry.label} className="rounded-md border border-neutral-200 px-3 py-2 text-left hover:bg-neutral-50" onClick={() => onOpenDocument(entry.title, entry.path)}>
+                      <span className="block text-neutral-800">{entry.label}</span>
+                      <span className="mono mt-1 block truncate text-[11px] text-neutral-400">{entry.description}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
             <div className="mt-3 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
@@ -2460,6 +2627,7 @@ export function App() {
   const [createOpen, setCreateOpen] = useState(false);
   const [worktreeSetupWorkspace, setWorktreeSetupWorkspace] = useState<Workspace>();
   const [worktreeSetupRunning, setWorktreeSetupRunning] = useState(false);
+  const [taskUpdatingId, setTaskUpdatingId] = useState("");
   const [refreshEnabled, setRefreshEnabled] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [drawerFolder, setDrawerFolder] = useState("");
@@ -2792,6 +2960,54 @@ export function App() {
       metadata: { instructionType: action, codexUrl: settings.codexUrl || "codex://" }
     });
     showToast(`已复制 ${workspace.name} 的指令并打开 Codex`);
+  };
+
+  const copyTaskInstruction = async (workspace: Workspace, task: WorkspaceTask) => {
+    await navigator.clipboard.writeText(taskCodexInstruction(workspace, task));
+    void recordWorkspaceAction(workspace, "task_instruction.copied", `Copied task handoff for ${task.title}`, {
+      target: workspaceStandardDocumentPath(workspace, "tasks"),
+      metadata: { taskId: task.id, taskTitle: task.title, taskStatus: task.status }
+    });
+    showToast(`已复制任务接力：${task.title}`);
+  };
+
+  const copyAndOpenTaskCodex = async (workspace: Workspace, task: WorkspaceTask) => {
+    await navigator.clipboard.writeText(taskCodexInstruction(workspace, task));
+    await openExternalUrl(settings.codexUrl || "codex://");
+    void recordWorkspaceAction(workspace, "task_handoff.opened", `Copied task handoff and opened Codex for ${task.title}`, {
+      target: workspaceStandardDocumentPath(workspace, "tasks"),
+      metadata: { taskId: task.id, taskTitle: task.title, taskStatus: task.status, codexUrl: settings.codexUrl || "codex://" }
+    });
+    showToast(`已复制任务接力并打开 Codex：${task.title}`);
+  };
+
+  const updateTaskStatus = async (workspace: Workspace, task: WorkspaceTask, status: "已完成" | "延期") => {
+    if (!isDesktopApp()) {
+      await copyTaskInstruction(workspace, task);
+      showToast("浏览器预览无法写回 tasks.md，已复制任务接力");
+      return;
+    }
+
+    setTaskUpdatingId(task.id);
+    try {
+      await updateWorkspaceTask({
+        workspacePath: workspace.path,
+        taskId: task.id,
+        status,
+        confirmed: true
+      });
+      showToast(`${task.title} 已标记为 ${status}`);
+      await refreshData();
+    } catch (error) {
+      showToast(localOperationErrorMessage({
+        operation: `更新任务 ${task.title}`,
+        error,
+        targetPath: workspaceStandardDocumentPath(workspace, "tasks"),
+        recovery: "确认 tasks.md 中该任务仍存在；如果工作区刚刚刷新过，请重新打开详情后再试。"
+      }));
+    } finally {
+      setTaskUpdatingId("");
+    }
   };
 
   const executeWorktreeSetup = async (workspace: Workspace) => {
@@ -3326,9 +3542,13 @@ export function App() {
         workspace={drawerWorkspace}
         onClose={() => setDrawerFolder("")}
         onCopyRiskInstruction={copyRiskInstruction}
+        onCopyTaskInstruction={copyTaskInstruction}
+        onCopyAndOpenTaskCodex={copyAndOpenTaskCodex}
+        onUpdateTask={updateTaskStatus}
         onRunSessionAction={runSessionAction}
         onOpenDocument={openDocument}
         onOpenPath={openConfiguredPath}
+        taskUpdatingId={taskUpdatingId}
       />
       <DocumentViewer document={document} onClose={() => setDocument(undefined)} onOpenExternal={openConfiguredPath} />
       {toast && <div className="fixed bottom-4 left-1/2 -translate-x-1/2 rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-700 shadow-[0_8px_24px_rgba(15,23,42,0.12)]" style={{ zIndex: 1100 }}>{toast}</div>}

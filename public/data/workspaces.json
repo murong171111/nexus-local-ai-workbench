@@ -79,6 +79,26 @@
           "kind": "markdown"
         }
       ],
+      "tasks": [
+        {
+          "id": "2026-01-01-sample-workspace:task-0",
+          "title": "确认服务范围",
+          "status": "待办",
+          "detail": "标记涉及服务和待验证服务 · priority=high",
+          "priority": "high",
+          "source": "workspace",
+          "sourceLine": 5
+        },
+        {
+          "id": "2026-01-01-sample-workspace:task-1",
+          "title": "补齐交付记录",
+          "status": "进行中",
+          "detail": "代码/SQL/逻辑变更后更新交付记录",
+          "priority": "medium",
+          "source": "workspace",
+          "sourceLine": 6
+        }
+      ],
       "worktreeCommand": "# order\ngit -C '~/ks_project/source-repos/order' fetch origin\ngit -C '~/ks_project/source-repos/order' worktree add '~/ks_project/workspaces/2026-01-01-sample-workspace/repos/order' 'chen/sample-branch'"
     }
   ]
