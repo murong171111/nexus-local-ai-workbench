@@ -100,6 +100,7 @@ final class AppState: ObservableObject {
     @Published var pinnedWorkspaceIDs: Set<WorkspaceSummary.ID>
     @Published var selectedSearchScope: SearchScope
     @Published var selectedTaskCenterFilter: TaskCenterFilter
+    @Published var focusedTaskCenterItemID: TaskCenterItem.ID?
     @Published var workspaceRoot: String
     @Published var sourceReposRoot: String
     @Published var docsRoot: String
@@ -523,6 +524,7 @@ final class AppState: ObservableObject {
             documentFocusHint = nil
         }
         selectedWorkspaceID = workspace.id
+        focusedTaskCenterItemID = nil
         Task {
             await refreshWidgetSnapshot()
         }
@@ -534,6 +536,7 @@ final class AppState: ObservableObject {
             documentFocusHint = nil
         }
         selectedWorkspaceID = item.workspaceID
+        focusedTaskCenterItemID = item.id
         Task {
             await refreshWidgetSnapshot()
         }
@@ -547,6 +550,7 @@ final class AppState: ObservableObject {
         setWorkspaceFilter(.all)
         clearSearch()
         selectedWorkspaceID = id
+        focusedTaskCenterItemID = nil
         Task {
             await refreshWidgetSnapshot()
         }
@@ -694,6 +698,10 @@ final class AppState: ObservableObject {
 
     func setTaskCenterFilter(_ filter: TaskCenterFilter) {
         selectedTaskCenterFilter = filter
+        if let focusedTaskCenterItemID,
+           !taskCenterItems.contains(where: { $0.id == focusedTaskCenterItemID }) {
+            self.focusedTaskCenterItemID = nil
+        }
         defaults.set(filter.rawValue, forKey: DefaultsKey.selectedTaskCenterFilter)
     }
 
@@ -710,6 +718,30 @@ final class AppState: ObservableObject {
         if let item = matchedItem ?? agentItems.first {
             selectTaskCenterItem(item)
         }
+    }
+
+    func nextTaskCenterItem(after feedback: LocalWriteFeedback) -> TaskCenterItem? {
+        nextTaskCenterItem(preferredWorkspaceID: feedback.workspaceID, excludingTaskID: nil)
+    }
+
+    func focusNextTask(after feedback: LocalWriteFeedback) {
+        guard let item = nextTaskCenterItem(after: feedback) else {
+            return
+        }
+        if !selectedTaskCenterFilter.matches(item) {
+            setTaskCenterFilter(.all)
+        }
+        selectTaskCenterItem(item)
+    }
+
+    private func nextTaskCenterItem(
+        preferredWorkspaceID: WorkspaceSummary.ID,
+        excludingTaskID: WorkspaceTask.ID?
+    ) -> TaskCenterItem? {
+        let activeItems = allTaskCenterItems.filter { item in
+            item.task.isActive && item.task.id != excludingTaskID
+        }
+        return activeItems.first { $0.workspaceID == preferredWorkspaceID } ?? activeItems.first
     }
 
     func persistLocalPaths() {
@@ -2758,6 +2790,7 @@ final class AppState: ObservableObject {
             )
             if response.appended || response.alreadyExists {
                 await refreshFromBridge()
+                focusAgentTask(sourceEventID: response.sourceEventId)
                 markLocalWriteFeedback(
                     title: response.appended
                         ? "Agent 任务已写入 / Agent task saved"
@@ -2801,10 +2834,19 @@ final class AppState: ObservableObject {
             if response.updated {
                 pendingTaskStatusUpdate = nil
                 await refreshFromBridge()
+                if let nextTask = nextTaskCenterItem(
+                    preferredWorkspaceID: update.workspaceID,
+                    excludingTaskID: update.taskID
+                ) {
+                    if !selectedTaskCenterFilter.matches(nextTask) {
+                        setTaskCenterFilter(.all)
+                    }
+                    selectTaskCenterItem(nextTask)
+                }
                 if lastError == nil {
                     markLocalWriteFeedback(
                         title: "任务状态已写回 / Task updated",
-                        detail: "\(response.task.title): \(response.previousStatus) -> \(response.task.status)。Workflow 已刷新，可继续查看交付焦点。",
+                        detail: "\(response.task.title): \(response.previousStatus) -> \(response.task.status)。Task Center 已聚焦下一项；没有下一项时可进入交付焦点。",
                         workspaceID: update.workspaceID,
                         workspaceName: update.workspaceName,
                         documentPath: response.path,

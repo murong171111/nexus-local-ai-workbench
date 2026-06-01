@@ -182,6 +182,74 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertFalse(TaskCenterFilter.agent.matches(blocked))
     }
 
+    @MainActor
+    func testTaskCenterContinuationPrefersSameWorkspaceActiveTask() {
+        let sameWorkspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "same-workspace",
+            name: "Same Workspace",
+            tasks: [
+                WorkspaceTask(
+                    id: "closed",
+                    title: "Closed task",
+                    status: "已完成",
+                    detail: "Already done",
+                    priority: "high",
+                    source: "workspace",
+                    sourceEventID: nil,
+                    sourceLine: 7
+                ),
+                WorkspaceTask(
+                    id: "same-next",
+                    title: "Continue here",
+                    status: "待办",
+                    detail: "Next active task in the updated workspace",
+                    priority: "medium",
+                    source: "workspace",
+                    sourceEventID: nil,
+                    sourceLine: 8
+                )
+            ]
+        )
+        let otherWorkspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "other-workspace",
+            name: "Other Workspace",
+            tasks: [
+                WorkspaceTask(
+                    id: "other-next",
+                    title: "Other active task",
+                    status: "待办",
+                    detail: "Should only be used as fallback",
+                    priority: "high",
+                    source: "workspace",
+                    sourceEventID: nil,
+                    sourceLine: 4
+                )
+            ]
+        )
+        let appState = appStateForAutomationTests(workspaces: [otherWorkspace, sameWorkspace])
+        appState.setTaskCenterFilter(.high)
+        let feedback = LocalWriteFeedback(
+            title: "任务状态已写回 / Task updated",
+            detail: "Closed task: 待办 -> 已完成。",
+            timestamp: "2026-06-01 10:00",
+            workspaceID: sameWorkspace.id,
+            workspaceName: sameWorkspace.name,
+            documentPath: "\(sameWorkspace.path)/tasks.md",
+            documentLabel: "打开 tasks.md",
+            systemImage: "checkmark.circle"
+        )
+
+        let nextTask = appState.nextTaskCenterItem(after: feedback)
+        appState.focusNextTask(after: feedback)
+
+        XCTAssertEqual(nextTask?.task.id, "same-next")
+        XCTAssertEqual(appState.selectedTaskCenterFilter, .all)
+        XCTAssertEqual(appState.selectedWorkspaceID, sameWorkspace.id)
+        XCTAssertEqual(appState.focusedTaskCenterItemID, "\(sameWorkspace.id):same-next")
+    }
+
     func testWorkspaceFiltersMatchLifecycleRiskAndSearchQuery() {
         let workspaces = WorkspaceSummary.previewData
 
