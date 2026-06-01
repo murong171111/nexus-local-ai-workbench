@@ -9,6 +9,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 ### Added
 
 - Deferred tasks now stay visible in Task Center but no longer trigger task automation warnings, high-priority task routing, menu-bar task attention, or active workflow blockers.
+- Native automation handoff prompts now include Nexus recommended next-step actions, so Codex receives branch/service confirmation blockers alongside the signal evidence.
 - Native Automation Action Center risk signals now select the risky workspace and copy the risk-review Codex handoff directly, so risk checks land on a concrete next step.
 - Native Automation Action Center worktree signal handoffs now include missing service evidence, source availability, the worktree script path, readiness checks, and branch-confirmation guidance.
 - Native Automation Action Center now separates dirty-service git signals from missing-worktree signals and routes them to the relevant service-scoped Codex handoff with dirty service evidence.
