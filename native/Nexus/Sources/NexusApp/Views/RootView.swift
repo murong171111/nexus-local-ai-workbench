@@ -4387,6 +4387,7 @@ private struct WorkspaceDetailOverviewView: View {
             servicesItem,
             riskItem,
             taskItem,
+            sqlItem,
             deliveryItem,
             sessionItem,
             checkItem
@@ -4535,6 +4536,19 @@ private struct WorkspaceDetailOverviewView: View {
             status: DetailOverviewStatus(workflowStatus: workflowSummary.deliveryStatus),
             actionLabel: workflowSummary.deliveryRoute.displayLabel,
             action: .delivery(workflowSummary.deliveryRoute)
+        )
+    }
+
+    private var sqlItem: DetailOverviewItem {
+        let summary = WorkspaceSqlSummary(workspace: workspace)
+        return DetailOverviewItem(
+            id: "sql",
+            label: "SQL",
+            value: summary.value,
+            detail: summary.detail,
+            status: DetailOverviewStatus(workflowStatus: summary.status),
+            actionLabel: summary.actionLabel,
+            action: summary.status == .pending ? .runLocalCheck : .document("sql")
         )
     }
 
@@ -5439,7 +5453,16 @@ private struct WorkspaceDocumentsHubView: View {
                         }
                     )
                 } else if let document = activePreview {
-                    NativeDocumentPreview(document: document, focusHint: activeFocusHint)
+                    NativeDocumentPreview(
+                        document: document,
+                        focusHint: activeFocusHint,
+                        copyPathAction: {
+                            copyToPasteboard(document.path)
+                        },
+                        closeAction: {
+                            appState.clearDocumentPreview()
+                        }
+                    )
                 } else {
                     NativeDocumentEmptyState()
                 }
@@ -5762,6 +5785,8 @@ private struct NativeDocumentEmptyState: View {
 private struct NativeDocumentPreview: View {
     let document: DocumentSnapshot
     let focusHint: DocumentFocusHint?
+    let copyPathAction: () -> Void
+    let closeAction: () -> Void
     @State private var mode: NativeDocumentMode = .preview
 
     private var shouldRenderPreview: Bool {
@@ -5805,6 +5830,22 @@ private struct NativeDocumentPreview: View {
                     .controlSize(.small)
                     .frame(width: 112)
                 }
+
+                Button {
+                    copyPathAction()
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                }
+                .buttonStyle(.borderless)
+                .help("复制文档路径 / Copy document path")
+
+                Button {
+                    closeAction()
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.borderless)
+                .help("只关闭文档预览，保留工作区详情 / Close document preview only")
             }
 
             if let focusHint {
@@ -5843,7 +5884,7 @@ private struct NativeDocumentPreview: View {
                         .textSelection(.enabled)
                 }
             }
-            .frame(maxHeight: 260)
+            .frame(minHeight: 220, maxHeight: 420)
             .padding(10)
             .background(NexusPalette.panel)
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -5895,6 +5936,10 @@ private struct WorkspaceCommandCenterView: View {
 
     private var codexSessionValue: String {
         codexSessionLinks.isEmpty ? "未绑定" : "\(codexSessionLinks.count) 个"
+    }
+
+    private var sqlSummary: WorkspaceSqlSummary {
+        WorkspaceSqlSummary(workspace: workspace)
     }
 
     private var codexSessionTone: Color {
@@ -6081,6 +6126,7 @@ private struct WorkspaceCommandCenterView: View {
             worktreePathItem,
             riskPathItem,
             taskPathItem,
+            sqlPathItem,
             deliveryPathItem,
             codexSessionPathItem,
             handoffPathItem
@@ -6208,6 +6254,20 @@ private struct WorkspaceCommandCenterView: View {
         )
     }
 
+    private var sqlPathItem: CommandCenterPathItem {
+        let action: CommandCenterPrimaryAction = sqlSummary.status == .pending
+            ? .localCheck
+            : .document("sql")
+        return CommandCenterPathItem(
+            title: "SQL",
+            detail: sqlSummary.value,
+            status: sqlSummary.status,
+            systemImage: "cylinder.split.1x2",
+            actionLabel: sqlSummary.actionLabel,
+            action: action
+        )
+    }
+
     private var handoffPathItem: CommandCenterPathItem {
         CommandCenterPathItem(
             title: "交接 / Handoff",
@@ -6282,6 +6342,7 @@ private struct WorkspaceCommandCenterView: View {
                     WorkflowMetric(label: "服务", value: serviceValue, tone: worktreeTone)
                     WorkflowMetric(label: "风险", value: workspace.riskLevel.label, tone: workspace.risks.isEmpty ? NexusPalette.success : NexusPalette.warning)
                     WorkflowMetric(label: "任务", value: workflowSummary.taskValue, tone: taskTone)
+                    WorkflowMetric(label: "SQL", value: sqlSummary.value, tone: sqlStatusTone)
                     WorkflowMetric(label: "交付", value: workflowSummary.deliveryValue, tone: deliveryTone)
                     WorkflowMetric(label: "会话", value: codexSessionValue, tone: codexSessionTone)
                 }
@@ -6461,6 +6522,23 @@ private struct WorkspaceCommandCenterView: View {
             return "archivebox"
         case .pending:
             return "doc.text"
+        }
+    }
+
+    private var sqlStatusTone: Color {
+        switch sqlSummary.status {
+        case .ready:
+            return NexusPalette.success
+        case .blocked:
+            return NexusPalette.danger
+        case .review:
+            return NexusPalette.warning
+        case .pending:
+            return .secondary
+        case .next:
+            return NexusPalette.accent
+        case .archived:
+            return .secondary
         }
     }
 

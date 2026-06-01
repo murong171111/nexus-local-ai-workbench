@@ -2930,6 +2930,15 @@ final class AppState: ObservableObject {
             documentFocusHint = nil
             await refreshFromBridge()
             selectedWorkspaceID = response.folder
+            await loadDocument(
+                path: "\(response.path)/handoff.md",
+                focusHint: DocumentFocusHint(
+                    path: "\(response.path)/handoff.md",
+                    line: nil,
+                    title: "Workspace created",
+                    detail: "新工作区已选中，先从 handoff.md 进入后续服务、分支和 worktree 检查。"
+                )
+            )
         } catch {
             lastError = error.localizedDescription
         }

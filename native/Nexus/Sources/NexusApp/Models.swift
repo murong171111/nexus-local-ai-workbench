@@ -309,6 +309,53 @@ struct WorkspaceWorkflowSummary: Hashable {
     }
 }
 
+struct WorkspaceSqlSummary: Hashable {
+    let value: String
+    let detail: String
+    let status: WorkflowPathStatus
+    let actionLabel: String
+
+    init(workspace: WorkspaceSummary) {
+        let sqlFileCount = workspace.sqlFiles.count
+        if let sqlCheck = Self.sqlCheck(in: workspace) {
+            detail = sqlCheck.detail
+            switch sqlCheck.status.lowercased() {
+            case "pass", "ok":
+                value = sqlFileCount > 0 ? "已匹配" : "无变更"
+                status = .ready
+                actionLabel = sqlFileCount > 0 ? "打开 SQL" : "复查 SQL"
+            case "fail", "blocked", "blocker":
+                value = "缺产物"
+                status = .blocked
+                actionLabel = "SQL 交接"
+            default:
+                value = "需复核"
+                status = .review
+                actionLabel = "SQL 交接"
+            }
+            return
+        }
+
+        if sqlFileCount > 0 {
+            value = "\(sqlFileCount) 文件"
+            detail = "已有 SQL 文件，但尚未生成 SQL 目录检查。运行本地检查确认正式/回滚匹配。"
+            status = .review
+            actionLabel = "复查 SQL"
+        } else {
+            value = "待检查"
+            detail = "暂未生成 SQL 目录检查，运行本地检查后可刷新。"
+            status = .pending
+            actionLabel = "运行检查"
+        }
+    }
+
+    private static func sqlCheck(in workspace: WorkspaceSummary) -> WorkspaceHealthCheck? {
+        workspace.healthChecks.first { check in
+            check.id == "sql-directory" || check.action == "sql"
+        }
+    }
+}
+
 enum AgentActionSurfaceKind: String, Hashable {
     case approval
     case answer
