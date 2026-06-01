@@ -2112,6 +2112,24 @@ final class AppState: ObservableObject {
                     "\(service.name): worktree=\(service.worktree), source=\(service.gitSummary)"
                 }
                 .joined(separator: " | ")
+            let missingWorktreeDetails = selected.services
+                .filter { !$0.worktreeExists }
+                .map { service in
+                    "\(service.name): worktree=\(service.worktree), source=\(service.sourceExists ? "exists" : "missing"), sourceGit=\(service.gitSummary)"
+                }
+                .joined(separator: " | ")
+            let worktreeChecks = selected.healthChecks
+                .filter { check in
+                    check.id == "worktree-ready"
+                        || check.action == "worktreeScript"
+                }
+                .map { "\($0.label) [\($0.status)]: \($0.detail)" }
+                .joined(separator: " | ")
+            let worktreeScriptPath = selected.documentLinks["worktreeScript"]
+                ?? "\(selected.path)/scripts/worktree-commands.sh"
+            let worktreeReadiness = Self.hasConfirmedTargetBranch(selected.branch)
+                ? "目标分支已确认；在 Nexus 中显式确认后创建缺失 worktree。"
+                : "目标分支未确认；先更新 branches.md 或 workspace.md，暂不要创建 worktree。"
             workspaceLines = [
                 "- 当前工作区: \(selected.name)",
                 "- 工作区目录: \(selected.path)",
@@ -2119,6 +2137,10 @@ final class AppState: ObservableObject {
                 "- 涉及服务: \(selected.serviceSummary.isEmpty ? "待确认" : selected.serviceSummary)",
                 "- 风险数: \(selected.risks.count)",
                 "- 活跃任务: \(selected.tasks.filter(\.isActive).count)",
+                "- 缺失 worktree: \(missingWorktreeDetails.isEmpty ? "无" : missingWorktreeDetails)",
+                "- Worktree 脚本: \(worktreeScriptPath)",
+                "- Worktree 检查: \(worktreeChecks.isEmpty ? "未生成" : worktreeChecks)",
+                "- Worktree 创建限制: \(worktreeReadiness)",
                 "- Dirty 服务: \(dirtyServiceDetails.isEmpty ? "无" : dirtyServiceDetails)",
                 "- 分支记录: \(branchesDocumentPath(for: selected))",
                 "- 分支检查: \(branchChecks.isEmpty ? "未生成" : branchChecks)",

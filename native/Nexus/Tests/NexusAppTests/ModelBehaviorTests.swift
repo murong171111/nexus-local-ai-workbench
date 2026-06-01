@@ -742,6 +742,62 @@ final class ModelBehaviorTests: XCTestCase {
     }
 
     @MainActor
+    func testAutomationWorktreeHandoffPromptIncludesMissingServiceEvidence() {
+        let selectedCleanWorkspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "selected-clean-worktree",
+            name: "Selected Clean Worktree",
+            folder: "2026-05-31-selected-clean-worktree",
+            path: "/tmp/workspaces/2026-05-31-selected-clean-worktree"
+        )
+        let worktreeWorkspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "worktree-workspace",
+            name: "Worktree Workspace",
+            folder: "2026-05-31-worktree-workspace",
+            path: "/tmp/workspaces/2026-05-31-worktree-workspace",
+            healthChecks: [
+                WorkspaceHealthCheck(
+                    id: "worktree-ready",
+                    label: "Worktree 就绪",
+                    detail: "缺少: commodity",
+                    status: "fail",
+                    action: "worktreeScript"
+                )
+            ],
+            services: [
+                ServiceStatus(
+                    name: "commodity",
+                    branch: "feature/workflow-summary",
+                    worktree: "missing",
+                    gitSummary: "source clean",
+                    worktreeExists: false,
+                    sourceExists: true
+                ),
+                ServiceStatus(
+                    name: "order",
+                    branch: "feature/workflow-summary",
+                    worktree: "ready",
+                    gitSummary: "clean",
+                    worktreeExists: true,
+                    sourceExists: true
+                )
+            ]
+        )
+        let appState = appStateForAutomationTests(workspaces: [selectedCleanWorkspace, worktreeWorkspace])
+        appState.selectedWorkspaceID = selectedCleanWorkspace.id
+
+        let prompt = appState.automationSignalHandoffPrompt(for: worktreeSignal())
+
+        XCTAssertTrue(prompt.contains("- 当前工作区: Worktree Workspace"))
+        XCTAssertTrue(prompt.contains("- 缺失 worktree: commodity: worktree=missing, source=exists, sourceGit=source clean"))
+        XCTAssertTrue(prompt.contains("- Worktree 脚本: /tmp/workspaces/2026-05-31-worktree-workspace/scripts/worktree-commands.sh"))
+        XCTAssertTrue(prompt.contains("Worktree 就绪 [fail]: 缺少: commodity"))
+        XCTAssertTrue(prompt.contains("目标分支已确认"))
+        XCTAssertFalse(prompt.contains("- 当前工作区: Selected Clean Worktree"))
+    }
+
+    @MainActor
     func testAutomationRiskActionCopiesRiskReviewPromptForRiskWorkspace() async {
         let selectedCleanWorkspace = workspaceForWorkflowSummary(
             stage: "developing",
@@ -902,6 +958,18 @@ final class ModelBehaviorTests: XCTestCase {
             detail: "1 services have uncommitted git changes.",
             count: 1,
             action: "review-dirty-services"
+        )
+    }
+
+    private func worktreeSignal() -> LocalAutomationSignal {
+        LocalAutomationSignal(
+            id: "worktree.check",
+            kind: "worktree",
+            severity: "warning",
+            title: "Worktree 检查 / Worktree check",
+            detail: "1 workspace-local worktrees are missing.",
+            count: 1,
+            action: "review-worktrees"
         )
     }
 

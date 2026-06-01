@@ -3368,7 +3368,7 @@ private struct AutomationSignalRow: View {
         case "update-delivery":
             "处理交付"
         case "review-worktrees":
-            "Worktree"
+            "创建 worktree"
         case "review-dirty-services":
             "服务交接"
         case "review-branches":

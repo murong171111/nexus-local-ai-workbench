@@ -10,6 +10,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 - Deferred tasks now stay visible in Task Center but no longer trigger task automation warnings, high-priority task routing, menu-bar task attention, or active workflow blockers.
 - Native Automation Action Center risk signals now select the risky workspace and copy the risk-review Codex handoff directly, so risk checks land on a concrete next step.
+- Native Automation Action Center worktree signal handoffs now include missing service evidence, source availability, the worktree script path, readiness checks, and branch-confirmation guidance.
 - Native Automation Action Center now separates dirty-service git signals from missing-worktree signals and routes them to the relevant service-scoped Codex handoff with dirty service evidence.
 - Native local automation checks now emit branch-alignment signals, surface branch issue counts, and route Action Center branch actions to the relevant workspace `branches.md` context.
 - Native Automation Action Center task signals now target the workspace with high-priority or open tasks when building copied Codex prompts, instead of falling back to whichever workspace was selected.
