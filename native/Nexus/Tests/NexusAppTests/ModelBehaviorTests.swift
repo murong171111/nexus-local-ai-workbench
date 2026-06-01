@@ -316,6 +316,69 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(workspace.sqlFiles.first?.fileName, "pay_log.sql")
     }
 
+    func testWorkspaceSqlSummaryPromotesSqlToTopLevelStatus() {
+        let missingRollback = workspaceForWorkflowSummary(
+            stage: "delivery",
+            healthChecks: [
+                WorkspaceHealthCheck(
+                    id: "sql-directory",
+                    label: "SQL 产物",
+                    detail: "交付记录包含 SQL 变更，但 sql/ 下缺少回滚 SQL 文件。",
+                    status: "fail",
+                    action: "sql"
+                )
+            ],
+            sqlFiles: [
+                WorkspaceSqlFile(
+                    relativePath: "pay_log.sql",
+                    path: "/tmp/workspaces/sql/sql/pay_log.sql",
+                    kind: "formal"
+                )
+            ]
+        )
+        let clean = workspaceForWorkflowSummary(
+            stage: "delivery",
+            healthChecks: [
+                WorkspaceHealthCheck(
+                    id: "sql-directory",
+                    label: "SQL 产物",
+                    detail: "SQL 变更已有正式 SQL 1 个、回滚 SQL 1 个。",
+                    status: "pass",
+                    action: "sql"
+                )
+            ],
+            sqlFiles: [
+                WorkspaceSqlFile(
+                    relativePath: "pay_log.sql",
+                    path: "/tmp/workspaces/sql/sql/pay_log.sql",
+                    kind: "formal"
+                ),
+                WorkspaceSqlFile(
+                    relativePath: "pay_log_rollback.sql",
+                    path: "/tmp/workspaces/sql/sql/pay_log_rollback.sql",
+                    kind: "rollback"
+                )
+            ]
+        )
+        let unchecked = workspaceForWorkflowSummary(
+            stage: "developing",
+            sqlFiles: [
+                WorkspaceSqlFile(
+                    relativePath: "draft.sql",
+                    path: "/tmp/workspaces/sql/sql/draft.sql",
+                    kind: "formal"
+                )
+            ]
+        )
+
+        XCTAssertEqual(WorkspaceSqlSummary(workspace: missingRollback).value, "缺产物")
+        XCTAssertEqual(WorkspaceSqlSummary(workspace: missingRollback).status, .blocked)
+        XCTAssertEqual(WorkspaceSqlSummary(workspace: clean).value, "已匹配")
+        XCTAssertEqual(WorkspaceSqlSummary(workspace: clean).status, .ready)
+        XCTAssertEqual(WorkspaceSqlSummary(workspace: unchecked).value, "1 文件")
+        XCTAssertEqual(WorkspaceSqlSummary(workspace: unchecked).status, .review)
+    }
+
     func testWorkflowPathStatusLabelsStayChineseFirst() {
         XCTAssertEqual(WorkflowPathStatus.ready.displayLabel, "就绪 / ready")
         XCTAssertEqual(WorkflowPathStatus.review.displayLabel, "复核 / review")
