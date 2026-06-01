@@ -27,7 +27,7 @@ The native right inspector also exposes an Automation Action Center. It keeps th
 - risk signals focus the risky workspace filter and copy the risk-review Codex handoff for the first workspace with risk evidence
 - delivery signals open the selected or first matching delivery record
 - task signals focus the Task Center and high-priority filter when needed; deferred tasks remain visible in Task Center but do not emit active task attention
-- worktree signals select the first affected workspace and can present the confirmed worktree setup sheet
+- worktree signals select the first affected workspace, can present the confirmed worktree setup sheet, and copy missing-service/source/script/readiness context for Codex handoff
 - dirty-service signals select the first affected workspace and open a service-scoped Codex handoff for the first dirty service
 - each actionable signal can copy a Codex handoff prompt with local paths, the matching risk, delivery, branch, task, worktree, or dirty-service workspace context, and the suggested next action
 
