@@ -53,12 +53,29 @@ function fileNameFromPath(path: string) {
   return path.split(/[\\/]/).filter(Boolean).pop() || path;
 }
 
-function workspaceStandardDocumentPath(workspace: Workspace, linkKey: string, relativePath: string) {
+const workspaceStandardRelativePaths: Record<string, string> = {
+  workspace: "workspace.md",
+  status: "STATUS.md",
+  services: "services.md",
+  branches: "branches.md",
+  requirements: "requirements.md",
+  acceptance: "acceptance.md",
+  changes: "changes.md",
+  tasks: "tasks.md",
+  delivery: "交付记录.md",
+  handoff: "handoff.md",
+  bootstrap: "bootstrap-report.md",
+  worktreeScript: "scripts/worktree-commands.sh",
+  sql: "sql"
+};
+
+function workspaceStandardDocumentPath(workspace: Workspace, linkKey: string, fallbackRelativePath = workspaceStandardRelativePaths[linkKey]) {
   const scannedPath = workspace.links[linkKey];
   if (scannedPath) return scannedPath;
+  if (!fallbackRelativePath) return "";
   const workspacePath = workspace.path || workspace.links.folder;
   if (!workspacePath) return "";
-  return `${workspacePath.replace(/\/+$/, "")}/${relativePath}`;
+  return `${workspacePath.replace(/\/+$/, "")}/${fallbackRelativePath}`;
 }
 
 function sqlKindLabel(kind: string) {
@@ -850,7 +867,7 @@ function WorkspaceCard({
             <button className="text-xs text-blue-600 hover:text-blue-700" onClick={() => openPathInDesktop(workspace.links.folder)}>
               目录
             </button>
-            <button className="text-xs text-blue-600 hover:text-blue-700" onClick={() => onOpenDocument("交付记录.md", workspace.links.delivery)}>
+            <button className="text-xs text-blue-600 hover:text-blue-700" onClick={() => onOpenDocument("交付记录.md", workspaceStandardDocumentPath(workspace, "delivery"))}>
               交付
             </button>
           </div>
@@ -869,22 +886,22 @@ function WorkspaceCard({
                     复制处理指令
                   </button>
                   {risk.includes("服务范围") && (
-                    <button className="rounded border border-amber-200 bg-white px-2 py-1 text-[11px] text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("services.md", workspace.links.services)}>
+                    <button className="rounded border border-amber-200 bg-white px-2 py-1 text-[11px] text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("services.md", workspaceStandardDocumentPath(workspace, "services"))}>
                       服务文档
                     </button>
                   )}
                   {risk.includes("目标分支") && (
-                    <button className="rounded border border-amber-200 bg-white px-2 py-1 text-[11px] text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("branches.md", workspace.links.branches)}>
+                    <button className="rounded border border-amber-200 bg-white px-2 py-1 text-[11px] text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("branches.md", workspaceStandardDocumentPath(workspace, "branches"))}>
                       分支文档
                     </button>
                   )}
                   {risk.includes("分支不一致") && (
-                    <button className="rounded border border-amber-200 bg-white px-2 py-1 text-[11px] text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("branches.md", workspace.links.branches)}>
+                    <button className="rounded border border-amber-200 bg-white px-2 py-1 text-[11px] text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("branches.md", workspaceStandardDocumentPath(workspace, "branches"))}>
                       分支文档
                     </button>
                   )}
-                  {risk.includes("worktree") && workspace.links.worktreeScript && (
-                    <button className="rounded border border-amber-200 bg-white px-2 py-1 text-[11px] text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("worktree-commands.sh", workspace.links.worktreeScript)}>
+                  {risk.includes("worktree") && workspaceStandardDocumentPath(workspace, "worktreeScript") && (
+                    <button className="rounded border border-amber-200 bg-white px-2 py-1 text-[11px] text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("worktree-commands.sh", workspaceStandardDocumentPath(workspace, "worktreeScript"))}>
                       worktree 脚本
                     </button>
                   )}
@@ -910,13 +927,13 @@ function WorkspaceCard({
           <button className="rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50" onClick={onCopyCommand}>
             复制 worktree 命令
           </button>
-          {workspace.links.worktreeScript && (
-            <button className="rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50" onClick={() => onOpenDocument("worktree-commands.sh", workspace.links.worktreeScript)}>
+          {workspaceStandardDocumentPath(workspace, "worktreeScript") && (
+            <button className="rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50" onClick={() => onOpenDocument("worktree-commands.sh", workspaceStandardDocumentPath(workspace, "worktreeScript"))}>
               worktree 脚本
             </button>
           )}
-          {workspace.links.bootstrap && (
-            <button className="rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50" onClick={() => onOpenDocument("bootstrap-report.md", workspace.links.bootstrap)}>
+          {workspaceStandardDocumentPath(workspace, "bootstrap") && (
+            <button className="rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50" onClick={() => onOpenDocument("bootstrap-report.md", workspaceStandardDocumentPath(workspace, "bootstrap"))}>
               状态报告
             </button>
           )}
@@ -929,7 +946,7 @@ function WorkspaceCard({
           <button className="rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs text-blue-700 hover:bg-blue-100" onClick={() => onCopyAndOpenCodex("continue")}>
             复制续做并打开 Codex
           </button>
-          <button className="rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50" onClick={() => onOpenDocument("tasks.md", workspace.links.tasks)}>
+          <button className="rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50" onClick={() => onOpenDocument("tasks.md", workspaceStandardDocumentPath(workspace, "tasks"))}>
             任务文档
           </button>
         </div>
@@ -1254,6 +1271,7 @@ function WorkspaceDrawer({
   const dirty = workspace.gitRows.filter(gitRowHasDirtyService).length;
   const branchMismatches = branchAlignmentRows(workspace);
   const sessionActions = workspaceSessionActions(workspace);
+  const sqlDirectoryPath = workspaceStandardDocumentPath(workspace, "sql");
   const sqlFiles = workspace.sqlFiles ?? [];
   const sqlDocuments = workspace.sqlDocuments?.length
     ? workspace.sqlDocuments
@@ -1261,16 +1279,16 @@ function WorkspaceDrawer({
       ? [{ relativePath: fileNameFromPath(workspace.links.sqlGuide), path: workspace.links.sqlGuide, kind: "markdown" }]
       : [];
   const documentEntries = [
-    ["状态", "STATUS.md", workspaceStandardDocumentPath(workspace, "status", "STATUS.md")],
-    ["服务", "services.md", workspaceStandardDocumentPath(workspace, "services", "services.md")],
-    ["分支", "branches.md", workspaceStandardDocumentPath(workspace, "branches", "branches.md")],
-    ["规则", "requirements.md", workspaceStandardDocumentPath(workspace, "requirements", "requirements.md")],
-    ["验收", "acceptance.md", workspaceStandardDocumentPath(workspace, "acceptance", "acceptance.md")],
-    ["变更", "changes.md", workspaceStandardDocumentPath(workspace, "changes", "changes.md")],
-    ["任务", "tasks.md", workspaceStandardDocumentPath(workspace, "tasks", "tasks.md")],
-    ["交付", "交付记录.md", workspaceStandardDocumentPath(workspace, "delivery", "交付记录.md")],
-    ["报告", "bootstrap-report.md", workspaceStandardDocumentPath(workspace, "bootstrap", "bootstrap-report.md")],
-    ["Worktree", "worktree-commands.sh", workspaceStandardDocumentPath(workspace, "worktreeScript", "scripts/worktree-commands.sh")]
+    ["状态", "STATUS.md", workspaceStandardDocumentPath(workspace, "status")],
+    ["服务", "services.md", workspaceStandardDocumentPath(workspace, "services")],
+    ["分支", "branches.md", workspaceStandardDocumentPath(workspace, "branches")],
+    ["规则", "requirements.md", workspaceStandardDocumentPath(workspace, "requirements")],
+    ["验收", "acceptance.md", workspaceStandardDocumentPath(workspace, "acceptance")],
+    ["变更", "changes.md", workspaceStandardDocumentPath(workspace, "changes")],
+    ["任务", "tasks.md", workspaceStandardDocumentPath(workspace, "tasks")],
+    ["交付", "交付记录.md", workspaceStandardDocumentPath(workspace, "delivery")],
+    ["报告", "bootstrap-report.md", workspaceStandardDocumentPath(workspace, "bootstrap")],
+    ["Worktree", "worktree-commands.sh", workspaceStandardDocumentPath(workspace, "worktreeScript")]
   ].filter((entry): entry is [string, string, string] => Boolean(entry[2]));
 
   return (
@@ -1327,7 +1345,7 @@ function WorkspaceDrawer({
               </div>
               <div className="grid gap-2">
                 {workspace.healthChecks.map((check) => {
-                  const target = workspace.links[check.action];
+                  const target = workspaceStandardDocumentPath(workspace, check.action);
                   return (
                     <div key={check.id} className="rounded-md bg-white px-3 py-2 text-sm">
                       <div className="flex items-start justify-between gap-3">
@@ -1356,7 +1374,7 @@ function WorkspaceDrawer({
             </div>
             <div className="grid gap-2">
               {sessionActions.map((action) => {
-                const target = workspace.links[action.documentKey];
+                const target = workspaceStandardDocumentPath(workspace, action.documentKey);
                 return (
                   <div key={action.id} className="rounded-md border border-neutral-200 bg-white px-3 py-2">
                     <div className="flex items-start justify-between gap-3">
@@ -1430,8 +1448,8 @@ function WorkspaceDrawer({
               ) : (
                 <div className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-500">未扫描到 `.sql` 文件。</div>
               )}
-              {workspace.links.sql && (
-                <button className="mt-2 rounded-md border border-neutral-200 bg-white px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-50" onClick={() => onOpenPath(workspace.links.sql)}>
+              {sqlDirectoryPath && (
+                <button className="mt-2 rounded-md border border-neutral-200 bg-white px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-50" onClick={() => onOpenPath(sqlDirectoryPath)}>
                   打开 SQL 目录
                 </button>
               )}
@@ -1450,27 +1468,27 @@ function WorkspaceDrawer({
                         复制处理指令
                       </button>
                       {risk.includes("目标分支") && (
-                        <button className="rounded-md border border-amber-200 bg-white px-2 py-1 text-xs text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("branches.md", workspace.links.branches)}>
+                        <button className="rounded-md border border-amber-200 bg-white px-2 py-1 text-xs text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("branches.md", workspaceStandardDocumentPath(workspace, "branches"))}>
                           打开分支文档
                         </button>
                       )}
                       {risk.includes("分支不一致") && (
-                        <button className="rounded-md border border-amber-200 bg-white px-2 py-1 text-xs text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("branches.md", workspace.links.branches)}>
+                        <button className="rounded-md border border-amber-200 bg-white px-2 py-1 text-xs text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("branches.md", workspaceStandardDocumentPath(workspace, "branches"))}>
                           打开分支文档
                         </button>
                       )}
                       {risk.includes("服务范围") && (
-                        <button className="rounded-md border border-amber-200 bg-white px-2 py-1 text-xs text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("services.md", workspace.links.services)}>
+                        <button className="rounded-md border border-amber-200 bg-white px-2 py-1 text-xs text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("services.md", workspaceStandardDocumentPath(workspace, "services"))}>
                           打开服务文档
                         </button>
                       )}
                       {risk.includes("交付") && (
-                        <button className="rounded-md border border-amber-200 bg-white px-2 py-1 text-xs text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("交付记录.md", workspace.links.delivery)}>
+                        <button className="rounded-md border border-amber-200 bg-white px-2 py-1 text-xs text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("交付记录.md", workspaceStandardDocumentPath(workspace, "delivery"))}>
                           打开交付记录
                         </button>
                       )}
-                      {risk.includes("worktree") && workspace.links.worktreeScript && (
-                        <button className="rounded-md border border-amber-200 bg-white px-2 py-1 text-xs text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("worktree-commands.sh", workspace.links.worktreeScript)}>
+                      {risk.includes("worktree") && workspaceStandardDocumentPath(workspace, "worktreeScript") && (
+                        <button className="rounded-md border border-amber-200 bg-white px-2 py-1 text-xs text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("worktree-commands.sh", workspaceStandardDocumentPath(workspace, "worktreeScript"))}>
                           打开 worktree 脚本
                         </button>
                       )}
