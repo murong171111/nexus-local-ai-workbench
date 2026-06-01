@@ -6944,6 +6944,151 @@ private struct WorkspaceCreationNextStepsView: View {
         return !["待确认", "未确认", "pending", "tbd", "todo"].contains { normalizedBranch.contains($0) }
     }
 
+    private var followUpSteps: [WorkspaceCreationFollowUpStep] {
+        [
+            serviceScopeStep,
+            targetBranchStep,
+            worktreeStep,
+            handoffStep,
+            localCheckStep
+        ]
+    }
+
+    private var serviceScopeStep: WorkspaceCreationFollowUpStep {
+        if workspace.services.isEmpty {
+            return WorkspaceCreationFollowUpStep(
+                id: "services",
+                title: "确认服务范围 / Services",
+                detail: "服务范围仍待确认，先补齐 services.md，后续 worktree 和风险检查才有可靠目标。",
+                status: "review",
+                tone: NexusPalette.warning,
+                systemImage: "square.stack.3d.up",
+                actionLabel: "打开 services.md",
+                actionSystemImage: "doc.text",
+                action: .openServices
+            )
+        }
+        return WorkspaceCreationFollowUpStep(
+            id: "services",
+            title: "确认服务范围 / Services",
+            detail: "\(workspace.services.count) 个服务已记录，可继续确认分支和 worktree。",
+            status: "ready",
+            tone: NexusPalette.success,
+            systemImage: "square.stack.3d.up",
+            actionLabel: "复核 services.md",
+            actionSystemImage: "doc.text",
+            action: .openServices
+        )
+    }
+
+    private var targetBranchStep: WorkspaceCreationFollowUpStep {
+        if branchLooksConfirmed {
+            return WorkspaceCreationFollowUpStep(
+                id: "branch",
+                title: "确认目标分支 / Branch",
+                detail: workspace.branch,
+                status: "ready",
+                tone: NexusPalette.success,
+                systemImage: "arrow.triangle.branch",
+                actionLabel: "复核 branches.md",
+                actionSystemImage: "doc.text",
+                action: .openBranches
+            )
+        }
+        return WorkspaceCreationFollowUpStep(
+            id: "branch",
+            title: "确认目标分支 / Branch",
+            detail: "目标分支仍待确认，创建 worktree 前先更新 branches.md 或 workspace.md。",
+            status: "blocked",
+            tone: NexusPalette.danger,
+            systemImage: "arrow.triangle.branch",
+            actionLabel: "打开 branches.md",
+            actionSystemImage: "doc.text",
+            action: .openBranches
+        )
+    }
+
+    private var worktreeStep: WorkspaceCreationFollowUpStep {
+        if workspace.services.isEmpty {
+            return WorkspaceCreationFollowUpStep(
+                id: "worktree",
+                title: "准备 worktree / Worktrees",
+                detail: "服务范围未确认，暂不创建 workspace-local worktree。",
+                status: "pending",
+                tone: NexusPalette.warning,
+                systemImage: "terminal",
+                actionLabel: "先补服务",
+                actionSystemImage: "square.stack.3d.up",
+                action: .openServices
+            )
+        }
+        if !branchLooksConfirmed {
+            return WorkspaceCreationFollowUpStep(
+                id: "worktree",
+                title: "准备 worktree / Worktrees",
+                detail: "目标分支未确认，暂不执行 worktree 创建。",
+                status: "blocked",
+                tone: NexusPalette.danger,
+                systemImage: "terminal",
+                actionLabel: "先定分支",
+                actionSystemImage: "arrow.triangle.branch",
+                action: .openBranches
+            )
+        }
+        if missingWorktrees.isEmpty {
+            return WorkspaceCreationFollowUpStep(
+                id: "worktree",
+                title: "准备 worktree / Worktrees",
+                detail: "当前服务已具备 workspace-local worktree。",
+                status: "ready",
+                tone: NexusPalette.success,
+                systemImage: "terminal",
+                actionLabel: nil,
+                actionSystemImage: nil,
+                action: nil
+            )
+        }
+        return WorkspaceCreationFollowUpStep(
+            id: "worktree",
+            title: "准备 worktree / Worktrees",
+            detail: "缺失 \(missingWorktrees.count) 个 worktree: \(missingWorktrees.joined(separator: ", "))",
+            status: "next",
+            tone: NexusPalette.accent,
+            systemImage: "terminal",
+            actionLabel: "创建 worktree",
+            actionSystemImage: "arrow.triangle.branch",
+            action: .setupWorktrees
+        )
+    }
+
+    private var handoffStep: WorkspaceCreationFollowUpStep {
+        WorkspaceCreationFollowUpStep(
+            id: "handoff",
+            title: "打开交接文档 / Handoff",
+            detail: "先看 handoff.md，再决定是否进入 Codex 接力。",
+            status: "next",
+            tone: NexusPalette.accent,
+            systemImage: "point.3.connected.trianglepath.dotted",
+            actionLabel: "打开 handoff",
+            actionSystemImage: "doc.text",
+            action: .openHandoff
+        )
+    }
+
+    private var localCheckStep: WorkspaceCreationFollowUpStep {
+        WorkspaceCreationFollowUpStep(
+            id: "local-check",
+            title: "运行本地检查 / Local check",
+            detail: "建档后跑一次检查，把分支、worktree、任务、交付和 SQL 风险收敛到 Action Center。",
+            status: "next",
+            tone: NexusPalette.accent,
+            systemImage: "checklist",
+            actionLabel: appState.isRunningAutomationCheck ? "检查中" : "运行检查",
+            actionSystemImage: "checklist",
+            action: .runLocalCheck
+        )
+    }
+
     var body: some View {
         SectionBlock(title: "创建后下一步 / Next steps") {
             VStack(alignment: .leading, spacing: 12) {
@@ -6993,26 +7138,16 @@ private struct WorkspaceCreationNextStepsView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Button {
-                        Task {
-                            await appState.loadHandoffForSelectedWorkspace()
-                        }
-                    } label: {
-                        Label("打开 handoff / Open handoff", systemImage: "doc.text")
+                    ForEach(followUpSteps) { step in
+                        WorkspaceCreationFollowUpRow(
+                            step: step,
+                            isDisabled: actionIsDisabled(step.action),
+                            performAction: performAction
+                        )
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(appState.isDocumentLoading)
+                }
 
-                    Button {
-                        appState.presentWorktreeSetup(for: workspace)
-                    } label: {
-                        Label("创建 worktree / Setup worktrees", systemImage: "arrow.triangle.branch")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(!appState.canSetupWorktrees(in: workspace))
-
+                HStack(spacing: 8) {
                     Button {
                         Task {
                             await appState.openWorkspaceInCodex(workspace)
@@ -7024,18 +7159,126 @@ private struct WorkspaceCreationNextStepsView: View {
                     .controlSize(.small)
 
                     Button {
-                        Task {
-                            await appState.runLocalAutomationCheck()
-                        }
+                        appState.dismissCreatedWorkspaceFollowUp()
                     } label: {
-                        Label(appState.isRunningAutomationCheck ? "检查中 / Checking" : "运行检查 / Run check", systemImage: "checklist")
+                        Label("稍后处理 / Later", systemImage: "clock")
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-                    .disabled(appState.isRunningAutomationCheck)
                 }
             }
         }
+    }
+
+    private func documentPath(for key: String, fallback: String) -> String {
+        workspace.documentLinks[key] ?? "\(workspace.path)/\(fallback)"
+    }
+
+    private func actionIsDisabled(_ action: WorkspaceCreationFollowUpAction?) -> Bool {
+        switch action {
+        case .openServices, .openBranches, .openHandoff:
+            return appState.isDocumentLoading
+        case .setupWorktrees:
+            return !appState.canSetupWorktrees(in: workspace)
+        case .runLocalCheck:
+            return appState.isRunningAutomationCheck
+        case nil:
+            return true
+        }
+    }
+
+    private func performAction(_ action: WorkspaceCreationFollowUpAction) {
+        switch action {
+        case .openServices:
+            Task {
+                await appState.loadDocument(path: documentPath(for: "services", fallback: "services.md"))
+            }
+        case .openBranches:
+            Task {
+                await appState.loadDocument(path: documentPath(for: "branches", fallback: "branches.md"))
+            }
+        case .openHandoff:
+            Task {
+                await appState.loadHandoffForSelectedWorkspace()
+            }
+        case .setupWorktrees:
+            appState.presentWorktreeSetup(for: workspace)
+        case .runLocalCheck:
+            Task {
+                await appState.runLocalAutomationCheck()
+            }
+        }
+    }
+}
+
+private enum WorkspaceCreationFollowUpAction {
+    case openServices
+    case openBranches
+    case setupWorktrees
+    case openHandoff
+    case runLocalCheck
+}
+
+private struct WorkspaceCreationFollowUpStep: Identifiable {
+    let id: String
+    let title: String
+    let detail: String
+    let status: String
+    let tone: Color
+    let systemImage: String
+    let actionLabel: String?
+    let actionSystemImage: String?
+    let action: WorkspaceCreationFollowUpAction?
+}
+
+private struct WorkspaceCreationFollowUpRow: View {
+    let step: WorkspaceCreationFollowUpStep
+    let isDisabled: Bool
+    let performAction: (WorkspaceCreationFollowUpAction) -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: step.systemImage)
+                .foregroundStyle(step.tone)
+                .frame(width: 16)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(step.title)
+                        .font(.caption.weight(.semibold))
+                    Text(step.status)
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(step.tone)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(step.tone.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                }
+
+                Text(step.detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 8)
+
+            if let action = step.action,
+               let actionLabel = step.actionLabel,
+               let actionSystemImage = step.actionSystemImage {
+                Button {
+                    performAction(action)
+                } label: {
+                    Label(actionLabel, systemImage: actionSystemImage)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+                .disabled(isDisabled)
+            }
+        }
+        .padding(9)
+        .background(step.tone.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
