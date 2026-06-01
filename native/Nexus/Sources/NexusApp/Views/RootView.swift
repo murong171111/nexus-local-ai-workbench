@@ -632,6 +632,7 @@ private struct SidebarView: View {
                         ForEach(Array(appState.taskCenterItems.prefix(4))) { item in
                             TaskCenterSidebarRow(
                                 item: item,
+                                isFocused: item.id == appState.focusedTaskCenterItemID,
                                 selectAction: {
                                     appState.selectTaskCenterItem(item)
                                 },
@@ -2952,6 +2953,18 @@ private struct LocalWriteFeedbackView: View {
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .help("打开刚刚写回的源文档 / Open the updated source document")
+
+                    if feedback.documentPath.hasSuffix("/tasks.md"),
+                       appState.nextTaskCenterItem(after: feedback) != nil {
+                        Button {
+                            appState.focusNextTask(after: feedback)
+                        } label: {
+                            Label("继续任务", systemImage: "arrow.down.circle")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .help("聚焦下一条活跃任务 / Focus the next active task")
+                    }
 
                     Button {
                         appState.focusWorkspace(id: feedback.workspaceID)
@@ -9416,6 +9429,17 @@ private struct TaskCenterWritebackHintView: View {
                 .controlSize(.mini)
                 .help("聚焦刚刚写回的工作区 / Focus the updated workspace")
 
+                if appState.nextTaskCenterItem(after: feedback) != nil {
+                    Button {
+                        appState.focusNextTask(after: feedback)
+                    } label: {
+                        Label("下一项", systemImage: "arrow.down.circle")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.mini)
+                    .help("聚焦下一条活跃任务 / Focus the next active task")
+                }
+
                 Button {
                     appState.focusWorkspace(id: feedback.workspaceID)
                     Task {
@@ -9437,6 +9461,7 @@ private struct TaskCenterWritebackHintView: View {
 
 private struct TaskCenterSidebarRow: View {
     let item: TaskCenterItem
+    let isFocused: Bool
     let selectAction: () -> Void
     let openDocumentAction: () -> Void
     let completeAction: () -> Void
@@ -9508,8 +9533,12 @@ private struct TaskCenterSidebarRow: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(NexusPalette.panel)
+        .background(isFocused ? NexusPalette.selected : NexusPalette.panel)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(isFocused ? NexusPalette.accent.opacity(0.28) : Color.clear)
+        }
     }
 
     private var color: Color {
