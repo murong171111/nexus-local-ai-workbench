@@ -3364,7 +3364,7 @@ private struct AutomationSignalRow: View {
     private var actionLabel: String {
         switch signal.action {
         case "review-risk":
-            "Focus"
+            "风险交接"
         case "update-delivery":
             "处理交付"
         case "review-worktrees":

@@ -24,7 +24,7 @@ Archived workspaces are counted separately and are intentionally excluded from r
 
 The native right inspector also exposes an Automation Action Center. It keeps the hook read-mostly, but turns emitted signals into local UI actions:
 
-- risk signals focus the risky workspace filter
+- risk signals focus the risky workspace filter and copy the risk-review Codex handoff for the first workspace with risk evidence
 - delivery signals open the selected or first matching delivery record
 - task signals focus the Task Center and high-priority filter when needed; deferred tasks remain visible in Task Center but do not emit active task attention
 - worktree signals select the first affected workspace and can present the confirmed worktree setup sheet

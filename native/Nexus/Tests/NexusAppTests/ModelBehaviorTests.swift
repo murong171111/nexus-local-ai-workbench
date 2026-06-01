@@ -1,5 +1,6 @@
-import XCTest
 import NexusBridge
+import AppKit
+import XCTest
 @testable import NexusApp
 
 final class ModelBehaviorTests: XCTestCase {
@@ -740,6 +741,50 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertFalse(prompt.contains("- 当前工作区: Selected Clean Dirty"))
     }
 
+    @MainActor
+    func testAutomationRiskActionCopiesRiskReviewPromptForRiskWorkspace() async {
+        let selectedCleanWorkspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "selected-clean-risk",
+            name: "Selected Clean Risk",
+            folder: "2026-05-31-selected-clean-risk",
+            path: "/tmp/workspaces/2026-05-31-selected-clean-risk"
+        )
+        let riskWorkspace = workspaceForWorkflowSummary(
+            stage: "blocked",
+            id: "risk-workspace",
+            name: "Risk Workspace",
+            folder: "2026-05-31-risk-workspace",
+            path: "/tmp/workspaces/2026-05-31-risk-workspace",
+            healthChecks: [
+                WorkspaceHealthCheck(
+                    id: "status-readiness",
+                    label: "状态文档",
+                    detail: "STATUS.md 仍是待补充。",
+                    status: "warning",
+                    action: "status"
+                )
+            ],
+            risks: [
+                RiskAlert(title: "状态待补充", detail: "需要先确认当前阻塞项。")
+            ]
+        )
+        let appState = appStateForAutomationTests(workspaces: [selectedCleanWorkspace, riskWorkspace])
+        appState.selectedWorkspaceID = selectedCleanWorkspace.id
+        NSPasteboard.general.clearContents()
+
+        await appState.runAutomationSignalAction(riskSignal())
+
+        let copiedPrompt = NSPasteboard.general.string(forType: .string) ?? ""
+        XCTAssertEqual(appState.selectedFilter, .risky)
+        XCTAssertEqual(appState.selectedWorkspaceID, riskWorkspace.id)
+        XCTAssertTrue(copiedPrompt.contains("Risk Workspace"))
+        XCTAssertTrue(copiedPrompt.contains("状态待补充"))
+        XCTAssertTrue(copiedPrompt.contains("STATUS.md 仍是待补充"))
+        XCTAssertTrue(appState.codexHandoffFeedback?.title.contains("风险复核") == true)
+        XCTAssertFalse(copiedPrompt.contains("Selected Clean Risk"))
+    }
+
     private func workspaceForWorkflowSummary(
         stage: String,
         id: String? = nil,
@@ -857,6 +902,18 @@ final class ModelBehaviorTests: XCTestCase {
             detail: "1 services have uncommitted git changes.",
             count: 1,
             action: "review-dirty-services"
+        )
+    }
+
+    private func riskSignal() -> LocalAutomationSignal {
+        LocalAutomationSignal(
+            id: "risk.check",
+            kind: "risk",
+            severity: "warning",
+            title: "风险检查 / Risk check",
+            detail: "1 workspaces have active risk signals.",
+            count: 1,
+            action: "review-risk"
         )
     }
 }

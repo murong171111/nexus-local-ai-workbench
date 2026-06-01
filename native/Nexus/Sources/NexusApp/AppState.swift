@@ -1087,6 +1087,9 @@ final class AppState: ObservableObject {
             setWorkspaceFilter(.risky)
             if let workspace = workspaceForAutomationSignal(signal) {
                 selectedWorkspaceID = workspace.id
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(riskReviewPrompt(for: workspace), forType: .string)
+                await recordRiskReviewHandoffCopied(for: workspace)
             }
         case "update-delivery":
             setWorkspaceFilter(.risky)
