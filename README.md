@@ -84,6 +84,8 @@ From a workspace detail view, use `Finder`, `IDE`, `Terminal`, or `Codex` to han
 
 The `Codex Sessions` area in workspace detail can bind multiple Codex deep links for the same requirement. Bindings are stored in the workspace-local `codex-sessions.json`; deleting a binding only removes the local Nexus record and does not delete the Codex conversation.
 
+Bound session links also travel with Codex handoff prompts. Workspace, lifecycle, task, risk, delivery, validation/PR, service, and automation handoffs list the relevant session titles and URLs, so a new continuation can reopen an existing Codex conversation before using the fresh context pack.
+
 After any Codex handoff, context copy, session-link copy, or task-source locator, the native inspector shows a dismissible clipboard feedback panel with the copied context type, timestamp, payload label, and next-step guidance. Codex prompts still explain the paste fallback, while task locators point back to `tasks.md` and the focused Documents Hub line context.
 
 When a local operation fails, such as an invalid path, invalid Codex URL, invalid IDE URL template, document-read failure, Terminal launch failure, or worktree setup error, the native inspector shows an `Operation` feedback card. It keeps the error visible and offers copy-error, refresh, environment-check, and Settings actions without moving the user out of the current workspace flow. The preview app uses the same recovery language in toasts for document opens, index rebuilds, workspace creation, settings import/export, and worktree setup.

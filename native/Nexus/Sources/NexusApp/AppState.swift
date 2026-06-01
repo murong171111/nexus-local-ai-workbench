@@ -1208,6 +1208,9 @@ final class AppState: ObservableObject {
             "- 当前说明: \(workspace.lifecycle.detail)",
             "- 下一步: \(workspace.lifecycle.nextAction)",
             "",
+            "## 已绑定 Codex 会话",
+            codexSessionHandoffLines(for: workspace).joined(separator: "\n"),
+            "",
             "## 当前信号",
             "- 风险数: \(workspace.risks.count)",
             "- 活跃任务: \(workspace.tasks.filter(\.isActive).count)",
@@ -1265,6 +1268,9 @@ final class AppState: ObservableObject {
             "",
             "## Nexus 推荐动作",
             actionLines.joined(separator: "\n"),
+            "",
+            "## 已绑定 Codex 会话",
+            codexSessionHandoffLines(for: workspace).joined(separator: "\n"),
             "",
             "## 本地路径",
             "- Workspaces root: \(workspaceRoot)",
@@ -1386,6 +1392,9 @@ final class AppState: ObservableObject {
             "## 服务与 worktree",
             serviceHandoffLines(for: workspace).joined(separator: "\n"),
             "",
+            "## 已绑定 Codex 会话",
+            codexSessionHandoffLines(for: workspace).joined(separator: "\n"),
+            "",
             "## 任务",
             "- 活跃任务: \(openTasks.count)",
             "- 阻塞任务: \(blockedTasks.count)",
@@ -1446,6 +1455,9 @@ final class AppState: ObservableObject {
             "",
             "## 服务与 worktree",
             serviceHandoffLines(for: workspace).joined(separator: "\n"),
+            "",
+            "## 已绑定 Codex 会话",
+            codexSessionHandoffLines(for: workspace).joined(separator: "\n"),
             "",
             "## 文档入口",
             "- 交付记录: \(deliveryPath)",
@@ -1556,6 +1568,24 @@ final class AppState: ObservableObject {
         }
     }
 
+    private func codexSessionHandoffLines(for workspace: WorkspaceSummary) -> [String] {
+        let links = codexSessionLinks(for: workspace)
+        guard !links.isEmpty else {
+            return ["- 未绑定 Codex 会话。需要继续历史上下文时，可在 Nexus 的 Sessions 区块绑定会话链接。"]
+        }
+
+        let visibleLinks = links.prefix(5).map { link in
+            let opened = link.lastOpenedAt ?? "never"
+            let cleanNotes = link.notes.trimmingCharacters(in: .whitespacesAndNewlines)
+            let notes = cleanNotes.isEmpty ? "" : " · notes: \(cleanNotes)"
+            return "- \(link.title): \(link.url) · opened: \(opened)\(notes)"
+        }
+        let overflow = links.count > 5
+            ? ["- 仅列出前 5 个 Codex 会话，完整列表请查看 Nexus Sessions 区块。"]
+            : []
+        return visibleLinks + overflow
+    }
+
     func riskReviewPrompt(for workspace: WorkspaceSummary) -> String {
         let riskLines = workspace.risks.isEmpty
             ? ["- 暂无显式风险。"]
@@ -1589,6 +1619,9 @@ final class AppState: ObservableObject {
             "",
             "## 推荐动作",
             actionLines.joined(separator: "\n"),
+            "",
+            "## 已绑定 Codex 会话",
+            codexSessionHandoffLines(for: workspace).joined(separator: "\n"),
             "",
             "## 处理要求",
             "- 先读取 workspace.md、STATUS.md、services.md、branches.md、tasks.md 和交付记录。",
@@ -1900,6 +1933,9 @@ final class AppState: ObservableObject {
             "- tasks.md: \(workspace.documentLinks["tasks"] ?? "\(workspace.path)/tasks.md")",
             "- 交付记录.md: \(workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md")",
             "",
+            "## 已绑定 Codex 会话",
+            codexSessionHandoffLines(for: workspace).joined(separator: "\n"),
+            "",
             "## 处理要求",
             "- 先确认该服务是否应该在当前需求范围内。",
             "- 如果 worktree 缺失，先回到 Nexus 执行确认后的 worktree 创建流程，不要直接在 source repo 切分支。",
@@ -2167,6 +2203,11 @@ final class AppState: ObservableObject {
                 : selected.sessionActions.prefix(5).map { action in
                     "[\(action.priority)/\(action.status)] \(action.label): \(action.detail) · 文档: \(action.documentKey)"
                 }.joined(separator: " | ")
+            let codexSessionDetails = codexSessionLinks(for: selected).isEmpty
+                ? "未绑定"
+                : codexSessionLinks(for: selected).prefix(5).map { link in
+                    "\(link.title): \(link.url)"
+                }.joined(separator: " | ")
             workspaceLines = [
                 "- 当前工作区: \(selected.name)",
                 "- 工作区目录: \(selected.path)",
@@ -2184,7 +2225,8 @@ final class AppState: ObservableObject {
                 "- 交付记录: \(deliveryDocumentPath(for: selected))",
                 "- SQL 文件: \(selected.sqlFiles.isEmpty ? "未扫描到" : selected.sqlFiles.map(\.relativePath).joined(separator: ", "))",
                 "- 交付/SQL 检查: \(deliveryAndSqlChecks.isEmpty ? "未生成" : deliveryAndSqlChecks)",
-                "- Nexus 推荐动作: \(nextStepActions)"
+                "- Nexus 推荐动作: \(nextStepActions)",
+                "- Codex 会话: \(codexSessionDetails)"
             ]
         } else {
             workspaceLines = ["- 当前工作区: 未选择"]
@@ -2415,11 +2457,19 @@ final class AppState: ObservableObject {
                 sourceLine: task.sourceLine
             )
         )
+        func appendCodexSessions(to prompt: String) -> String {
+            [
+                prompt,
+                "",
+                "## 已绑定 Codex 会话",
+                codexSessionHandoffLines(for: workspace).joined(separator: "\n")
+            ].joined(separator: "\n")
+        }
         do {
             let response = try await bridge.workspaceTaskHandoffPrompt(request: request)
-            return response.prompt
+            return appendCodexSessions(to: response.prompt)
         } catch {
-            return request.fallbackPrompt
+            return appendCodexSessions(to: request.fallbackPrompt)
         }
     }
 
