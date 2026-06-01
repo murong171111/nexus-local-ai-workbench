@@ -538,59 +538,102 @@ private struct SidebarView: View {
     @Binding var isSettingsPresented: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 8) {
-                    Image(systemName: "point.3.connected.trianglepath.dotted")
-                        .foregroundStyle(NexusPalette.accent)
-                    Text("Nexus")
-                        .font(.title3.weight(.semibold))
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "point.3.connected.trianglepath.dotted")
+                                .foregroundStyle(NexusPalette.accent)
+                            Text("Nexus")
+                                .font(.title3.weight(.semibold))
+                        }
+                        Text("Local AI Workbench")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Agent 状态 / Status")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Label(appState.agentStatus.title, systemImage: "circle.fill")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(appState.lastError == nil ? NexusPalette.success : NexusPalette.danger)
+                            Text(appState.agentStatus.detail)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            if appState.lastError != nil {
+                                Text("右侧操作反馈包含恢复动作 / See operation feedback")
+                                    .font(.caption2)
+                                    .foregroundStyle(NexusPalette.danger)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .padding(12)
+                        .background(NexusPalette.panel)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    }
+
+                    AgentInboxSidebarView(
+                        summary: appState.agentInboxSummary,
+                        openEvent: { event in
+                            appState.selectedAgentEvent = event
+                        }
+                    )
+
+                    if appState.agentWorkflowSummary.shouldShow {
+                        AgentWorkflowBridgeView(
+                            summary: appState.agentWorkflowSummary,
+                            focusAgentTasks: {
+                                appState.focusAgentTasks()
+                            }
+                        )
+                    }
+
+                    sidebarTaskCenter
+                    sidebarWidgetSnapshot
+                    sidebarPinnedWorkspaces
+                    sidebarFilters
                 }
-                Text("Local AI Workbench")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                .padding(18)
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Agent 状态 / Status")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 6) {
-                    Label(appState.agentStatus.title, systemImage: "circle.fill")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(appState.lastError == nil ? NexusPalette.success : NexusPalette.danger)
-                    Text(appState.agentStatus.detail)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if appState.lastError != nil {
-                        Text("右侧操作反馈包含恢复动作 / See operation feedback")
-                            .font(.caption2)
-                            .foregroundStyle(NexusPalette.danger)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .padding(12)
-                .background(NexusPalette.panel)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            }
+            Divider()
 
-            AgentInboxSidebarView(
-                summary: appState.agentInboxSummary,
-                openEvent: { event in
-                    appState.selectedAgentEvent = event
-                }
-            )
-
-            if appState.agentWorkflowSummary.shouldShow {
-                AgentWorkflowBridgeView(
-                    summary: appState.agentWorkflowSummary,
-                    focusAgentTasks: {
-                        appState.focusAgentTasks()
-                    }
+            VStack(alignment: .leading, spacing: 10) {
+                SetupReadinessSidebarCard(
+                    isCreateWorkspacePresented: $isCreateWorkspacePresented,
+                    isSettingsPresented: $isSettingsPresented
                 )
-            }
 
+                Button {
+                    isCreateWorkspacePresented = true
+                } label: {
+                    Label("New Workspace", systemImage: "plus")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button {
+                    isSettingsPresented = true
+                } label: {
+                    Label("Settings", systemImage: "gearshape")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.borderless)
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 12)
+            .padding(.bottom, 18)
+        }
+        .background(NexusPalette.sidebar)
+    }
+
+    @ViewBuilder
+    private var sidebarTaskCenter: some View {
             if appState.taskCenterTotalCount > 0 || recentTaskWriteback != nil {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
@@ -653,7 +696,10 @@ private struct SidebarView: View {
                     }
                 }
             }
+    }
 
+    @ViewBuilder
+    private var sidebarWidgetSnapshot: some View {
             if let snapshot = appState.widgetSnapshot {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("小组件摘要 / Widget")
@@ -677,7 +723,10 @@ private struct SidebarView: View {
                 .background(NexusPalette.panel)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
+    }
 
+    @ViewBuilder
+    private var sidebarPinnedWorkspaces: some View {
             if !appState.pinnedWorkspaces.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("置顶工作区 / Pinned")
@@ -712,7 +761,9 @@ private struct SidebarView: View {
                     }
                 }
             }
+    }
 
+    private var sidebarFilters: some View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("筛选 / Filters")
                     .font(.caption.weight(.semibold))
@@ -758,27 +809,6 @@ private struct SidebarView: View {
                     .help("清空搜索和工作区筛选 / Clear search and workspace filter")
                 }
             }
-
-            Spacer()
-
-            Button {
-                isCreateWorkspacePresented = true
-            } label: {
-                Label("New Workspace", systemImage: "plus")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(.borderedProminent)
-
-            Button {
-                isSettingsPresented = true
-            } label: {
-                Label("Settings", systemImage: "gearshape")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(.borderless)
-        }
-        .padding(18)
-        .background(NexusPalette.sidebar)
     }
 
     private func copyTaskHandoff(_ item: TaskCenterItem) {
@@ -11255,6 +11285,115 @@ private struct AgentEventTarget: Identifiable {
             return false
         }
         return scheme == "http" || scheme == "https"
+    }
+}
+
+private struct SetupReadinessSidebarCard: View {
+    @EnvironmentObject private var appState: AppState
+    @Binding var isCreateWorkspacePresented: Bool
+    @Binding var isSettingsPresented: Bool
+
+    private var readiness: NativeSetupReadiness {
+        appState.setupReadiness
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: symbol)
+                    .foregroundStyle(color)
+                    .frame(width: 16)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("本机设置 / Setup")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(readiness.title)
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
+                }
+                Spacer()
+                EnvironmentStatusPill(status: readiness.status.environmentStatus)
+            }
+
+            Text(readiness.detail)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(3)
+
+            HStack(spacing: 8) {
+                Button {
+                    runPrimaryAction()
+                } label: {
+                    Label(readiness.primaryActionLabel, systemImage: primarySymbol)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+                .disabled(appState.isCheckingNativeEnvironment || appState.isLoading)
+
+                Button {
+                    isSettingsPresented = true
+                } label: {
+                    Label(readiness.secondaryActionLabel, systemImage: "gearshape")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(NexusPalette.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func runPrimaryAction() {
+        switch readiness.status {
+        case .ready where appState.workspaces.isEmpty:
+            isCreateWorkspacePresented = true
+        case .ready:
+            Task {
+                await appState.refreshFromBridge()
+            }
+        default:
+            Task {
+                await appState.checkNativeEnvironment()
+            }
+        }
+    }
+
+    private var symbol: String {
+        switch readiness.status {
+        case .ready:
+            "checkmark.seal"
+        case .needsReview:
+            "exclamationmark.triangle"
+        case .unchecked:
+            "questionmark.circle"
+        }
+    }
+
+    private var primarySymbol: String {
+        switch readiness.status {
+        case .ready where appState.workspaces.isEmpty:
+            "plus"
+        case .ready:
+            "arrow.clockwise"
+        default:
+            "checkmark.seal"
+        }
+    }
+
+    private var color: Color {
+        switch readiness.status {
+        case .ready:
+            NexusPalette.success
+        case .needsReview:
+            NexusPalette.danger
+        case .unchecked:
+            NexusPalette.warning
+        }
     }
 }
 

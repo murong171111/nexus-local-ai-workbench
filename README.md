@@ -33,6 +33,7 @@ It is designed for teams that work across multiple local service repositories an
 - Global search popover for indexed workspace documents, SQL notes, and browser-preview metadata fallback, with grouped results and keyboard navigation.
 - Browser-preview workspace pins are persisted locally and keep important workspaces above the risk-score sort while leaving workspace Markdown unchanged.
 - First-run onboarding for importing team profiles, configuring local paths, scanning source repositories, and optionally creating a demo workspace, with native empty-state setup guidance and a demo template inside the create-workspace sheet.
+- Native sidebar setup readiness keeps Settings visible at the lower-left edge and labels installs as unchecked, ready, or needing review. When the environment check passes, Nexus says initialization is unnecessary and routes directly to refresh or first-workspace creation.
 - Environment health checks for configured directories and Git availability.
 - Native workspace scanning from the configured paths; no local Python script is required for the packaged app.
 - Native create-workspace flow that scans source repositories, filters service candidates, selects real local services, leaves service scope pending when needed, offers a first-run demo template when no workspaces exist, checks root/folder/destination/environment/scope readiness before writing, then focuses the new workspace, opens the generated `handoff.md`, and shows an initialization receipt, handoff, worktree, Codex, and check actions.

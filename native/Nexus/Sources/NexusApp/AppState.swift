@@ -91,6 +91,61 @@ struct NativeEnvironmentHealth: Hashable {
     let warnings: [String]
 }
 
+enum NativeSetupReadinessStatus: String, Hashable {
+    case unchecked
+    case ready
+    case needsReview
+
+    var environmentStatus: String {
+        switch self {
+        case .ready:
+            "pass"
+        case .needsReview:
+            "blocker"
+        case .unchecked:
+            "warning"
+        }
+    }
+}
+
+struct NativeSetupReadiness: Hashable {
+    let status: NativeSetupReadinessStatus
+    let title: String
+    let detail: String
+    let primaryActionLabel: String
+    let secondaryActionLabel: String
+
+    init(health: NativeEnvironmentHealth?, workspaceCount: Int, profileImported: Bool) {
+        guard let health else {
+            status = .unchecked
+            title = "待检查 / Setup check"
+            detail = profileImported
+                ? "已导入 Profile，运行环境检查后即可确认是否需要调整路径。"
+                : "首次使用前先确认路径和 Git；已有有效配置时不会强制初始化。"
+            primaryActionLabel = "环境检查"
+            secondaryActionLabel = "Settings"
+            return
+        }
+
+        if health.ready {
+            status = .ready
+            title = "环境可用 / Ready"
+            detail = workspaceCount > 0
+                ? "路径和 Git 已通过检查，不需要初始化；可以直接进入现有工作区。"
+                : "路径和 Git 已通过检查，不需要初始化；可以直接新建第一个工作区。"
+            primaryActionLabel = workspaceCount > 0 ? "刷新" : "新建"
+            secondaryActionLabel = "Settings"
+            return
+        }
+
+        status = .needsReview
+        title = "需要配置 / Needs setup"
+        detail = "\(health.blockers.count) blockers · \(health.warnings.count) warnings。先在 Settings 调整路径，再重新运行环境检查。"
+        primaryActionLabel = "环境检查"
+        secondaryActionLabel = "Settings"
+    }
+}
+
 @MainActor
 final class AppState: ObservableObject {
     @Published var query = ""
@@ -413,6 +468,14 @@ final class AppState: ObservableObject {
 
     var automationScheduleToken: String {
         "\(isAutomationScheduleEnabled)-\(automationIntervalMinutes)"
+    }
+
+    var setupReadiness: NativeSetupReadiness {
+        NativeSetupReadiness(
+            health: nativeEnvironmentHealth,
+            workspaceCount: workspaces.count,
+            profileImported: lastSettingsProfilePath != nil
+        )
     }
 
     private var applicationSupportRootPath: String {
