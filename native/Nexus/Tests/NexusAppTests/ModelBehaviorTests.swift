@@ -4,6 +4,59 @@ import XCTest
 @testable import NexusApp
 
 final class ModelBehaviorTests: XCTestCase {
+    func testNativeSetupReadinessSkipsInitializationWhenEnvironmentIsReady() {
+        let readiness = NativeSetupReadiness(
+            health: environmentHealth(ready: true, workspaceCount: 2, sourceRepoCount: 5),
+            workspaceCount: 2,
+            profileImported: false
+        )
+
+        XCTAssertEqual(readiness.status, .ready)
+        XCTAssertEqual(readiness.status.environmentStatus, "pass")
+        XCTAssertEqual(readiness.primaryActionLabel, "刷新")
+        XCTAssertTrue(readiness.detail.contains("不需要初始化"))
+        XCTAssertTrue(readiness.detail.contains("现有工作区"))
+    }
+
+    func testNativeSetupReadinessRoutesEmptyReadyEnvironmentToWorkspaceCreation() {
+        let readiness = NativeSetupReadiness(
+            health: environmentHealth(ready: true, workspaceCount: 0, sourceRepoCount: 3),
+            workspaceCount: 0,
+            profileImported: true
+        )
+
+        XCTAssertEqual(readiness.status, .ready)
+        XCTAssertEqual(readiness.primaryActionLabel, "新建")
+        XCTAssertTrue(readiness.detail.contains("新建第一个工作区"))
+    }
+
+    func testNativeSetupReadinessHighlightsUncheckedAndBlockedSettings() {
+        let unchecked = NativeSetupReadiness(
+            health: nil,
+            workspaceCount: 0,
+            profileImported: true
+        )
+        XCTAssertEqual(unchecked.status, .unchecked)
+        XCTAssertEqual(unchecked.status.environmentStatus, "warning")
+        XCTAssertTrue(unchecked.detail.contains("已导入 Profile"))
+
+        let blocked = NativeSetupReadiness(
+            health: environmentHealth(
+                ready: false,
+                workspaceCount: 0,
+                sourceRepoCount: 0,
+                blockers: ["工作区目录不存在"],
+                warnings: ["源仓库目录下暂未识别到 git 服务仓库"]
+            ),
+            workspaceCount: 0,
+            profileImported: false
+        )
+        XCTAssertEqual(blocked.status, .needsReview)
+        XCTAssertEqual(blocked.status.environmentStatus, "blocker")
+        XCTAssertTrue(blocked.detail.contains("1 blockers"))
+        XCTAssertTrue(blocked.detail.contains("Settings"))
+    }
+
     func testMenuBarStatusSummaryPrioritizesBlockedWorkspaces() {
         let summary = MenuBarStatusSummary(
             workspaceCount: 4,
@@ -1148,6 +1201,25 @@ final class ModelBehaviorTests: XCTestCase {
             sourceReposRoot: "/tmp/source-repos",
             docsRoot: "/tmp/docs",
             defaults: defaults
+        )
+    }
+
+    private func environmentHealth(
+        ready: Bool,
+        workspaceCount: Int,
+        sourceRepoCount: Int,
+        blockers: [String] = [],
+        warnings: [String] = []
+    ) -> NativeEnvironmentHealth {
+        NativeEnvironmentHealth(
+            generatedAt: "2026-06-01T12:00:00Z",
+            ready: ready,
+            pathChecks: [],
+            toolChecks: [],
+            workspaceCount: workspaceCount,
+            sourceRepoCount: sourceRepoCount,
+            blockers: blockers,
+            warnings: warnings
         )
     }
 
