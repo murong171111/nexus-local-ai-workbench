@@ -1024,6 +1024,60 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertFalse(copiedPrompt.contains("Selected Clean Risk"))
     }
 
+    @MainActor
+    func testCodexSessionLinksFlowIntoHandoffPrompts() async {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "delivery",
+            id: "session-workspace",
+            name: "Session Workspace",
+            folder: "2026-06-01-session-workspace",
+            path: "/tmp/workspaces/2026-06-01-session-workspace",
+            risks: [
+                RiskAlert(title: "交付待复核", detail: "需要延续已有 Codex 会话。")
+            ],
+            tasks: [
+                WorkspaceTask(
+                    id: "session-task",
+                    title: "Follow existing session",
+                    status: "待办",
+                    detail: "Continue from the bound Codex session.",
+                    priority: "high",
+                    source: "workspace",
+                    sourceEventID: nil,
+                    sourceLine: 12
+                )
+            ]
+        )
+        let appState = appStateForAutomationTests(workspaces: [workspace])
+        appState.selectedWorkspaceID = workspace.id
+        appState.codexSessionLinksByWorkspace[workspace.id] = [
+            CodexSessionLink(
+                id: "session-1",
+                title: "Architecture thread",
+                url: "codex://thread/session-1",
+                notes: "Resume design review",
+                createdAt: "2026-06-01T10:00:00Z",
+                lastOpenedAt: "2026-06-01T10:30:00Z"
+            )
+        ]
+
+        let prompts = [
+            appState.workspaceHandoffPrompt(for: workspace),
+            appState.deliveryUpdatePrompt(for: workspace),
+            appState.validationPrHandoffPrompt(for: workspace),
+            appState.riskReviewPrompt(for: workspace),
+            appState.automationSignalHandoffPrompt(for: riskSignal()),
+            await appState.workspaceTaskHandoffPrompt(for: workspace.tasks[0], in: workspace)
+        ]
+
+        for prompt in prompts {
+            XCTAssertTrue(prompt.contains("Architecture thread"))
+            XCTAssertTrue(prompt.contains("codex://thread/session-1"))
+        }
+        XCTAssertTrue(prompts[0].contains("notes: Resume design review"))
+        XCTAssertTrue(prompts[4].contains("- Codex 会话: Architecture thread: codex://thread/session-1"))
+    }
+
     private func workspaceForWorkflowSummary(
         stage: String,
         id: String? = nil,
