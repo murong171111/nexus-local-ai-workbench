@@ -29,7 +29,7 @@ The native right inspector also exposes an Automation Action Center. It keeps th
 - task signals focus the Task Center and high-priority filter when needed; deferred tasks remain visible in Task Center but do not emit active task attention
 - worktree signals select the first affected workspace, can present the confirmed worktree setup sheet, and copy missing-service/source/script/readiness context for Codex handoff
 - dirty-service signals select the first affected workspace and open a service-scoped Codex handoff for the first dirty service
-- each actionable signal can copy a Codex handoff prompt with local paths, the matching risk, delivery, branch, task, worktree, or dirty-service workspace context, and the suggested next action
+- each actionable signal can copy a Codex handoff prompt with local paths, the matching risk, delivery, branch, task, worktree, or dirty-service workspace context, Nexus recommended next-step actions, and the suggested next action
 
 The native Settings panel can also enable scheduled checks while Nexus is running. The schedule is a local `UserDefaults` preference with supported intervals of 5, 15, 30, and 60 minutes. It is not a LaunchAgent, daemon, or system notification channel; closing Nexus stops the loop.
 

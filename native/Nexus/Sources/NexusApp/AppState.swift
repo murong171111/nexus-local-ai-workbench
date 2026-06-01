@@ -2130,6 +2130,11 @@ final class AppState: ObservableObject {
             let worktreeReadiness = Self.hasConfirmedTargetBranch(selected.branch)
                 ? "目标分支已确认；在 Nexus 中显式确认后创建缺失 worktree。"
                 : "目标分支未确认；先更新 branches.md 或 workspace.md，暂不要创建 worktree。"
+            let nextStepActions = selected.sessionActions.isEmpty
+                ? "无"
+                : selected.sessionActions.prefix(5).map { action in
+                    "[\(action.priority)/\(action.status)] \(action.label): \(action.detail) · 文档: \(action.documentKey)"
+                }.joined(separator: " | ")
             workspaceLines = [
                 "- 当前工作区: \(selected.name)",
                 "- 工作区目录: \(selected.path)",
@@ -2146,7 +2151,8 @@ final class AppState: ObservableObject {
                 "- 分支检查: \(branchChecks.isEmpty ? "未生成" : branchChecks)",
                 "- 交付记录: \(deliveryDocumentPath(for: selected))",
                 "- SQL 文件: \(selected.sqlFiles.isEmpty ? "未扫描到" : selected.sqlFiles.map(\.relativePath).joined(separator: ", "))",
-                "- 交付/SQL 检查: \(deliveryAndSqlChecks.isEmpty ? "未生成" : deliveryAndSqlChecks)"
+                "- 交付/SQL 检查: \(deliveryAndSqlChecks.isEmpty ? "未生成" : deliveryAndSqlChecks)",
+                "- Nexus 推荐动作: \(nextStepActions)"
             ]
         } else {
             workspaceLines = ["- 当前工作区: 未选择"]

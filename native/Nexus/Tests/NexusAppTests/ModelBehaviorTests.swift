@@ -798,6 +798,58 @@ final class ModelBehaviorTests: XCTestCase {
     }
 
     @MainActor
+    func testAutomationHandoffPromptIncludesNexusNextStepActions() {
+        let scopingWorkspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "scoping-workspace",
+            name: "Scoping Workspace",
+            folder: "2026-05-31-scoping-workspace",
+            path: "/tmp/workspaces/2026-05-31-scoping-workspace",
+            healthChecks: [
+                WorkspaceHealthCheck(
+                    id: "target-branch",
+                    label: "目标分支",
+                    detail: "目标分支待确认，后续 worktree 创建会被阻止。",
+                    status: "fail",
+                    action: "branches"
+                )
+            ],
+            risks: [
+                RiskAlert(title: "目标分支未确认", detail: "创建 worktree 前需要先定分支。")
+            ],
+            sessionActions: [
+                WorkspaceSessionAction(
+                    id: "confirm-target-branch",
+                    label: "确认目标分支 / Confirm branch",
+                    detail: "目标分支仍是待确认状态，创建 worktree 前需要先定分支。",
+                    priority: "high",
+                    status: "blocked",
+                    instructionType: "git",
+                    documentKey: "branches"
+                ),
+                WorkspaceSessionAction(
+                    id: "confirm-services",
+                    label: "确认服务范围 / Confirm services",
+                    detail: "先补齐已确认服务，后续 worktree 和风险检查才有可靠目标。",
+                    priority: "high",
+                    status: "blocked",
+                    instructionType: "risk",
+                    documentKey: "services"
+                )
+            ]
+        )
+        let appState = appStateForAutomationTests(workspaces: [scopingWorkspace])
+
+        let prompt = appState.automationSignalHandoffPrompt(for: riskSignal())
+
+        XCTAssertTrue(prompt.contains("- 当前工作区: Scoping Workspace"))
+        XCTAssertTrue(prompt.contains("Nexus 推荐动作"))
+        XCTAssertTrue(prompt.contains("[high/blocked] 确认目标分支 / Confirm branch"))
+        XCTAssertTrue(prompt.contains("文档: branches"))
+        XCTAssertTrue(prompt.contains("[high/blocked] 确认服务范围 / Confirm services"))
+    }
+
+    @MainActor
     func testAutomationRiskActionCopiesRiskReviewPromptForRiskWorkspace() async {
         let selectedCleanWorkspace = workspaceForWorkflowSummary(
             stage: "developing",
@@ -850,6 +902,7 @@ final class ModelBehaviorTests: XCTestCase {
         healthChecks: [WorkspaceHealthCheck] = [],
         risks: [RiskAlert] = [],
         sqlFiles: [WorkspaceSqlFile] = [],
+        sessionActions: [WorkspaceSessionAction] = [],
         services: [ServiceStatus]? = nil,
         tasks: [WorkspaceTask]? = nil
     ) -> WorkspaceSummary {
@@ -875,7 +928,7 @@ final class ModelBehaviorTests: XCTestCase {
             activities: [],
             risks: risks,
             healthChecks: healthChecks,
-            sessionActions: [],
+            sessionActions: sessionActions,
             lifecycle: WorkspaceLifecycle(
                 stage: stage,
                 label: "Workflow",
