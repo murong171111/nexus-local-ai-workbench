@@ -420,6 +420,7 @@ export function workspaceSessionActions(workspace: Workspace): WorkspaceSessionA
   const dirtyServices = workspace.gitRows.filter(gitRowHasDirtyService).map((row) => row.service);
   const mismatches = branchAlignmentRows(workspace).map((row) => `${row.service}(${row.actualBranch})`);
   const deliveryRisk = workspace.risks.find((risk) => risk.includes("交付") || risk.toLowerCase().includes("delivery"));
+  const activeTasks = workspace.taskCounts.doing + workspace.taskCounts.todo;
 
   if (!workspace.confirmedServices.length) {
     actions.push(sessionAction("confirm-services", "确认服务范围 / Confirm services", "先补齐已确认服务，后续 worktree 和风险检查才有可靠目标。", "high", "blocked", "risk", "services"));
@@ -439,6 +440,10 @@ export function workspaceSessionActions(workspace: Workspace): WorkspaceSessionA
 
   if (dirtyServices.length) {
     actions.push(sessionAction("review-dirty-services", "复核未提交服务 / Review changes", `存在未提交服务: ${dirtyServices.join(", ")}`, "medium", "recommended", "git", "status"));
+  }
+
+  if (activeTasks > 0) {
+    actions.push(sessionAction("continue-active-tasks", "继续活跃任务 / Continue tasks", `tasks.md 中还有 ${activeTasks} 个活跃任务（${workspace.taskCounts.doing} 进行中、${workspace.taskCounts.todo} 待办）。`, "medium", "recommended", "task", "tasks"));
   }
 
   if (deliveryRisk) {

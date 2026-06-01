@@ -288,12 +288,15 @@ test("workspaceSessionActions builds a startup flow from workspace state", () =>
       "confirm-target-branch",
       "create-worktrees",
       "review-dirty-services",
+      "continue-active-tasks",
       "update-delivery-record",
       "resolve-blocked-tasks",
       "start-codex-session"
     ]
   );
   assert.equal(actions[0].status, "blocked");
+  assert.equal(actions[3].instructionType, "task");
+  assert.match(actions[3].detail, /3 个活跃任务/);
   assert.equal(actions.at(-1).instructionType, "continue");
 });
 

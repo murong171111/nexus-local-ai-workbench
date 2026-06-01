@@ -1459,6 +1459,7 @@ fn workspace_health_checks(
     sql_artifacts: &SqlArtifactStatus,
     task_counts: &TaskCounts,
 ) -> Vec<WorkspaceHealthCheck> {
+    let active_tasks = task_counts.doing + task_counts.todo;
     vec![
         health_check(
             "service-scope",
@@ -1562,6 +1563,20 @@ fn workspace_health_checks(
             "sql",
         ),
         health_check(
+            "active-tasks",
+            "活跃任务 / Active tasks",
+            if active_tasks == 0 {
+                "无活跃任务".to_string()
+            } else {
+                format!(
+                    "存在 {} 个活跃任务: {} 进行中 / {} 待办",
+                    active_tasks, task_counts.doing, task_counts.todo
+                )
+            },
+            if active_tasks == 0 { "pass" } else { "warning" },
+            "tasks",
+        ),
+        health_check(
             "blocked-tasks",
             "阻塞任务 / Blocked tasks",
             if task_counts.blocked == 0 {
@@ -1607,6 +1622,7 @@ fn workspace_session_actions(
     task_counts: &TaskCounts,
 ) -> Vec<WorkspaceSessionAction> {
     let mut actions = Vec::new();
+    let active_tasks = task_counts.doing + task_counts.todo;
 
     if confirmed_services.is_empty() {
         actions.push(session_action(
@@ -1665,6 +1681,21 @@ fn workspace_session_actions(
             "recommended",
             "git",
             "status",
+        ));
+    }
+
+    if active_tasks > 0 {
+        actions.push(session_action(
+            "continue-active-tasks",
+            "继续活跃任务 / Continue tasks",
+            format!(
+                "tasks.md 中还有 {} 个活跃任务（{} 进行中、{} 待办）。",
+                active_tasks, task_counts.doing, task_counts.todo
+            ),
+            "medium",
+            "recommended",
+            "task",
+            "tasks",
         ));
     }
 
@@ -2901,7 +2932,7 @@ mod tests {
         assert!(item.risks.iter().any(|risk| risk == "交付记录待补充"));
         assert!(item.links.contains_key("workspace"));
         assert_eq!(item.activities[0].title, "worktree 未创建: order");
-        assert_eq!(item.health_checks.len(), 8);
+        assert_eq!(item.health_checks.len(), 9);
         assert!(item.health_checks.iter().any(|check| {
             check.id == "worktree-ready" && check.status == "fail" && check.detail.contains("order")
         }));
@@ -2913,10 +2944,20 @@ mod tests {
             .health_checks
             .iter()
             .any(|check| { check.id == "service-scope" && check.status == "pass" }));
+        assert!(item.health_checks.iter().any(|check| {
+            check.id == "active-tasks"
+                && check.status == "warning"
+                && check.detail.contains("2 个活跃任务")
+        }));
         assert!(item.session_actions.iter().any(|action| {
             action.id == "create-worktrees"
                 && action.instruction_type == "worktree"
                 && action.detail.contains("order")
+        }));
+        assert!(item.session_actions.iter().any(|action| {
+            action.id == "continue-active-tasks"
+                && action.instruction_type == "task"
+                && action.detail.contains("2 个活跃任务")
         }));
         assert!(item.session_actions.iter().any(|action| {
             action.id == "start-codex-session" && action.instruction_type == "continue"
