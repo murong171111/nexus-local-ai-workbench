@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Added
 
+- Native/Rust local checks now emit an `active-tasks` health row and a `continue-active-tasks` next-step action, so open `doing`/`todo` tasks route directly back to `tasks.md` instead of hiding behind aggregate task counts.
 - Native Codex handoff prompts now include bound Codex session links, so workspace, lifecycle, task, risk, delivery, validation/PR, service, and automation handoffs can resume existing conversations instead of starting from only fresh context.
 - Native workspace detail now promotes SQL readiness into the top-level overview and Command Center workflow path, so SQL artifact state is visible before opening the deeper Workflow checklist.
 - Native workspace creation now opens the generated `handoff.md` after focusing the new workspace, and the document preview has an explicit close-preview control that keeps the workspace detail open.

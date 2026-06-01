@@ -124,11 +124,12 @@ function sessionStatusLabel(status: string) {
   return "later";
 }
 
-function instructionType(action: WorkspaceSessionAction): "continue" | "git" | "delivery" | "risk" | "worktree" {
+function instructionType(action: WorkspaceSessionAction): "continue" | "git" | "delivery" | "risk" | "worktree" | "task" {
   if (action.instructionType === "git") return "git";
   if (action.instructionType === "delivery") return "delivery";
   if (action.instructionType === "risk") return "risk";
   if (action.instructionType === "worktree") return "worktree";
+  if (action.instructionType === "task") return "task";
   return "continue";
 }
 
@@ -245,7 +246,7 @@ function toneForRisk(count: number) {
   return "green";
 }
 
-function codexInstruction(workspace: Workspace, action: "continue" | "git" | "delivery" | "risk" | "worktree") {
+function codexInstruction(workspace: Workspace, action: "continue" | "git" | "delivery" | "risk" | "worktree" | "task") {
   if (action === "continue") {
     const checks = workspace.healthChecks?.length
       ? workspace.healthChecks.map((check) => `- [${healthStatusLabel(check.status)}] ${check.label}: ${check.detail}`).join("\n")
@@ -260,6 +261,9 @@ function codexInstruction(workspace: Workspace, action: "continue" | "git" | "de
   }
   if (action === "delivery") {
     return `更新工作区 ${workspace.folder} 的交付记录。\n请根据本次代码/SQL/逻辑变更，补充交付记录.md，包含涉及服务、分支、变更点、SQL、验证结果和遗留风险。\n如果交付记录.md 任意位置记录实际 SQL 变更，或 SQL 段落出现“变更类型：DDL/DML”、影响表、新增字段、回填脚本、数据修复等变更元数据，必须在 sql/ 下同步正式 SQL 文件和回滚 SQL 文件。`;
+  }
+  if (action === "task") {
+    return `继续处理工作区 ${workspace.folder} 的活跃任务。\n请先读取 tasks.md、STATUS.md、services.md、branches.md 和交付记录.md，按 tasks.md 中“进行中/待办”的任务顺序给出下一步处理建议。处理完成或延期后，同步更新 tasks.md；如果涉及代码、SQL、逻辑、配置或验证变化，同步更新交付记录.md，SQL 变更还必须补齐 sql/ 下正式 SQL 和回滚 SQL 文件。`;
   }
   if (action === "worktree") {
     return workspace.worktreeCommand;
@@ -2686,7 +2690,7 @@ export function App() {
     showToast(`已复制 ${workspace.name} 的 worktree 命令`);
   };
 
-  const copyInstruction = async (workspace: Workspace, action: "continue" | "git" | "delivery" | "risk" | "worktree") => {
+  const copyInstruction = async (workspace: Workspace, action: "continue" | "git" | "delivery" | "risk" | "worktree" | "task") => {
     await navigator.clipboard.writeText(codexInstruction(workspace, action));
     void recordWorkspaceAction(workspace, "codex_instruction.copied", `Copied ${action} Codex instruction for ${workspace.name}`, {
       metadata: { instructionType: action }

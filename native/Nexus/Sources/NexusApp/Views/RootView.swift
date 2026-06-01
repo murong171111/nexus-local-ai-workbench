@@ -7160,6 +7160,8 @@ private struct SessionActionRow: View {
             "terminal"
         case "git":
             "arrow.triangle.branch"
+        case "task":
+            "checklist"
         case "delivery":
             "doc.text"
         default:
