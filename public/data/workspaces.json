@@ -17,7 +17,8 @@
         "done": 0,
         "doing": 0,
         "todo": 3,
-        "blocked": 0
+        "blocked": 0,
+        "deferred": 0
       },
       "decisionCount": 0,
       "gitRows": [

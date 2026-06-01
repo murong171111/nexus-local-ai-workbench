@@ -1221,12 +1221,31 @@ public struct TaskCountsSnapshot: Codable, Equatable, Sendable {
     public let doing: Int
     public let todo: Int
     public let blocked: Int
+    public let deferred: Int
 
-    public init(done: Int, doing: Int, todo: Int, blocked: Int) {
+    public init(done: Int, doing: Int, todo: Int, blocked: Int, deferred: Int = 0) {
         self.done = done
         self.doing = doing
         self.todo = todo
         self.blocked = blocked
+        self.deferred = deferred
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case done
+        case doing
+        case todo
+        case blocked
+        case deferred
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        done = try container.decode(Int.self, forKey: .done)
+        doing = try container.decode(Int.self, forKey: .doing)
+        todo = try container.decode(Int.self, forKey: .todo)
+        blocked = try container.decode(Int.self, forKey: .blocked)
+        deferred = try container.decodeIfPresent(Int.self, forKey: .deferred) ?? 0
     }
 }
 

@@ -24,7 +24,7 @@ private func localCheckSummaryPayload(
         "- Risks: \(check.riskCount)",
         "- Delivery issues: \(check.deliveryIssueCount)",
         "- Branch issues: \(check.branchMismatchCount)",
-        "- Open tasks: \(check.openTaskCount) (\(check.highPriorityTaskCount) high priority)",
+        "- Active tasks: \(check.openTaskCount) (\(check.highPriorityTaskCount) high priority)",
         "- Worktree issues: \(check.missingWorktreeCount) missing, \(check.dirtyServiceCount) dirty"
     ]
 
@@ -2039,7 +2039,7 @@ private struct WorktreeSetupFollowUpCheckView: View {
                     label: "任务",
                     value: check.openTaskCount,
                     tone: check.highPriorityTaskCount > 0 ? NexusPalette.warning : NexusPalette.accent,
-                    help: "未完成任务数量 / Open task count"
+                    help: "活跃任务数量 / Active task count"
                 )
                 WorktreeSetupCheckMetric(
                     label: "分支",
@@ -2550,7 +2550,7 @@ private struct WorkspaceCard: View {
 
             HStack(spacing: 16) {
                 Metric(label: "服务 / Services", value: "\(workspace.services.count)")
-                Metric(label: "任务 / Tasks", value: "\(workspace.tasks.filter { !$0.isDone }.count) open")
+                Metric(label: "任务 / Tasks", value: "\(workspace.tasks.filter(\.isActive).count) active")
                 Metric(label: "Worktree", value: workspace.worktreeState)
                 Metric(label: "最近活动 / Activity", value: workspace.activities.first?.title ?? "No recent activity")
             }
@@ -3536,6 +3536,13 @@ private struct WorkspaceDetailView: View {
             return
         }
 
+        if action.documentKey == "sql" {
+            Task {
+                await appState.openSqlReviewDocument(in: workspace)
+            }
+            return
+        }
+
         let documentPath = workspace.documentLinks[action.documentKey]
             ?? workspace.documentLinks["handoff"]
             ?? "\(workspace.path)/handoff.md"
@@ -3953,11 +3960,11 @@ private struct WorkspaceDetailMapView: View {
     let action: (WorkspaceDetailSection) -> Void
 
     private var openTaskCount: Int {
-        workspace.tasks.filter { !$0.isDone }.count
+        workspace.tasks.filter(\.isActive).count
     }
 
     private var blockedTaskCount: Int {
-        workspace.tasks.filter { !$0.isDone && $0.isBlocked }.count
+        workspace.tasks.filter { $0.isActive && $0.isBlocked }.count
     }
 
     private var missingWorktreeCount: Int {
@@ -4208,7 +4215,7 @@ private struct WorkspaceDetailOverviewView: View {
     }
 
     private var openTasks: [WorkspaceTask] {
-        workspace.tasks.filter { !$0.isDone }
+        workspace.tasks.filter(\.isActive)
     }
 
     private var blockedTaskCount: Int {
@@ -4321,7 +4328,7 @@ private struct WorkspaceDetailOverviewView: View {
             id: "tasks",
             label: "任务",
             value: workflowSummary.taskValue,
-            detail: blockedTaskCount > 0 ? "\(openTasks.count) 开放" : openTasks.isEmpty ? "无开放任务" : "tasks.md",
+            detail: blockedTaskCount > 0 ? "\(openTasks.count) 活跃" : openTasks.isEmpty ? "无活跃任务" : "tasks.md",
             status: DetailOverviewStatus(workflowStatus: workflowSummary.taskStatus),
             actionLabel: "打开任务",
             action: .document("tasks")
@@ -4497,6 +4504,12 @@ private struct WorkspaceDetailOverviewView: View {
     }
 
     private func documentPath(for key: String) -> String {
+        if key == "sql" {
+            return workspace.sqlFiles.first?.path
+                ?? workspace.documentLinks["delivery"]
+                ?? "\(workspace.path)/交付记录.md"
+        }
+
         if let path = workspace.documentLinks[key] {
             return path
         }
@@ -5666,7 +5679,7 @@ private struct WorkspaceCommandCenterView: View {
     let workspace: WorkspaceSummary
 
     private var openTaskCount: Int {
-        workspace.tasks.filter { !$0.isDone }.count
+        workspace.tasks.filter(\.isActive).count
     }
 
     private var missingWorktreeCount: Int {
@@ -5674,7 +5687,7 @@ private struct WorkspaceCommandCenterView: View {
     }
 
     private var blockedTaskCount: Int {
-        workspace.tasks.filter { !$0.isDone && $0.isBlocked }.count
+        workspace.tasks.filter { $0.isActive && $0.isBlocked }.count
     }
 
     private var workflowSummary: WorkspaceWorkflowSummary {
@@ -5833,7 +5846,7 @@ private struct WorkspaceCommandCenterView: View {
 
         if openTaskCount > 0 {
             return CommandCenterPrimaryStep(
-                title: "处理开放任务 / Review tasks",
+                title: "处理活跃任务 / Review tasks",
                 detail: "\(openTaskCount) 个任务仍未关闭。开发前后都可以从这里确认任务状态和交付影响。",
                 status: .next,
                 systemImage: "checklist",
@@ -7423,7 +7436,7 @@ private struct WorkflowStatusView: View {
     let lifecycleAction: (LifecycleTransition) -> Void
 
     private var openTasks: [WorkspaceTask] {
-        workspace.tasks.filter { !$0.isDone }
+        workspace.tasks.filter(\.isActive)
     }
 
     private var blockedTasks: [WorkspaceTask] {
@@ -7612,8 +7625,8 @@ private struct WorkflowStatusView: View {
 
         if !openTasks.isEmpty {
             return DeliveryFocusStep(
-                title: "确认开放任务 / Review open tasks",
-                detail: "\(openTasks.count) 个任务仍未关闭。交付前需要判断它们是已完成、延期，还是还要继续开发。",
+                title: "确认活跃任务 / Review active tasks",
+                detail: "\(openTasks.count) 个任务仍在活跃队列。交付前需要判断它们是已完成、延期，还是还要继续开发。",
                 statusLabel: "review",
                 tone: NexusPalette.accent,
                 systemImage: "checklist",
@@ -7801,7 +7814,7 @@ private struct WorkflowStatusView: View {
             return DeliveryReadinessItem(
                 id: "tasks",
                 title: "任务状态 / Tasks",
-                detail: "\(openTasks.count) 个任务仍未关闭，交付前需要确认是否完成或延期。",
+                detail: "\(openTasks.count) 个任务仍在活跃队列，交付前需要确认是否完成或延期。",
                 status: .warning,
                 systemImage: "checklist"
             )
@@ -7810,7 +7823,7 @@ private struct WorkflowStatusView: View {
         return DeliveryReadinessItem(
             id: "tasks",
             title: "任务状态 / Tasks",
-            detail: "当前没有开放任务。",
+            detail: "当前没有活跃任务。",
             status: .pass,
             systemImage: "checklist"
         )
@@ -7907,7 +7920,7 @@ private struct WorkflowStatusView: View {
 
                 HStack(spacing: 8) {
                     WorkflowMetric(
-                        label: "Open tasks",
+                        label: "Active tasks",
                         value: "\(openTasks.count)",
                         tone: openTasks.isEmpty ? NexusPalette.success : NexusPalette.accent
                     )
@@ -8001,7 +8014,7 @@ private struct WorkflowStatusView: View {
                 }
 
                 if openTasks.isEmpty {
-                    Label("当前没有开放任务。可以继续查看交付记录或运行本地检查确认状态。", systemImage: "checkmark.circle")
+                    Label("当前没有活跃任务。可以继续查看交付记录或运行本地检查确认状态。", systemImage: "checkmark.circle")
                         .font(.caption)
                         .foregroundStyle(NexusPalette.success)
                 } else {
@@ -8025,7 +8038,7 @@ private struct WorkflowStatusView: View {
                         }
 
                         if openTasks.count > 4 {
-                            Text("Showing 4 of \(openTasks.count) open tasks. Open tasks.md for the full list.")
+                            Text("Showing 4 of \(openTasks.count) active tasks. Open tasks.md for the full list.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -9061,7 +9074,7 @@ private struct TaskCenterSidebarRow: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.mini)
-                .disabled(item.task.isDone || item.task.status.contains("延期"))
+                .disabled(item.task.isDone || item.task.isDeferred)
                 .help("确认后写入 tasks.md 为延期")
 
                 Button("Codex") {
@@ -9152,7 +9165,7 @@ private struct WorkspaceTaskRow: View {
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.mini)
-                        .disabled(task.status.contains("延期"))
+                        .disabled(task.isDeferred)
                         .help("确认后写入 tasks.md 为延期")
                     }
                 }

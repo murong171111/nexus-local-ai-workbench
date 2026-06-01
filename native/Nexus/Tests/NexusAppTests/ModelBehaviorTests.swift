@@ -157,10 +157,27 @@ final class ModelBehaviorTests: XCTestCase {
                 sourceLine: nil
             )
         )
+        let highDeferred = TaskCenterItem(
+            workspaceID: "workspace-c",
+            workspaceName: "Workspace C",
+            workspaceFolder: "workspace-c",
+            task: WorkspaceTask(
+                id: "high-deferred",
+                title: "Later high priority",
+                status: "延期",
+                detail: "deferred until release window",
+                priority: "high",
+                source: "workspace",
+                sourceEventID: nil,
+                sourceLine: nil
+            )
+        )
 
         XCTAssertTrue(TaskCenterFilter.high.matches(blocked))
         XCTAssertTrue(TaskCenterFilter.agent.matches(agentDeferred))
         XCTAssertTrue(TaskCenterFilter.deferred.matches(agentDeferred))
+        XCTAssertTrue(TaskCenterFilter.deferred.matches(highDeferred))
+        XCTAssertFalse(TaskCenterFilter.high.matches(highDeferred))
         XCTAssertFalse(TaskCenterFilter.agent.matches(blocked))
     }
 
@@ -362,6 +379,59 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertFalse(noFlow.shouldShow)
     }
 
+    @MainActor
+    func testAgentWorkflowSummaryIgnoresDeferredAgentTasks() {
+        let deferredAgentWorkspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "deferred-agent-workspace",
+            tasks: [
+                WorkspaceTask(
+                    id: "agent-deferred",
+                    title: "稍后处理 Agent 建议",
+                    status: "延期",
+                    detail: "deferred until next release",
+                    priority: "high",
+                    source: "agent",
+                    sourceEventID: "agent-event-1",
+                    sourceLine: 12
+                )
+            ]
+        )
+        let activeAgentWorkspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "active-agent-workspace",
+            tasks: [
+                WorkspaceTask(
+                    id: "agent-active",
+                    title: "今天处理 Agent 建议",
+                    status: "todo",
+                    detail: "需要继续处理。",
+                    priority: "medium",
+                    source: "agent",
+                    sourceEventID: "agent-event-2",
+                    sourceLine: 18
+                )
+            ]
+        )
+        let deferredOnlyState = appStateForAutomationTests(workspaces: [deferredAgentWorkspace])
+
+        XCTAssertEqual(deferredOnlyState.taskCenterCount(for: .agent), 1)
+        XCTAssertEqual(deferredOnlyState.taskCenterCount(for: .deferred), 1)
+        XCTAssertEqual(deferredOnlyState.agentWorkflowSummary.agentTaskCount, 0)
+        XCTAssertEqual(deferredOnlyState.agentWorkflowSummary.openTaskCount, 0)
+        XCTAssertFalse(deferredOnlyState.agentWorkflowSummary.shouldShow)
+        XCTAssertEqual(deferredOnlyState.menuBarSummary.agentTaskCount, 0)
+
+        let mixedState = appStateForAutomationTests(workspaces: [deferredAgentWorkspace, activeAgentWorkspace])
+
+        XCTAssertEqual(mixedState.taskCenterCount(for: .agent), 2)
+        XCTAssertEqual(mixedState.taskCenterCount(for: .deferred), 1)
+        XCTAssertEqual(mixedState.agentWorkflowSummary.agentTaskCount, 1)
+        XCTAssertEqual(mixedState.agentWorkflowSummary.openTaskCount, 1)
+        XCTAssertTrue(mixedState.agentWorkflowSummary.shouldShow)
+        XCTAssertEqual(mixedState.menuBarSummary.agentTaskCount, 1)
+    }
+
     func testWorkspaceWorkflowSummaryCombinesTaskAndDeliverySignals() {
         let payLogSummary = WorkspaceWorkflowSummary(workspace: WorkspaceSummary.previewData[0])
 
@@ -533,8 +603,58 @@ final class ModelBehaviorTests: XCTestCase {
         let prompt = appState.automationSignalHandoffPrompt(for: taskSignal())
 
         XCTAssertTrue(prompt.contains("- 当前工作区: Task Workspace"))
-        XCTAssertTrue(prompt.contains("- 未完成任务: 1"))
+        XCTAssertTrue(prompt.contains("- 活跃任务: 1"))
         XCTAssertFalse(prompt.contains("- 当前工作区: Selected Clean"))
+    }
+
+    @MainActor
+    func testAutomationTaskHandoffPromptSkipsDeferredTasks() {
+        let deferredWorkspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "deferred-task-workspace",
+            name: "Deferred Task Workspace",
+            folder: "2026-05-31-deferred-task-workspace",
+            path: "/tmp/workspaces/2026-05-31-deferred-task-workspace",
+            tasks: [
+                WorkspaceTask(
+                    id: "task-deferred-high",
+                    title: "稍后复核",
+                    status: "延期",
+                    detail: "deferred until release window",
+                    priority: "high",
+                    source: "workspace",
+                    sourceEventID: nil,
+                    sourceLine: 18
+                )
+            ]
+        )
+        let activeWorkspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "active-task-workspace",
+            name: "Active Task Workspace",
+            folder: "2026-05-31-active-task-workspace",
+            path: "/tmp/workspaces/2026-05-31-active-task-workspace",
+            tasks: [
+                WorkspaceTask(
+                    id: "task-active",
+                    title: "继续验证",
+                    status: "todo",
+                    detail: "需要今天处理。",
+                    priority: "medium",
+                    source: "workspace",
+                    sourceEventID: nil,
+                    sourceLine: 20
+                )
+            ]
+        )
+        let appState = appStateForAutomationTests(workspaces: [deferredWorkspace, activeWorkspace])
+        appState.selectedWorkspaceID = deferredWorkspace.id
+
+        let prompt = appState.automationSignalHandoffPrompt(for: taskSignal())
+
+        XCTAssertTrue(prompt.contains("- 当前工作区: Active Task Workspace"))
+        XCTAssertTrue(prompt.contains("- 活跃任务: 1"))
+        XCTAssertFalse(prompt.contains("- 当前工作区: Deferred Task Workspace"))
     }
 
     @MainActor

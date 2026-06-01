@@ -105,7 +105,7 @@ Workspace task rows are now scanned as structured task snapshots:
 
 The native SwiftUI sidebar shows open tasks across all workspaces in a local Task Center. Selecting a task moves focus to the owning workspace, and each task row can locate the owning `tasks.md` row for source review by opening the document, copying a task-source locator, and showing the focused line context in Documents Hub. The workspace detail panel shows task rows alongside readiness, session actions, risk, activity, and documents, with the same direct path back to `tasks.md`.
 
-Task Center filters are local UI state. The native shell can persistently focus all open tasks, high-priority tasks, agent-sourced tasks, or deferred tasks without changing `tasks.md`.
+Task Center filters are local UI state. The native shell can persistently focus all open tasks, high-priority tasks, agent-sourced tasks, or deferred tasks without changing `tasks.md`. Deferred tasks remain reviewable in the deferred filter, but they are not treated as active task attention by local automation, menu-bar task counts, or workflow blockers.
 
 ## Task Status Updates
 
