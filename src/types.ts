@@ -66,6 +66,7 @@ export type Workspace = {
     doing: number;
     todo: number;
     blocked: number;
+    deferred?: number;
   };
   decisionCount: number;
   gitRows: GitRow[];

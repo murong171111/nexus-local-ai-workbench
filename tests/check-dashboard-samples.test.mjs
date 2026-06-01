@@ -21,7 +21,7 @@ function sampleDashboard(overrides = {}) {
         sourceRoot: "~/ks_project/source-repos",
         confirmedServices: ["order"],
         candidateServices: [],
-        taskCounts: { done: 0, doing: 0, todo: 1, blocked: 0 },
+        taskCounts: { done: 0, doing: 0, todo: 1, blocked: 0, deferred: 0 },
         decisionCount: 0,
         gitRows: [
           {

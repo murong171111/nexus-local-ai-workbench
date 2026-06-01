@@ -294,8 +294,8 @@ final class AppState: ObservableObject {
     var agentWorkflowSummary: AgentWorkflowSummary {
         AgentWorkflowSummary(
             inbox: agentInboxSummary,
-            agentTaskCount: taskCenterCount(for: .agent),
-            openTaskCount: taskCenterTotalCount
+            agentTaskCount: activeAgentTaskCenterCount,
+            openTaskCount: activeTaskCenterCount
         )
     }
 
@@ -380,9 +380,9 @@ final class AppState: ObservableObject {
             archivedWorkspaceCount: archivedWorkspaceCount,
             riskyWorkspaceCount: riskyWorkspaceCount,
             blockedWorkspaceCount: blockedWorkspaceCount,
-            openTaskCount: taskCenterTotalCount,
+            openTaskCount: activeTaskCenterCount,
             highPriorityTaskCount: taskCenterCount(for: .high),
-            agentTaskCount: taskCenterCount(for: .agent),
+            agentTaskCount: activeAgentTaskCenterCount,
             missingWorktreeCount: missingWorktreeCount,
             dirtyServiceCount: dirtyServiceCount,
             activeWorkspaceName: selectedWorkspace?.name,
@@ -392,6 +392,14 @@ final class AppState: ObservableObject {
 
     func taskCenterCount(for filter: TaskCenterFilter) -> Int {
         allTaskCenterItems.filter { filter.matches($0) }.count
+    }
+
+    private var activeTaskCenterCount: Int {
+        allTaskCenterItems.filter { $0.task.isActive }.count
+    }
+
+    private var activeAgentTaskCenterCount: Int {
+        allTaskCenterItems.filter { $0.task.isActive && TaskCenterFilter.agent.matches($0) }.count
     }
 
     var hasSearchQuery: Bool {
@@ -1119,7 +1127,10 @@ final class AppState: ObservableObject {
             } else {
                 setTaskCenterFilter(.all)
             }
-            if let item = taskCenterItems.first ?? allTaskCenterItems.first {
+            if let item = taskCenterItems.first(where: { $0.task.isActive })
+                ?? allTaskCenterItems.first(where: { $0.task.isActive })
+                ?? taskCenterItems.first
+                ?? allTaskCenterItems.first {
                 selectTaskCenterItem(item)
             }
         case "refresh":
@@ -1164,7 +1175,7 @@ final class AppState: ObservableObject {
             "",
             "## 当前信号",
             "- 风险数: \(workspace.risks.count)",
-            "- 未完成任务: \(workspace.tasks.filter { !$0.isDone }.count)",
+            "- 活跃任务: \(workspace.tasks.filter(\.isActive).count)",
             "- Worktree: \(workspace.worktreeState)",
             "",
             "## 处理要求",
@@ -1176,7 +1187,8 @@ final class AppState: ObservableObject {
     }
 
     func workspaceHandoffPrompt(for workspace: WorkspaceSummary) -> String {
-        let openTasks = workspace.tasks.filter { !$0.isDone }
+        let openTasks = workspace.tasks.filter(\.isActive)
+        let deferredTaskCount = workspace.tasks.filter(\.isDeferred).count
         let blockedTaskCount = openTasks.filter(\.isBlocked).count
         let deliveryLines = deliveryHandoffLines(for: workspace)
         let serviceLines = serviceHandoffLines(for: workspace)
@@ -1199,7 +1211,8 @@ final class AppState: ObservableObject {
             "- 生命周期: \(workspace.lifecycle.label)",
             "- 下一步: \(workspace.lifecycle.nextAction)",
             "- 风险数: \(workspace.risks.count)",
-            "- 未完成任务: \(openTasks.count)",
+            "- 活跃任务: \(openTasks.count)",
+            "- 延期任务: \(deferredTaskCount)",
             "- 阻塞任务: \(blockedTaskCount)",
             "- Worktree 缺失: \(workspace.services.filter { !$0.worktreeExists }.count)",
             "",
@@ -1248,7 +1261,7 @@ final class AppState: ObservableObject {
             "- 风险: \(check.riskCount)",
             "- 交付问题: \(check.deliveryIssueCount)",
             "- 分支问题: \(check.branchMismatchCount)",
-            "- 开放任务: \(check.openTaskCount)（高优先级 \(check.highPriorityTaskCount)）",
+            "- 活跃任务: \(check.openTaskCount)（高优先级 \(check.highPriorityTaskCount)）",
             "- worktree 问题: 缺失 \(check.missingWorktreeCount)，未提交 \(check.dirtyServiceCount)",
             check.auditError.map { "- 审计写入失败: \($0)" } ?? "- 审计: \(check.auditEventId == nil ? "未写入" : "已写入")"
         ]
@@ -1265,14 +1278,25 @@ final class AppState: ObservableObject {
     }
 
     private func taskHandoffLines(for workspace: WorkspaceSummary) -> [String] {
-        let openTasks = workspace.tasks.filter { !$0.isDone }
+        let openTasks = workspace.tasks.filter(\.isActive)
+        let deferredTasks = workspace.tasks.filter(\.isDeferred)
         guard !openTasks.isEmpty else {
-            return ["- 当前没有开放任务。交付前仍需复核 tasks.md 是否有遗漏。"]
+            if !deferredTasks.isEmpty {
+                return [
+                    "- 当前没有活跃任务。",
+                    "- 延期任务: \(deferredTasks.prefix(5).map(\.title).joined(separator: ", "))"
+                ]
+            }
+            return ["- 当前没有活跃任务。交付前仍需复核 tasks.md 是否有遗漏。"]
         }
 
-        return openTasks.prefix(5).map { task in
+        let activeLines = openTasks.prefix(5).map { task in
             "- [\(task.priority)] \(task.title) · 状态: \(task.status) · 来源: \(task.source)"
-        } + (openTasks.count > 5 ? ["- 仅列出前 5 个开放任务，完整任务请查看 tasks.md。"] : [])
+        } + (openTasks.count > 5 ? ["- 仅列出前 5 个活跃任务，完整任务请查看 tasks.md。"] : [])
+        let deferredLine = deferredTasks.isEmpty
+            ? []
+            : ["- 延期任务: \(deferredTasks.prefix(5).map(\.title).joined(separator: ", "))"]
+        return activeLines + deferredLine
     }
 
     private func deliveryHandoffLines(for workspace: WorkspaceSummary) -> [String] {
@@ -1293,7 +1317,7 @@ final class AppState: ObservableObject {
     }
 
     func deliveryUpdatePrompt(for workspace: WorkspaceSummary) -> String {
-        let openTasks = workspace.tasks.filter { !$0.isDone }
+        let openTasks = workspace.tasks.filter(\.isActive)
         let blockedTasks = openTasks.filter(\.isBlocked)
         let riskLines = workspace.risks.isEmpty
             ? ["- 暂无显式风险。"]
@@ -1328,7 +1352,7 @@ final class AppState: ObservableObject {
             serviceHandoffLines(for: workspace).joined(separator: "\n"),
             "",
             "## 任务",
-            "- 未完成任务: \(openTasks.count)",
+            "- 活跃任务: \(openTasks.count)",
             "- 阻塞任务: \(blockedTasks.count)",
             taskHandoffLines(for: workspace).joined(separator: "\n"),
             "",
@@ -1350,7 +1374,7 @@ final class AppState: ObservableObject {
     }
 
     func validationPrHandoffPrompt(for workspace: WorkspaceSummary) -> String {
-        let openTasks = workspace.tasks.filter { !$0.isDone }
+        let openTasks = workspace.tasks.filter(\.isActive)
         let blockedTasks = openTasks.filter(\.isBlocked)
         let deliveryPath = workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md"
         let tasksPath = workspace.documentLinks["tasks"] ?? "\(workspace.path)/tasks.md"
@@ -1381,7 +1405,7 @@ final class AppState: ObservableObject {
             readinessLines.joined(separator: "\n"),
             "",
             "## 任务状态",
-            "- 未完成任务: \(openTasks.count)",
+            "- 活跃任务: \(openTasks.count)",
             "- 阻塞任务: \(blockedTasks.count)",
             taskHandoffLines(for: workspace).joined(separator: "\n"),
             "",
@@ -1439,7 +1463,7 @@ final class AppState: ObservableObject {
                 "tool": "Codex",
                 "codexUrl": rawURL,
                 "lifecycle": workspace.lifecycle.stage,
-                "openTasks": "\(workspace.tasks.filter { !$0.isDone }.count)",
+                "openTasks": "\(workspace.tasks.filter(\.isActive).count)",
                 "riskCount": "\(workspace.risks.count)",
                 "serviceCount": "\(workspace.services.count)",
                 "lastLocalCheckStatus": lastAutomationCheck?.status ?? "none"
@@ -1479,7 +1503,7 @@ final class AppState: ObservableObject {
             metadata: [
                 "tool": "Codex",
                 "codexUrl": rawURL,
-                "openTasks": "\(workspace.tasks.filter { !$0.isDone }.count)",
+                "openTasks": "\(workspace.tasks.filter(\.isActive).count)",
                 "riskCount": "\(workspace.risks.count)",
                 "serviceCount": "\(workspace.services.count)"
             ],
@@ -1722,7 +1746,7 @@ final class AppState: ObservableObject {
                 "tool": "Codex",
                 "codexUrl": rawURL,
                 "riskCount": "\(workspace.risks.count)",
-                "openTaskCount": "\(workspace.tasks.filter { !$0.isDone }.count)",
+                "openTaskCount": "\(workspace.tasks.filter(\.isActive).count)",
                 "lastCheckStatus": lastAutomationCheck?.status ?? "none"
             ],
             workspaceOverride: workspace
@@ -2091,7 +2115,7 @@ final class AppState: ObservableObject {
                 "- 目标分支: \(selected.branch)",
                 "- 涉及服务: \(selected.serviceSummary.isEmpty ? "待确认" : selected.serviceSummary)",
                 "- 风险数: \(selected.risks.count)",
-                "- 未完成任务: \(selected.tasks.filter { !$0.isDone }.count)",
+                "- 活跃任务: \(selected.tasks.filter(\.isActive).count)",
                 "- Dirty 服务: \(dirtyServiceDetails.isEmpty ? "无" : dirtyServiceDetails)",
                 "- 分支记录: \(branchesDocumentPath(for: selected))",
                 "- 分支检查: \(branchChecks.isEmpty ? "未生成" : branchChecks)",
@@ -3078,14 +3102,14 @@ final class AppState: ObservableObject {
     private func firstWorkspaceWithHighPriorityTask() -> WorkspaceSummary? {
         activeSignalWorkspaces.first { workspace in
             workspace.tasks.contains { task in
-                !task.isDone && task.priorityRank == 0
+                task.isActive && task.priorityRank == 0
             }
         }
     }
 
     private func firstWorkspaceWithOpenTask() -> WorkspaceSummary? {
         activeSignalWorkspaces.first { workspace in
-            workspace.tasks.contains { !$0.isDone }
+            workspace.tasks.contains(where: \.isActive)
         }
     }
 

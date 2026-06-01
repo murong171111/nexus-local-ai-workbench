@@ -113,12 +113,12 @@ fn automation_response_from_workspaces(
     let open_task_count = active_workspaces
         .iter()
         .flat_map(|workspace| workspace.tasks.iter())
-        .filter(|task| !task_is_done(task))
+        .filter(|task| task_needs_attention(task))
         .count();
     let high_priority_task_count = active_workspaces
         .iter()
         .flat_map(|workspace| workspace.tasks.iter())
-        .filter(|task| !task_is_done(task) && task_is_high_priority(task))
+        .filter(|task| task_needs_attention(task) && task_is_high_priority(task))
         .count();
     let missing_worktree_count = active_workspaces
         .iter()
@@ -362,6 +362,15 @@ fn task_is_done(task: &WorkspaceTask) -> bool {
         || normalized.contains("resolved")
 }
 
+fn task_is_deferred(task: &WorkspaceTask) -> bool {
+    let normalized = format!("{} {}", task.status, task.detail).to_lowercase();
+    normalized.contains("延期") || normalized.contains("deferred")
+}
+
+fn task_needs_attention(task: &WorkspaceTask) -> bool {
+    !task_is_done(task) && !task_is_deferred(task)
+}
+
 fn task_is_high_priority(task: &WorkspaceTask) -> bool {
     let normalized = format!("{} {} {}", task.status, task.priority, task.detail).to_lowercase();
     normalized.contains("priority=high")
@@ -555,6 +564,64 @@ mod tests {
             .signals
             .iter()
             .any(|signal| signal.id == "worktree.check"));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn local_automation_check_ignores_deferred_tasks_for_attention() {
+        let root = std::env::temp_dir().join(format!(
+            "nexus-core-automation-deferred-{}",
+            std::process::id()
+        ));
+        let workspace = root.join("2026-05-31-deferred-demo");
+        let worktree = workspace.join("repos").join("order");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(workspace.join("sql")).unwrap();
+        fs::create_dir_all(&worktree).unwrap();
+        fs::write(
+            workspace.join("workspace.md"),
+            "# Deferred Demo\n\n- 需求名称: Deferred Demo\n- 当前状态: developing\n- 目标分支: chen/deferred-task\n- 源仓库集合: ~/source-repos\n",
+        )
+        .unwrap();
+        fs::write(
+            workspace.join("services.md"),
+            "# Services\n\n## 已确认相关\n\n| 服务 | 源仓库 | 说明 |\n| --- | --- | --- |\n| order | ~/source-repos/order | core |\n",
+        )
+        .unwrap();
+        fs::write(
+            workspace.join("tasks.md"),
+            "# Tasks\n\n| 任务 | 状态 | 说明 |\n| --- | --- | --- |\n| 稍后复核 | 延期 | priority=high deferred=2026-06-02 |\n",
+        )
+        .unwrap();
+        fs::write(
+            workspace.join("交付记录.md"),
+            "# 交付记录\n\n## SQL 变更\n\n- 是否有 SQL 变更：否\n",
+        )
+        .unwrap();
+        let init_status = Command::new("git")
+            .args(["init", "-b", "chen/deferred-task"])
+            .current_dir(&worktree)
+            .status()
+            .unwrap();
+        assert!(init_status.success());
+
+        let response = local_automation_check(LocalAutomationCheckRequest {
+            workspaces_root: root.to_string_lossy().to_string(),
+            source_repos_root: "~/source-repos".to_string(),
+            docs_root: "~/docs".to_string(),
+            audit_root: None,
+            actor: None,
+            generated_at: "2026-05-31T10:00:00Z".to_string(),
+        })
+        .unwrap();
+
+        assert_eq!(response.open_task_count, 0);
+        assert_eq!(response.high_priority_task_count, 0);
+        assert!(!response
+            .signals
+            .iter()
+            .any(|signal| signal.id == "task.check"));
 
         fs::remove_dir_all(root).unwrap();
     }

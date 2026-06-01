@@ -59,6 +59,7 @@ pub struct TaskCounts {
     pub doing: usize,
     pub todo: usize,
     pub blocked: usize,
+    pub deferred: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -2036,7 +2037,9 @@ fn count_tasks(rows: &[Vec<String>]) -> TaskCounts {
     let mut counts = TaskCounts::default();
     for row in rows {
         let joined = row.join(" ").to_lowercase();
-        if joined.contains("阻塞") || joined.contains("blocked") {
+        if joined.contains("延期") || joined.contains("deferred") {
+            counts.deferred += 1;
+        } else if joined.contains("阻塞") || joined.contains("blocked") {
             counts.blocked += 1;
         } else if ["已完成", "已确认", "已创建", "完成"]
             .iter()
@@ -2884,6 +2887,7 @@ mod tests {
         assert_eq!(item.task_counts.done, 1);
         assert_eq!(item.task_counts.doing, 1);
         assert_eq!(item.task_counts.todo, 1);
+        assert_eq!(item.task_counts.deferred, 0);
         assert_eq!(item.tasks.len(), 3);
         assert_eq!(item.tasks[0].title, "确认需求范围");
         assert_eq!(item.tasks[1].priority, "medium");
@@ -3552,7 +3556,8 @@ mod tests {
         let dashboard =
             scan_workspaces(&root.to_string_lossy(), "~/source-repos", "~/docs").unwrap();
         assert_eq!(dashboard.workspaces[0].task_counts.done, 1);
-        assert_eq!(dashboard.workspaces[0].task_counts.todo, 1);
+        assert_eq!(dashboard.workspaces[0].task_counts.todo, 0);
+        assert_eq!(dashboard.workspaces[0].task_counts.deferred, 1);
         assert_eq!(dashboard.workspaces[0].tasks[0].source_line, Some(5));
         assert_eq!(dashboard.workspaces[0].tasks[1].source_line, Some(6));
 

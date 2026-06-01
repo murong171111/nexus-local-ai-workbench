@@ -96,7 +96,7 @@ function checkWorkspace(filePath, workspace, index, seenFolders, findings) {
   if (!isRecord(workspace.taskCounts)) {
     findings.push(finding(filePath, `${prefix}.taskCounts`, "taskCounts is required"));
   } else {
-    for (const key of ["done", "doing", "todo", "blocked"]) {
+    for (const key of ["done", "doing", "todo", "blocked", "deferred"]) {
       if (!nonNegativeInteger(workspace.taskCounts[key])) {
         findings.push(finding(filePath, `${prefix}.taskCounts.${key}`, `${key} must be a non-negative integer`));
       }

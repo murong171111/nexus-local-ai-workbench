@@ -821,6 +821,7 @@ function WorkspaceCard({
               ) : (
                 <div className="mono truncate">
                   更新 {workspace.updated} / 决策 {workspace.decisionCount} / 待办 {workspace.taskCounts.todo}
+                  {workspace.taskCounts.deferred ? ` / 延期 ${workspace.taskCounts.deferred}` : ""}
                 </div>
               )}
             </div>
@@ -2922,7 +2923,7 @@ export function App() {
         sourceRoot: settings.sourceReposRoot,
         confirmedServices: input.services,
         candidateServices: [],
-        taskCounts: { done: 0, doing: 0, todo: 5, blocked: 0 },
+        taskCounts: { done: 0, doing: 0, todo: 5, blocked: 0, deferred: 0 },
         decisionCount: 0,
         gitRows: input.services.map((service) => ({
           service,

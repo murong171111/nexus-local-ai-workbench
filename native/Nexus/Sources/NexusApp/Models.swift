@@ -168,7 +168,7 @@ enum TaskCenterFilter: String, CaseIterable, Identifiable {
         case .all:
             true
         case .high:
-            item.task.priorityRank == 0
+            item.task.isActive && item.task.priorityRank == 0
         case .agent:
             item.task.source == "agent"
         case .deferred:
@@ -234,7 +234,7 @@ struct WorkspaceWorkflowSummary: Hashable {
     let deliveryRoute: WorkflowDeliveryRoute
 
     init(workspace: WorkspaceSummary) {
-        let openTasks = workspace.tasks.filter { !$0.isDone }
+        let openTasks = workspace.tasks.filter(\.isActive)
         let blockedTasks = openTasks.filter(\.isBlocked)
         openTaskCount = openTasks.count
         blockedTaskCount = blockedTasks.count
@@ -757,7 +757,7 @@ struct MenuBarStatusSummary: Hashable {
             return "\(highPriorityTaskCount) high-priority tasks are open"
         }
         if openTaskCount > 0 {
-            return "\(openTaskCount) open tasks are ready"
+            return "\(openTaskCount) active tasks are ready"
         }
         return "Workspace state is clean"
     }
@@ -772,9 +772,9 @@ struct MenuBarStatusSummary: Hashable {
             "Archived workspaces: \(archivedWorkspaceCount)",
             "Risky workspaces: \(riskyWorkspaceCount)",
             "Blocked workspaces: \(blockedWorkspaceCount)",
-            "Open tasks: \(openTaskCount)",
+            "Active tasks: \(openTaskCount)",
             "High-priority tasks: \(highPriorityTaskCount)",
-            "Agent tasks: \(agentTaskCount)",
+            "Active agent tasks: \(agentTaskCount)",
             "Missing worktrees: \(missingWorktreeCount)",
             "Dirty services: \(dirtyServiceCount)",
             "Status: \(statusLine)"
@@ -959,7 +959,12 @@ struct WorkspaceTask: Identifiable, Hashable {
         return normalized.contains("延期") || normalized.contains("deferred")
     }
 
+    var isActive: Bool {
+        !isDone && !isDeferred
+    }
+
     var priorityRank: Int {
+        if isDeferred { return 4 }
         if isBlocked { return 0 }
         switch priority.lowercased() {
         case "high":
@@ -1493,7 +1498,7 @@ extension WorkspaceLifecycle {
             return
         }
 
-        let openTasks = tasks.filter { !$0.isDone }.count
+        let openTasks = tasks.filter(\.isActive).count
         let hasMissingWorktree = services.contains { !$0.worktreeExists }
         let hasDeliveryRisk = risks.contains { risk in
             let normalized = "\(risk.title) \(risk.detail)".lowercased()
@@ -1548,7 +1553,7 @@ extension WorkspaceLifecycle {
             self.init(
                 stage: "developing",
                 label: "开发中 / Developing",
-                detail: "\(openTasks) 个开放任务需要继续处理。",
+                detail: "\(openTasks) 个活跃任务需要继续处理。",
                 progress: 60,
                 nextAction: "继续编码、验证，并保持交付记录同步。",
                 documentKey: "tasks"
