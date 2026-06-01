@@ -38,6 +38,7 @@ pub struct WorkspaceData {
     pub updated: String,
     pub links: BTreeMap<String, String>,
     pub sql_files: Vec<WorkspaceSqlFile>,
+    pub sql_documents: Vec<WorkspaceSqlDocument>,
     pub worktree_command: String,
     pub tasks: Vec<WorkspaceTask>,
     pub activities: Vec<WorkspaceActivity>,
@@ -48,6 +49,14 @@ pub struct WorkspaceData {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceSqlFile {
+    pub relative_path: String,
+    pub path: String,
+    pub kind: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceSqlDocument {
     pub relative_path: String,
     pub path: String,
     pub kind: String,
@@ -1166,7 +1175,18 @@ fn collect_workspace(
         "sql".to_string(),
         path.join("sql").to_string_lossy().to_string(),
     );
+    for relative_path in ["sql/SQL变更说明.md", "sql/README.md", "sql/readme.md"] {
+        let guide_path = path.join(relative_path);
+        if guide_path.is_file() {
+            links.insert(
+                "sqlGuide".to_string(),
+                guide_path.to_string_lossy().to_string(),
+            );
+            break;
+        }
+    }
     let sql_files = workspace_sql_files(path);
+    let sql_documents = workspace_sql_documents(path);
 
     let risk_count = risks.len();
     let folder = folder_from_path(path);
@@ -1233,6 +1253,7 @@ fn collect_workspace(
         updated: generated_date(),
         links,
         sql_files,
+        sql_documents,
         worktree_command,
         tasks,
         activities,
@@ -2222,6 +2243,25 @@ fn workspace_sql_files(workspace: &Path) -> Vec<WorkspaceSqlFile> {
         .collect()
 }
 
+fn workspace_sql_documents(workspace: &Path) -> Vec<WorkspaceSqlDocument> {
+    let sql_dir = workspace.join("sql");
+    collect_sql_documents(&sql_dir)
+        .into_iter()
+        .map(|relative_path| WorkspaceSqlDocument {
+            path: sql_dir.join(&relative_path).to_string_lossy().to_string(),
+            relative_path,
+            kind: "markdown".to_string(),
+        })
+        .collect()
+}
+
+fn collect_sql_documents(sql_dir: &Path) -> Vec<String> {
+    let mut documents = Vec::new();
+    collect_sql_documents_inner(sql_dir, sql_dir, &mut documents);
+    documents.sort();
+    documents
+}
+
 fn collect_sql_files_inner(dir: &Path, base: &Path, files: &mut Vec<(String, String)>) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
@@ -2253,6 +2293,40 @@ fn collect_sql_files_inner(dir: &Path, base: &Path, files: &mut Vec<(String, Str
             .to_string_lossy()
             .to_string();
         files.push((relative_path, read_text_lossy(&path)));
+    }
+}
+
+fn collect_sql_documents_inner(dir: &Path, base: &Path, documents: &mut Vec<String>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if file_type.is_dir() {
+            collect_sql_documents_inner(&path, base, documents);
+            continue;
+        }
+        if !file_type.is_file() {
+            continue;
+        }
+        let extension = path
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or_default()
+            .to_lowercase();
+        if !matches!(extension.as_str(), "md" | "markdown") {
+            continue;
+        }
+        let relative_path = path
+            .strip_prefix(base)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .to_string();
+        documents.push(relative_path);
     }
 }
 
@@ -2906,6 +2980,12 @@ mod tests {
         .unwrap();
         fs::write(workspace.join("decisions.md"), "# Decisions\n").unwrap();
         fs::write(workspace.join("交付记录.md"), "# 交付记录\n\n暂无。\n").unwrap();
+        fs::write(workspace.join("sql").join("SQL变更说明.md"), "# SQL 说明\n").unwrap();
+        fs::write(
+            workspace.join("sql").join("V1__demo.sql"),
+            "alter table demo add column flag tinyint;",
+        )
+        .unwrap();
 
         let dashboard =
             scan_workspaces(&root.to_string_lossy(), "~/source-repos", "~/docs").unwrap();
@@ -2931,6 +3011,16 @@ mod tests {
             .any(|risk| risk.contains("worktree 未创建")));
         assert!(item.risks.iter().any(|risk| risk == "交付记录待补充"));
         assert!(item.links.contains_key("workspace"));
+        let expected_sql_guide = workspace
+            .join("sql")
+            .join("SQL变更说明.md")
+            .to_string_lossy()
+            .to_string();
+        assert_eq!(item.links.get("sqlGuide"), Some(&expected_sql_guide));
+        assert_eq!(item.sql_files.len(), 1);
+        assert_eq!(item.sql_files[0].relative_path, "V1__demo.sql");
+        assert_eq!(item.sql_documents.len(), 1);
+        assert_eq!(item.sql_documents[0].relative_path, "SQL变更说明.md");
         assert_eq!(item.activities[0].title, "worktree 未创建: order");
         assert_eq!(item.health_checks.len(), 9);
         assert!(item.health_checks.iter().any(|check| {

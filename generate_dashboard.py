@@ -101,6 +101,54 @@ def run_git_status(path):
     return {"exists": True, "branch": branch, "dirty": dirty, "summary": summary}
 
 
+def is_rollback_sql(relative_path, content):
+    value = f"{relative_path}\n{content}".lower()
+    return any(
+        marker in value
+        for marker in [
+            "rollback",
+            "roll-back",
+            "roll_back",
+            "revert",
+            "_down",
+            ".down.",
+            "回滚",
+            "撤销",
+        ]
+    )
+
+
+def collect_sql_entries(path):
+    sql_dir = path / "sql"
+    sql_files = []
+    sql_documents = []
+    if not sql_dir.exists():
+        return sql_files, sql_documents
+
+    for file_path in sorted(item for item in sql_dir.rglob("*") if item.is_file()):
+        relative_path = str(file_path.relative_to(sql_dir))
+        suffix = file_path.suffix.lower()
+        if suffix == ".sql":
+            content = read_text(file_path)
+            sql_files.append(
+                {
+                    "relativePath": relative_path,
+                    "path": str(file_path),
+                    "kind": "rollback" if is_rollback_sql(relative_path, content) else "formal",
+                }
+            )
+        elif suffix in {".md", ".markdown"}:
+            sql_documents.append(
+                {
+                    "relativePath": relative_path,
+                    "path": str(file_path),
+                    "kind": "markdown",
+                }
+            )
+
+    return sql_files, sql_documents
+
+
 def count_tasks(rows):
     counts = {"done": 0, "doing": 0, "todo": 0, "blocked": 0}
     for row in rows:
@@ -181,6 +229,7 @@ def collect_workspace(path):
     if not (path / "sql").exists():
         risks.append("缺少 SQL 目录")
 
+    sql_files, sql_documents = collect_sql_entries(path)
     links = {
         "folder": str(path),
         "workspace": str(path / "workspace.md"),
@@ -192,6 +241,11 @@ def collect_workspace(path):
         "handoff": str(path / "handoff.md"),
         "sql": str(path / "sql"),
     }
+    for relative_path in ["SQL变更说明.md", "README.md", "readme.md"]:
+        guide_path = path / "sql" / relative_path
+        if guide_path.is_file():
+            links["sqlGuide"] = str(guide_path)
+            break
 
     return {
         "name": name,
@@ -209,6 +263,8 @@ def collect_workspace(path):
         "riskCount": len(risks),
         "updated": dt.date.today().isoformat(),
         "links": links,
+        "sqlFiles": sql_files,
+        "sqlDocuments": sql_documents,
         "worktreeCommand": (
             "python3 /path/to/ks-project-demand-workspace/scripts/create_worktrees.py "
             f"--workspace {path} --services {','.join(confirmed) or '<services>'} --branch <target-branch>"

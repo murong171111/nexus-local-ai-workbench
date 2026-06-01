@@ -965,6 +965,22 @@ struct WorkspaceSqlFile: Identifiable, Hashable {
     }
 }
 
+struct WorkspaceSqlDocument: Identifiable, Hashable {
+    let relativePath: String
+    let path: String
+    let kind: String
+
+    var id: String { relativePath }
+
+    var fileName: String {
+        URL(fileURLWithPath: relativePath).lastPathComponent
+    }
+
+    var kindLabel: String {
+        "SQL 说明文档 / Markdown"
+    }
+}
+
 struct WorkspaceLifecycle: Hashable {
     let stage: String
     let label: String
@@ -1229,6 +1245,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
     let worktreeState: String
     let documentLinks: [String: String]
     let sqlFiles: [WorkspaceSqlFile]
+    let sqlDocuments: [WorkspaceSqlDocument]
     let services: [ServiceStatus]
     let activities: [ActivityEvent]
     let risks: [RiskAlert]
@@ -1276,6 +1293,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
         worktreeState: String,
         documentLinks: [String: String] = [:],
         sqlFiles: [WorkspaceSqlFile] = [],
+        sqlDocuments: [WorkspaceSqlDocument] = [],
         services: [ServiceStatus],
         activities: [ActivityEvent],
         risks: [RiskAlert],
@@ -1295,6 +1313,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
         self.worktreeState = worktreeState
         self.documentLinks = documentLinks
         self.sqlFiles = sqlFiles
+        self.sqlDocuments = sqlDocuments
         self.services = services
         self.activities = activities
         self.risks = risks
@@ -1358,6 +1377,13 @@ struct WorkspaceSummary: Identifiable, Hashable {
                 kind: file.kind
             )
         }
+        let sqlDocuments = (snapshot.sqlDocuments ?? []).map { file in
+            WorkspaceSqlDocument(
+                relativePath: file.relativePath,
+                path: file.path,
+                kind: file.kind
+            )
+        }
         let tasks = (snapshot.tasks ?? []).map { task in
             WorkspaceTask(
                 id: task.id,
@@ -1391,6 +1417,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
             worktreeState: worktreeState,
             documentLinks: snapshot.links,
             sqlFiles: sqlFiles,
+            sqlDocuments: sqlDocuments,
             services: services,
             activities: activities,
             risks: risks,
@@ -1513,6 +1540,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
             worktreeState: worktreeState,
             documentLinks: documentLinks,
             sqlFiles: sqlFiles,
+            sqlDocuments: sqlDocuments,
             services: services,
             activities: Array(([activity] + activities).prefix(6)),
             risks: risks,

@@ -5412,7 +5412,18 @@ private struct WorkspaceDocumentsHubView: View {
     }
 
     private var sqlDocumentEntries: [ResolvedWorkspaceDocumentEntry] {
-        workspace.sqlFiles.map { file in
+        let notes = workspace.sqlDocuments.map { file in
+            let entry = WorkspaceDocumentEntry(
+                key: "sql-doc/\(file.relativePath)",
+                label: file.fileName,
+                description: file.kindLabel,
+                systemImage: "doc.text",
+                fallbackRelativePath: "sql/\(file.relativePath)",
+                canCreateMissing: false
+            )
+            return ResolvedWorkspaceDocumentEntry(entry: entry, path: file.path)
+        }
+        let artifacts = workspace.sqlFiles.map { file in
             let entry = WorkspaceDocumentEntry(
                 key: "sql/\(file.relativePath)",
                 label: file.fileName,
@@ -5423,6 +5434,7 @@ private struct WorkspaceDocumentsHubView: View {
             )
             return ResolvedWorkspaceDocumentEntry(entry: entry, path: file.path)
         }
+        return notes + artifacts
     }
 
     private func recoverableEntry(for error: DocumentLoadError) -> ResolvedWorkspaceDocumentEntry? {

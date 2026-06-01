@@ -52,6 +52,12 @@ export type WorkspaceSqlFile = {
   kind: "formal" | "rollback" | string;
 };
 
+export type WorkspaceSqlDocument = {
+  relativePath: string;
+  path: string;
+  kind: "markdown" | string;
+};
+
 export type Workspace = {
   name: string;
   folder: string;
@@ -76,6 +82,7 @@ export type Workspace = {
   updated: string;
   links: Record<string, string>;
   sqlFiles?: WorkspaceSqlFile[];
+  sqlDocuments?: WorkspaceSqlDocument[];
   worktreeCommand: string;
   activities?: WorkspaceActivity[];
   healthChecks?: WorkspaceHealthCheck[];
