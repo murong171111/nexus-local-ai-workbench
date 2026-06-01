@@ -2289,6 +2289,13 @@ final class AppState: ObservableObject {
         }
     }
 
+    func clearDocumentPreview() {
+        documentPreview = nil
+        documentLoadError = nil
+        documentFocusHint = nil
+        documentLoadingPath = nil
+    }
+
     func createWorkspaceDocument(
         in workspace: WorkspaceSummary,
         documentKey: String,
