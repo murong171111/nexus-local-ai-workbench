@@ -38,10 +38,10 @@ import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { Card } from "./components/ui/card";
 import { Input } from "./components/ui/input";
-import { appendAuditEvent, checkEnvironment, createWorkspace, exportSettingsProfile, isDesktopApp, openExternalUrl, openPath as openPathInDesktop, readTextFile, rebuildSearchIndex, scanSourceRepos, scanWorkspaces, searchIndex, setupWorktrees, updateWorkspaceTask, writeWidgetSnapshot, type EnvironmentHealth, type RebuildSearchIndexResponse, type SearchResult, type SourceRepo } from "./desktop";
+import { appendAuditEvent, bindCodexSession, checkEnvironment, createWorkspace, deleteCodexSession, exportSettingsProfile, isDesktopApp, openCodexSession, openExternalUrl, openPath as openPathInDesktop, readCodexSessions, readTextFile, rebuildSearchIndex, scanSourceRepos, scanWorkspaces, searchIndex, setupWorktrees, updateWorkspaceTask, writeWidgetSnapshot, type EnvironmentHealth, type RebuildSearchIndexResponse, type SearchResult, type SourceRepo } from "./desktop";
 import { cn, riskTone } from "./lib";
 import { branchAlignmentRows, buildWorktreeCommand, createSettingsProfile, fallbackSearchResults, filterWorkspaces, groupSearchResults, hasConfirmedTargetBranch, localOperationErrorMessage, normalizeServiceList, orderedSearchResults, parseServiceInput, parseSettingsProfile, settingsProfileFilename, sortWorkspacesForAttention, todayString, widgetSnapshotFromDashboard, workspaceCreatePreflight, workspaceFolderFromName, workspaceIsArchived, workspaceSessionActions, type NexusSettingsProfile } from "./workspace-model";
-import type { DashboardData, GitRow, Workspace, WorkspaceSessionAction, WorkspaceTask } from "./types";
+import type { CodexSessionLink, DashboardData, GitRow, Workspace, WorkspaceSessionAction, WorkspaceTask } from "./types";
 
 const initialData = rawData as DashboardData;
 
@@ -112,6 +112,11 @@ const auditActionLabels: Record<string, string> = {
   "codex.opened": "Codex 已打开 / Codex opened",
   "codex_instruction.copied": "Codex 指令已复制 / Instruction copied",
   "codex_handoff.opened": "Codex 交接已打开 / Codex handoff",
+  "codex_session_link.bound": "Codex 会话已绑定 / Session bound",
+  "codex_session_link.copied": "Codex 会话已复制 / Session copied",
+  "codex_session_link.deleted": "Codex 会话已删除 / Session deleted",
+  "codex_session_link.opened": "Codex 会话已打开 / Session opened",
+  "codex_session_link.updated": "Codex 会话已更新 / Session updated",
   "document.opened": "文档已打开 / Document opened",
   "risk_instruction.copied": "风险指令已复制 / Risk instruction",
   "task_handoff.opened": "任务交接已打开 / Task handoff",
@@ -188,6 +193,18 @@ function taskPriorityLabel(priority: string) {
   if (priority === "medium") return "P1";
   if (priority === "low") return "P3";
   return "P2";
+}
+
+function compactSessionTime(value?: string | null) {
+  if (!value) return "never";
+  return value.replace("T", " ").slice(0, 16);
+}
+
+function codexSessionPromptBlock(sessions: CodexSessionLink[]) {
+  if (!sessions.length) return "- 暂无绑定会话";
+  return sessions
+    .map((session) => `- ${session.title}: ${session.url}${session.notes ? ` (${session.notes})` : ""}`)
+    .join("\n");
 }
 
 function instructionType(action: WorkspaceSessionAction): "continue" | "git" | "delivery" | "risk" | "worktree" | "task" {
@@ -312,7 +329,8 @@ function toneForRisk(count: number) {
   return "green";
 }
 
-function codexInstruction(workspace: Workspace, action: "continue" | "git" | "delivery" | "risk" | "worktree" | "task") {
+function codexInstruction(workspace: Workspace, action: "continue" | "git" | "delivery" | "risk" | "worktree" | "task", sessions: CodexSessionLink[] = []) {
+  const sessionBlock = codexSessionPromptBlock(sessions);
   if (action === "continue") {
     const checks = workspace.healthChecks?.length
       ? workspace.healthChecks.map((check) => `- [${healthStatusLabel(check.status)}] ${check.label}: ${check.detail}`).join("\n")
@@ -320,24 +338,24 @@ function codexInstruction(workspace: Workspace, action: "continue" | "git" | "de
     const actions = workspaceSessionActions(workspace)
       .map((sessionAction) => `- ${sessionPriorityLabel(sessionAction.priority)} ${sessionAction.label}: ${sessionAction.detail}`)
       .join("\n");
-    return `继续工作区：${workspace.folder}\n需求：${workspace.name}\n目标分支：${workspace.targetBranch}\n涉及服务：${workspace.confirmedServices.join(", ") || "待确认"}\n\n请先读取该工作区的 AGENTS.md、requirements.md、acceptance.md、changes.md、STATUS.md、services.md、branches.md、tasks.md 和交付记录.md，然后总结当前状态、风险和下一步建议。\n\n当前就绪检查：\n${checks}\n\n建议会话动作：\n${actions}`;
+    return `继续工作区：${workspace.folder}\n需求：${workspace.name}\n目标分支：${workspace.targetBranch}\n涉及服务：${workspace.confirmedServices.join(", ") || "待确认"}\n\n请先读取该工作区的 AGENTS.md、requirements.md、acceptance.md、changes.md、STATUS.md、services.md、branches.md、tasks.md 和交付记录.md，然后总结当前状态、风险和下一步建议。\n\n已绑定 Codex 会话：\n${sessionBlock}\n\n当前就绪检查：\n${checks}\n\n建议会话动作：\n${actions}`;
   }
   if (action === "git") {
     return `检查工作区 ${workspace.folder} 的所有相关服务 git 状态。\n请重点检查 workspaces/${workspace.folder}/repos 下的 worktree 是否存在、分支是否匹配、是否有未提交改动，并给出处理建议。`;
   }
   if (action === "delivery") {
-    return `更新工作区 ${workspace.folder} 的交付记录。\n请先对齐 requirements.md、acceptance.md 和 changes.md，再根据本次代码/SQL/逻辑变更补充交付记录.md，包含涉及服务、分支、变更点、SQL、验证结果和遗留风险。\n如果交付记录.md 任意位置记录实际 SQL 变更，或 SQL 段落出现“变更类型：DDL/DML”、影响表、新增字段、回填脚本、数据修复等变更元数据，必须在 sql/ 下同步正式 SQL 文件和回滚 SQL 文件。`;
+    return `更新工作区 ${workspace.folder} 的交付记录。\n请先对齐 requirements.md、acceptance.md 和 changes.md，再根据本次代码/SQL/逻辑变更补充交付记录.md，包含涉及服务、分支、变更点、SQL、验证结果和遗留风险。\n如果交付记录.md 任意位置记录实际 SQL 变更，或 SQL 段落出现“变更类型：DDL/DML”、影响表、新增字段、回填脚本、数据修复等变更元数据，必须在 sql/ 下同步正式 SQL 文件和回滚 SQL 文件。\n\n已绑定 Codex 会话：\n${sessionBlock}`;
   }
   if (action === "task") {
-    return `继续处理工作区 ${workspace.folder} 的活跃任务。\n请先读取 requirements.md、acceptance.md、changes.md、tasks.md、STATUS.md、services.md、branches.md 和交付记录.md，按 tasks.md 中“进行中/待办”的任务顺序给出下一步处理建议。处理完成或延期后，同步更新 tasks.md；如果涉及代码、SQL、逻辑、配置或验证变化，同步更新 changes.md 和交付记录.md，SQL 变更还必须补齐 sql/ 下正式 SQL 和回滚 SQL 文件。`;
+    return `继续处理工作区 ${workspace.folder} 的活跃任务。\n请先读取 requirements.md、acceptance.md、changes.md、tasks.md、STATUS.md、services.md、branches.md 和交付记录.md，按 tasks.md 中“进行中/待办”的任务顺序给出下一步处理建议。处理完成或延期后，同步更新 tasks.md；如果涉及代码、SQL、逻辑、配置或验证变化，同步更新 changes.md 和交付记录.md，SQL 变更还必须补齐 sql/ 下正式 SQL 和回滚 SQL 文件。\n\n已绑定 Codex 会话：\n${sessionBlock}`;
   }
   if (action === "worktree") {
     return workspace.worktreeCommand;
   }
-  return `分析工作区 ${workspace.folder} 的风险项。\n当前风险：\n${workspace.risks.map((risk) => `- ${risk}`).join("\n") || "- 暂无"}\n请逐项解释原因、影响范围和建议处理动作。`;
+  return `分析工作区 ${workspace.folder} 的风险项。\n当前风险：\n${workspace.risks.map((risk) => `- ${risk}`).join("\n") || "- 暂无"}\n请逐项解释原因、影响范围和建议处理动作。\n\n已绑定 Codex 会话：\n${sessionBlock}`;
 }
 
-function taskCodexInstruction(workspace: Workspace, task: WorkspaceTask) {
+function taskCodexInstruction(workspace: Workspace, task: WorkspaceTask, sessions: CodexSessionLink[] = []) {
   return `继续处理 Nexus 工作区任务。
 
 工作区：
@@ -358,27 +376,31 @@ function taskCodexInstruction(workspace: Workspace, task: WorkspaceTask) {
 任务说明：
 ${task.detail || "无"}
 
+已绑定 Codex 会话：
+${codexSessionPromptBlock(sessions)}
+
 请先读取 requirements.md、acceptance.md、changes.md、tasks.md、STATUS.md、services.md、branches.md 和交付记录.md，再检查相关 repos/<service> worktree。
 处理完成或延期后，同步更新 tasks.md；如果涉及代码、SQL、逻辑、接口、DTO、配置或验证变化，同步更新 changes.md 和交付记录.md。SQL 变更必须补齐 sql/ 下正式 SQL 和回滚 SQL 文件。`;
 }
 
-function riskInstruction(workspace: Workspace, risk: string) {
+function riskInstruction(workspace: Workspace, risk: string, sessions: CodexSessionLink[] = []) {
+  const sessionBlock = `\n\n已绑定 Codex 会话：\n${codexSessionPromptBlock(sessions)}`;
   if (risk.includes("分支不一致")) {
-    return `工作区 ${workspace.folder} 存在风险：${risk}\n请读取 branches.md 并检查每个 repos/<service> worktree 的实际分支是否等于目标分支 ${workspace.targetBranch}。请列出不一致服务、当前分支、建议切换或重建 worktree 的命令，并提醒不要直接切换源仓库分支。`;
+    return `工作区 ${workspace.folder} 存在风险：${risk}\n请读取 branches.md 并检查每个 repos/<service> worktree 的实际分支是否等于目标分支 ${workspace.targetBranch}。请列出不一致服务、当前分支、建议切换或重建 worktree 的命令，并提醒不要直接切换源仓库分支。${sessionBlock}`;
   }
   if (risk.includes("目标分支")) {
-    return `工作区 ${workspace.folder} 存在风险：${risk}\n请读取 branches.md 和 workspace.md，确认目标分支命名，并给出是否需要创建 worktree 的建议。`;
+    return `工作区 ${workspace.folder} 存在风险：${risk}\n请读取 branches.md 和 workspace.md，确认目标分支命名，并给出是否需要创建 worktree 的建议。${sessionBlock}`;
   }
   if (risk.includes("worktree")) {
-    return `工作区 ${workspace.folder} 存在风险：${risk}\n请基于 services.md 中已确认服务，检查 repos/<service> 是否存在，并给出创建 worktree 的命令。`;
+    return `工作区 ${workspace.folder} 存在风险：${risk}\n请基于 services.md 中已确认服务，检查 repos/<service> 是否存在，并给出创建 worktree 的命令。${sessionBlock}`;
   }
   if (risk.includes("服务范围")) {
-    return `工作区 ${workspace.folder} 存在风险：${risk}\n请读取需求文档和 services.md，梳理已确认服务、候选服务和仍需验证的调用链。`;
+    return `工作区 ${workspace.folder} 存在风险：${risk}\n请读取需求文档和 services.md，梳理已确认服务、候选服务和仍需验证的调用链。${sessionBlock}`;
   }
   if (risk.includes("交付")) {
-    return `工作区 ${workspace.folder} 存在风险：${risk}\n请检查交付记录.md 是否存在并补齐交付记录结构。`;
+    return `工作区 ${workspace.folder} 存在风险：${risk}\n请检查交付记录.md 是否存在并补齐交付记录结构。${sessionBlock}`;
   }
-  return `工作区 ${workspace.folder} 存在风险：${risk}\n请分析该风险的原因、影响和建议处理动作。`;
+  return `工作区 ${workspace.folder} 存在风险：${risk}\n请分析该风险的原因、影响和建议处理动作。${sessionBlock}`;
 }
 
 function Stat({ label, value, icon: Icon }: { label: { title: string; desc: string }; value: string | number; icon: LucideIcon }) {
@@ -1315,6 +1337,14 @@ function WorkspaceDrawer({
   onCopyTaskInstruction,
   onCopyAndOpenTaskCodex,
   onUpdateTask,
+  codexSessions,
+  codexSessionsLoading,
+  codexSessionOperationId,
+  onRefreshCodexSessions,
+  onBindCodexSession,
+  onOpenCodexSession,
+  onCopyCodexSession,
+  onDeleteCodexSession,
   onRunSessionAction,
   onOpenDocument,
   onOpenPath,
@@ -1326,12 +1356,43 @@ function WorkspaceDrawer({
   onCopyTaskInstruction: (workspace: Workspace, task: WorkspaceTask) => void;
   onCopyAndOpenTaskCodex: (workspace: Workspace, task: WorkspaceTask) => void;
   onUpdateTask: (workspace: Workspace, task: WorkspaceTask, status: "已完成" | "延期") => void;
+  codexSessions: CodexSessionLink[];
+  codexSessionsLoading: boolean;
+  codexSessionOperationId: string;
+  onRefreshCodexSessions: (workspace: Workspace) => void;
+  onBindCodexSession: (workspace: Workspace, input: { title: string; url: string; notes: string }) => Promise<boolean>;
+  onOpenCodexSession: (workspace: Workspace, link: CodexSessionLink) => void;
+  onCopyCodexSession: (workspace: Workspace, link: CodexSessionLink) => void;
+  onDeleteCodexSession: (workspace: Workspace, link: CodexSessionLink) => void;
   onRunSessionAction: (workspace: Workspace, action: WorkspaceSessionAction) => void;
   onOpenDocument: (title: string, path: string) => void;
   onOpenPath: (path: string) => void;
   taskUpdatingId: string;
 }) {
+  const [sessionTitle, setSessionTitle] = useState("");
+  const [sessionUrl, setSessionUrl] = useState("");
+  const [sessionNotes, setSessionNotes] = useState("");
+
+  useEffect(() => {
+    setSessionTitle("");
+    setSessionUrl("");
+    setSessionNotes("");
+  }, [workspace?.folder]);
+
   if (!workspace) return null;
+
+  const submitSessionLink = async () => {
+    const saved = await onBindCodexSession(workspace, {
+      title: sessionTitle,
+      url: sessionUrl,
+      notes: sessionNotes
+    });
+    if (saved) {
+      setSessionTitle("");
+      setSessionUrl("");
+      setSessionNotes("");
+    }
+  };
 
   const missing = workspace.gitRows.filter((row) => !row.worktree.exists).length;
   const dirty = workspace.gitRows.filter(gitRowHasDirtyService).length;
@@ -1515,6 +1576,68 @@ function WorkspaceDrawer({
                 </button>
               </div>
             )}
+          </section>
+
+          <section className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2 text-sm font-medium text-neutral-900">
+                  <Sparkles className="h-4 w-4 text-blue-600" />
+                  Codex 会话 / Sessions
+                </div>
+                <div className="mono mt-1 text-[11px] text-neutral-400">codex-sessions.json</div>
+              </div>
+              <button className="rounded-md border border-neutral-200 bg-white px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50" onClick={() => onRefreshCodexSessions(workspace)}>
+                {codexSessionsLoading ? "读取中" : `${codexSessions.length} 个链接`}
+              </button>
+            </div>
+
+            <div className="rounded-md border border-neutral-200 bg-white p-3">
+              <div className="grid gap-2">
+                <Input value={sessionTitle} onChange={(event) => setSessionTitle(event.target.value)} placeholder="会话标题，例如：交易快照排查" />
+                <Input value={sessionUrl} onChange={(event) => setSessionUrl(event.target.value)} placeholder="Codex 会话链接，例如：codex://..." />
+                <Input value={sessionNotes} onChange={(event) => setSessionNotes(event.target.value)} placeholder="备注，可选" />
+                <Button type="button" onClick={submitSessionLink} disabled={!sessionUrl.trim() || codexSessionOperationId === "bind"}>
+                  <Plus className="h-4 w-4" />
+                  {codexSessionOperationId === "bind" ? "绑定中" : "绑定会话"}
+                </Button>
+              </div>
+            </div>
+
+            <div className="mt-2 grid gap-2">
+              {codexSessions.length ? (
+                codexSessions.map((link) => {
+                  const operating = codexSessionOperationId === link.id;
+                  return (
+                    <div key={link.id} className="rounded-md border border-neutral-200 bg-white px-3 py-2">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium text-neutral-950">{link.title}</div>
+                        <div className="mono mt-1 truncate text-[11px] text-neutral-500">{link.url}</div>
+                        {link.notes && <div className="mt-1 text-xs leading-5 text-neutral-500">{link.notes}</div>}
+                        <div className="mono mt-1 text-[11px] text-neutral-400">
+                          created {compactSessionTime(link.createdAt)} / opened {compactSessionTime(link.lastOpenedAt)}
+                        </div>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60" disabled={operating} onClick={() => onOpenCodexSession(workspace, link)}>
+                          {operating ? "处理中" : "打开"}
+                        </button>
+                        <button className="rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50" onClick={() => onCopyCodexSession(workspace, link)}>
+                          复制
+                        </button>
+                        <button className="rounded-md border border-red-200 bg-white px-2 py-1 text-xs text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60" disabled={operating} onClick={() => onDeleteCodexSession(workspace, link)}>
+                          删除绑定
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="rounded-md border border-dashed border-neutral-200 bg-white px-3 py-3 text-sm leading-6 text-neutral-500">
+                  还没有绑定会话。绑定后，后续可以直接回到对应 Codex 会话，而不是每次重新拼接上下文。
+                </div>
+              )}
+            </div>
           </section>
 
           <section className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
@@ -2628,6 +2751,9 @@ export function App() {
   const [worktreeSetupWorkspace, setWorktreeSetupWorkspace] = useState<Workspace>();
   const [worktreeSetupRunning, setWorktreeSetupRunning] = useState(false);
   const [taskUpdatingId, setTaskUpdatingId] = useState("");
+  const [codexSessionsByWorkspace, setCodexSessionsByWorkspace] = useState<Record<string, CodexSessionLink[]>>({});
+  const [codexSessionsLoadingFolder, setCodexSessionsLoadingFolder] = useState("");
+  const [codexSessionOperationId, setCodexSessionOperationId] = useState("");
   const [refreshEnabled, setRefreshEnabled] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [drawerFolder, setDrawerFolder] = useState("");
@@ -2920,6 +3046,55 @@ export function App() {
     }
   }, [prependWorkspaceActivity]);
 
+  const setCodexSessionsForWorkspace = useCallback((workspace: Workspace, sessions: CodexSessionLink[]) => {
+    setCodexSessionsByWorkspace((currentSessions) => ({
+      ...currentSessions,
+      [workspace.folder]: sessions
+    }));
+  }, []);
+
+  const loadCodexSessions = useCallback(async (workspace: Workspace) => {
+    if (!isDesktopApp()) {
+      setCodexSessionsForWorkspace(workspace, []);
+      return;
+    }
+
+    setCodexSessionsLoadingFolder(workspace.folder);
+    try {
+      const response = await readCodexSessions(workspace.path);
+      setCodexSessionsForWorkspace(workspace, response?.sessions ?? []);
+    } catch (error) {
+      showToast(localOperationErrorMessage({
+        operation: "读取 Codex 会话绑定",
+        error,
+        targetPath: `${workspace.path}/codex-sessions.json`,
+        recovery: "确认工作区目录存在；如果文件格式损坏，可以先备份 codex-sessions.json 后重新绑定会话。"
+      }));
+    } finally {
+      setCodexSessionsLoadingFolder("");
+    }
+  }, [setCodexSessionsForWorkspace, showToast]);
+
+  useEffect(() => {
+    if (!drawerWorkspace) return;
+    void loadCodexSessions(drawerWorkspace);
+  }, [drawerWorkspace?.folder, drawerWorkspace?.path, loadCodexSessions]);
+
+  const codexSessionsForPrompt = async (workspace: Workspace) => {
+    if (Object.prototype.hasOwnProperty.call(codexSessionsByWorkspace, workspace.folder)) {
+      return codexSessionsByWorkspace[workspace.folder] ?? [];
+    }
+    if (!isDesktopApp()) return [];
+    try {
+      const response = await readCodexSessions(workspace.path);
+      const sessions = response?.sessions ?? [];
+      setCodexSessionsForWorkspace(workspace, sessions);
+      return sessions;
+    } catch {
+      return [];
+    }
+  };
+
   const toggleDetails = (folder: string) => {
     setExpanded((currentSet) => {
       const next = new Set(currentSet);
@@ -2946,7 +3121,8 @@ export function App() {
   };
 
   const copyInstruction = async (workspace: Workspace, action: "continue" | "git" | "delivery" | "risk" | "worktree" | "task") => {
-    await navigator.clipboard.writeText(codexInstruction(workspace, action));
+    const sessions = await codexSessionsForPrompt(workspace);
+    await navigator.clipboard.writeText(codexInstruction(workspace, action, sessions));
     void recordWorkspaceAction(workspace, "codex_instruction.copied", `Copied ${action} Codex instruction for ${workspace.name}`, {
       metadata: { instructionType: action }
     });
@@ -2954,7 +3130,8 @@ export function App() {
   };
 
   const copyAndOpenCodex = async (workspace: Workspace, action: "continue" | "git" | "delivery" | "risk") => {
-    await navigator.clipboard.writeText(codexInstruction(workspace, action));
+    const sessions = await codexSessionsForPrompt(workspace);
+    await navigator.clipboard.writeText(codexInstruction(workspace, action, sessions));
     await openExternalUrl(settings.codexUrl || "codex://");
     void recordWorkspaceAction(workspace, "codex_handoff.opened", `Copied ${action} instruction and opened Codex for ${workspace.name}`, {
       metadata: { instructionType: action, codexUrl: settings.codexUrl || "codex://" }
@@ -2963,7 +3140,8 @@ export function App() {
   };
 
   const copyTaskInstruction = async (workspace: Workspace, task: WorkspaceTask) => {
-    await navigator.clipboard.writeText(taskCodexInstruction(workspace, task));
+    const sessions = await codexSessionsForPrompt(workspace);
+    await navigator.clipboard.writeText(taskCodexInstruction(workspace, task, sessions));
     void recordWorkspaceAction(workspace, "task_instruction.copied", `Copied task handoff for ${task.title}`, {
       target: workspaceStandardDocumentPath(workspace, "tasks"),
       metadata: { taskId: task.id, taskTitle: task.title, taskStatus: task.status }
@@ -2972,7 +3150,8 @@ export function App() {
   };
 
   const copyAndOpenTaskCodex = async (workspace: Workspace, task: WorkspaceTask) => {
-    await navigator.clipboard.writeText(taskCodexInstruction(workspace, task));
+    const sessions = await codexSessionsForPrompt(workspace);
+    await navigator.clipboard.writeText(taskCodexInstruction(workspace, task, sessions));
     await openExternalUrl(settings.codexUrl || "codex://");
     void recordWorkspaceAction(workspace, "task_handoff.opened", `Copied task handoff and opened Codex for ${task.title}`, {
       target: workspaceStandardDocumentPath(workspace, "tasks"),
@@ -3007,6 +3186,110 @@ export function App() {
       }));
     } finally {
       setTaskUpdatingId("");
+    }
+  };
+
+  const bindWorkspaceCodexSession = async (workspace: Workspace, input: { title: string; url: string; notes: string }) => {
+    if (!isDesktopApp()) {
+      showToast("绑定 Codex 会话需要在 Nexus Mac App 中使用");
+      return false;
+    }
+
+    setCodexSessionOperationId("bind");
+    try {
+      const response = await bindCodexSession({
+        workspacePath: workspace.path,
+        title: input.title,
+        url: input.url,
+        notes: input.notes,
+        confirmed: true
+      });
+      if (response) {
+        setCodexSessionsForWorkspace(workspace, response.sessions);
+        const sessionLabel = response.link?.title ?? (input.title || input.url);
+        prependWorkspaceActivity(workspace, response.updated ? "codex_session_link.updated" : "codex_session_link.bound", `${response.updated ? "Updated" : "Bound"} Codex session ${sessionLabel}`);
+      }
+      showToast(response?.updated ? "Codex 会话已更新" : "Codex 会话已绑定");
+      return true;
+    } catch (error) {
+      showToast(localOperationErrorMessage({
+        operation: "绑定 Codex 会话",
+        error,
+        targetPath: `${workspace.path}/codex-sessions.json`,
+        recovery: "确认链接带有有效 scheme，例如 codex:// 或 https://；确认后再重新绑定。"
+      }));
+      return false;
+    } finally {
+      setCodexSessionOperationId("");
+    }
+  };
+
+  const openWorkspaceCodexSession = async (workspace: Workspace, link: CodexSessionLink) => {
+    if (!isDesktopApp()) {
+      await openExternalUrl(link.url);
+      return;
+    }
+
+    setCodexSessionOperationId(link.id);
+    try {
+      const response = await openCodexSession({
+        workspacePath: workspace.path,
+        sessionId: link.id,
+        confirmed: true
+      });
+      if (response) {
+        setCodexSessionsForWorkspace(workspace, response.sessions);
+        prependWorkspaceActivity(workspace, "codex_session_link.opened", `Opened Codex session ${link.title}`);
+      }
+      showToast(`已打开 Codex 会话：${link.title}`);
+    } catch (error) {
+      showToast(localOperationErrorMessage({
+        operation: "打开 Codex 会话",
+        error,
+        targetPath: link.url,
+        recovery: "确认 Codex URL Scheme 可用；如果链接已失效，可以删除绑定后重新添加。"
+      }));
+    } finally {
+      setCodexSessionOperationId("");
+    }
+  };
+
+  const copyWorkspaceCodexSession = async (workspace: Workspace, link: CodexSessionLink) => {
+    await navigator.clipboard.writeText(link.url);
+    void recordWorkspaceAction(workspace, "codex_session_link.copied", `Copied Codex session ${link.title}`, {
+      target: link.url,
+      metadata: { sessionId: link.id, sessionTitle: link.title, sessionUrl: link.url }
+    });
+    showToast(`已复制 Codex 会话链接：${link.title}`);
+  };
+
+  const deleteWorkspaceCodexSession = async (workspace: Workspace, link: CodexSessionLink) => {
+    if (!isDesktopApp()) {
+      showToast("删除 Codex 会话绑定需要在 Nexus Mac App 中使用");
+      return;
+    }
+
+    setCodexSessionOperationId(link.id);
+    try {
+      const response = await deleteCodexSession({
+        workspacePath: workspace.path,
+        sessionId: link.id,
+        confirmed: true
+      });
+      if (response) {
+        setCodexSessionsForWorkspace(workspace, response.sessions);
+        prependWorkspaceActivity(workspace, "codex_session_link.deleted", `Deleted Codex session ${link.title}`);
+      }
+      showToast(`已删除 Codex 会话绑定：${link.title}`);
+    } catch (error) {
+      showToast(localOperationErrorMessage({
+        operation: "删除 Codex 会话绑定",
+        error,
+        targetPath: `${workspace.path}/codex-sessions.json`,
+        recovery: "刷新工作区详情后重试；删除只会移除 Nexus 本地绑定，不会删除 Codex 会话。"
+      }));
+    } finally {
+      setCodexSessionOperationId("");
     }
   };
 
@@ -3353,7 +3636,8 @@ export function App() {
   };
 
   const copyRiskInstruction = async (workspace: Workspace, risk: string) => {
-    await navigator.clipboard.writeText(riskInstruction(workspace, risk));
+    const sessions = await codexSessionsForPrompt(workspace);
+    await navigator.clipboard.writeText(riskInstruction(workspace, risk, sessions));
     void recordWorkspaceAction(workspace, "risk_instruction.copied", `Copied risk instruction for ${risk}`, {
       metadata: { risk }
     });
@@ -3545,6 +3829,14 @@ export function App() {
         onCopyTaskInstruction={copyTaskInstruction}
         onCopyAndOpenTaskCodex={copyAndOpenTaskCodex}
         onUpdateTask={updateTaskStatus}
+        codexSessions={drawerWorkspace ? codexSessionsByWorkspace[drawerWorkspace.folder] ?? [] : []}
+        codexSessionsLoading={drawerWorkspace ? codexSessionsLoadingFolder === drawerWorkspace.folder : false}
+        codexSessionOperationId={codexSessionOperationId}
+        onRefreshCodexSessions={loadCodexSessions}
+        onBindCodexSession={bindWorkspaceCodexSession}
+        onOpenCodexSession={openWorkspaceCodexSession}
+        onCopyCodexSession={copyWorkspaceCodexSession}
+        onDeleteCodexSession={deleteWorkspaceCodexSession}
         onRunSessionAction={runSessionAction}
         onOpenDocument={openDocument}
         onOpenPath={openConfiguredPath}

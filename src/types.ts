@@ -69,6 +69,15 @@ export type WorkspaceTask = {
   sourceLine?: number;
 };
 
+export type CodexSessionLink = {
+  id: string;
+  title: string;
+  url: string;
+  notes: string;
+  createdAt: string;
+  lastOpenedAt?: string | null;
+};
+
 export type Workspace = {
   name: string;
   folder: string;
