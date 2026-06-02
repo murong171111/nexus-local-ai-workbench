@@ -38,7 +38,7 @@ import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { Card } from "./components/ui/card";
 import { Input } from "./components/ui/input";
-import { appendAuditEvent, bindCodexSession, checkEnvironment, createWorkspace, deleteCodexSession, exportSettingsProfile, isDesktopApp, openCodexSession, openExternalUrl, openPath as openPathInDesktop, readCodexSessions, readTextFile, rebuildSearchIndex, scanSourceRepos, scanWorkspaces, searchIndex, setupWorktrees, updateWorkspaceTask, writeWidgetSnapshot, type EnvironmentHealth, type RebuildSearchIndexResponse, type SearchResult, type SourceRepo } from "./desktop";
+import { appendAuditEvent, bindCodexSession, checkEnvironment, createWorkspace, deleteCodexSession, exportSettingsProfile, initializeDemandIntake, isDesktopApp, openCodexSession, openExternalUrl, openPath as openPathInDesktop, readCodexSessions, readDemandIntakeStatus, readTextFile, rebuildSearchIndex, scanSourceRepos, scanWorkspaces, searchIndex, setupWorktrees, updateWorkspaceTask, writeWidgetSnapshot, type DemandIntakeInput, type DemandIntakeStatus, type EnvironmentHealth, type RebuildSearchIndexResponse, type SearchResult, type SourceRepo } from "./desktop";
 import { cn, riskTone } from "./lib";
 import { branchAlignmentRows, buildWorktreeCommand, createSettingsProfile, fallbackSearchResults, filterWorkspaces, groupSearchResults, hasConfirmedTargetBranch, localOperationErrorMessage, normalizeServiceList, orderedSearchResults, parseServiceInput, parseSettingsProfile, settingsProfileFilename, sortWorkspacesForAttention, todayString, widgetSnapshotFromDashboard, workspaceCreatePreflight, workspaceFolderFromName, workspaceIsArchived, workspaceSessionActions, type NexusSettingsProfile } from "./workspace-model";
 import type { CodexSessionLink, DashboardData, GitRow, Workspace, WorkspaceSessionAction, WorkspaceTask } from "./types";
@@ -117,6 +117,9 @@ const auditActionLabels: Record<string, string> = {
   "codex_session_link.deleted": "Codex 会话已删除 / Session deleted",
   "codex_session_link.opened": "Codex 会话已打开 / Session opened",
   "codex_session_link.updated": "Codex 会话已更新 / Session updated",
+  "demand_intake.folder.opened": "需求目录已打开 / Demand folder",
+  "demand_intake.initialized": "需求预检已初始化 / Demand intake",
+  "demand_intake_prompt.copied": "预检提示词已复制 / Intake prompt",
   "document.opened": "文档已打开 / Document opened",
   "risk_instruction.copied": "风险指令已复制 / Risk instruction",
   "task_handoff.opened": "任务交接已打开 / Task handoff",
@@ -241,6 +244,13 @@ const onboardingStorageKey = "nexus-onboarding-complete";
 const pinnedWorkspacesStorageKey = "nexus-pinned-workspaces";
 const demoWorkspaceName = "Nexus 示例工作区";
 const demoWorkspaceBranch = "chen/nexus-demo-workspace";
+const demandIntakeStandardFiles = [
+  { key: "requirement", label: "需求确认卡", filename: "requirement.md" },
+  { key: "questions", label: "待确认问题", filename: "questions.md" },
+  { key: "scope", label: "开发范围", filename: "scope.md" },
+  { key: "tasks", label: "需求列表", filename: "tasks.md" },
+  { key: "delivery", label: "需求交付", filename: "delivery.md" }
+];
 
 function settingsFromDashboard(dashboard: DashboardData): NexusSettings {
   return {
@@ -401,6 +411,37 @@ function riskInstruction(workspace: Workspace, risk: string, sessions: CodexSess
     return `工作区 ${workspace.folder} 存在风险：${risk}\n请检查交付记录.md 是否存在并补齐交付记录结构。${sessionBlock}`;
   }
   return `工作区 ${workspace.folder} 存在风险：${risk}\n请分析该风险的原因、影响和建议处理动作。${sessionBlock}`;
+}
+
+function demandIntakeDirectory(workspace: Workspace) {
+  return `${workspace.path}/需求`;
+}
+
+function fallbackDemandIntakeStatus(workspace: Workspace): DemandIntakeStatus {
+  const directoryPath = demandIntakeDirectory(workspace);
+  const files = demandIntakeStandardFiles.map((file) => ({
+    ...file,
+    path: `${directoryPath}/${file.filename}`,
+    exists: false
+  }));
+  return { directoryPath, exists: false, ready: false, missingCount: files.length, files };
+}
+
+function demandIntakePrompt(workspace: Workspace, input: DemandIntakeInput) {
+  const demandName = input.demandName.trim() || workspace.name;
+  const materials = [
+    input.lanhuLink.trim() ? `蓝湖链接：${input.lanhuLink.trim()}` : "",
+    input.notes.trim() ? `补充说明：${input.notes.trim()}` : ""
+  ].filter(Boolean).join("\n") || "待补充";
+
+  return [
+    "使用 $lanhu-demand-intake。",
+    `当前工作区：${workspace.path}。`,
+    `需求名称：${demandName}。`,
+    "蓝湖材料：",
+    materials,
+    "请先整理 需求/requirement.md 和 需求/questions.md，并在 需求/tasks.md 创建未完成需求列表；不要开发。"
+  ].join("\n");
 }
 
 function Stat({ label, value, icon: Icon }: { label: { title: string; desc: string }; value: string | number; icon: LucideIcon }) {
@@ -1348,7 +1389,10 @@ function WorkspaceDrawer({
   onRunSessionAction,
   onOpenDocument,
   onOpenPath,
-  taskUpdatingId
+  taskUpdatingId,
+  onInitializeDemandIntake,
+  onOpenDemandIntakeFolder,
+  onCopyDemandIntakePrompt
 }: {
   workspace?: Workspace;
   onClose: () => void;
@@ -1368,16 +1412,52 @@ function WorkspaceDrawer({
   onOpenDocument: (title: string, path: string) => void;
   onOpenPath: (path: string) => void;
   taskUpdatingId: string;
+  onInitializeDemandIntake: (workspace: Workspace, input: DemandIntakeInput) => Promise<DemandIntakeStatus | undefined>;
+  onOpenDemandIntakeFolder: (workspace: Workspace) => void;
+  onCopyDemandIntakePrompt: (workspace: Workspace, input: DemandIntakeInput) => void;
 }) {
   const [sessionTitle, setSessionTitle] = useState("");
   const [sessionUrl, setSessionUrl] = useState("");
   const [sessionNotes, setSessionNotes] = useState("");
+  const [demandInput, setDemandInput] = useState<DemandIntakeInput>({ demandName: "", lanhuLink: "", notes: "" });
+  const [demandStatus, setDemandStatus] = useState<DemandIntakeStatus>();
+  const [demandLoading, setDemandLoading] = useState(false);
+  const [demandInitializing, setDemandInitializing] = useState(false);
 
   useEffect(() => {
     setSessionTitle("");
     setSessionUrl("");
     setSessionNotes("");
   }, [workspace?.folder]);
+
+  useEffect(() => {
+    if (!workspace) return;
+    setDemandInput({ demandName: workspace.name, lanhuLink: "", notes: "" });
+  }, [workspace?.folder, workspace?.name]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!workspace) {
+      setDemandStatus(undefined);
+      return;
+    }
+
+    setDemandLoading(true);
+    void readDemandIntakeStatus(workspace.path)
+      .then((status) => {
+        if (!cancelled) setDemandStatus(status ?? fallbackDemandIntakeStatus(workspace));
+      })
+      .catch(() => {
+        if (!cancelled) setDemandStatus(fallbackDemandIntakeStatus(workspace));
+      })
+      .finally(() => {
+        if (!cancelled) setDemandLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [workspace?.path]);
 
   if (!workspace) return null;
 
@@ -1423,6 +1503,18 @@ function WorkspaceDrawer({
     { label: "报告", title: "bootstrap-report.md", description: "初始化报告 / Bootstrap", path: workspaceStandardDocumentPath(workspace, "bootstrap") },
     { label: "Worktree", title: "worktree-commands.sh", description: "创建命令脚本 / Script", path: workspaceStandardDocumentPath(workspace, "worktreeScript") }
   ].filter((entry): entry is { label: string; title: string; description: string; path: string } => Boolean(entry.path));
+  const currentDemandStatus = demandStatus ?? fallbackDemandIntakeStatus(workspace);
+  const demandPrompt = demandIntakePrompt(workspace, demandInput);
+  const requirementFile = currentDemandStatus.files.find((file) => file.key === "requirement");
+  const initializeDemand = async () => {
+    setDemandInitializing(true);
+    try {
+      const status = await onInitializeDemandIntake(workspace, demandInput);
+      if (status) setDemandStatus(status);
+    } finally {
+      setDemandInitializing(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 bg-neutral-950/10" style={{ zIndex: 1000 }} onMouseDown={onClose}>
@@ -1673,6 +1765,100 @@ function WorkspaceDrawer({
                   </div>
                 );
               })}
+            </div>
+          </section>
+
+          <section className="rounded-lg border border-neutral-200 bg-white p-3">
+            <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2 text-sm font-medium text-neutral-900">
+                  <BookOpen className="h-4 w-4 text-blue-600" />
+                  需求预检 / Demand intake
+                </div>
+                <div className="mt-1 text-xs leading-5 text-neutral-500">
+                  新建工作区后的第一步：先归档蓝湖材料、整理确认卡和问题列表，再进入开发。
+                </div>
+              </div>
+              <span className={cn("mono rounded border px-2 py-1 text-[11px]", currentDemandStatus.ready ? "border-emerald-200 bg-emerald-50 text-emerald-700" : currentDemandStatus.exists ? "border-amber-200 bg-amber-50 text-amber-700" : "border-neutral-200 bg-neutral-50 text-neutral-500")}>
+                {demandLoading ? "checking" : currentDemandStatus.ready ? "ready" : currentDemandStatus.exists ? `${currentDemandStatus.missingCount} missing` : "not initialized"}
+              </span>
+            </div>
+
+            <div className="rounded-md bg-neutral-50 px-3 py-2 text-xs text-neutral-500">
+              <div className="mono break-all">{currentDemandStatus.directoryPath}</div>
+              <div className="mt-1">
+                后续开发按 `需求/tasks.md` 中未完成需求点推进；Nexus 只创建归档入口和提示词，不自动解析蓝湖。
+              </div>
+            </div>
+
+            <div className="mt-3 grid gap-2">
+              {currentDemandStatus.files.map((file) => (
+                <button
+                  key={file.key}
+                  className="flex min-w-0 items-center justify-between gap-3 rounded-md border border-neutral-200 px-3 py-2 text-left text-sm hover:bg-neutral-50"
+                  onClick={() => file.exists && onOpenDocument(`需求/${file.filename}`, file.path)}
+                  disabled={!file.exists}
+                  title={file.path}
+                >
+                  <span className="min-w-0">
+                    <span className="block font-medium text-neutral-800">{file.label}</span>
+                    <span className="mono mt-1 block truncate text-[11px] text-neutral-400">{file.filename}</span>
+                  </span>
+                  <span className={cn("mono shrink-0 rounded border px-2 py-1 text-[11px]", file.exists ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-neutral-200 bg-neutral-50 text-neutral-400")}>
+                    {file.exists ? "exists" : "missing"}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-4 grid gap-3">
+              <label className="grid gap-1.5">
+                <span className="text-xs font-medium text-neutral-500">需求名称</span>
+                <Input
+                  value={demandInput.demandName}
+                  onChange={(event) => setDemandInput((current) => ({ ...current, demandName: event.target.value }))}
+                  placeholder={workspace.name}
+                />
+              </label>
+              <label className="grid gap-1.5">
+                <span className="text-xs font-medium text-neutral-500">蓝湖链接</span>
+                <Input
+                  value={demandInput.lanhuLink}
+                  onChange={(event) => setDemandInput((current) => ({ ...current, lanhuLink: event.target.value }))}
+                  placeholder="https://lanhuapp.com/..."
+                />
+              </label>
+              <label className="grid gap-1.5">
+                <span className="text-xs font-medium text-neutral-500">补充说明</span>
+                <textarea
+                  value={demandInput.notes}
+                  onChange={(event) => setDemandInput((current) => ({ ...current, notes: event.target.value }))}
+                  placeholder="补充业务背景、入口、产品口径或截图说明"
+                  className="min-h-20 resize-y rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm leading-6 text-neutral-800 outline-none placeholder:text-neutral-400 focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                />
+              </label>
+              <div className="rounded-md border border-neutral-200 bg-neutral-950 p-3">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="text-xs font-medium text-neutral-300">Codex 预检提示词</div>
+                  <span className="mono text-[10px] uppercase text-neutral-500">copy only</span>
+                </div>
+                <pre className="max-h-40 overflow-auto whitespace-pre-wrap text-xs leading-5 text-neutral-100">{demandPrompt}</pre>
+              </div>
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button className="rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60" onClick={() => void initializeDemand()} disabled={demandInitializing}>
+                {demandInitializing ? "处理中" : currentDemandStatus.exists ? "补齐需求预检文件" : "初始化需求预检文件"}
+              </button>
+              <button className="rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50" onClick={() => onOpenDemandIntakeFolder(workspace)} disabled={!currentDemandStatus.exists}>
+                打开 需求/ 文件夹
+              </button>
+              <button className="rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50" onClick={() => requirementFile && onOpenDocument("需求/requirement.md", requirementFile.path)} disabled={!requirementFile?.exists}>
+                打开 requirement.md
+              </button>
+              <button className="rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50" onClick={() => onCopyDemandIntakePrompt(workspace, demandInput)}>
+                复制 Codex 预检提示词
+              </button>
             </div>
           </section>
 
@@ -2508,7 +2694,7 @@ function CreateWorkspacePanel({
               <h2 className="text-lg font-semibold text-neutral-950">新建工作区</h2>
             </div>
             <p className="mt-1 text-sm leading-6 text-neutral-500">
-              按 `ks-project-demand-workspace` skill 的标准结构创建需求目录、交付记录、任务、分支和服务文档。
+              按 `ks-project-demand-workspace` skill 的标准结构创建工作区。创建后先在详情页完成需求预检，再进入 worktree 和开发。
             </p>
           </div>
           <Button variant="ghost" onClick={onClose}>
@@ -2593,7 +2779,7 @@ function CreateWorkspacePanel({
             <Card className="p-4 text-sm leading-6 text-neutral-600">
               <div className="font-medium text-neutral-950">创建位置</div>
               <div className="mono mt-2 break-all text-xs text-neutral-500">{settings.workspacesRoot}</div>
-              <div className="mt-3 text-neutral-500">创建后不会自动创建 worktree；目标分支确认后再按工作区里的命令创建。</div>
+              <div className="mt-3 text-neutral-500">创建后不会自动创建 worktree；先初始化 `需求/` 并冻结范围，目标分支确认后再按工作区里的命令创建。</div>
             </Card>
             <Card className="p-4 text-sm leading-6 text-neutral-600">
               <div className="font-medium text-neutral-950">创建前检查 / Preflight</div>
@@ -3129,6 +3315,50 @@ export function App() {
     showToast(`已复制 ${workspace.name} 的 Codex 指令`);
   };
 
+  const handleInitializeDemandIntake = useCallback(async (workspace: Workspace, input: DemandIntakeInput) => {
+    try {
+      const status = await initializeDemandIntake({
+        workspacePath: workspace.path,
+        demandName: input.demandName.trim() || workspace.name,
+        lanhuLink: input.lanhuLink,
+        notes: input.notes,
+        confirmed: true
+      });
+      showToast(status?.ready ? "已初始化需求预检文件" : "已处理需求预检文件");
+      await refreshData();
+      void refreshSearchIndex();
+      return status ?? undefined;
+    } catch (error) {
+      showToast(localOperationErrorMessage({
+        operation: "初始化需求预检",
+        error,
+        targetPath: demandIntakeDirectory(workspace),
+        recovery: "确认工作区目录存在且可写；如果已存在同名非目录或非文件，请先手动检查。"
+      }));
+      return undefined;
+    }
+  }, [refreshData, refreshSearchIndex, showToast]);
+
+  const handleOpenDemandIntakeFolder = async (workspace: Workspace) => {
+    const path = demandIntakeDirectory(workspace);
+    await openPathInDesktop(path);
+    void recordWorkspaceAction(workspace, "demand_intake.folder.opened", "Opened demand intake folder", {
+      target: path,
+      metadata: { directoryPath: path }
+    });
+  };
+
+  const handleCopyDemandIntakePrompt = async (workspace: Workspace, input: DemandIntakeInput) => {
+    await navigator.clipboard.writeText(demandIntakePrompt(workspace, input));
+    void recordWorkspaceAction(workspace, "demand_intake_prompt.copied", `Copied demand intake prompt for ${workspace.name}`, {
+      metadata: {
+        demandName: input.demandName.trim() || workspace.name,
+        lanhuLink: input.lanhuLink.trim()
+      }
+    });
+    showToast("已复制 Codex 预检提示词");
+  };
+
   const copyAndOpenCodex = async (workspace: Workspace, action: "continue" | "git" | "delivery" | "risk") => {
     const sessions = await codexSessionsForPrompt(workspace);
     await navigator.clipboard.writeText(codexInstruction(workspace, action, sessions));
@@ -3500,7 +3730,13 @@ export function App() {
         handoff: `${path}/handoff.md`,
         bootstrap: `${path}/bootstrap-report.md`,
         worktreeScript: `${path}/scripts/worktree-commands.sh`,
-        sql: `${path}/sql`
+        sql: `${path}/sql`,
+        demandIntake: `${path}/需求`,
+        demandRequirement: `${path}/需求/requirement.md`,
+        demandQuestions: `${path}/需求/questions.md`,
+        demandScope: `${path}/需求/scope.md`,
+        demandTasks: `${path}/需求/tasks.md`,
+        demandDelivery: `${path}/需求/delivery.md`
       };
       const workspaceRisks = [
         ...(targetBranch === "待确认" ? ["目标分支未确认"] : []),
@@ -3592,9 +3828,10 @@ export function App() {
       };
       setDashboard((currentData) => ({ ...currentData, workspaces: [workspace, ...currentData.workspaces] }));
       setActive(input.folder);
+      setDrawerFolder(input.folder);
       setCreateOpen(false);
       void refreshSearchIndex();
-      showToast(`已创建工作区 ${input.name}`);
+      showToast(`已创建工作区 ${input.name}，下一步初始化需求预检`);
     } catch (error) {
       showToast(localOperationErrorMessage({
         operation: "创建工作区",
@@ -3841,6 +4078,9 @@ export function App() {
         onOpenDocument={openDocument}
         onOpenPath={openConfiguredPath}
         taskUpdatingId={taskUpdatingId}
+        onInitializeDemandIntake={handleInitializeDemandIntake}
+        onOpenDemandIntakeFolder={handleOpenDemandIntakeFolder}
+        onCopyDemandIntakePrompt={handleCopyDemandIntakePrompt}
       />
       <DocumentViewer document={document} onClose={() => setDocument(undefined)} onOpenExternal={openConfiguredPath} />
       {toast && <div className="fixed bottom-4 left-1/2 -translate-x-1/2 rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-700 shadow-[0_8px_24px_rgba(15,23,42,0.12)]" style={{ zIndex: 1100 }}>{toast}</div>}

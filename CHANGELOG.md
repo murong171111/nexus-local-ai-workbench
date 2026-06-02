@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Added
 
+- Tauri workspace detail now includes a `需求预检 / Demand intake` panel that checks the workspace-local `需求/` folder, initializes `requirement.md`, `questions.md`, `scope.md`, `tasks.md`, and `delivery.md` without overwriting existing files, and copies a `$lanhu-demand-intake` Codex prompt for requirement confirmation before development.
 - Native sidebar now shows a setup readiness card near Settings, making environment-ready installs explicitly skip initialization and route directly to refresh or first-workspace creation.
 - Tauri workspace detail drawer can now bind, view, open, copy, and delete workspace-local Codex session links stored in `codex-sessions.json`.
 - Native/Rust local checks now emit an `active-tasks` health row and a `continue-active-tasks` next-step action, so open `doing`/`todo` tasks route directly back to `tasks.md` instead of hiding behind aggregate task counts.
