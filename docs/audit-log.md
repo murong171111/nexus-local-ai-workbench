@@ -35,6 +35,9 @@ Each line is a standalone JSON object:
 ## Currently Audited
 
 - `workspace.created`: written after confirmed workspace creation succeeds.
+- `demand_intake.initialized`: written after Nexus creates or completes the workspace-local `需求/` intake files.
+- `demand_intake_prompt.copied`: written when the `$lanhu-demand-intake` precheck prompt is copied from workspace detail.
+- `demand_intake.folder.opened`: written when the workspace-local `需求/` folder is opened from Nexus.
 - `settings_profile.exported`: written after a settings profile export succeeds.
 - `document.opened`: written when a workspace document is opened inside Nexus.
 - `document.created`: written when Nexus creates a missing standard workspace document after explicit confirmation.

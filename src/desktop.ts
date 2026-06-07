@@ -86,6 +86,28 @@ export type CodexSessionMutationResponse = {
   updated: boolean;
 };
 
+export type DemandIntakeInput = {
+  demandName: string;
+  lanhuLink: string;
+  notes: string;
+};
+
+export type DemandIntakeFileStatus = {
+  key: string;
+  label: string;
+  filename: string;
+  path: string;
+  exists: boolean;
+};
+
+export type DemandIntakeStatus = {
+  directoryPath: string;
+  exists: boolean;
+  ready: boolean;
+  missingCount: number;
+  files: DemandIntakeFileStatus[];
+};
+
 export type AuditEventPayload = {
   actor?: string;
   action: string;
@@ -343,6 +365,29 @@ export async function readCodexSessions(workspacePath: string) {
   });
 }
 
+function browserDemandIntakeStatus(workspacePath: string): DemandIntakeStatus {
+  const directoryPath = `${workspacePath}/需求`;
+  const files = [
+    { key: "requirement", label: "需求确认卡", filename: "requirement.md" },
+    { key: "questions", label: "待确认问题", filename: "questions.md" },
+    { key: "scope", label: "开发范围", filename: "scope.md" },
+    { key: "tasks", label: "需求列表", filename: "tasks.md" },
+    { key: "delivery", label: "需求交付", filename: "delivery.md" }
+  ].map((file) => ({
+    ...file,
+    path: `${directoryPath}/${file.filename}`,
+    exists: false
+  }));
+  return { directoryPath, exists: false, ready: false, missingCount: files.length, files };
+}
+
+export async function readDemandIntakeStatus(workspacePath: string) {
+  if (!isDesktopApp()) return browserDemandIntakeStatus(workspacePath);
+  return tauriInvoke<DemandIntakeStatus>("read_demand_intake_status", {
+    request: { workspacePath }
+  });
+}
+
 export async function bindCodexSession(payload: BindCodexSessionPayload) {
   if (!isDesktopApp()) {
     throw new Error("绑定 Codex 会话需要在 Nexus Mac App 中使用");
@@ -379,6 +424,21 @@ export async function deleteCodexSession(payload: CodexSessionActionPayload) {
     request: {
       workspacePath: payload.workspacePath,
       sessionId: payload.sessionId,
+      confirmed: payload.confirmed
+    }
+  });
+}
+
+export async function initializeDemandIntake(payload: DemandIntakeInput & { workspacePath: string; confirmed: boolean }) {
+  if (!isDesktopApp()) {
+    throw new Error("初始化需求预检需要在 Nexus Mac App 中使用");
+  }
+  return tauriInvoke<DemandIntakeStatus>("initialize_demand_intake", {
+    request: {
+      workspacePath: payload.workspacePath,
+      demandName: payload.demandName,
+      lanhuLink: payload.lanhuLink,
+      notes: payload.notes,
       confirmed: payload.confirmed
     }
   });

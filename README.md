@@ -11,6 +11,7 @@ It is designed for teams that work across multiple local service repositories an
 - Native macOS app built with Tauri, React, TailwindCSS, and Swift WidgetKit source.
 - Workspace cards for requirement folders, branches, services, risks, activity, and worktree state.
 - In-app workspace creation using the `ks-project-demand-workspace` layout, with scanned service selection, manual fallback, a preflight review, a confirmation summary, and guided next steps after creation.
+- Workspace detail demand-intake panel for checking or initializing a fixed `需求/` folder with `requirement.md`, `questions.md`, `scope.md`, `tasks.md`, and `delivery.md`, plus a copyable `$lanhu-demand-intake` Codex prompt. Nexus creates the archive entry points and prompt only; it does not parse Lanhu or call AI.
 - In-app Markdown document preview for status, service scope, branch notes, tasks, and delivery records.
 - Local path settings for workspaces, source repositories, and delivery document roots.
 - Exportable and importable team settings profiles for sharing local path conventions, Codex URL, and IDE URL templates, including first-run onboarding import and native Settings import/export.
@@ -112,6 +113,12 @@ Nexus expects each requirement workspace to contain Markdown files like:
   交付记录.md
   codex-sessions.json
   bootstrap-report.md
+  需求/
+    requirement.md
+    questions.md
+    scope.md
+    tasks.md
+    delivery.md
   logs/
   sql/
   repos/
@@ -126,7 +133,9 @@ Use the `New Workspace` action in the left rail. Nexus can scan the configured s
 
 Before writing files, Nexus shows a summary of the target path, branch, and service scope. The preflight review blocks obvious failures such as an empty workspaces root, a root path that is not a directory, an invalid folder name, or a destination that already exists. Pending service scope, pending target branch, missing environment checks, and selected services that are not in the latest source-repository scan are shown as review items so early scoping can still be documented. Creating a workspace requires confirming the local write, then writes the standard Markdown document set and records selected services in `services.md` and `branches.md`. It also generates `bootstrap-report.md`, `scripts/worktree-commands.sh`, a local audit event, and an initialization receipt that verifies the generated files, initial `STATUS.md`, service scope, target branch, and worktree readiness.
 
-After creation, Nexus selects the new workspace, clears stale document previews, and shows a guided next-step checklist for service scope, target branch, worktree readiness, `handoff.md`, and the first local check. Each row opens the nearest source document or setup flow, so pending service/branch decisions are handled before worktree creation.
+After creation, Nexus selects the new workspace, clears stale document previews, and shows guided next steps. The first recommended step is the `需求预检 / Demand intake` panel: initialize `需求/`, enter a requirement name, Lanhu link, and notes, then copy the `$lanhu-demand-intake` prompt into Codex so the agent can prepare `requirement.md`, `questions.md`, and the unfinished requirement list in `需求/tasks.md`. Nexus does not parse Lanhu or call AI directly; requirement understanding and question grading remain in the follow-up Codex session.
+
+After demand intake is complete and `需求/scope.md` is frozen, continue with service scope, target branch, worktree readiness, `handoff.md`, and the first local check. Each row opens the nearest source document or setup flow, so pending service/branch decisions are handled before worktree creation.
 
 Nexus does not automatically create worktrees during workspace creation. When the branch and service scope are confirmed, use the native worktree setup action to run a confirmed local `git fetch` and `git worktree add` flow. Before the action is enabled, Nexus shows a preflight review for target branch readiness, missing worktrees, source repositories, and the workspace-local `repos/<service>` write location. After it runs, Nexus refreshes the workspace state, shows Chinese-first created/skipped/failed service results, and offers Finder, result-aware Codex handoff, and local-check follow-ups. Running the follow-up check from the result card shows the local check summary in place.
 
