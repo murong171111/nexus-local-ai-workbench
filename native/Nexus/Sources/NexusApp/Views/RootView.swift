@@ -3507,6 +3507,10 @@ private struct WorkspaceDetailView: View {
             CodexSessionLinksView(workspace: workspace)
                 .environmentObject(appState)
 
+            WorkspaceDemandIntakeView(workspace: workspace)
+                .environmentObject(appState)
+                .id(WorkspaceDetailSection.demand)
+
             LifecycleDetailView(
                 workspace: workspace,
                 openAction: {
@@ -4129,6 +4133,7 @@ private struct WorkspaceActiveDocumentBanner: View {
 private enum WorkspaceDetailSection: String, CaseIterable, Identifiable {
     case overview
     case command
+    case demand
     case workflow
     case services
     case risk
@@ -4143,6 +4148,8 @@ private enum WorkspaceDetailSection: String, CaseIterable, Identifiable {
             "概览 / Overview"
         case .command:
             "工作台 / Command"
+        case .demand:
+            "需求 / Demand"
         case .workflow:
             "任务交付 / Workflow"
         case .services:
@@ -4162,6 +4169,8 @@ private enum WorkspaceDetailSection: String, CaseIterable, Identifiable {
             "rectangle.grid.2x2"
         case .command:
             "point.3.connected.trianglepath.dotted"
+        case .demand:
+            "text.badge.checkmark"
         case .workflow:
             "checklist"
         case .services:
@@ -4177,6 +4186,7 @@ private enum WorkspaceDetailSection: String, CaseIterable, Identifiable {
 }
 
 private struct WorkspaceDetailMapView: View {
+    @EnvironmentObject private var appState: AppState
     let workspace: WorkspaceSummary
     let action: (WorkspaceDetailSection) -> Void
 
@@ -4253,6 +4263,8 @@ private struct WorkspaceDetailMapView: View {
             workspace.lifecycle.label
         case .command:
             primaryPathDetail
+        case .demand:
+            demandDetail
         case .workflow:
             blockedTaskCount > 0 ? "\(blockedTaskCount) 阻塞" : "\(openTaskCount) 开放"
         case .services:
@@ -4272,6 +4284,8 @@ private struct WorkspaceDetailMapView: View {
             return workspace.isArchived ? .secondary : NexusPalette.accent
         case .command:
             return commandTone
+        case .demand:
+            return demandTone
         case .workflow:
             if blockedTaskCount > 0 {
                 return NexusPalette.danger
@@ -4302,6 +4316,30 @@ private struct WorkspaceDetailMapView: View {
             return NexusPalette.warning
         }
         return NexusPalette.success
+    }
+
+    private var demandStatus: DemandIntakeStatus? {
+        appState.demandIntakeStatus(for: workspace)
+    }
+
+    private var demandDetail: String {
+        guard let demandStatus else {
+            return "待检查"
+        }
+        if demandStatus.ready {
+            return "已就绪"
+        }
+        return demandStatus.exists ? "缺 \(demandStatus.missingCount)" : "待初始化"
+    }
+
+    private var demandTone: Color {
+        guard let demandStatus else {
+            return .secondary
+        }
+        if demandStatus.ready {
+            return NexusPalette.success
+        }
+        return demandStatus.exists ? NexusPalette.warning : NexusPalette.accent
     }
 
     private var primaryPathDetail: String {
@@ -5564,6 +5602,208 @@ private struct WorkspaceDocumentGroupHeader: View {
                 .clipShape(Capsule())
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct WorkspaceDemandIntakeView: View {
+    @EnvironmentObject private var appState: AppState
+    @State private var demandName = ""
+    @State private var lanhuLink = ""
+    @State private var notes = ""
+    @State private var confirmed = false
+    let workspace: WorkspaceSummary
+
+    private var status: DemandIntakeStatus {
+        appState.demandIntakeDisplayStatus(for: workspace)
+    }
+
+    private var isLoading: Bool {
+        appState.demandIntakeLoadingWorkspaceID == workspace.id
+    }
+
+    private var actionDisabled: Bool {
+        !confirmed || appState.isInitializingDemandIntake
+    }
+
+    var body: some View {
+        SectionBlock(title: "需求预检 / Demand intake") {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: status.ready ? "checkmark.seal" : "text.badge.checkmark")
+                        .foregroundStyle(statusColor)
+                        .frame(width: 16)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(statusTitle)
+                            .font(.subheadline.weight(.semibold))
+                        Text(status.directoryPath)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+
+                    Spacer()
+
+                    Button {
+                        Task {
+                            await appState.refreshDemandIntakeStatus(for: workspace)
+                        }
+                    } label: {
+                        Label(isLoading ? "检查中" : "刷新", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(isLoading)
+                }
+
+                LazyVGrid(columns: metricColumns, alignment: .leading, spacing: 8) {
+                    WorkflowMetric(label: "目录", value: status.exists ? "exists" : "missing", tone: status.exists ? NexusPalette.success : NexusPalette.warning)
+                    WorkflowMetric(label: "文件", value: "\(readyFileCount)/\(status.files.count)", tone: status.ready ? NexusPalette.success : NexusPalette.warning)
+                    WorkflowMetric(label: "缺失", value: "\(status.missingCount)", tone: status.missingCount == 0 ? NexusPalette.success : NexusPalette.warning)
+                }
+
+                LazyVGrid(columns: fileColumns, alignment: .leading, spacing: 8) {
+                    ForEach(status.files) { file in
+                        DemandIntakeFileRow(file: file) {
+                            Task {
+                                await appState.loadDocument(path: file.path)
+                            }
+                        }
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    TextField("需求名称", text: $demandName)
+                        .textFieldStyle(.roundedBorder)
+                    TextField("蓝湖链接", text: $lanhuLink)
+                        .textFieldStyle(.roundedBorder)
+                    TextField("备注", text: $notes, axis: .vertical)
+                        .textFieldStyle(.roundedBorder)
+                        .lineLimit(2...4)
+                }
+
+                Toggle("确认创建或补齐需求预检文件", isOn: $confirmed)
+                    .toggleStyle(.checkbox)
+
+                HStack(spacing: 8) {
+                    Button {
+                        Task {
+                            let response = await appState.initializeDemandIntake(
+                                in: workspace,
+                                demandName: demandName,
+                                lanhuLink: lanhuLink,
+                                notes: notes,
+                                confirmed: confirmed
+                            )
+                            if response != nil {
+                                confirmed = false
+                            }
+                        }
+                    } label: {
+                        Label(
+                            appState.isInitializingDemandIntake
+                                ? "处理中"
+                                : (status.exists ? "补齐文件" : "初始化预检"),
+                            systemImage: "doc.badge.plus"
+                        )
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .disabled(actionDisabled)
+
+                    Button {
+                        Task {
+                            await appState.loadDocument(path: requirementFile?.path ?? "\(status.directoryPath)/requirement.md")
+                        }
+                    } label: {
+                        Label("打开确认卡", systemImage: "doc.text")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(!(requirementFile?.exists ?? false))
+                }
+            }
+        }
+        .task(id: workspace.id) {
+            if demandName.isEmpty {
+                demandName = workspace.name
+            }
+            if appState.demandIntakeStatus(for: workspace) == nil {
+                await appState.refreshDemandIntakeStatus(for: workspace)
+            }
+        }
+    }
+
+    private var statusTitle: String {
+        if status.ready {
+            return "需求预检已就绪"
+        }
+        if status.exists {
+            return "需求预检文件待补齐"
+        }
+        return "需求预检待初始化"
+    }
+
+    private var statusColor: Color {
+        if status.ready {
+            return NexusPalette.success
+        }
+        return status.exists ? NexusPalette.warning : NexusPalette.accent
+    }
+
+    private var readyFileCount: Int {
+        status.files.filter(\.exists).count
+    }
+
+    private var requirementFile: DemandIntakeFileStatus? {
+        status.files.first { $0.key == "requirement" }
+    }
+
+    private var metricColumns: [GridItem] {
+        [GridItem(.adaptive(minimum: 92), spacing: 8, alignment: .leading)]
+    }
+
+    private var fileColumns: [GridItem] {
+        [GridItem(.adaptive(minimum: 142), spacing: 8, alignment: .leading)]
+    }
+}
+
+private struct DemandIntakeFileRow: View {
+    let file: DemandIntakeFileStatus
+    let openAction: () -> Void
+
+    var body: some View {
+        Button {
+            openAction()
+        } label: {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: file.exists ? "checkmark.circle.fill" : "circle.dashed")
+                    .font(.caption)
+                    .foregroundStyle(file.exists ? NexusPalette.success : .secondary)
+                    .frame(width: 14)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(file.label)
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
+                    Text(file.filename)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(8)
+            .background(file.exists ? NexusPalette.selected : NexusPalette.badge)
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .stroke(file.exists ? NexusPalette.success.opacity(0.24) : Color.clear)
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(!file.exists)
+        .help(file.path)
     }
 }
 

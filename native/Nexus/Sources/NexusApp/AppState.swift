@@ -167,6 +167,9 @@ final class AppState: ObservableObject {
     @Published var isCreatingWorkspace = false
     @Published var isSettingUpWorktrees = false
     @Published var isCreatingDocument = false
+    @Published var isInitializingDemandIntake = false
+    @Published var demandIntakeLoadingWorkspaceID: WorkspaceSummary.ID?
+    @Published var demandIntakeStatusesByWorkspace: [WorkspaceSummary.ID: DemandIntakeStatus] = [:]
     @Published var isUpdatingTask = false
     @Published var isUpdatingLifecycle = false
     @Published var lastError: String?
@@ -2494,6 +2497,109 @@ final class AppState: ObservableObject {
             lastError = error.localizedDescription
             return nil
         }
+    }
+
+    func demandIntakeStatus(for workspace: WorkspaceSummary) -> DemandIntakeStatus? {
+        demandIntakeStatusesByWorkspace[workspace.id]
+    }
+
+    func demandIntakeDisplayStatus(for workspace: WorkspaceSummary) -> DemandIntakeStatus {
+        demandIntakeStatus(for: workspace) ?? Self.fallbackDemandIntakeStatus(for: workspace)
+    }
+
+    func refreshDemandIntakeStatus(for workspace: WorkspaceSummary) async {
+        demandIntakeLoadingWorkspaceID = workspace.id
+        lastError = nil
+        defer {
+            if demandIntakeLoadingWorkspaceID == workspace.id {
+                demandIntakeLoadingWorkspaceID = nil
+            }
+        }
+
+        do {
+            let status = try await bridge.readDemandIntakeStatus(
+                request: DemandIntakeStatusRequest(workspacePath: workspace.path)
+            )
+            demandIntakeStatusesByWorkspace[workspace.id] = status
+        } catch {
+            lastError = error.localizedDescription
+            demandIntakeStatusesByWorkspace[workspace.id] = Self.fallbackDemandIntakeStatus(for: workspace)
+        }
+    }
+
+    func initializeDemandIntake(
+        in workspace: WorkspaceSummary,
+        demandName: String,
+        lanhuLink: String,
+        notes: String,
+        confirmed: Bool
+    ) async -> InitializeDemandIntakeResponse? {
+        isInitializingDemandIntake = true
+        lastError = nil
+        defer {
+            isInitializingDemandIntake = false
+        }
+
+        do {
+            let response = try await bridge.initializeDemandIntake(
+                request: InitializeDemandIntakeRequest(
+                    workspacePath: workspace.path,
+                    demandName: demandName,
+                    lanhuLink: lanhuLink,
+                    notes: notes,
+                    confirmed: confirmed,
+                    auditRoot: auditRootPath,
+                    actor: "Nexus Native"
+                )
+            )
+            demandIntakeStatusesByWorkspace[workspace.id] = response.status
+            await refreshFromBridge()
+            markLocalWriteFeedback(
+                title: response.createdFiles.isEmpty
+                    ? "需求预检已就绪 / Demand intake ready"
+                    : "需求预检已初始化 / Demand intake created",
+                detail: "\(workspace.name) · \(response.createdFiles.count) files created · \(response.status.missingCount) missing。",
+                workspaceID: workspace.id,
+                workspaceName: workspace.name,
+                documentPath: response.status.files.first?.path ?? response.status.directoryPath,
+                documentLabel: "打开需求确认卡",
+                systemImage: "text.badge.checkmark"
+            )
+            return response
+        } catch {
+            lastError = error.localizedDescription
+            return nil
+        }
+    }
+
+    static func fallbackDemandIntakeStatus(for workspace: WorkspaceSummary) -> DemandIntakeStatus {
+        let workspacePath = workspace.path.hasSuffix("/")
+            ? String(workspace.path.dropLast())
+            : workspace.path
+        let directoryPath = "\(workspacePath)/需求"
+        let files = [
+            ("requirement", "需求确认卡", "requirement.md"),
+            ("questions", "待确认问题", "questions.md"),
+            ("scope", "开发范围", "scope.md"),
+            ("tasks", "需求列表", "tasks.md"),
+            ("delivery", "需求交付", "delivery.md")
+        ].map { item in
+            let (key, label, filename) = item
+            return DemandIntakeFileStatus(
+                key: key,
+                label: label,
+                filename: filename,
+                path: "\(directoryPath)/\(filename)",
+                exists: false
+            )
+        }
+        return DemandIntakeStatus(
+            directoryPath: directoryPath,
+            exists: false,
+            ready: false,
+            missingCount: files.count,
+            files: files
+        )
     }
 
     func agentEventHandoffPrompt(for event: AgentEvent) async -> String {

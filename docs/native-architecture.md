@@ -33,6 +33,7 @@ The first native shell scaffold is available at `native/Nexus`. It is a Swift Pa
 - AppKit adapters for menu bar, file panels, keyboard shortcuts, Finder/Terminal/IDE launch, and any behavior where AppKit is more reliable than SwiftUI alone.
 - Explicit confirmation flows for operations that create files, create worktrees, or change local state.
 - Create-workspace UX for scanning source repositories, filtering service candidates, accepting manual fallback services, showing pending scope, preflighting workspaces root readiness, folder validity, destination collisions, environment health, and scope warnings before confirmation, verifying generated files and initial status through an initialization receipt, and guiding the user to the next safe step after creation.
+- Workspace demand-intake preflight that reads the workspace-local `需求/` archive status, initializes missing requirement/question/scope/task/delivery templates only after explicit confirmation, and routes generated files back into the document preview and local-write feedback loop.
 - Workspace workflow summary that keeps task status, delivery-record status, document opens, local checks, and Codex handoff together instead of scattering them across unrelated sections.
 - Workspace Documents Hub that maps standard workspace files and scanned `sql/*.sql` artifacts to native preview/source rendering and avoids stale previews when the selected workspace changes.
 

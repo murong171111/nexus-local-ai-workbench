@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Added
 
+- Native workspace detail now includes a `需求预检 / Demand intake` section backed by the Swift/Rust bridge, with status refresh, confirmed initialization, per-file readiness, document open actions, and local write feedback.
 - Rust Core now owns demand-intake status and confirmed initialization for workspace-local `需求/` files, with Tauri commands, the FFI layer, and the Swift bridge sharing the same no-overwrite templates and audit metadata.
 - Tauri workspace detail now includes a `需求预检 / Demand intake` panel that checks the workspace-local `需求/` folder, initializes `requirement.md`, `questions.md`, `scope.md`, `tasks.md`, and `delivery.md` without overwriting existing files, and copies a `$lanhu-demand-intake` Codex prompt for requirement confirmation before development.
 - Native sidebar now shows a setup readiness card near Settings, making environment-ready installs explicitly skip initialization and route directly to refresh or first-workspace creation.
