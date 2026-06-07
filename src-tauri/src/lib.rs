@@ -1,13 +1,16 @@
 use nexus_core::{
     append_audit_event as append_audit_event_core, create_workspace as create_workspace_core,
     expand_user_path, export_settings_profile as export_settings_profile_core,
+    initialize_demand_intake as initialize_demand_intake_core,
+    read_demand_intake_status as read_demand_intake_status_core,
     rebuild_search_index as rebuild_search_index_core, scan_source_repos as scan_source_repos_core,
     scan_workspaces_with_audit as scan_workspaces_core, search_index as search_index_core,
     setup_worktrees as setup_worktrees_core, update_workspace_task as update_workspace_task_core,
     AuditEventInput, CreateWorkspaceRequest, CreateWorkspaceResponse, DashboardData,
-    ExportSettingsProfileResponse, RebuildSearchIndexResponse, SearchResult, SettingsProfile,
-    SetupWorktreesRequest, SetupWorktreesResponse, SourceRepo, UpdateWorkspaceTaskRequest,
-    UpdateWorkspaceTaskResponse, WidgetSnapshot, DEFAULT_INDEX_FILE,
+    DemandIntakeStatus, ExportSettingsProfileResponse, InitializeDemandIntakeRequest,
+    RebuildSearchIndexResponse, SearchResult, SettingsProfile, SetupWorktreesRequest,
+    SetupWorktreesResponse, SourceRepo, UpdateWorkspaceTaskRequest, UpdateWorkspaceTaskResponse,
+    WidgetSnapshot, DEFAULT_INDEX_FILE,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{hash_map::DefaultHasher, BTreeMap};
@@ -87,20 +90,6 @@ struct SetupWorktreesCommandRequest {
 #[serde(rename_all = "camelCase")]
 struct DemandIntakeStatusRequest {
     pub workspace_path: String,
-}
-
-#[derive(Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct InitializeDemandIntakeRequest {
-    pub workspace_path: String,
-    #[serde(default)]
-    pub demand_name: String,
-    #[serde(default)]
-    pub lanhu_link: String,
-    #[serde(default)]
-    pub notes: String,
-    #[serde(default)]
-    pub confirmed: bool,
 }
 
 #[derive(Deserialize)]
@@ -212,35 +201,6 @@ struct WidgetSnapshotResponse {
     path: String,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct DemandIntakeFileStatus {
-    key: String,
-    label: String,
-    filename: String,
-    path: String,
-    exists: bool,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct DemandIntakeStatus {
-    directory_path: String,
-    exists: bool,
-    ready: bool,
-    missing_count: usize,
-    files: Vec<DemandIntakeFileStatus>,
-}
-
-const DEMAND_INTAKE_DIR: &str = "需求";
-const DEMAND_INTAKE_FILES: [(&str, &str, &str); 5] = [
-    ("requirement", "需求确认卡", "requirement.md"),
-    ("questions", "待确认问题", "questions.md"),
-    ("scope", "开发范围", "scope.md"),
-    ("tasks", "需求列表", "tasks.md"),
-    ("delivery", "需求交付", "delivery.md"),
-];
-
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
     open_with_system(&url)
@@ -291,8 +251,7 @@ fn read_text_file(path: String) -> Result<String, String> {
 fn read_demand_intake_status(
     request: DemandIntakeStatusRequest,
 ) -> Result<DemandIntakeStatus, String> {
-    let workspace = checked_workspace_path(&request.workspace_path)?;
-    Ok(demand_intake_status_for_workspace(&workspace))
+    read_demand_intake_status_core(&request.workspace_path)
 }
 
 #[tauri::command]
@@ -538,46 +497,11 @@ fn initialize_demand_intake(
     app: tauri::AppHandle,
     request: InitializeDemandIntakeRequest,
 ) -> Result<DemandIntakeStatus, String> {
-    if !request.confirmed {
-        return Err("demand intake initialization requires explicit confirmation".to_string());
-    }
-
-    let workspace = checked_workspace_path(&request.workspace_path)?;
-    let demand_dir = workspace.join(DEMAND_INTAKE_DIR);
-    if demand_dir.exists() && !demand_dir.is_dir() {
-        return Err(format!(
-            "demand intake path exists but is not a directory: {}",
-            demand_dir.display()
-        ));
-    }
-
-    fs::create_dir_all(&demand_dir).map_err(|error| error.to_string())?;
-    let demand_name = non_empty_or(&request.demand_name, "待补充");
-    let lanhu_link = non_empty_or(&request.lanhu_link, "待补充");
-    let notes = non_empty_or(&request.notes, "待补充");
-    let mut created_files = Vec::new();
-
-    for (key, _label, filename) in DEMAND_INTAKE_FILES {
-        let file_path = demand_dir.join(filename);
-        if file_path.exists() {
-            if !file_path.is_file() {
-                return Err(format!(
-                    "demand intake file path exists but is not a file: {}",
-                    file_path.display()
-                ));
-            }
-            continue;
-        }
-
-        fs::write(
-            &file_path,
-            demand_intake_template(key, &demand_name, &lanhu_link, &notes),
-        )
-        .map_err(|error| error.to_string())?;
-        created_files.push(filename.to_string());
-    }
-
-    let status = demand_intake_status_for_workspace(&workspace);
+    let workspace_path = request.workspace_path.clone();
+    let demand_name = request.demand_name.clone();
+    let lanhu_link = request.lanhu_link.clone();
+    let response = initialize_demand_intake_core(request)?;
+    let status = response.status;
     record_audit_event(
         &app,
         AuditEventInput {
@@ -586,90 +510,15 @@ fn initialize_demand_intake(
             target: status.directory_path.clone(),
             summary: format!("Initialized demand intake files for {}", demand_name),
             metadata: audit_metadata(&[
-                ("workspacePath", workspace.to_string_lossy().to_string()),
+                ("workspacePath", workspace_path),
                 ("demandName", demand_name),
                 ("lanhuLink", lanhu_link),
-                ("createdFiles", created_files.join(",")),
+                ("createdFiles", response.created_files.join(",")),
                 ("missingCount", status.missing_count.to_string()),
             ]),
         },
     );
     Ok(status)
-}
-
-fn checked_workspace_path(workspace_path: &str) -> Result<PathBuf, String> {
-    let workspace = expand_user_path(workspace_path);
-    if !workspace.exists() {
-        return Err(format!("workspace does not exist: {}", workspace.display()));
-    }
-    if !workspace.is_dir() {
-        return Err(format!(
-            "workspace path is not a directory: {}",
-            workspace.display()
-        ));
-    }
-    Ok(workspace)
-}
-
-fn demand_intake_status_for_workspace(workspace: &Path) -> DemandIntakeStatus {
-    let demand_dir = workspace.join(DEMAND_INTAKE_DIR);
-    let exists = demand_dir.is_dir();
-    let files = DEMAND_INTAKE_FILES
-        .iter()
-        .map(|(key, label, filename)| {
-            let path = demand_dir.join(filename);
-            DemandIntakeFileStatus {
-                key: (*key).to_string(),
-                label: (*label).to_string(),
-                filename: (*filename).to_string(),
-                path: path.to_string_lossy().to_string(),
-                exists: path.is_file(),
-            }
-        })
-        .collect::<Vec<_>>();
-    let missing_count = files.iter().filter(|file| !file.exists).count();
-    DemandIntakeStatus {
-        directory_path: demand_dir.to_string_lossy().to_string(),
-        exists,
-        ready: exists && missing_count == 0,
-        missing_count,
-        files,
-    }
-}
-
-fn demand_intake_template(key: &str, demand_name: &str, lanhu_link: &str, notes: &str) -> String {
-    match key {
-        "requirement" => format!(
-            "# 需求确认卡：{}\n\n## 1. 需求目标\n\n- 待整理。\n\n## 2. 页面和入口\n\n- 页面：待确认\n- 入口：待确认\n- 角色/权限：待确认\n\n## 3. 用户流程\n\n1. 待整理。\n\n## 4. UI 与交互规则\n\n- 字段：待确认\n- 按钮：待确认\n- 状态：待确认\n- 校验：待确认\n- 空状态/异常：待确认\n\n## 5. 已确认需求点\n\n- 待整理。\n\n## 6. 推断内容\n\n- 暂无。\n\n## 7. 待确认问题\n\n- P0: 待整理\n- P1: 待整理\n- P2: 待整理\n\n## 8. 建议开发范围\n\n- 本次建议实现：待确认\n- 暂不实现：待确认\n\n## 9. 验收标准\n\n- 待整理。\n\n## 输入材料\n\n- 蓝湖链接：{}\n\n### 补充说明\n\n{}\n",
-            demand_name, lanhu_link, notes
-        ),
-        "questions" => format!(
-            "# 待确认问题：{}\n\n## P0 阻塞开发\n\n- [ ] 待整理。\n\n## P1 可先做主流程但影响边界\n\n- [ ] 待整理。\n\n## P2 不阻塞开发的细节\n\n- [ ] 待整理。\n\n## 结论\n\n- P0 清零前不要进入编码。\n",
-            demand_name
-        ),
-        "scope" => format!(
-            "# 本次开发范围：{}\n\n## 已确认并实现\n\n- 待确认。\n\n## 暂不实现\n\n- 待确认。\n\n## 仍待确认\n\n- 待确认。\n\n## 进入开发条件\n\n- [ ] requirement.md 已整理。\n- [ ] questions.md 中 P0 已清零或有明确处理结论。\n- [ ] 本文件已冻结本次开发范围。\n",
-            demand_name
-        ),
-        "tasks" => format!(
-            "# 需求列表：{}\n\n> 由需求预检阶段维护。后续开发按未完成需求顺序推进，完成后回写状态。\n\n| 需求点 | 状态 | 优先级 | 来源 | 说明 |\n| --- | --- | --- | --- | --- |\n| 整理 requirement.md | 待办 | P0 | 需求预检 | 从蓝湖材料和补充说明提炼需求确认卡 |\n| 整理 questions.md | 待办 | P0 | 需求预检 | 按 P0/P1/P2 分级缺口 |\n| 冻结 scope.md | 待办 | P0 | 产品确认 | P0 清零后确认开发范围 |\n\n## 开发顺序规则\n\n- 优先处理状态为 `进行中` 或 `待办` 的 P0/P1 需求点。\n- 开发前先确认 `scope.md` 已冻结。\n- 完成需求点后，将状态更新为 `已完成`，并在 delivery.md 或 交付记录.md 补充结果。\n",
-            demand_name
-        ),
-        "delivery" => format!(
-            "# 需求交付记录：{}\n\n## 预检结论\n\n- 待整理。\n\n## 范围确认\n\n- 待整理。\n\n## 开发与验证记录\n\n- 暂无。\n\n## 遗留问题\n\n- 暂无。\n",
-            demand_name
-        ),
-        _ => "# Document\n\n待补充。\n".to_string(),
-    }
-}
-
-fn non_empty_or(value: &str, fallback: &str) -> String {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        fallback.to_string()
-    } else {
-        trimmed.to_string()
-    }
 }
 
 #[tauri::command]

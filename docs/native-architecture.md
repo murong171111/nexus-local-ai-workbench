@@ -48,6 +48,7 @@ The first native shell scaffold is available at `native/Nexus`. It is a Swift Pa
 - Reviewable worktree command generation.
 - Confirmed worktree setup that validates service names, source repositories, target branches, and existing worktree paths before running Git, then returns created/skipped/failed details for native follow-up actions.
 - Standard workspace skeleton creation, including Markdown documents, SQL/log/repos folders, bootstrap scripts, and initialization receipt data for generated files and initial `STATUS.md`.
+- Demand-intake status and confirmed initialization for workspace-local `需求/` files, preserving existing human-written files while producing reusable requirement, question, scope, task, and delivery templates.
 - Settings profile validation.
 - Settings profile export file naming and JSON serialization.
 - Widget snapshot generation.
@@ -57,7 +58,7 @@ The first native shell scaffold is available at `native/Nexus`. It is a Swift Pa
 ### Swift/Rust Bridge
 
 - The initial bridge uses a small C ABI with JSON request/response payloads. It is intentionally simple while the native app shape is still moving.
-- `crates/nexus-ffi` currently exposes workspace scans with readiness checks, session actions, and audit-log activity enrichment, source-repository scans, document reads, widget snapshot computation, JSONL audit event append, JSONL agent event append/read, SQLite/FTS index rebuild/search, confirmed workspace creation, and confirmed worktree setup over `nexus-core`.
+- `crates/nexus-ffi` currently exposes workspace scans with readiness checks, session actions, and audit-log activity enrichment, source-repository scans, document reads, demand-intake status/initialization, widget snapshot computation, JSONL audit event append, JSONL agent event append/read, SQLite/FTS index rebuild/search, confirmed workspace creation, and confirmed worktree setup over `nexus-core`.
 - `native/Nexus/Sources/NexusBridge` owns Swift `Codable` DTOs, preview fallback data, and optional dynamic library loading through `NEXUS_CORE_LIBRARY`.
 - The native SwiftUI shell uses the same search bridge to rebuild/query the local index, then falls back to in-memory workspace metadata when the dynamic library is not configured.
 - Native search results surface selected-result context from the current workspace model, including branch, service count, risk, and recent activity.
@@ -106,7 +107,7 @@ The first native shell scaffold is available at `native/Nexus`. It is a Swift Pa
 - The native shell can schedule those local automation checks with persisted UserDefaults while the app process is running; this remains separate from LaunchAgents or system notification permissions.
 - Optional UserNotifications alerts are a native-shell concern and are only sent after explicit local authorization when automation status needs review or attention.
 - Automation notification preferences, including cooldown, minimum status, and signal filters, stay in local UserDefaults because they are personal attention settings rather than workspace source-of-truth records.
-- The command surface should grow in this order: scan, read document, compute widget snapshot, create workspace skeleton, audit local actions, rebuild/search the local index, produce worktree plans, and execute confirmed worktree setup.
+- The command surface should grow in this order: scan, read document, compute widget snapshot, create workspace skeleton, initialize demand intake, audit local actions, rebuild/search the local index, produce worktree plans, and execute confirmed worktree setup.
 - Local write operations must include explicit confirmation in the bridge request, not only in UI copy.
 - Bridge responses use explicit success/error envelopes so the native shell can show user-facing failures without guessing.
 

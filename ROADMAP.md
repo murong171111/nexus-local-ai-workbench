@@ -17,13 +17,13 @@ This roadmap describes the next product and engineering steps for Nexus. The cur
 - Keep sample workspace data free of private local paths. `[done with publishable text scan in npm run privacy:check for app/web/native metadata assets, generated build-output exclusions, private keys, GitHub token shapes, and secret-like assignments, plus dashboard sample shape checks in npm run sample:check]`
 - Improve error messages for missing directories, invalid paths, and git failures. `[started with native operation feedback, create/worktree preflight copy, settings profile import recovery context, browser-preview operation recovery messages, and local dev-tool diagnostics]`
 - Add unit coverage for workspace parsing, creation defaults, widget snapshots, and git status mapping. `[started with JS coverage for workspace parsing, creation defaults, widget snapshots, search grouping, settings profiles, worktree status signal mapping, agent hooks, Swift native model behavior, and Rust Core git/workspace tests]`
-- Split the large Rust command layer by extracting reusable logic into `nexus-core`.
+- Split the large Rust command layer by extracting reusable logic into `nexus-core`. `[started with workspace, git, documents, search, automation, settings, worktree setup, audit, agent events, tasks, lifecycle, widget snapshots, and demand intake status/initialization]`
 
 ## 0.2.x: Native Foundation
 
-- Extract workspace, git, document, risk, settings, and widget snapshot logic into a standalone Rust Core crate.
-- Keep Tauri commands as thin wrappers around Rust Core during the transition.
-- Define stable Swift/Rust DTO contracts for dashboard data, workspace documents, settings profiles, and audit events. `[started for dashboard/source scans, documents, widgets, workspace creation, and audit events]`
+- Extract workspace, git, document, risk, settings, demand intake, and widget snapshot logic into a standalone Rust Core crate.
+- Keep Tauri commands as thin wrappers around Rust Core during the transition. `[started for workspace creation, source/workspace scans, documents, search, settings, widget snapshots, audit, worktree setup, task/lifecycle writebacks, agent events, automation checks, and demand intake]`
+- Define stable Swift/Rust DTO contracts for dashboard data, workspace documents, settings profiles, audit events, and demand intake. `[started for dashboard/source scans, documents, widgets, workspace creation, audit events, and demand intake status/initialization]`
 - Add a SwiftUI/AppKit Mac shell that can render sample workspace data. `[started]`
 - Add native settings and path configuration in the SwiftUI shell. `[started with persisted paths, path status rows, directory pickers, team profile import/export, and environment checks]`
 - Decide and document the Swift/Rust bridge mechanism. `[started with C ABI + JSON]`

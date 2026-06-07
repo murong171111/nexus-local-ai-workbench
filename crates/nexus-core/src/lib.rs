@@ -1,6 +1,7 @@
 mod agent;
 mod audit;
 mod automation;
+mod demand;
 mod documents;
 mod git;
 mod index;
@@ -22,6 +23,10 @@ pub use audit::{
 pub use automation::{
     local_automation_check, LocalAutomationCheckRequest, LocalAutomationCheckResponse,
     LocalAutomationSignal,
+};
+pub use demand::{
+    initialize_demand_intake, read_demand_intake_status, DemandIntakeFileStatus,
+    DemandIntakeStatus, InitializeDemandIntakeRequest, InitializeDemandIntakeResponse,
 };
 pub use documents::{
     create_workspace_document, read_document, CreateWorkspaceDocumentRequest,

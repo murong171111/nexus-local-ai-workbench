@@ -8,6 +8,8 @@ public protocol NexusBridge {
     func scanSourceRepos(request: ScanSourceReposRequest) async throws -> [SourceRepositorySnapshot]
     func readDocument(request: ReadDocumentRequest) async throws -> DocumentSnapshot
     func createWorkspaceDocument(request: CreateWorkspaceDocumentRequest) async throws -> CreateWorkspaceDocumentResponse
+    func readDemandIntakeStatus(request: DemandIntakeStatusRequest) async throws -> DemandIntakeStatus
+    func initializeDemandIntake(request: InitializeDemandIntakeRequest) async throws -> InitializeDemandIntakeResponse
     func widgetSnapshot(request: WidgetSnapshotRequest) async throws -> WidgetSnapshot
     func appendAuditEvent(request: AppendAuditEventRequest) async throws -> AppendAuditEventResponse
     func appendAgentEvent(request: AppendAgentEventRequest) async throws -> AppendAgentEventResponse
@@ -90,6 +92,40 @@ public final class PreviewNexusBridge: NexusBridge {
             throw NexusBridgeError.coreError("workspace document creation requires explicit confirmation")
         }
         throw NexusBridgeError.coreError("Document recovery requires Rust Core bridge. Set NEXUS_CORE_LIBRARY to a local libnexus_ffi.dylib.")
+    }
+
+    public func readDemandIntakeStatus(request: DemandIntakeStatusRequest) async throws -> DemandIntakeStatus {
+        let directoryPath = "\(request.workspacePath)/需求"
+        let files = [
+            ("requirement", "需求确认卡", "requirement.md"),
+            ("questions", "待确认问题", "questions.md"),
+            ("scope", "开发范围", "scope.md"),
+            ("tasks", "需求列表", "tasks.md"),
+            ("delivery", "需求交付", "delivery.md")
+        ].map { item in
+            let (key, label, filename) = item
+            return DemandIntakeFileStatus(
+                key: key,
+                label: label,
+                filename: filename,
+                path: "\(directoryPath)/\(filename)",
+                exists: false
+            )
+        }
+        return DemandIntakeStatus(
+            directoryPath: directoryPath,
+            exists: false,
+            ready: false,
+            missingCount: files.count,
+            files: files
+        )
+    }
+
+    public func initializeDemandIntake(request: InitializeDemandIntakeRequest) async throws -> InitializeDemandIntakeResponse {
+        guard request.confirmed else {
+            throw NexusBridgeError.coreError("demand intake initialization requires explicit confirmation")
+        }
+        throw NexusBridgeError.coreError("Demand intake initialization requires Rust Core bridge. Set NEXUS_CORE_LIBRARY to a local libnexus_ffi.dylib.")
     }
 
     public func widgetSnapshot(request: WidgetSnapshotRequest) async throws -> WidgetSnapshot {
@@ -204,6 +240,8 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
     private let scanSourceReposFunction: BridgeCall
     private let readDocumentFunction: BridgeCall
     private let createWorkspaceDocumentFunction: BridgeCall
+    private let readDemandIntakeStatusFunction: BridgeCall
+    private let initializeDemandIntakeFunction: BridgeCall
     private let widgetSnapshotFunction: BridgeCall
     private let appendAuditEventFunction: BridgeCall
     private let appendAgentEventFunction: BridgeCall
@@ -246,6 +284,14 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
             self.createWorkspaceDocumentFunction = try Self.loadSymbol(
                 handle: handle,
                 name: "nexus_create_workspace_document_json"
+            )
+            self.readDemandIntakeStatusFunction = try Self.loadSymbol(
+                handle: handle,
+                name: "nexus_read_demand_intake_status_json"
+            )
+            self.initializeDemandIntakeFunction = try Self.loadSymbol(
+                handle: handle,
+                name: "nexus_initialize_demand_intake_json"
             )
             self.widgetSnapshotFunction = try Self.loadSymbol(
                 handle: handle,
@@ -333,6 +379,14 @@ public final class DynamicLibraryNexusBridge: NexusBridge {
 
     public func createWorkspaceDocument(request: CreateWorkspaceDocumentRequest) async throws -> CreateWorkspaceDocumentResponse {
         try call(createWorkspaceDocumentFunction, request: request)
+    }
+
+    public func readDemandIntakeStatus(request: DemandIntakeStatusRequest) async throws -> DemandIntakeStatus {
+        try call(readDemandIntakeStatusFunction, request: request)
+    }
+
+    public func initializeDemandIntake(request: InitializeDemandIntakeRequest) async throws -> InitializeDemandIntakeResponse {
+        try call(initializeDemandIntakeFunction, request: request)
     }
 
     public func widgetSnapshot(request: WidgetSnapshotRequest) async throws -> WidgetSnapshot {
