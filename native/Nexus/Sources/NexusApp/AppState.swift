@@ -2572,6 +2572,121 @@ final class AppState: ObservableObject {
         }
     }
 
+    func demandIntakePrompt(
+        for workspace: WorkspaceSummary,
+        demandName: String,
+        lanhuLink: String,
+        notes: String
+    ) -> String {
+        let cleanDemandName = demandName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? workspace.name
+            : demandName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let materialLines = [
+            normalizedDemandIntakeLine(label: "蓝湖链接", value: lanhuLink),
+            normalizedDemandIntakeLine(label: "补充说明", value: notes)
+        ].compactMap { $0 }
+        let materials = materialLines.isEmpty ? "待补充" : materialLines.joined(separator: "\n")
+
+        return [
+            "使用 $lanhu-demand-intake。",
+            "",
+            "## 工作区",
+            "- 当前工作区: \(workspace.path)",
+            "- 需求名称: \(cleanDemandName)",
+            "- 需求目录: \(workspace.path)/需求",
+            "- 目标分支: \(workspace.branch)",
+            "",
+            "## 蓝湖材料",
+            materials,
+            "",
+            "## 已绑定 Codex 会话",
+            codexSessionHandoffLines(for: workspace).joined(separator: "\n"),
+            "",
+            "## 处理要求",
+            "- 先整理 需求/requirement.md 和 需求/questions.md。",
+            "- 在 需求/scope.md 冻结本次开发范围。",
+            "- 在 需求/tasks.md 创建未完成需求列表，按 P0/P1/P2 标记优先级。",
+            "- 在 P0 问题清零前不要开发代码。",
+            "- 不要覆盖已有人工内容；缺口请追加或标注待确认。"
+        ].joined(separator: "\n")
+    }
+
+    func copyDemandIntakePrompt(
+        for workspace: WorkspaceSummary,
+        demandName: String,
+        lanhuLink: String,
+        notes: String,
+        openCodex: Bool
+    ) async {
+        let prompt = demandIntakePrompt(
+            for: workspace,
+            demandName: demandName,
+            lanhuLink: lanhuLink,
+            notes: notes
+        )
+        let cleanDemandName = demandName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? workspace.name
+            : demandName.trimmingCharacters(in: .whitespacesAndNewlines)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(prompt, forType: .string)
+
+        let rawURL = codexURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? Self.defaultCodexURL
+            : codexURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let action = openCodex ? "demand_intake_prompt.opened" : "demand_intake_prompt.copied"
+        if openCodex {
+            if let url = URL(string: rawURL) {
+                NSWorkspace.shared.open(url)
+                markCodexHandoff(
+                    title: "Codex 已打开 / Intake copied",
+                    detail: "\(workspace.name) · 需求预检提示词已复制到剪贴板。",
+                    systemImage: "text.badge.checkmark",
+                    sectionTitle: "需求预检 / Demand intake",
+                    clipboardLabel: "$lanhu-demand-intake prompt is on the clipboard"
+                )
+            } else {
+                lastError = "Invalid Codex URL: \(rawURL)"
+                markCodexHandoff(
+                    title: "预检提示已复制 / URL needs review",
+                    detail: "\(workspace.name) · Codex URL 无效，请在 Settings 中修正。",
+                    systemImage: "exclamationmark.triangle",
+                    sectionTitle: "需求预检 / Demand intake",
+                    clipboardLabel: "$lanhu-demand-intake prompt is on the clipboard"
+                )
+            }
+        } else {
+            markCodexHandoff(
+                title: "预检提示词已复制 / Intake copied",
+                detail: "\(workspace.name) · $lanhu-demand-intake 已放入剪贴板。",
+                systemImage: "doc.on.clipboard",
+                sectionTitle: "需求预检 / Demand intake",
+                clipboardLabel: "$lanhu-demand-intake prompt is on the clipboard"
+            )
+        }
+
+        await recordWorkspaceAction(
+            action: action,
+            target: "\(workspace.path)/需求",
+            summary: openCodex ? "Copied demand intake prompt and opened Codex" : "Copied demand intake prompt",
+            metadata: [
+                "tool": "Codex",
+                "codexUrl": openCodex ? rawURL : "",
+                "demandName": cleanDemandName,
+                "hasLanhuLink": "\(!lanhuLink.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)",
+                "hasNotes": "\(!notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)"
+            ],
+            workspaceOverride: workspace
+        )
+    }
+
+    private func normalizedDemandIntakeLine(label: String, value: String) -> String? {
+        let cleanValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanValue.isEmpty else {
+            return nil
+        }
+        return "\(label): \(cleanValue)"
+    }
+
     static func fallbackDemandIntakeStatus(for workspace: WorkspaceSummary) -> DemandIntakeStatus {
         let workspacePath = workspace.path.hasSuffix("/")
             ? String(workspace.path.dropLast())
@@ -3618,6 +3733,10 @@ final class AppState: ObservableObject {
             return "Codex 会话已复制 / Session copied"
         case "codex_session_link.deleted":
             return "Codex 会话已删除 / Session deleted"
+        case "demand_intake_prompt.copied":
+            return "需求预检已复制 / Intake copied"
+        case "demand_intake_prompt.opened":
+            return "需求预检已打开 / Intake opened"
         case "risk_review_handoff.copied":
             return "风险复核已复制 / Risk review copied"
         case "settings_profile.exported":
