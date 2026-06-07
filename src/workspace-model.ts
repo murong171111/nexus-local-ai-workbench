@@ -421,9 +421,24 @@ export function workspaceSessionActions(workspace: Workspace): WorkspaceSessionA
   const mismatches = branchAlignmentRows(workspace).map((row) => `${row.service}(${row.actualBranch})`);
   const deliveryRisk = workspace.risks.find((risk) => risk.includes("交付") || risk.toLowerCase().includes("delivery"));
   const activeTasks = workspace.taskCounts.doing + workspace.taskCounts.todo;
+  const demandIntakeCheck = (workspace.healthChecks ?? []).find((check) =>
+    (check.id === "demand-intake" || check.action === "demandIntake") && check.status !== "pass"
+  );
   const workspaceDocChecks = (workspace.healthChecks ?? []).filter((check) =>
     ["requirements", "acceptance", "changes"].includes(check.action) && check.status !== "pass"
   );
+
+  if (demandIntakeCheck) {
+    actions.push(sessionAction(
+      "initialize-demand-intake",
+      "完成需求预检 / Demand intake",
+      demandIntakeCheck.detail,
+      "high",
+      demandIntakeCheck.status === "fail" ? "blocked" : "recommended",
+      "demand",
+      "demandIntake"
+    ));
+  }
 
   if (!workspace.confirmedServices.length) {
     actions.push(sessionAction("confirm-services", "确认服务范围 / Confirm services", "先补齐已确认服务，后续 worktree 和风险检查才有可靠目标。", "high", "blocked", "risk", "services"));

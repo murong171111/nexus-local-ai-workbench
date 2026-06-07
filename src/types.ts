@@ -33,7 +33,7 @@ export type WorkspaceSessionAction = {
   detail: string;
   priority: "high" | "medium" | "low" | string;
   status: "blocked" | "recommended" | "optional" | string;
-  instructionType: "continue" | "git" | "delivery" | "risk" | "worktree" | string;
+  instructionType: "continue" | "git" | "delivery" | "risk" | "worktree" | "task" | "demand" | string;
   documentKey: string;
 };
 

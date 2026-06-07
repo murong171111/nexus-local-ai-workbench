@@ -1,6 +1,6 @@
 use crate::{
     expand_user_path, git_status, normalize_git_branch, read_audit_events, target_branch_confirmed,
-    AgentEventTaskDraftResponse, AuditEvent, GitStatus,
+    read_demand_intake_status, AgentEventTaskDraftResponse, AuditEvent, GitStatus,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -152,6 +152,43 @@ impl WorkspaceDocumentReadiness {
             "warning"
         } else {
             "pass"
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct DemandIntakeReadiness {
+    exists: bool,
+    ready: bool,
+    missing_count: usize,
+}
+
+impl DemandIntakeReadiness {
+    fn detail(&self) -> String {
+        if self.ready {
+            "需求/ 预检文件已齐全".to_string()
+        } else if self.exists {
+            format!("需求/ 仍缺 {} 个预检文件", self.missing_count)
+        } else {
+            "缺少需求预检目录 需求/".to_string()
+        }
+    }
+
+    fn status(&self) -> &'static str {
+        if self.ready {
+            "pass"
+        } else if self.exists {
+            "warning"
+        } else {
+            "fail"
+        }
+    }
+
+    fn action_status(&self) -> &'static str {
+        if self.exists {
+            "recommended"
+        } else {
+            "blocked"
         }
     }
 }
@@ -1171,6 +1208,7 @@ fn collect_workspace(
         acceptance_readiness,
         changes_readiness,
     ];
+    let demand_intake = demand_intake_readiness(path);
     let sql_dir_exists = path.join("sql").exists();
     let sql_artifacts = sql_artifact_status(path, &delivery_text, delivery_exists, sql_dir_exists);
 
@@ -1245,6 +1283,45 @@ fn collect_workspace(
         "sql".to_string(),
         path.join("sql").to_string_lossy().to_string(),
     );
+    links.insert(
+        "demandIntake".to_string(),
+        path.join("需求").to_string_lossy().to_string(),
+    );
+    links.insert(
+        "demandRequirement".to_string(),
+        path.join("需求")
+            .join("requirement.md")
+            .to_string_lossy()
+            .to_string(),
+    );
+    links.insert(
+        "demandQuestions".to_string(),
+        path.join("需求")
+            .join("questions.md")
+            .to_string_lossy()
+            .to_string(),
+    );
+    links.insert(
+        "demandScope".to_string(),
+        path.join("需求")
+            .join("scope.md")
+            .to_string_lossy()
+            .to_string(),
+    );
+    links.insert(
+        "demandTasks".to_string(),
+        path.join("需求")
+            .join("tasks.md")
+            .to_string_lossy()
+            .to_string(),
+    );
+    links.insert(
+        "demandDelivery".to_string(),
+        path.join("需求")
+            .join("delivery.md")
+            .to_string_lossy()
+            .to_string(),
+    );
     for relative_path in ["sql/SQL变更说明.md", "sql/README.md", "sql/readme.md"] {
         let guide_path = path.join(relative_path);
         if guide_path.is_file() {
@@ -1278,6 +1355,7 @@ fn collect_workspace(
         &branch_mismatches,
         delivery_exists,
         delivery_stale,
+        &demand_intake,
         &v2_documents,
         &sql_artifacts,
         &task_counts,
@@ -1290,6 +1368,7 @@ fn collect_workspace(
         &branch_mismatches,
         delivery_exists,
         delivery_stale,
+        &demand_intake,
         &v2_documents,
         &sql_artifacts,
         &task_counts,
@@ -1549,6 +1628,7 @@ fn workspace_health_checks(
     branch_mismatches: &[String],
     delivery_exists: bool,
     delivery_stale: bool,
+    demand_intake: &DemandIntakeReadiness,
     v2_documents: &[WorkspaceDocumentReadiness],
     sql_artifacts: &SqlArtifactStatus,
     task_counts: &TaskCounts,
@@ -1629,6 +1709,13 @@ fn workspace_health_checks(
                 "warning"
             },
             "status",
+        ),
+        health_check(
+            "demand-intake",
+            "需求预检 / Demand intake",
+            demand_intake.detail(),
+            demand_intake.status(),
+            "demandIntake",
         ),
         health_check(
             "delivery-record",
@@ -1722,12 +1809,25 @@ fn workspace_session_actions(
     branch_mismatches: &[String],
     delivery_exists: bool,
     delivery_stale: bool,
+    demand_intake: &DemandIntakeReadiness,
     v2_documents: &[WorkspaceDocumentReadiness],
     sql_artifacts: &SqlArtifactStatus,
     task_counts: &TaskCounts,
 ) -> Vec<WorkspaceSessionAction> {
     let mut actions = Vec::new();
     let active_tasks = task_counts.doing + task_counts.todo;
+
+    if !demand_intake.ready {
+        actions.push(session_action(
+            "initialize-demand-intake",
+            "完成需求预检 / Demand intake",
+            demand_intake.detail(),
+            "high",
+            demand_intake.action_status(),
+            "demand",
+            "demandIntake",
+        ));
+    }
 
     if confirmed_services.is_empty() {
         actions.push(session_action(
@@ -2695,6 +2795,22 @@ fn workspace_document_readiness(
     }
 }
 
+fn demand_intake_readiness(workspace: &Path) -> DemandIntakeReadiness {
+    let workspace_path = workspace.to_string_lossy().to_string();
+    match read_demand_intake_status(&workspace_path) {
+        Ok(status) => DemandIntakeReadiness {
+            exists: status.exists,
+            ready: status.ready,
+            missing_count: status.missing_count,
+        },
+        Err(_) => DemandIntakeReadiness {
+            exists: false,
+            ready: false,
+            missing_count: 5,
+        },
+    }
+}
+
 fn generated_at() -> String {
     chrono_like_now(true)
 }
@@ -3180,7 +3296,12 @@ mod tests {
         assert_eq!(item.sql_documents.len(), 1);
         assert_eq!(item.sql_documents[0].relative_path, "SQL变更说明.md");
         assert_eq!(item.activities[0].title, "worktree 未创建: order");
-        assert_eq!(item.health_checks.len(), 12);
+        assert_eq!(item.health_checks.len(), 13);
+        assert!(item.health_checks.iter().any(|check| {
+            check.id == "demand-intake"
+                && check.status == "fail"
+                && check.detail.contains("需求预检")
+        }));
         assert!(item.health_checks.iter().any(|check| {
             check.id == "worktree-ready" && check.status == "fail" && check.detail.contains("order")
         }));
@@ -3196,6 +3317,11 @@ mod tests {
             check.id == "active-tasks"
                 && check.status == "warning"
                 && check.detail.contains("2 个活跃任务")
+        }));
+        assert!(item.session_actions.iter().any(|action| {
+            action.id == "initialize-demand-intake"
+                && action.instruction_type == "demand"
+                && action.document_key == "demandIntake"
         }));
         assert!(item.session_actions.iter().any(|action| {
             action.id == "create-worktrees"

@@ -3494,7 +3494,12 @@ private struct WorkspaceDetailView: View {
                 WorkspaceCreationNextStepsView(workspace: workspace)
             }
 
-            WorkspaceCommandCenterView(workspace: workspace)
+            WorkspaceCommandCenterView(
+                workspace: workspace,
+                demandAction: {
+                    scrollToSection(.demand)
+                }
+            )
                 .environmentObject(appState)
                 .id(WorkspaceDetailSection.command)
 
@@ -3585,6 +3590,11 @@ private struct WorkspaceDetailView: View {
     private func run(_ action: WorkspaceSessionAction) {
         if action.instructionType == "worktree" {
             appState.presentWorktreeSetup(for: workspace)
+            return
+        }
+
+        if action.instructionType == "demand" || action.documentKey == "demandIntake" {
+            scrollToSection(.demand)
             return
         }
 
@@ -6230,6 +6240,7 @@ private struct WorkspaceCommandCenterView: View {
     @EnvironmentObject private var appState: AppState
     @State private var isCodexSessionBindPresented = false
     let workspace: WorkspaceSummary
+    let demandAction: () -> Void
 
     private var openTaskCount: Int {
         workspace.tasks.filter(\.isActive).count
@@ -6265,6 +6276,65 @@ private struct WorkspaceCommandCenterView: View {
 
     private var codexSessionTone: Color {
         codexSessionLinks.isEmpty ? .secondary : NexusPalette.success
+    }
+
+    private var demandIntakeCheck: WorkspaceHealthCheck? {
+        workspace.healthChecks.first { check in
+            check.id == "demand-intake" || check.action == "demandIntake"
+        }
+    }
+
+    private var demandIntakeStatus: DemandIntakeStatus? {
+        appState.demandIntakeStatus(for: workspace)
+    }
+
+    private var demandIntakeReady: Bool {
+        if let demandIntakeStatus {
+            return demandIntakeStatus.ready
+        }
+        if let demandIntakeCheck {
+            return demandIntakeCheck.status == "pass"
+        }
+        return true
+    }
+
+    private var demandIntakePathStatus: WorkflowPathStatus {
+        if demandIntakeReady {
+            return .ready
+        }
+        if let demandIntakeStatus {
+            return demandIntakeStatus.exists ? .review : .blocked
+        }
+        if let demandIntakeCheck, demandIntakeCheck.status == "fail" {
+            return .blocked
+        }
+        return .review
+    }
+
+    private var demandIntakeValue: String {
+        if let demandIntakeStatus {
+            if demandIntakeStatus.ready {
+                return "已就绪"
+            }
+            return demandIntakeStatus.exists ? "缺 \(demandIntakeStatus.missingCount)" : "待初始化"
+        }
+        guard let demandIntakeCheck else {
+            return "未检查"
+        }
+        return demandIntakeCheck.status == "pass" ? "已就绪" : "待处理"
+    }
+
+    private var demandIntakeTone: Color {
+        if demandIntakeReady {
+            return NexusPalette.success
+        }
+        if let demandIntakeStatus, demandIntakeStatus.exists {
+            return NexusPalette.warning
+        }
+        if let demandIntakeCheck, demandIntakeCheck.status == "warning" {
+            return NexusPalette.warning
+        }
+        return NexusPalette.danger
     }
 
     private var serviceValue: String {
@@ -6333,6 +6403,19 @@ private struct WorkspaceCommandCenterView: View {
                 actionSystemImage: "doc.text",
                 tone: .secondary,
                 action: .document("handoff")
+            )
+        }
+
+        if !demandIntakeReady {
+            return CommandCenterPrimaryStep(
+                title: "完成需求预检 / Demand intake",
+                detail: demandIntakeCheck?.detail ?? "开发前先补齐 workspace-local 需求预检文件，把蓝湖和补充说明整理成 requirement、questions、scope、tasks 和 delivery。",
+                status: demandIntakePathStatus,
+                systemImage: "text.badge.checkmark",
+                actionLabel: "打开预检",
+                actionSystemImage: "text.badge.checkmark",
+                tone: demandIntakeTone,
+                action: .demandIntake
             )
         }
 
@@ -6444,6 +6527,7 @@ private struct WorkspaceCommandCenterView: View {
     private var sessionPathItems: [CommandCenterPathItem] {
         [
             scopePathItem,
+            demandPathItem,
             worktreePathItem,
             riskPathItem,
             taskPathItem,
@@ -6452,6 +6536,17 @@ private struct WorkspaceCommandCenterView: View {
             codexSessionPathItem,
             handoffPathItem
         ]
+    }
+
+    private var demandPathItem: CommandCenterPathItem {
+        CommandCenterPathItem(
+            title: "预检 / Intake",
+            detail: demandIntakeValue,
+            status: demandIntakePathStatus,
+            systemImage: "text.badge.checkmark",
+            actionLabel: demandIntakeReady ? "查看预检" : "打开预检",
+            action: .demandIntake
+        )
     }
 
     private var scopePathItem: CommandCenterPathItem {
@@ -6662,6 +6757,7 @@ private struct WorkspaceCommandCenterView: View {
                     WorkflowMetric(label: "分支", value: shortBranch, tone: branchTone)
                     WorkflowMetric(label: "服务", value: serviceValue, tone: worktreeTone)
                     WorkflowMetric(label: "风险", value: workspace.riskLevel.label, tone: workspace.risks.isEmpty ? NexusPalette.success : NexusPalette.warning)
+                    WorkflowMetric(label: "预检", value: demandIntakeValue, tone: demandIntakeTone)
                     WorkflowMetric(label: "任务", value: workflowSummary.taskValue, tone: taskTone)
                     WorkflowMetric(label: "SQL", value: sqlSummary.value, tone: sqlStatusTone)
                     WorkflowMetric(label: "交付", value: workflowSummary.deliveryValue, tone: deliveryTone)
@@ -6770,6 +6866,8 @@ private struct WorkspaceCommandCenterView: View {
             }
         case .worktree:
             appState.presentWorktreeSetup(for: workspace)
+        case .demandIntake:
+            demandAction()
         case .localCheck:
             Task {
                 await appState.runLocalAutomationCheck(actor: "Nexus Command Center")
@@ -6914,6 +7012,7 @@ private enum CommandCenterPrimaryAction {
     case document(String)
     case riskPrompt
     case worktree
+    case demandIntake
     case localCheck
     case deliveryHandoff
     case validationHandoff
