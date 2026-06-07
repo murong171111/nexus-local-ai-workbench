@@ -49,6 +49,14 @@ function gitRowHasDirtyService(row: GitRow) {
   return row.worktree.dirty || row.source.dirty;
 }
 
+function fileNameFromPath(path: string) {
+  return path.split(/[\\/]/).filter(Boolean).pop() || path;
+}
+
+function sqlKindLabel(kind: string) {
+  return kind === "rollback" ? "回滚 SQL / Rollback" : "正式 SQL / Formal";
+}
+
 const stateLabels: Record<string, string> = {
   analyzing: "分析中 / Analyzing",
   developing: "开发中 / Developing",
@@ -1222,13 +1230,15 @@ function WorkspaceDrawer({
   onClose,
   onCopyRiskInstruction,
   onRunSessionAction,
-  onOpenDocument
+  onOpenDocument,
+  onOpenPath
 }: {
   workspace?: Workspace;
   onClose: () => void;
   onCopyRiskInstruction: (workspace: Workspace, risk: string) => void;
   onRunSessionAction: (workspace: Workspace, action: WorkspaceSessionAction) => void;
   onOpenDocument: (title: string, path: string) => void;
+  onOpenPath: (path: string) => void;
 }) {
   if (!workspace) return null;
 
@@ -1236,6 +1246,21 @@ function WorkspaceDrawer({
   const dirty = workspace.gitRows.filter(gitRowHasDirtyService).length;
   const branchMismatches = branchAlignmentRows(workspace);
   const sessionActions = workspaceSessionActions(workspace);
+  const sqlFiles = workspace.sqlFiles ?? [];
+  const sqlDocuments = workspace.sqlDocuments?.length
+    ? workspace.sqlDocuments
+    : workspace.links.sqlGuide
+      ? [{ relativePath: fileNameFromPath(workspace.links.sqlGuide), path: workspace.links.sqlGuide, kind: "markdown" }]
+      : [];
+  const documentEntries = [
+    ["状态", "STATUS.md", workspace.links.status],
+    ["服务", "services.md", workspace.links.services],
+    ["分支", "branches.md", workspace.links.branches],
+    ["任务", "tasks.md", workspace.links.tasks],
+    ["交付", "交付记录.md", workspace.links.delivery],
+    ["报告", "bootstrap-report.md", workspace.links.bootstrap],
+    ["Worktree", "worktree-commands.sh", workspace.links.worktreeScript]
+  ].filter((entry): entry is [string, string, string] => Boolean(entry[2]));
 
   return (
     <div className="fixed inset-0 bg-neutral-950/10" style={{ zIndex: 1000 }} onMouseDown={onClose}>
@@ -1352,20 +1377,53 @@ function WorkspaceDrawer({
           <section>
             <div className="mb-2 text-sm font-medium text-neutral-900">文档入口 / Documents</div>
             <div className="grid grid-cols-2 gap-2 text-sm">
-              {[
-                ["状态", workspace.links.status],
-                ["服务", workspace.links.services],
-                ["分支", workspace.links.branches],
-                ["任务", workspace.links.tasks],
-                ["交付", workspace.links.delivery],
-                ["报告", workspace.links.bootstrap],
-                ["Worktree", workspace.links.worktreeScript],
-                ["SQL", workspace.links.sql]
-              ].filter(([, href]) => Boolean(href)).map(([label, href]) => (
-                <button key={label} className="rounded-md border border-neutral-200 px-3 py-2 text-left text-neutral-700 hover:bg-neutral-50" onClick={() => onOpenDocument(`${label}.md`, href)}>
+              {documentEntries.map(([label, title, href]) => (
+                <button key={label} className="rounded-md border border-neutral-200 px-3 py-2 text-left text-neutral-700 hover:bg-neutral-50" onClick={() => onOpenDocument(title, href)}>
                   {label}
                 </button>
               ))}
+            </div>
+
+            <div className="mt-3 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+              <div className="mb-2 flex items-center gap-2 text-sm font-medium text-neutral-900">
+                <Database className="h-4 w-4 text-blue-600" />
+                SQL 产物 / SQL artifacts
+              </div>
+              {sqlDocuments.length ? (
+                <div className="mb-2 grid gap-2">
+                  {sqlDocuments.map((file) => (
+                    <button
+                      key={file.relativePath}
+                      className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-left hover:bg-neutral-50"
+                      onClick={() => onOpenDocument(fileNameFromPath(file.relativePath), file.path)}
+                    >
+                      <div className="truncate text-sm text-neutral-800">{fileNameFromPath(file.relativePath)}</div>
+                      <div className="mono mt-1 truncate text-[11px] text-neutral-500">SQL 说明文档 / Markdown · {file.relativePath}</div>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              {sqlFiles.length ? (
+                <div className="grid gap-2">
+                  {sqlFiles.map((file) => (
+                    <button
+                      key={file.relativePath}
+                      className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-left hover:bg-neutral-50"
+                      onClick={() => onOpenDocument(fileNameFromPath(file.relativePath), file.path)}
+                    >
+                      <div className="truncate text-sm text-neutral-800">{fileNameFromPath(file.relativePath)}</div>
+                      <div className="mono mt-1 truncate text-[11px] text-neutral-500">{sqlKindLabel(file.kind)} · {file.relativePath}</div>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-500">未扫描到 `.sql` 文件。</div>
+              )}
+              {workspace.links.sql && (
+                <button className="mt-2 rounded-md border border-neutral-200 bg-white px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-50" onClick={() => onOpenPath(workspace.links.sql)}>
+                  打开 SQL 目录
+                </button>
+              )}
             </div>
           </section>
 
@@ -3217,6 +3275,7 @@ export function App() {
         onCopyRiskInstruction={copyRiskInstruction}
         onRunSessionAction={runSessionAction}
         onOpenDocument={openDocument}
+        onOpenPath={openConfiguredPath}
       />
       <DocumentViewer document={document} onClose={() => setDocument(undefined)} onOpenExternal={openConfiguredPath} />
       {toast && <div className="fixed bottom-4 left-1/2 -translate-x-1/2 rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-700 shadow-[0_8px_24px_rgba(15,23,42,0.12)]" style={{ zIndex: 1100 }}>{toast}</div>}

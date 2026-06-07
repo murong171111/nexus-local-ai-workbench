@@ -359,6 +359,13 @@ final class ModelBehaviorTests: XCTestCase {
                     kind: "rollback"
                 )
             ],
+            sqlDocuments: [
+                WorkspaceSqlDocumentSnapshot(
+                    relativePath: "SQL变更说明.md",
+                    path: "/tmp/workspaces/2026-05-31-sql-workspace/sql/SQL变更说明.md",
+                    kind: "markdown"
+                )
+            ],
             worktreeCommand: ""
         )
 
@@ -367,6 +374,8 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(workspace.sqlFiles.map(\.relativePath), ["pay_log.sql", "pay_log_rollback.sql"])
         XCTAssertEqual(workspace.sqlFiles.map(\.kindLabel), ["正式 SQL / Formal", "回滚 SQL / Rollback"])
         XCTAssertEqual(workspace.sqlFiles.first?.fileName, "pay_log.sql")
+        XCTAssertEqual(workspace.sqlDocuments.map(\.relativePath), ["SQL变更说明.md"])
+        XCTAssertEqual(workspace.sqlDocuments.first?.kindLabel, "SQL 说明文档 / Markdown")
     }
 
     func testWorkspaceSqlSummaryPromotesSqlToTopLevelStatus() {

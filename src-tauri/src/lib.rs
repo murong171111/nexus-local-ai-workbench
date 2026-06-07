@@ -166,7 +166,14 @@ fn open_idea(path: String) -> Result<(), String> {
 
 #[tauri::command]
 fn read_text_file(path: String) -> Result<String, String> {
-    fs::read_to_string(expand_user_path(&path)).map_err(|error| error.to_string())
+    let path = expand_user_path(&path);
+    if !path.exists() {
+        return Err(format!("file does not exist: {}", path.display()));
+    }
+    if !path.is_file() {
+        return Err(format!("path is not a text file: {}", path.display()));
+    }
+    fs::read_to_string(path).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
