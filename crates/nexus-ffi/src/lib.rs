@@ -824,8 +824,13 @@ mod tests {
         );
         assert_eq!(
             value["data"]["workspaces"][0]["sessionActions"][0]["id"],
-            "create-worktrees"
+            "initialize-demand-intake"
         );
+        assert!(value["data"]["workspaces"][0]["sessionActions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|action| action["id"] == "create-worktrees"));
         assert_eq!(
             value["data"]["workspaces"][0]["tasks"][0]["title"],
             "核对任务中心"
