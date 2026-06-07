@@ -82,6 +82,92 @@ public struct CreateWorkspaceDocumentResponse: Codable, Equatable, Sendable {
     }
 }
 
+public struct DemandIntakeStatusRequest: Codable, Equatable, Sendable {
+    public let workspacePath: String
+
+    public init(workspacePath: String) {
+        self.workspacePath = workspacePath
+    }
+}
+
+public struct InitializeDemandIntakeRequest: Codable, Equatable, Sendable {
+    public let workspacePath: String
+    public let demandName: String
+    public let lanhuLink: String
+    public let notes: String
+    public let confirmed: Bool
+    public let auditRoot: String?
+    public let actor: String?
+
+    public init(
+        workspacePath: String,
+        demandName: String,
+        lanhuLink: String,
+        notes: String,
+        confirmed: Bool,
+        auditRoot: String? = nil,
+        actor: String? = nil
+    ) {
+        self.workspacePath = workspacePath
+        self.demandName = demandName
+        self.lanhuLink = lanhuLink
+        self.notes = notes
+        self.confirmed = confirmed
+        self.auditRoot = auditRoot
+        self.actor = actor
+    }
+}
+
+public struct DemandIntakeFileStatus: Codable, Equatable, Identifiable, Sendable {
+    public var id: String { key }
+
+    public let key: String
+    public let label: String
+    public let filename: String
+    public let path: String
+    public let exists: Bool
+
+    public init(key: String, label: String, filename: String, path: String, exists: Bool) {
+        self.key = key
+        self.label = label
+        self.filename = filename
+        self.path = path
+        self.exists = exists
+    }
+}
+
+public struct DemandIntakeStatus: Codable, Equatable, Sendable {
+    public let directoryPath: String
+    public let exists: Bool
+    public let ready: Bool
+    public let missingCount: Int
+    public let files: [DemandIntakeFileStatus]
+
+    public init(
+        directoryPath: String,
+        exists: Bool,
+        ready: Bool,
+        missingCount: Int,
+        files: [DemandIntakeFileStatus]
+    ) {
+        self.directoryPath = directoryPath
+        self.exists = exists
+        self.ready = ready
+        self.missingCount = missingCount
+        self.files = files
+    }
+}
+
+public struct InitializeDemandIntakeResponse: Codable, Equatable, Sendable {
+    public let status: DemandIntakeStatus
+    public let createdFiles: [String]
+
+    public init(status: DemandIntakeStatus, createdFiles: [String]) {
+        self.status = status
+        self.createdFiles = createdFiles
+    }
+}
+
 public struct WidgetSnapshotRequest: Codable, Equatable, Sendable {
     public let workspacesRoot: String
     public let sourceReposRoot: String

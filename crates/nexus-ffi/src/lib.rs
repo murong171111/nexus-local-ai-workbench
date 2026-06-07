@@ -1,13 +1,15 @@
 use nexus_core::{
     agent_event_handoff_prompt, agent_event_task_draft, append_agent_event_from_root,
     append_agent_task_draft, append_audit_event_from_root, create_workspace,
-    create_workspace_document, local_automation_check, read_agent_events_from_root, read_document,
-    rebuild_search_index, scan_source_repos, scan_workspaces, scan_workspaces_with_audit,
-    search_index, setup_worktrees, update_workspace_lifecycle, update_workspace_task,
-    widget_snapshot_from_dashboard, workspace_task_handoff_prompt, AgentEvent, AgentEventInput,
-    AgentEventTaskDraftResponse, AppendAgentTaskDraftRequest as CoreAppendAgentTaskDraftRequest,
-    AuditEventInput, CreateWorkspaceDocumentRequest as CoreCreateWorkspaceDocumentRequest,
+    create_workspace_document, initialize_demand_intake, local_automation_check,
+    read_agent_events_from_root, read_demand_intake_status, read_document, rebuild_search_index,
+    scan_source_repos, scan_workspaces, scan_workspaces_with_audit, search_index, setup_worktrees,
+    update_workspace_lifecycle, update_workspace_task, widget_snapshot_from_dashboard,
+    workspace_task_handoff_prompt, AgentEvent, AgentEventInput, AgentEventTaskDraftResponse,
+    AppendAgentTaskDraftRequest as CoreAppendAgentTaskDraftRequest, AuditEventInput,
+    CreateWorkspaceDocumentRequest as CoreCreateWorkspaceDocumentRequest,
     CreateWorkspaceRequest as CoreCreateWorkspaceRequest,
+    InitializeDemandIntakeRequest as CoreInitializeDemandIntakeRequest,
     LocalAutomationCheckRequest as CoreLocalAutomationCheckRequest,
     SetupWorktreesRequest as CoreSetupWorktreesRequest,
     UpdateWorkspaceLifecycleRequest as CoreUpdateWorkspaceLifecycleRequest,
@@ -45,6 +47,28 @@ struct CreateWorkspaceDocumentBridgeRequest {
     workspace_path: String,
     document_key: String,
     relative_path: String,
+    confirmed: bool,
+    audit_root: Option<String>,
+    actor: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DemandIntakeStatusBridgeRequest {
+    workspace_path: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InitializeDemandIntakeBridgeRequest {
+    workspace_path: String,
+    #[serde(default)]
+    demand_name: String,
+    #[serde(default)]
+    lanhu_link: String,
+    #[serde(default)]
+    notes: String,
+    #[serde(default)]
     confirmed: bool,
     audit_root: Option<String>,
     actor: Option<String>,
@@ -269,6 +293,59 @@ pub unsafe extern "C" fn nexus_create_workspace_document_json(
             Ok(response)
         },
     )
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn nexus_read_demand_intake_status_json(
+    input_json: *const c_char,
+) -> *mut c_char {
+    bridge_call(input_json, |request: DemandIntakeStatusBridgeRequest| {
+        read_demand_intake_status(&request.workspace_path)
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn nexus_initialize_demand_intake_json(
+    input_json: *const c_char,
+) -> *mut c_char {
+    bridge_call(input_json, |request: InitializeDemandIntakeBridgeRequest| {
+        let response = initialize_demand_intake(CoreInitializeDemandIntakeRequest {
+            workspace_path: request.workspace_path.clone(),
+            demand_name: request.demand_name.clone(),
+            lanhu_link: request.lanhu_link.clone(),
+            notes: request.notes.clone(),
+            confirmed: request.confirmed,
+        })?;
+
+        if let Some(audit_root) = request.audit_root.as_deref() {
+            let _ = append_audit_event_from_root(
+                audit_root,
+                AuditEventInput {
+                    actor: request.actor.unwrap_or_else(|| "Nexus Native".to_string()),
+                    action: "demand_intake.initialized".to_string(),
+                    target: response.status.directory_path.clone(),
+                    summary: format!(
+                        "Initialized demand intake files for {}",
+                        request.demand_name
+                    ),
+                    metadata: [
+                        ("workspacePath".to_string(), request.workspace_path),
+                        ("demandName".to_string(), request.demand_name),
+                        ("lanhuLink".to_string(), request.lanhu_link),
+                        ("createdFiles".to_string(), response.created_files.join(",")),
+                        (
+                            "missingCount".to_string(),
+                            response.status.missing_count.to_string(),
+                        ),
+                    ]
+                    .into_iter()
+                    .collect(),
+                },
+            );
+        }
+
+        Ok(response)
+    })
 }
 
 #[no_mangle]
@@ -835,6 +912,63 @@ mod tests {
         let audit_log = fs::read_to_string(audit_root.join("audit-log.jsonl")).unwrap();
         assert!(audit_log.contains("document.created"));
         assert!(audit_log.contains("tasks.md"));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn demand_intake_status_bridge_reports_missing_files() {
+        let root =
+            std::env::temp_dir().join(format!("nexus-ffi-demand-status-{}", std::process::id()));
+        let workspace = root.join("2026-05-30-demand-status");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&workspace).unwrap();
+
+        let request = format!(r#"{{"workspacePath":"{}"}}"#, workspace.to_string_lossy());
+        let input = CString::new(request).unwrap();
+        let output = unsafe { nexus_read_demand_intake_status_json(input.as_ptr()) };
+        let response = unsafe { CStr::from_ptr(output).to_string_lossy().to_string() };
+        unsafe { nexus_string_free(output) };
+
+        let value = serde_json::from_str::<Value>(&response).unwrap();
+        assert_eq!(value["ok"], true);
+        assert_eq!(value["data"]["ready"], false);
+        assert_eq!(value["data"]["missingCount"], 5);
+        assert_eq!(value["data"]["files"][0]["filename"], "requirement.md");
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn initialize_demand_intake_bridge_writes_files_and_audit() {
+        let root =
+            std::env::temp_dir().join(format!("nexus-ffi-demand-init-{}", std::process::id()));
+        let workspace = root.join("2026-05-30-demand-init");
+        let audit_root = root.join("audit");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&workspace).unwrap();
+
+        let request = format!(
+            r#"{{"workspacePath":"{}","demandName":"会员权益页","lanhuLink":"https://lanhu.example/design","notes":"先确认首屏","confirmed":true,"auditRoot":"{}","actor":"Nexus FFI Test"}}"#,
+            workspace.to_string_lossy(),
+            audit_root.to_string_lossy()
+        );
+        let input = CString::new(request).unwrap();
+        let output = unsafe { nexus_initialize_demand_intake_json(input.as_ptr()) };
+        let response = unsafe { CStr::from_ptr(output).to_string_lossy().to_string() };
+        unsafe { nexus_string_free(output) };
+
+        let value = serde_json::from_str::<Value>(&response).unwrap();
+        assert_eq!(value["ok"], true);
+        assert_eq!(value["data"]["status"]["ready"], true);
+        assert_eq!(value["data"]["createdFiles"].as_array().unwrap().len(), 5);
+        let requirement = fs::read_to_string(workspace.join("需求/requirement.md")).unwrap();
+        assert!(requirement.contains("会员权益页"));
+        assert!(requirement.contains("https://lanhu.example/design"));
+
+        let audit_log = fs::read_to_string(audit_root.join("audit-log.jsonl")).unwrap();
+        assert!(audit_log.contains("demand_intake.initialized"));
+        assert!(audit_log.contains("createdFiles"));
 
         fs::remove_dir_all(root).unwrap();
     }
