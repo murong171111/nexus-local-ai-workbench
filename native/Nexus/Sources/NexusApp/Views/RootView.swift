@@ -5685,7 +5685,7 @@ private struct WorkspaceDemandIntakeView: View {
                 Toggle("确认创建或补齐需求预检文件", isOn: $confirmed)
                     .toggleStyle(.checkbox)
 
-                HStack(spacing: 8) {
+                LazyVGrid(columns: actionColumns, alignment: .leading, spacing: 8) {
                     Button {
                         Task {
                             let response = await appState.initializeDemandIntake(
@@ -5721,6 +5721,38 @@ private struct WorkspaceDemandIntakeView: View {
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .disabled(!(requirementFile?.exists ?? false))
+
+                    Button {
+                        Task {
+                            await appState.copyDemandIntakePrompt(
+                                for: workspace,
+                                demandName: demandName,
+                                lanhuLink: lanhuLink,
+                                notes: notes,
+                                openCodex: false
+                            )
+                        }
+                    } label: {
+                        Label("复制预检", systemImage: "doc.on.clipboard")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    Button {
+                        Task {
+                            await appState.copyDemandIntakePrompt(
+                                for: workspace,
+                                demandName: demandName,
+                                lanhuLink: lanhuLink,
+                                notes: notes,
+                                openCodex: true
+                            )
+                        }
+                    } label: {
+                        Label("打开 Codex", systemImage: "point.3.connected.trianglepath.dotted")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                 }
             }
         }
@@ -5765,6 +5797,10 @@ private struct WorkspaceDemandIntakeView: View {
 
     private var fileColumns: [GridItem] {
         [GridItem(.adaptive(minimum: 142), spacing: 8, alignment: .leading)]
+    }
+
+    private var actionColumns: [GridItem] {
+        [GridItem(.adaptive(minimum: 112), spacing: 8, alignment: .leading)]
     }
 }
 
