@@ -41,6 +41,9 @@ function sampleDashboard(overrides = {}) {
           status: "~/ks_project/workspaces/2026-01-01-sample-workspace/STATUS.md",
           services: "~/ks_project/workspaces/2026-01-01-sample-workspace/services.md",
           branches: "~/ks_project/workspaces/2026-01-01-sample-workspace/branches.md",
+          requirements: "~/ks_project/workspaces/2026-01-01-sample-workspace/requirements.md",
+          acceptance: "~/ks_project/workspaces/2026-01-01-sample-workspace/acceptance.md",
+          changes: "~/ks_project/workspaces/2026-01-01-sample-workspace/changes.md",
           tasks: "~/ks_project/workspaces/2026-01-01-sample-workspace/tasks.md",
           delivery: "~/ks_project/workspaces/2026-01-01-sample-workspace/交付记录.md",
           handoff: "~/ks_project/workspaces/2026-01-01-sample-workspace/handoff.md"

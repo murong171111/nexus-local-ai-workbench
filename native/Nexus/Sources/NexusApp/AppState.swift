@@ -1280,9 +1280,9 @@ final class AppState: ObservableObject {
             "- Worktree: \(workspace.worktreeState)",
             "",
             "## 处理要求",
-            "- 先读取工作区 Markdown，尤其是 AGENTS.md、STATUS.md、tasks.md、branches.md 和交付记录。",
+            "- 先读取工作区 Markdown，尤其是 AGENTS.md、requirements.md、acceptance.md、changes.md、STATUS.md、tasks.md、branches.md 和交付记录。",
             "- 按生命周期下一步处理，不要跳过服务范围、分支、worktree、交付记录这些前置条件。",
-            "- 如果涉及代码、SQL、业务逻辑、接口、DTO、配置或验证变化，同步更新交付记录。",
+            "- 如果涉及代码、SQL、业务逻辑、接口、DTO、配置或验证变化，同步更新 changes.md 和交付记录。",
             "- 处理完成后回到 Nexus 刷新，并重新确认生命周期阶段。"
         ].joined(separator: "\n")
     }
@@ -1339,6 +1339,9 @@ final class AppState: ObservableObject {
             "- Workspaces root: \(workspaceRoot)",
             "- Source repos root: \(sourceReposRoot)",
             "- Docs root: \(docsRoot)",
+            "- requirements.md: \(workspace.documentLinks["requirements"] ?? "\(workspace.path)/requirements.md")",
+            "- acceptance.md: \(workspace.documentLinks["acceptance"] ?? "\(workspace.path)/acceptance.md")",
+            "- changes.md: \(workspace.documentLinks["changes"] ?? "\(workspace.path)/changes.md")",
             "- tasks.md: \(workspace.documentLinks["tasks"] ?? "\(workspace.path)/tasks.md")",
             "- 交付记录: \(workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md")",
             "- handoff.md: \(workspace.documentLinks["handoff"] ?? "\(workspace.path)/handoff.md")",
@@ -1347,7 +1350,7 @@ final class AppState: ObservableObject {
             "- 先读取工作区 Markdown，再决定是否修改代码或文档。",
             "- 优先按 Nexus 推荐动作处理；如果有阻塞项，先处理阻塞项再进入代码修改。",
             "- 优先在 workspace-local repos/<service> worktree 中处理，不要切换源仓库分支。",
-            "- 如果涉及代码、SQL、业务逻辑、接口、DTO、配置或验证变化，同步更新交付记录。",
+            "- 如果涉及代码、SQL、业务逻辑、接口、DTO、配置或验证变化，同步更新 changes.md 和交付记录。",
             "- 处理完成后回到 Nexus 刷新工作区状态，并再次运行本地检查。"
         ].joined(separator: "\n")
     }
@@ -1448,6 +1451,9 @@ final class AppState: ObservableObject {
             "- STATUS.md: \(workspace.documentLinks["status"] ?? "\(workspace.path)/STATUS.md")",
             "- services.md: \(workspace.documentLinks["services"] ?? "\(workspace.path)/services.md")",
             "- branches.md: \(workspace.documentLinks["branches"] ?? "\(workspace.path)/branches.md")",
+            "- requirements.md: \(workspace.documentLinks["requirements"] ?? "\(workspace.path)/requirements.md")",
+            "- acceptance.md: \(workspace.documentLinks["acceptance"] ?? "\(workspace.path)/acceptance.md")",
+            "- changes.md: \(workspace.documentLinks["changes"] ?? "\(workspace.path)/changes.md")",
             "",
             "## 最近本地检查",
             localCheckHandoffLines().joined(separator: "\n"),
@@ -1471,8 +1477,8 @@ final class AppState: ObservableObject {
             riskLines.joined(separator: "\n"),
             "",
             "## 处理要求",
-            "- 先读取工作区 Markdown 和现有交付记录，不要凭空补内容。",
-            "- 如果本轮有代码、SQL、业务逻辑、接口、DTO、配置或验证变化，必须补到交付记录。",
+            "- 先读取工作区 Markdown、requirements.md、acceptance.md、changes.md 和现有交付记录，不要凭空补内容。",
+            "- 如果本轮有代码、SQL、业务逻辑、接口、DTO、配置或验证变化，必须补到 changes.md 和交付记录。",
             "- 如果交付记录任意位置记录实际 SQL 变更，或 SQL 段落出现 `变更类型：DDL/DML`、影响表、新增字段、回填脚本、数据修复等变更元数据，必须在 sql/ 下同步正式 SQL 文件和回滚 SQL 文件。",
             "- 交付记录至少覆盖：涉及服务、分支/worktree 状态、改动范围、SQL/配置、验证记录、风险和后续事项。",
             "- 如果发现交付记录缺少事实，请列出需要我确认的问题，不要编造验证结果。",
@@ -1487,6 +1493,9 @@ final class AppState: ObservableObject {
         let tasksPath = workspace.documentLinks["tasks"] ?? "\(workspace.path)/tasks.md"
         let handoffPath = workspace.documentLinks["handoff"] ?? "\(workspace.path)/handoff.md"
         let branchPath = workspace.documentLinks["branches"] ?? "\(workspace.path)/branches.md"
+        let requirementsPath = workspace.documentLinks["requirements"] ?? "\(workspace.path)/requirements.md"
+        let acceptancePath = workspace.documentLinks["acceptance"] ?? "\(workspace.path)/acceptance.md"
+        let changesPath = workspace.documentLinks["changes"] ?? "\(workspace.path)/changes.md"
         let localCheckLines = localCheckHandoffLines()
         let readinessLines = workspace.healthChecks.isEmpty
             ? ["- 暂无 workspace health check，请先运行 Nexus 本地检查。"]
@@ -1526,10 +1535,13 @@ final class AppState: ObservableObject {
             "- 交付记录: \(deliveryPath)",
             "- tasks.md: \(tasksPath)",
             "- branches.md: \(branchPath)",
+            "- requirements.md: \(requirementsPath)",
+            "- acceptance.md: \(acceptancePath)",
+            "- changes.md: \(changesPath)",
             "- handoff.md: \(handoffPath)",
             "",
             "## 处理要求",
-            "- 先复核本地工作树、目标分支、任务、交付记录、SQL 产物和最近本地检查。",
+            "- 先复核需求规则、验收清单、变更日志、本地工作树、目标分支、任务、交付记录、SQL 产物和最近本地检查。",
             "- 不要编造验证结果；缺少的测试、CI、PR 链接或发布状态请明确列为待确认。",
             "- 输出适合 PR 描述的摘要：背景、改动范围、影响服务、验证记录、SQL/配置、风险与回滚。",
             "- 如果交付记录任意位置记录实际 SQL 变更，或 SQL 段落出现 `变更类型：DDL/DML`、影响表、新增字段、回填脚本、数据修复等变更元数据，确认 sql/ 下已有正式 SQL 和回滚 SQL。",
@@ -1687,10 +1699,10 @@ final class AppState: ObservableObject {
             codexSessionHandoffLines(for: workspace).joined(separator: "\n"),
             "",
             "## 处理要求",
-            "- 先读取 workspace.md、STATUS.md、services.md、branches.md、tasks.md 和交付记录。",
+            "- 先读取 requirements.md、acceptance.md、changes.md、workspace.md、STATUS.md、services.md、branches.md、tasks.md 和交付记录。",
             "- 判断风险属于需求范围、分支、worktree、服务 git 状态、任务阻塞、SQL/交付记录，还是实现逻辑。",
             "- 给出阻塞项、可并行项和建议处理顺序。",
-            "- 如果处理涉及代码、SQL、业务逻辑、接口、DTO、配置或验证变化，同步更新交付记录。",
+            "- 如果处理涉及代码、SQL、业务逻辑、接口、DTO、配置或验证变化，同步更新 changes.md 和交付记录。",
             "- 处理完成后回到 Nexus 运行本地检查并刷新状态。"
         ].joined(separator: "\n")
     }
@@ -1993,6 +2005,9 @@ final class AppState: ObservableObject {
             "## 相关文档",
             "- services.md: \(workspace.documentLinks["services"] ?? "\(workspace.path)/services.md")",
             "- branches.md: \(workspace.documentLinks["branches"] ?? "\(workspace.path)/branches.md")",
+            "- requirements.md: \(workspace.documentLinks["requirements"] ?? "\(workspace.path)/requirements.md")",
+            "- acceptance.md: \(workspace.documentLinks["acceptance"] ?? "\(workspace.path)/acceptance.md")",
+            "- changes.md: \(workspace.documentLinks["changes"] ?? "\(workspace.path)/changes.md")",
             "- tasks.md: \(workspace.documentLinks["tasks"] ?? "\(workspace.path)/tasks.md")",
             "- 交付记录.md: \(workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md")",
             "",
@@ -2003,7 +2018,7 @@ final class AppState: ObservableObject {
             "- 先确认该服务是否应该在当前需求范围内。",
             "- 如果 worktree 缺失，先回到 Nexus 执行确认后的 worktree 创建流程，不要直接在 source repo 切分支。",
             "- 如果存在未提交或分支不一致，先说明风险，再决定是否继续开发、提交或调整文档。",
-            "- 涉及代码、SQL、业务逻辑、配置或验证变化时，同步更新交付记录和必要 SQL 产物。"
+            "- 涉及代码、SQL、业务逻辑、配置或验证变化时，同步更新 changes.md、交付记录和必要 SQL 产物。"
         ].joined(separator: "\n")
     }
 
@@ -2316,7 +2331,7 @@ final class AppState: ObservableObject {
             "",
             "## 处理要求",
             "- 先读取相关工作区 Markdown，再决定是否修改代码或文档。",
-            "- 如果涉及代码、SQL、业务逻辑、接口、DTO、配置或验证变化，同步更新交付记录。",
+            "- 如果涉及代码、SQL、业务逻辑、接口、DTO、配置或验证变化，同步更新 changes.md 和交付记录。",
             "- 优先在 workspace-local repos/<service> worktree 中处理，不直接切换源仓库分支。",
             "- 处理完成后回到 Nexus 刷新并再次运行自动化检查。"
         ]).joined(separator: "\n")
@@ -2706,8 +2721,8 @@ final class AppState: ObservableObject {
             "## 下一步要求",
             "- \(failedGuidance)",
             "- 不要删除 worktree、reset、clean 或切换源仓库分支，除非用户明确要求。",
-            "- 继续前读取 workspace.md、STATUS.md、branches.md、services.md、tasks.md 和交付记录。",
-            "- 如果后续修改代码、SQL、配置或业务逻辑，同步更新交付记录。",
+            "- 继续前读取 requirements.md、acceptance.md、changes.md、workspace.md、STATUS.md、branches.md、services.md、tasks.md 和交付记录。",
+            "- 如果后续修改代码、SQL、配置或业务逻辑，同步更新 changes.md 和交付记录。",
             "- 处理完成后回到 Nexus 刷新，并运行本地检查。"
         ].joined(separator: "\n")
     }

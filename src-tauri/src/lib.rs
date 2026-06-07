@@ -3,17 +3,21 @@ use nexus_core::{
     expand_user_path, export_settings_profile as export_settings_profile_core,
     rebuild_search_index as rebuild_search_index_core, scan_source_repos as scan_source_repos_core,
     scan_workspaces_with_audit as scan_workspaces_core, search_index as search_index_core,
-    setup_worktrees as setup_worktrees_core, AuditEventInput, CreateWorkspaceRequest,
-    CreateWorkspaceResponse, DashboardData, ExportSettingsProfileResponse,
-    RebuildSearchIndexResponse, SearchResult, SettingsProfile, SetupWorktreesRequest,
-    SetupWorktreesResponse, SourceRepo, WidgetSnapshot, DEFAULT_INDEX_FILE,
+    setup_worktrees as setup_worktrees_core, update_workspace_task as update_workspace_task_core,
+    AuditEventInput, CreateWorkspaceRequest, CreateWorkspaceResponse, DashboardData,
+    ExportSettingsProfileResponse, RebuildSearchIndexResponse, SearchResult, SettingsProfile,
+    SetupWorktreesRequest, SetupWorktreesResponse, SourceRepo, UpdateWorkspaceTaskRequest,
+    UpdateWorkspaceTaskResponse, WidgetSnapshot, DEFAULT_INDEX_FILE,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{hash_map::DefaultHasher, BTreeMap};
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tauri::Manager;
+
+const CODEX_SESSIONS_FILE: &str = "codex-sessions.json";
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -77,6 +81,64 @@ struct SetupWorktreesCommandRequest {
     pub target_branch: String,
     #[serde(default)]
     pub confirmed: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CodexSessionsReadRequest {
+    workspace_path: String,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BindCodexSessionRequest {
+    workspace_path: String,
+    title: String,
+    url: String,
+    notes: String,
+    confirmed: bool,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CodexSessionActionRequest {
+    workspace_path: String,
+    session_id: String,
+    confirmed: bool,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CodexSessionLink {
+    id: String,
+    title: String,
+    url: String,
+    notes: String,
+    created_at: String,
+    last_opened_at: Option<String>,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CodexSessionLinkStore {
+    schema_version: u8,
+    sessions: Vec<CodexSessionLink>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CodexSessionStoreResponse {
+    path: String,
+    sessions: Vec<CodexSessionLink>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CodexSessionMutationResponse {
+    path: String,
+    sessions: Vec<CodexSessionLink>,
+    link: Option<CodexSessionLink>,
+    updated: bool,
 }
 
 #[derive(Deserialize)]
@@ -414,12 +476,295 @@ fn setup_worktrees(
     Ok(response)
 }
 
+#[tauri::command]
+fn update_workspace_task(
+    app: tauri::AppHandle,
+    request: UpdateWorkspaceTaskRequest,
+) -> Result<UpdateWorkspaceTaskResponse, String> {
+    if !request.confirmed {
+        return Err("workspace task update requires explicit confirmation".to_string());
+    }
+
+    let response = update_workspace_task_core(request.clone())?;
+    record_audit_event(
+        &app,
+        AuditEventInput {
+            actor: "Nexus App".to_string(),
+            action: "workspace.task.updated".to_string(),
+            target: response.path.clone(),
+            summary: format!(
+                "Updated task {} from {} to {}",
+                response.task.title, response.previous_status, response.task.status
+            ),
+            metadata: audit_metadata(&[
+                ("workspace", request.workspace_path),
+                ("taskId", request.task_id),
+                ("previousStatus", response.previous_status.clone()),
+                ("status", response.task.status.clone()),
+                ("updated", response.updated.to_string()),
+            ]),
+        },
+    );
+    Ok(response)
+}
+
+#[tauri::command]
+fn read_codex_sessions(
+    request: CodexSessionsReadRequest,
+) -> Result<CodexSessionStoreResponse, String> {
+    let sessions_path = codex_sessions_path(&request.workspace_path)?;
+    let sessions = read_codex_session_links(&sessions_path)?;
+    Ok(CodexSessionStoreResponse {
+        path: sessions_path.to_string_lossy().to_string(),
+        sessions,
+    })
+}
+
+#[tauri::command]
+fn bind_codex_session(
+    app: tauri::AppHandle,
+    request: BindCodexSessionRequest,
+) -> Result<CodexSessionMutationResponse, String> {
+    if !request.confirmed {
+        return Err("codex session binding requires explicit confirmation".to_string());
+    }
+
+    let sessions_path = codex_sessions_path(&request.workspace_path)?;
+    let mut sessions = read_codex_session_links(&sessions_path)?;
+    let url = normalized_session_url(&request.url)?;
+    let title = clean_session_title(&request.title, sessions.len() + 1);
+    let notes = request.notes.trim().to_string();
+    let mut updated = false;
+    let link = if let Some(existing_index) = sessions.iter().position(|link| link.url == url) {
+        sessions[existing_index].title = title.clone();
+        sessions[existing_index].notes = notes.clone();
+        updated = true;
+        sessions[existing_index].clone()
+    } else {
+        let created_at = generated_at();
+        let id = codex_session_id(&url, &created_at);
+        let link = CodexSessionLink {
+            id,
+            title: title.clone(),
+            url: url.clone(),
+            notes,
+            created_at,
+            last_opened_at: None,
+        };
+        sessions.insert(0, link.clone());
+        link
+    };
+
+    write_codex_session_links(&sessions_path, &sessions)?;
+    record_audit_event(
+        &app,
+        AuditEventInput {
+            actor: "Nexus App".to_string(),
+            action: if updated {
+                "codex_session_link.updated".to_string()
+            } else {
+                "codex_session_link.bound".to_string()
+            },
+            target: sessions_path.to_string_lossy().to_string(),
+            summary: if updated {
+                "Updated Codex session link".to_string()
+            } else {
+                "Bound Codex session link".to_string()
+            },
+            metadata: audit_metadata(&[
+                ("workspace", request.workspace_path),
+                ("sessionId", link.id.clone()),
+                ("sessionTitle", link.title.clone()),
+                ("sessionUrl", link.url.clone()),
+                ("sessionCount", sessions.len().to_string()),
+            ]),
+        },
+    );
+
+    Ok(CodexSessionMutationResponse {
+        path: sessions_path.to_string_lossy().to_string(),
+        sessions,
+        link: Some(link),
+        updated,
+    })
+}
+
+#[tauri::command]
+fn open_codex_session(
+    app: tauri::AppHandle,
+    request: CodexSessionActionRequest,
+) -> Result<CodexSessionMutationResponse, String> {
+    if !request.confirmed {
+        return Err("codex session opening requires explicit confirmation".to_string());
+    }
+
+    let sessions_path = codex_sessions_path(&request.workspace_path)?;
+    let mut sessions = read_codex_session_links(&sessions_path)?;
+    let Some(index) = sessions
+        .iter()
+        .position(|link| link.id == request.session_id)
+    else {
+        return Err(format!(
+            "codex session link not found: {}",
+            request.session_id
+        ));
+    };
+    let mut link = sessions[index].clone();
+    open_with_system(&link.url)?;
+    link.last_opened_at = Some(generated_at());
+    sessions[index] = link.clone();
+    write_codex_session_links(&sessions_path, &sessions)?;
+    record_audit_event(
+        &app,
+        AuditEventInput {
+            actor: "Nexus App".to_string(),
+            action: "codex_session_link.opened".to_string(),
+            target: link.url.clone(),
+            summary: "Opened Codex session link".to_string(),
+            metadata: audit_metadata(&[
+                ("workspace", request.workspace_path),
+                ("sessionId", link.id.clone()),
+                ("sessionTitle", link.title.clone()),
+                ("sessionUrl", link.url.clone()),
+            ]),
+        },
+    );
+
+    Ok(CodexSessionMutationResponse {
+        path: sessions_path.to_string_lossy().to_string(),
+        sessions,
+        link: Some(link),
+        updated: true,
+    })
+}
+
+#[tauri::command]
+fn delete_codex_session(
+    app: tauri::AppHandle,
+    request: CodexSessionActionRequest,
+) -> Result<CodexSessionMutationResponse, String> {
+    if !request.confirmed {
+        return Err("codex session deletion requires explicit confirmation".to_string());
+    }
+
+    let sessions_path = codex_sessions_path(&request.workspace_path)?;
+    let mut sessions = read_codex_session_links(&sessions_path)?;
+    let Some(index) = sessions
+        .iter()
+        .position(|link| link.id == request.session_id)
+    else {
+        return Err(format!(
+            "codex session link not found: {}",
+            request.session_id
+        ));
+    };
+    let link = sessions.remove(index);
+    write_codex_session_links(&sessions_path, &sessions)?;
+    record_audit_event(
+        &app,
+        AuditEventInput {
+            actor: "Nexus App".to_string(),
+            action: "codex_session_link.deleted".to_string(),
+            target: sessions_path.to_string_lossy().to_string(),
+            summary: "Deleted Codex session link".to_string(),
+            metadata: audit_metadata(&[
+                ("workspace", request.workspace_path),
+                ("sessionId", link.id.clone()),
+                ("sessionTitle", link.title.clone()),
+                ("sessionUrl", link.url.clone()),
+                ("sessionCount", sessions.len().to_string()),
+            ]),
+        },
+    );
+
+    Ok(CodexSessionMutationResponse {
+        path: sessions_path.to_string_lossy().to_string(),
+        sessions,
+        link: Some(link),
+        updated: true,
+    })
+}
+
 fn open_with_system(target: &str) -> Result<(), String> {
     Command::new("open")
         .arg(target)
         .status()
         .map_err(|error| error.to_string())
         .and_then(status_to_result)
+}
+
+fn codex_sessions_path(workspace_path: &str) -> Result<PathBuf, String> {
+    let workspace = expand_user_path(workspace_path);
+    if !workspace.exists() {
+        return Err(format!("workspace does not exist: {}", workspace.display()));
+    }
+    if !workspace.is_dir() {
+        return Err(format!(
+            "workspace is not a directory: {}",
+            workspace.display()
+        ));
+    }
+    Ok(workspace.join(CODEX_SESSIONS_FILE))
+}
+
+fn read_codex_session_links(path: &Path) -> Result<Vec<CodexSessionLink>, String> {
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let content = fs::read_to_string(path).map_err(|error| error.to_string())?;
+    if content.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    if let Ok(store) = serde_json::from_str::<CodexSessionLinkStore>(&content) {
+        return Ok(store.sessions);
+    }
+    if let Ok(sessions) = serde_json::from_str::<Vec<CodexSessionLink>>(&content) {
+        return Ok(sessions);
+    }
+    Err(format!("invalid codex sessions file: {}", path.display()))
+}
+
+fn write_codex_session_links(path: &Path, sessions: &[CodexSessionLink]) -> Result<(), String> {
+    let store = CodexSessionLinkStore {
+        schema_version: 1,
+        sessions: sessions.to_vec(),
+    };
+    let payload = serde_json::to_string_pretty(&store).map_err(|error| error.to_string())?;
+    fs::write(path, payload).map_err(|error| error.to_string())
+}
+
+fn normalized_session_url(url: &str) -> Result<String, String> {
+    let trimmed = url.trim();
+    let Some((scheme, _rest)) = trimmed.split_once(':') else {
+        return Err(
+            "Codex session URL requires a valid scheme, for example codex:// or https://."
+                .to_string(),
+        );
+    };
+    if scheme.is_empty()
+        || !scheme.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '+' | '-' | '.')
+        })
+    {
+        return Err("Codex session URL scheme is invalid.".to_string());
+    }
+    Ok(trimmed.to_string())
+}
+
+fn clean_session_title(title: &str, index: usize) -> String {
+    let clean = title.trim();
+    if clean.is_empty() {
+        format!("Codex session {index}")
+    } else {
+        clean.to_string()
+    }
+}
+
+fn codex_session_id(url: &str, timestamp: &str) -> String {
+    let mut hasher = DefaultHasher::new();
+    url.hash(&mut hasher);
+    timestamp.hash(&mut hasher);
+    format!("session-{:x}", hasher.finish())
 }
 
 fn path_check(key: &str, label: &str, value: &str) -> PathCheck {
@@ -575,7 +920,12 @@ pub fn run() {
             export_settings_profile,
             append_audit_event,
             create_workspace,
-            setup_worktrees
+            setup_worktrees,
+            update_workspace_task,
+            read_codex_sessions,
+            bind_codex_session,
+            open_codex_session,
+            delete_codex_session
         ])
         .run(tauri::generate_context!())
         .expect("error while running Nexus");

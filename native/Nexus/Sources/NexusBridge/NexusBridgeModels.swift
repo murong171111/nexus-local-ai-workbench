@@ -699,9 +699,9 @@ public extension WorkspaceTaskHandoffPromptRequest {
         \(task.detail.isEmpty ? "No detail provided" : task.detail)
 
         Expected workflow:
-        1. Read the workspace documents, especially `tasks.md`, `workspace.md`, `services.md`, `branches.md`, `handoff.md`, and `交付记录.md`.
+        1. Read the workspace documents, especially `requirements.md`, `acceptance.md`, `changes.md`, `tasks.md`, `workspace.md`, `services.md`, `branches.md`, `handoff.md`, and `交付记录.md`.
         2. Inspect the relevant `repos/<service>` worktrees before editing.
-        3. Keep code, SQL, and delivery-document changes aligned.
+        3. Keep code, SQL, changes, acceptance, and delivery-document changes aligned.
         4. Report touched services, branches, verification, and any remaining risk.
         """
     }

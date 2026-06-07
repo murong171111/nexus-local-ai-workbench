@@ -1,4 +1,5 @@
 import type { NexusSettingsProfile, WorkspaceSearchResult } from "./workspace-model";
+import type { CodexSessionLink, WorkspaceTask } from "./types";
 
 async function tauriInvoke<T>(command: string, args?: Record<string, unknown>) {
   if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) {
@@ -42,6 +43,47 @@ export type SetupWorktreesResponse = {
   created: WorktreeSetupResult[];
   skipped: WorktreeSetupResult[];
   failed: WorktreeSetupResult[];
+};
+
+export type UpdateWorkspaceTaskPayload = {
+  workspacePath: string;
+  taskId: string;
+  status: string;
+  detail?: string;
+  confirmed: boolean;
+};
+
+export type UpdateWorkspaceTaskResponse = {
+  path: string;
+  task: WorkspaceTask;
+  previousStatus: string;
+  updated: boolean;
+};
+
+export type CodexSessionStoreResponse = {
+  path: string;
+  sessions: CodexSessionLink[];
+};
+
+export type BindCodexSessionPayload = {
+  workspacePath: string;
+  title: string;
+  url: string;
+  notes?: string;
+  confirmed: boolean;
+};
+
+export type CodexSessionActionPayload = {
+  workspacePath: string;
+  sessionId: string;
+  confirmed: boolean;
+};
+
+export type CodexSessionMutationResponse = {
+  path: string;
+  sessions: CodexSessionLink[];
+  link?: CodexSessionLink;
+  updated: boolean;
 };
 
 export type AuditEventPayload = {
@@ -274,6 +316,69 @@ export async function setupWorktrees(payload: SetupWorktreesPayload) {
       sourceReposRoot: payload.sourceReposRoot,
       services: payload.services,
       targetBranch: payload.targetBranch,
+      confirmed: payload.confirmed
+    }
+  });
+}
+
+export async function updateWorkspaceTask(payload: UpdateWorkspaceTaskPayload) {
+  if (!isDesktopApp()) {
+    throw new Error("更新任务需要在 Nexus Mac App 中使用");
+  }
+  return tauriInvoke<UpdateWorkspaceTaskResponse>("update_workspace_task", {
+    request: {
+      workspacePath: payload.workspacePath,
+      taskId: payload.taskId,
+      status: payload.status,
+      detail: payload.detail,
+      confirmed: payload.confirmed
+    }
+  });
+}
+
+export async function readCodexSessions(workspacePath: string) {
+  if (!isDesktopApp()) return null;
+  return tauriInvoke<CodexSessionStoreResponse>("read_codex_sessions", {
+    request: { workspacePath }
+  });
+}
+
+export async function bindCodexSession(payload: BindCodexSessionPayload) {
+  if (!isDesktopApp()) {
+    throw new Error("绑定 Codex 会话需要在 Nexus Mac App 中使用");
+  }
+  return tauriInvoke<CodexSessionMutationResponse>("bind_codex_session", {
+    request: {
+      workspacePath: payload.workspacePath,
+      title: payload.title,
+      url: payload.url,
+      notes: payload.notes ?? "",
+      confirmed: payload.confirmed
+    }
+  });
+}
+
+export async function openCodexSession(payload: CodexSessionActionPayload) {
+  if (!isDesktopApp()) {
+    throw new Error("打开 Codex 会话需要在 Nexus Mac App 中使用");
+  }
+  return tauriInvoke<CodexSessionMutationResponse>("open_codex_session", {
+    request: {
+      workspacePath: payload.workspacePath,
+      sessionId: payload.sessionId,
+      confirmed: payload.confirmed
+    }
+  });
+}
+
+export async function deleteCodexSession(payload: CodexSessionActionPayload) {
+  if (!isDesktopApp()) {
+    throw new Error("删除 Codex 会话需要在 Nexus Mac App 中使用");
+  }
+  return tauriInvoke<CodexSessionMutationResponse>("delete_codex_session", {
+    request: {
+      workspacePath: payload.workspacePath,
+      sessionId: payload.sessionId,
       confirmed: payload.confirmed
     }
   });

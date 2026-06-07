@@ -38,10 +38,10 @@ import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { Card } from "./components/ui/card";
 import { Input } from "./components/ui/input";
-import { appendAuditEvent, checkEnvironment, createWorkspace, exportSettingsProfile, isDesktopApp, openExternalUrl, openPath as openPathInDesktop, readTextFile, rebuildSearchIndex, scanSourceRepos, scanWorkspaces, searchIndex, setupWorktrees, writeWidgetSnapshot, type EnvironmentHealth, type RebuildSearchIndexResponse, type SearchResult, type SourceRepo } from "./desktop";
+import { appendAuditEvent, bindCodexSession, checkEnvironment, createWorkspace, deleteCodexSession, exportSettingsProfile, isDesktopApp, openCodexSession, openExternalUrl, openPath as openPathInDesktop, readCodexSessions, readTextFile, rebuildSearchIndex, scanSourceRepos, scanWorkspaces, searchIndex, setupWorktrees, updateWorkspaceTask, writeWidgetSnapshot, type EnvironmentHealth, type RebuildSearchIndexResponse, type SearchResult, type SourceRepo } from "./desktop";
 import { cn, riskTone } from "./lib";
 import { branchAlignmentRows, buildWorktreeCommand, createSettingsProfile, fallbackSearchResults, filterWorkspaces, groupSearchResults, hasConfirmedTargetBranch, localOperationErrorMessage, normalizeServiceList, orderedSearchResults, parseServiceInput, parseSettingsProfile, settingsProfileFilename, sortWorkspacesForAttention, todayString, widgetSnapshotFromDashboard, workspaceCreatePreflight, workspaceFolderFromName, workspaceIsArchived, workspaceSessionActions, type NexusSettingsProfile } from "./workspace-model";
-import type { DashboardData, GitRow, Workspace, WorkspaceSessionAction } from "./types";
+import type { CodexSessionLink, DashboardData, GitRow, Workspace, WorkspaceSessionAction, WorkspaceTask } from "./types";
 
 const initialData = rawData as DashboardData;
 
@@ -51,6 +51,31 @@ function gitRowHasDirtyService(row: GitRow) {
 
 function fileNameFromPath(path: string) {
   return path.split(/[\\/]/).filter(Boolean).pop() || path;
+}
+
+const workspaceStandardRelativePaths: Record<string, string> = {
+  workspace: "workspace.md",
+  status: "STATUS.md",
+  services: "services.md",
+  branches: "branches.md",
+  requirements: "requirements.md",
+  acceptance: "acceptance.md",
+  changes: "changes.md",
+  tasks: "tasks.md",
+  delivery: "交付记录.md",
+  handoff: "handoff.md",
+  bootstrap: "bootstrap-report.md",
+  worktreeScript: "scripts/worktree-commands.sh",
+  sql: "sql"
+};
+
+function workspaceStandardDocumentPath(workspace: Workspace, linkKey: string, fallbackRelativePath = workspaceStandardRelativePaths[linkKey]) {
+  const scannedPath = workspace.links[linkKey];
+  if (scannedPath) return scannedPath;
+  if (!fallbackRelativePath) return "";
+  const workspacePath = workspace.path || workspace.links.folder;
+  if (!workspacePath) return "";
+  return `${workspacePath.replace(/\/+$/, "")}/${fallbackRelativePath}`;
 }
 
 function sqlKindLabel(kind: string) {
@@ -87,9 +112,17 @@ const auditActionLabels: Record<string, string> = {
   "codex.opened": "Codex 已打开 / Codex opened",
   "codex_instruction.copied": "Codex 指令已复制 / Instruction copied",
   "codex_handoff.opened": "Codex 交接已打开 / Codex handoff",
+  "codex_session_link.bound": "Codex 会话已绑定 / Session bound",
+  "codex_session_link.copied": "Codex 会话已复制 / Session copied",
+  "codex_session_link.deleted": "Codex 会话已删除 / Session deleted",
+  "codex_session_link.opened": "Codex 会话已打开 / Session opened",
+  "codex_session_link.updated": "Codex 会话已更新 / Session updated",
   "document.opened": "文档已打开 / Document opened",
   "risk_instruction.copied": "风险指令已复制 / Risk instruction",
+  "task_handoff.opened": "任务交接已打开 / Task handoff",
+  "task_instruction.copied": "任务接力已复制 / Task instruction",
   "workspace.created": "工作区已创建 / Workspace created",
+  "workspace.task.updated": "任务状态已更新 / Task updated",
   "worktree.command.copied": "Worktree 命令已复制 / Worktree command",
   "worktree.setup.executed": "Worktree 已创建 / Worktree setup"
 };
@@ -130,6 +163,48 @@ function sessionStatusLabel(status: string) {
   if (status === "blocked") return "block";
   if (status === "recommended") return "next";
   return "later";
+}
+
+function taskIsDone(task: WorkspaceTask) {
+  const normalized = task.status.toLowerCase();
+  return normalized.includes("完成") || normalized.includes("已确认") || normalized.includes("已创建") || normalized.includes("done") || normalized.includes("closed") || normalized.includes("ready");
+}
+
+function taskIsDeferred(task: WorkspaceTask) {
+  const normalized = task.status.toLowerCase();
+  return normalized.includes("延期") || normalized.includes("defer");
+}
+
+function taskIsActive(task: WorkspaceTask) {
+  return !taskIsDone(task) && !taskIsDeferred(task);
+}
+
+function taskStatusTone(task: WorkspaceTask) {
+  const normalized = task.status.toLowerCase();
+  if (task.status.includes("阻塞") || normalized.includes("blocked")) return "text-red-700 bg-red-50 border-red-200";
+  if (taskIsDone(task)) return "text-emerald-700 bg-emerald-50 border-emerald-200";
+  if (taskIsDeferred(task)) return "text-neutral-600 bg-neutral-50 border-neutral-200";
+  if (task.status.includes("进行中") || normalized.includes("doing")) return "text-blue-700 bg-blue-50 border-blue-200";
+  return "text-amber-800 bg-amber-50 border-amber-200";
+}
+
+function taskPriorityLabel(priority: string) {
+  if (priority === "high") return "P0";
+  if (priority === "medium") return "P1";
+  if (priority === "low") return "P3";
+  return "P2";
+}
+
+function compactSessionTime(value?: string | null) {
+  if (!value) return "never";
+  return value.replace("T", " ").slice(0, 16);
+}
+
+function codexSessionPromptBlock(sessions: CodexSessionLink[]) {
+  if (!sessions.length) return "- 暂无绑定会话";
+  return sessions
+    .map((session) => `- ${session.title}: ${session.url}${session.notes ? ` (${session.notes})` : ""}`)
+    .join("\n");
 }
 
 function instructionType(action: WorkspaceSessionAction): "continue" | "git" | "delivery" | "risk" | "worktree" | "task" {
@@ -254,7 +329,8 @@ function toneForRisk(count: number) {
   return "green";
 }
 
-function codexInstruction(workspace: Workspace, action: "continue" | "git" | "delivery" | "risk" | "worktree" | "task") {
+function codexInstruction(workspace: Workspace, action: "continue" | "git" | "delivery" | "risk" | "worktree" | "task", sessions: CodexSessionLink[] = []) {
+  const sessionBlock = codexSessionPromptBlock(sessions);
   if (action === "continue") {
     const checks = workspace.healthChecks?.length
       ? workspace.healthChecks.map((check) => `- [${healthStatusLabel(check.status)}] ${check.label}: ${check.detail}`).join("\n")
@@ -262,40 +338,69 @@ function codexInstruction(workspace: Workspace, action: "continue" | "git" | "de
     const actions = workspaceSessionActions(workspace)
       .map((sessionAction) => `- ${sessionPriorityLabel(sessionAction.priority)} ${sessionAction.label}: ${sessionAction.detail}`)
       .join("\n");
-    return `继续工作区：${workspace.folder}\n需求：${workspace.name}\n目标分支：${workspace.targetBranch}\n涉及服务：${workspace.confirmedServices.join(", ") || "待确认"}\n\n请先读取该工作区的 AGENTS.md、STATUS.md、services.md、branches.md、tasks.md 和交付记录.md，然后总结当前状态、风险和下一步建议。\n\n当前就绪检查：\n${checks}\n\n建议会话动作：\n${actions}`;
+    return `继续工作区：${workspace.folder}\n需求：${workspace.name}\n目标分支：${workspace.targetBranch}\n涉及服务：${workspace.confirmedServices.join(", ") || "待确认"}\n\n请先读取该工作区的 AGENTS.md、requirements.md、acceptance.md、changes.md、STATUS.md、services.md、branches.md、tasks.md 和交付记录.md，然后总结当前状态、风险和下一步建议。\n\n已绑定 Codex 会话：\n${sessionBlock}\n\n当前就绪检查：\n${checks}\n\n建议会话动作：\n${actions}`;
   }
   if (action === "git") {
     return `检查工作区 ${workspace.folder} 的所有相关服务 git 状态。\n请重点检查 workspaces/${workspace.folder}/repos 下的 worktree 是否存在、分支是否匹配、是否有未提交改动，并给出处理建议。`;
   }
   if (action === "delivery") {
-    return `更新工作区 ${workspace.folder} 的交付记录。\n请根据本次代码/SQL/逻辑变更，补充交付记录.md，包含涉及服务、分支、变更点、SQL、验证结果和遗留风险。\n如果交付记录.md 任意位置记录实际 SQL 变更，或 SQL 段落出现“变更类型：DDL/DML”、影响表、新增字段、回填脚本、数据修复等变更元数据，必须在 sql/ 下同步正式 SQL 文件和回滚 SQL 文件。`;
+    return `更新工作区 ${workspace.folder} 的交付记录。\n请先对齐 requirements.md、acceptance.md 和 changes.md，再根据本次代码/SQL/逻辑变更补充交付记录.md，包含涉及服务、分支、变更点、SQL、验证结果和遗留风险。\n如果交付记录.md 任意位置记录实际 SQL 变更，或 SQL 段落出现“变更类型：DDL/DML”、影响表、新增字段、回填脚本、数据修复等变更元数据，必须在 sql/ 下同步正式 SQL 文件和回滚 SQL 文件。\n\n已绑定 Codex 会话：\n${sessionBlock}`;
   }
   if (action === "task") {
-    return `继续处理工作区 ${workspace.folder} 的活跃任务。\n请先读取 tasks.md、STATUS.md、services.md、branches.md 和交付记录.md，按 tasks.md 中“进行中/待办”的任务顺序给出下一步处理建议。处理完成或延期后，同步更新 tasks.md；如果涉及代码、SQL、逻辑、配置或验证变化，同步更新交付记录.md，SQL 变更还必须补齐 sql/ 下正式 SQL 和回滚 SQL 文件。`;
+    return `继续处理工作区 ${workspace.folder} 的活跃任务。\n请先读取 requirements.md、acceptance.md、changes.md、tasks.md、STATUS.md、services.md、branches.md 和交付记录.md，按 tasks.md 中“进行中/待办”的任务顺序给出下一步处理建议。处理完成或延期后，同步更新 tasks.md；如果涉及代码、SQL、逻辑、配置或验证变化，同步更新 changes.md 和交付记录.md，SQL 变更还必须补齐 sql/ 下正式 SQL 和回滚 SQL 文件。\n\n已绑定 Codex 会话：\n${sessionBlock}`;
   }
   if (action === "worktree") {
     return workspace.worktreeCommand;
   }
-  return `分析工作区 ${workspace.folder} 的风险项。\n当前风险：\n${workspace.risks.map((risk) => `- ${risk}`).join("\n") || "- 暂无"}\n请逐项解释原因、影响范围和建议处理动作。`;
+  return `分析工作区 ${workspace.folder} 的风险项。\n当前风险：\n${workspace.risks.map((risk) => `- ${risk}`).join("\n") || "- 暂无"}\n请逐项解释原因、影响范围和建议处理动作。\n\n已绑定 Codex 会话：\n${sessionBlock}`;
 }
 
-function riskInstruction(workspace: Workspace, risk: string) {
+function taskCodexInstruction(workspace: Workspace, task: WorkspaceTask, sessions: CodexSessionLink[] = []) {
+  return `继续处理 Nexus 工作区任务。
+
+工作区：
+- 名称：${workspace.name}
+- 目录：${workspace.folder}
+- 路径：${workspace.path}
+- 目标分支：${workspace.targetBranch}
+- 涉及服务：${workspace.confirmedServices.join(", ") || "待确认"}
+
+任务：
+- ID：${task.id}
+- 标题：${task.title}
+- 状态：${task.status}
+- 优先级：${task.priority}
+- 来源：${task.source}${task.sourceEventId ? ` / ${task.sourceEventId}` : ""}
+- 行号：${task.sourceLine ?? "未知"}
+
+任务说明：
+${task.detail || "无"}
+
+已绑定 Codex 会话：
+${codexSessionPromptBlock(sessions)}
+
+请先读取 requirements.md、acceptance.md、changes.md、tasks.md、STATUS.md、services.md、branches.md 和交付记录.md，再检查相关 repos/<service> worktree。
+处理完成或延期后，同步更新 tasks.md；如果涉及代码、SQL、逻辑、接口、DTO、配置或验证变化，同步更新 changes.md 和交付记录.md。SQL 变更必须补齐 sql/ 下正式 SQL 和回滚 SQL 文件。`;
+}
+
+function riskInstruction(workspace: Workspace, risk: string, sessions: CodexSessionLink[] = []) {
+  const sessionBlock = `\n\n已绑定 Codex 会话：\n${codexSessionPromptBlock(sessions)}`;
   if (risk.includes("分支不一致")) {
-    return `工作区 ${workspace.folder} 存在风险：${risk}\n请读取 branches.md 并检查每个 repos/<service> worktree 的实际分支是否等于目标分支 ${workspace.targetBranch}。请列出不一致服务、当前分支、建议切换或重建 worktree 的命令，并提醒不要直接切换源仓库分支。`;
+    return `工作区 ${workspace.folder} 存在风险：${risk}\n请读取 branches.md 并检查每个 repos/<service> worktree 的实际分支是否等于目标分支 ${workspace.targetBranch}。请列出不一致服务、当前分支、建议切换或重建 worktree 的命令，并提醒不要直接切换源仓库分支。${sessionBlock}`;
   }
   if (risk.includes("目标分支")) {
-    return `工作区 ${workspace.folder} 存在风险：${risk}\n请读取 branches.md 和 workspace.md，确认目标分支命名，并给出是否需要创建 worktree 的建议。`;
+    return `工作区 ${workspace.folder} 存在风险：${risk}\n请读取 branches.md 和 workspace.md，确认目标分支命名，并给出是否需要创建 worktree 的建议。${sessionBlock}`;
   }
   if (risk.includes("worktree")) {
-    return `工作区 ${workspace.folder} 存在风险：${risk}\n请基于 services.md 中已确认服务，检查 repos/<service> 是否存在，并给出创建 worktree 的命令。`;
+    return `工作区 ${workspace.folder} 存在风险：${risk}\n请基于 services.md 中已确认服务，检查 repos/<service> 是否存在，并给出创建 worktree 的命令。${sessionBlock}`;
   }
   if (risk.includes("服务范围")) {
-    return `工作区 ${workspace.folder} 存在风险：${risk}\n请读取需求文档和 services.md，梳理已确认服务、候选服务和仍需验证的调用链。`;
+    return `工作区 ${workspace.folder} 存在风险：${risk}\n请读取需求文档和 services.md，梳理已确认服务、候选服务和仍需验证的调用链。${sessionBlock}`;
   }
   if (risk.includes("交付")) {
-    return `工作区 ${workspace.folder} 存在风险：${risk}\n请检查交付记录.md 是否存在并补齐交付记录结构。`;
+    return `工作区 ${workspace.folder} 存在风险：${risk}\n请检查交付记录.md 是否存在并补齐交付记录结构。${sessionBlock}`;
   }
-  return `工作区 ${workspace.folder} 存在风险：${risk}\n请分析该风险的原因、影响和建议处理动作。`;
+  return `工作区 ${workspace.folder} 存在风险：${risk}\n请分析该风险的原因、影响和建议处理动作。${sessionBlock}`;
 }
 
 function Stat({ label, value, icon: Icon }: { label: { title: string; desc: string }; value: string | number; icon: LucideIcon }) {
@@ -842,7 +947,7 @@ function WorkspaceCard({
             <button className="text-xs text-blue-600 hover:text-blue-700" onClick={() => openPathInDesktop(workspace.links.folder)}>
               目录
             </button>
-            <button className="text-xs text-blue-600 hover:text-blue-700" onClick={() => onOpenDocument("交付记录.md", workspace.links.delivery)}>
+            <button className="text-xs text-blue-600 hover:text-blue-700" onClick={() => onOpenDocument("交付记录.md", workspaceStandardDocumentPath(workspace, "delivery"))}>
               交付
             </button>
           </div>
@@ -861,22 +966,22 @@ function WorkspaceCard({
                     复制处理指令
                   </button>
                   {risk.includes("服务范围") && (
-                    <button className="rounded border border-amber-200 bg-white px-2 py-1 text-[11px] text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("services.md", workspace.links.services)}>
+                    <button className="rounded border border-amber-200 bg-white px-2 py-1 text-[11px] text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("services.md", workspaceStandardDocumentPath(workspace, "services"))}>
                       服务文档
                     </button>
                   )}
                   {risk.includes("目标分支") && (
-                    <button className="rounded border border-amber-200 bg-white px-2 py-1 text-[11px] text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("branches.md", workspace.links.branches)}>
+                    <button className="rounded border border-amber-200 bg-white px-2 py-1 text-[11px] text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("branches.md", workspaceStandardDocumentPath(workspace, "branches"))}>
                       分支文档
                     </button>
                   )}
                   {risk.includes("分支不一致") && (
-                    <button className="rounded border border-amber-200 bg-white px-2 py-1 text-[11px] text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("branches.md", workspace.links.branches)}>
+                    <button className="rounded border border-amber-200 bg-white px-2 py-1 text-[11px] text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("branches.md", workspaceStandardDocumentPath(workspace, "branches"))}>
                       分支文档
                     </button>
                   )}
-                  {risk.includes("worktree") && workspace.links.worktreeScript && (
-                    <button className="rounded border border-amber-200 bg-white px-2 py-1 text-[11px] text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("worktree-commands.sh", workspace.links.worktreeScript)}>
+                  {risk.includes("worktree") && workspaceStandardDocumentPath(workspace, "worktreeScript") && (
+                    <button className="rounded border border-amber-200 bg-white px-2 py-1 text-[11px] text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("worktree-commands.sh", workspaceStandardDocumentPath(workspace, "worktreeScript"))}>
                       worktree 脚本
                     </button>
                   )}
@@ -902,13 +1007,13 @@ function WorkspaceCard({
           <button className="rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50" onClick={onCopyCommand}>
             复制 worktree 命令
           </button>
-          {workspace.links.worktreeScript && (
-            <button className="rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50" onClick={() => onOpenDocument("worktree-commands.sh", workspace.links.worktreeScript)}>
+          {workspaceStandardDocumentPath(workspace, "worktreeScript") && (
+            <button className="rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50" onClick={() => onOpenDocument("worktree-commands.sh", workspaceStandardDocumentPath(workspace, "worktreeScript"))}>
               worktree 脚本
             </button>
           )}
-          {workspace.links.bootstrap && (
-            <button className="rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50" onClick={() => onOpenDocument("bootstrap-report.md", workspace.links.bootstrap)}>
+          {workspaceStandardDocumentPath(workspace, "bootstrap") && (
+            <button className="rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50" onClick={() => onOpenDocument("bootstrap-report.md", workspaceStandardDocumentPath(workspace, "bootstrap"))}>
               状态报告
             </button>
           )}
@@ -921,7 +1026,7 @@ function WorkspaceCard({
           <button className="rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs text-blue-700 hover:bg-blue-100" onClick={() => onCopyAndOpenCodex("continue")}>
             复制续做并打开 Codex
           </button>
-          <button className="rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50" onClick={() => onOpenDocument("tasks.md", workspace.links.tasks)}>
+          <button className="rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50" onClick={() => onOpenDocument("tasks.md", workspaceStandardDocumentPath(workspace, "tasks"))}>
             任务文档
           </button>
         </div>
@@ -1229,38 +1334,95 @@ function WorkspaceDrawer({
   workspace,
   onClose,
   onCopyRiskInstruction,
+  onCopyTaskInstruction,
+  onCopyAndOpenTaskCodex,
+  onUpdateTask,
+  codexSessions,
+  codexSessionsLoading,
+  codexSessionOperationId,
+  onRefreshCodexSessions,
+  onBindCodexSession,
+  onOpenCodexSession,
+  onCopyCodexSession,
+  onDeleteCodexSession,
   onRunSessionAction,
   onOpenDocument,
-  onOpenPath
+  onOpenPath,
+  taskUpdatingId
 }: {
   workspace?: Workspace;
   onClose: () => void;
   onCopyRiskInstruction: (workspace: Workspace, risk: string) => void;
+  onCopyTaskInstruction: (workspace: Workspace, task: WorkspaceTask) => void;
+  onCopyAndOpenTaskCodex: (workspace: Workspace, task: WorkspaceTask) => void;
+  onUpdateTask: (workspace: Workspace, task: WorkspaceTask, status: "已完成" | "延期") => void;
+  codexSessions: CodexSessionLink[];
+  codexSessionsLoading: boolean;
+  codexSessionOperationId: string;
+  onRefreshCodexSessions: (workspace: Workspace) => void;
+  onBindCodexSession: (workspace: Workspace, input: { title: string; url: string; notes: string }) => Promise<boolean>;
+  onOpenCodexSession: (workspace: Workspace, link: CodexSessionLink) => void;
+  onCopyCodexSession: (workspace: Workspace, link: CodexSessionLink) => void;
+  onDeleteCodexSession: (workspace: Workspace, link: CodexSessionLink) => void;
   onRunSessionAction: (workspace: Workspace, action: WorkspaceSessionAction) => void;
   onOpenDocument: (title: string, path: string) => void;
   onOpenPath: (path: string) => void;
+  taskUpdatingId: string;
 }) {
+  const [sessionTitle, setSessionTitle] = useState("");
+  const [sessionUrl, setSessionUrl] = useState("");
+  const [sessionNotes, setSessionNotes] = useState("");
+
+  useEffect(() => {
+    setSessionTitle("");
+    setSessionUrl("");
+    setSessionNotes("");
+  }, [workspace?.folder]);
+
   if (!workspace) return null;
+
+  const submitSessionLink = async () => {
+    const saved = await onBindCodexSession(workspace, {
+      title: sessionTitle,
+      url: sessionUrl,
+      notes: sessionNotes
+    });
+    if (saved) {
+      setSessionTitle("");
+      setSessionUrl("");
+      setSessionNotes("");
+    }
+  };
 
   const missing = workspace.gitRows.filter((row) => !row.worktree.exists).length;
   const dirty = workspace.gitRows.filter(gitRowHasDirtyService).length;
   const branchMismatches = branchAlignmentRows(workspace);
   const sessionActions = workspaceSessionActions(workspace);
+  const tasks = workspace.tasks ?? [];
+  const activeTasks = tasks.filter(taskIsActive);
+  const sqlDirectoryPath = workspaceStandardDocumentPath(workspace, "sql");
   const sqlFiles = workspace.sqlFiles ?? [];
   const sqlDocuments = workspace.sqlDocuments?.length
     ? workspace.sqlDocuments
     : workspace.links.sqlGuide
       ? [{ relativePath: fileNameFromPath(workspace.links.sqlGuide), path: workspace.links.sqlGuide, kind: "markdown" }]
       : [];
-  const documentEntries = [
-    ["状态", "STATUS.md", workspace.links.status],
-    ["服务", "services.md", workspace.links.services],
-    ["分支", "branches.md", workspace.links.branches],
-    ["任务", "tasks.md", workspace.links.tasks],
-    ["交付", "交付记录.md", workspace.links.delivery],
-    ["报告", "bootstrap-report.md", workspace.links.bootstrap],
-    ["Worktree", "worktree-commands.sh", workspace.links.worktreeScript]
-  ].filter((entry): entry is [string, string, string] => Boolean(entry[2]));
+  const coreDocumentEntries = [
+    { label: "总览", title: "workspace.md", description: "工作区约定 / Workspace", path: workspaceStandardDocumentPath(workspace, "workspace") },
+    { label: "需求规则", title: "requirements.md", description: "规则、边界、待确认项 / Requirements", path: workspaceStandardDocumentPath(workspace, "requirements") },
+    { label: "验收清单", title: "acceptance.md", description: "验收方式与证据 / Acceptance", path: workspaceStandardDocumentPath(workspace, "acceptance") },
+    { label: "变更记录", title: "changes.md", description: "代码、SQL、逻辑变化 / Changes", path: workspaceStandardDocumentPath(workspace, "changes") },
+    { label: "任务", title: "tasks.md", description: "待办、阻塞、延期 / Tasks", path: workspaceStandardDocumentPath(workspace, "tasks") },
+    { label: "交接", title: "handoff.md", description: "下一轮 Codex 上下文 / Handoff", path: workspaceStandardDocumentPath(workspace, "handoff") }
+  ].filter((entry): entry is { label: string; title: string; description: string; path: string } => Boolean(entry.path));
+  const deliveryDocumentEntries = [
+    { label: "状态", title: "STATUS.md", description: "当前阶段与焦点 / Status", path: workspaceStandardDocumentPath(workspace, "status") },
+    { label: "服务", title: "services.md", description: "涉及服务范围 / Services", path: workspaceStandardDocumentPath(workspace, "services") },
+    { label: "分支", title: "branches.md", description: "目标分支与 worktree / Branches", path: workspaceStandardDocumentPath(workspace, "branches") },
+    { label: "交付", title: "交付记录.md", description: "交付说明与验证 / Delivery", path: workspaceStandardDocumentPath(workspace, "delivery") },
+    { label: "报告", title: "bootstrap-report.md", description: "初始化报告 / Bootstrap", path: workspaceStandardDocumentPath(workspace, "bootstrap") },
+    { label: "Worktree", title: "worktree-commands.sh", description: "创建命令脚本 / Script", path: workspaceStandardDocumentPath(workspace, "worktreeScript") }
+  ].filter((entry): entry is { label: string; title: string; description: string; path: string } => Boolean(entry.path));
 
   return (
     <div className="fixed inset-0 bg-neutral-950/10" style={{ zIndex: 1000 }} onMouseDown={onClose}>
@@ -1316,7 +1478,7 @@ function WorkspaceDrawer({
               </div>
               <div className="grid gap-2">
                 {workspace.healthChecks.map((check) => {
-                  const target = workspace.links[check.action];
+                  const target = workspaceStandardDocumentPath(workspace, check.action);
                   return (
                     <div key={check.id} className="rounded-md bg-white px-3 py-2 text-sm">
                       <div className="flex items-start justify-between gap-3">
@@ -1339,13 +1501,153 @@ function WorkspaceDrawer({
           ) : null}
 
           <section className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-sm font-medium text-neutral-900">
+                <ListChecks className="h-4 w-4 text-blue-600" />
+                任务闭环 / Tasks
+              </div>
+              <span className="mono text-[11px] text-neutral-500">
+                {activeTasks.length ? `${activeTasks.length} active` : "clear"}
+              </span>
+            </div>
+            {tasks.length ? (
+              <div className="grid gap-2">
+                {tasks.slice(0, 8).map((task) => {
+                  const updating = taskUpdatingId === task.id;
+                  const done = taskIsDone(task);
+                  const deferred = taskIsDeferred(task);
+                  return (
+                    <div key={task.id} className="rounded-md border border-neutral-200 bg-white px-3 py-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-medium text-neutral-950">{task.title}</span>
+                            <span className={cn("mono rounded border px-1.5 py-0.5 text-[10px]", taskStatusTone(task))}>{task.status}</span>
+                            <span className="mono rounded border border-neutral-200 bg-neutral-50 px-1.5 py-0.5 text-[10px] text-neutral-500">{taskPriorityLabel(task.priority)}</span>
+                            {task.source === "agent" && <span className="mono rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] text-blue-700">agent</span>}
+                          </div>
+                          {task.detail && <div className="mt-1 text-xs leading-5 text-neutral-500">{task.detail}</div>}
+                          <div className="mono mt-1 text-[11px] text-neutral-400">tasks.md{task.sourceLine ? `:${task.sourceLine}` : ""}</div>
+                        </div>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button className="rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50" onClick={() => onOpenDocument("tasks.md", workspaceStandardDocumentPath(workspace, "tasks"))}>
+                          打开任务文档
+                        </button>
+                        <button className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs text-blue-700 hover:bg-blue-100" onClick={() => onCopyTaskInstruction(workspace, task)}>
+                          复制任务接力
+                        </button>
+                        <button className="rounded-md border border-blue-200 bg-white px-2 py-1 text-xs text-blue-700 hover:bg-blue-50" onClick={() => onCopyAndOpenTaskCodex(workspace, task)}>
+                          打开 Codex
+                        </button>
+                        {!done && (
+                          <button
+                            className="rounded-md border border-emerald-200 bg-white px-2 py-1 text-xs text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            disabled={updating}
+                            onClick={() => onUpdateTask(workspace, task, "已完成")}
+                          >
+                            {updating ? "写入中" : "完成"}
+                          </button>
+                        )}
+                        {!deferred && !done && (
+                          <button
+                            className="rounded-md border border-neutral-200 bg-white px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            disabled={updating}
+                            onClick={() => onUpdateTask(workspace, task, "延期")}
+                          >
+                            延期
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+                {tasks.length > 8 && (
+                  <button className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-50" onClick={() => onOpenDocument("tasks.md", workspaceStandardDocumentPath(workspace, "tasks"))}>
+                    还有 {tasks.length - 8} 个任务，打开 tasks.md 查看全部
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-500">
+                暂未从 tasks.md 扫描到任务。可以先打开任务文档补充任务清单。
+                <button className="ml-2 text-blue-600 hover:text-blue-700" onClick={() => onOpenDocument("tasks.md", workspaceStandardDocumentPath(workspace, "tasks"))}>
+                  打开 tasks.md
+                </button>
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2 text-sm font-medium text-neutral-900">
+                  <Sparkles className="h-4 w-4 text-blue-600" />
+                  Codex 会话 / Sessions
+                </div>
+                <div className="mono mt-1 text-[11px] text-neutral-400">codex-sessions.json</div>
+              </div>
+              <button className="rounded-md border border-neutral-200 bg-white px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50" onClick={() => onRefreshCodexSessions(workspace)}>
+                {codexSessionsLoading ? "读取中" : `${codexSessions.length} 个链接`}
+              </button>
+            </div>
+
+            <div className="rounded-md border border-neutral-200 bg-white p-3">
+              <div className="grid gap-2">
+                <Input value={sessionTitle} onChange={(event) => setSessionTitle(event.target.value)} placeholder="会话标题，例如：交易快照排查" />
+                <Input value={sessionUrl} onChange={(event) => setSessionUrl(event.target.value)} placeholder="Codex 会话链接，例如：codex://..." />
+                <Input value={sessionNotes} onChange={(event) => setSessionNotes(event.target.value)} placeholder="备注，可选" />
+                <Button type="button" onClick={submitSessionLink} disabled={!sessionUrl.trim() || codexSessionOperationId === "bind"}>
+                  <Plus className="h-4 w-4" />
+                  {codexSessionOperationId === "bind" ? "绑定中" : "绑定会话"}
+                </Button>
+              </div>
+            </div>
+
+            <div className="mt-2 grid gap-2">
+              {codexSessions.length ? (
+                codexSessions.map((link) => {
+                  const operating = codexSessionOperationId === link.id;
+                  return (
+                    <div key={link.id} className="rounded-md border border-neutral-200 bg-white px-3 py-2">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium text-neutral-950">{link.title}</div>
+                        <div className="mono mt-1 truncate text-[11px] text-neutral-500">{link.url}</div>
+                        {link.notes && <div className="mt-1 text-xs leading-5 text-neutral-500">{link.notes}</div>}
+                        <div className="mono mt-1 text-[11px] text-neutral-400">
+                          created {compactSessionTime(link.createdAt)} / opened {compactSessionTime(link.lastOpenedAt)}
+                        </div>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60" disabled={operating} onClick={() => onOpenCodexSession(workspace, link)}>
+                          {operating ? "处理中" : "打开"}
+                        </button>
+                        <button className="rounded-md border border-neutral-200 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50" onClick={() => onCopyCodexSession(workspace, link)}>
+                          复制
+                        </button>
+                        <button className="rounded-md border border-red-200 bg-white px-2 py-1 text-xs text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60" disabled={operating} onClick={() => onDeleteCodexSession(workspace, link)}>
+                          删除绑定
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="rounded-md border border-dashed border-neutral-200 bg-white px-3 py-3 text-sm leading-6 text-neutral-500">
+                  还没有绑定会话。绑定后，后续可以直接回到对应 Codex 会话，而不是每次重新拼接上下文。
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
             <div className="mb-3 flex items-center gap-2 text-sm font-medium text-neutral-900">
               <Sparkles className="h-4 w-4 text-blue-600" />
               会话启动 / Session actions
             </div>
             <div className="grid gap-2">
               {sessionActions.map((action) => {
-                const target = workspace.links[action.documentKey];
+                const target = workspaceStandardDocumentPath(workspace, action.documentKey);
                 return (
                   <div key={action.id} className="rounded-md border border-neutral-200 bg-white px-3 py-2">
                     <div className="flex items-start justify-between gap-3">
@@ -1376,12 +1678,29 @@ function WorkspaceDrawer({
 
           <section>
             <div className="mb-2 text-sm font-medium text-neutral-900">文档入口 / Documents</div>
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              {documentEntries.map(([label, title, href]) => (
-                <button key={label} className="rounded-md border border-neutral-200 px-3 py-2 text-left text-neutral-700 hover:bg-neutral-50" onClick={() => onOpenDocument(title, href)}>
-                  {label}
-                </button>
-              ))}
+            <div className="grid gap-3">
+              <div>
+                <div className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-neutral-400">核心文档 / Core</div>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  {coreDocumentEntries.map((entry) => (
+                    <button key={entry.label} className="rounded-md border border-neutral-200 px-3 py-2 text-left hover:bg-neutral-50" onClick={() => onOpenDocument(entry.title, entry.path)}>
+                      <span className="block text-neutral-800">{entry.label}</span>
+                      <span className="mono mt-1 block truncate text-[11px] text-neutral-400">{entry.description}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-neutral-400">交付资料 / Delivery</div>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  {deliveryDocumentEntries.map((entry) => (
+                    <button key={entry.label} className="rounded-md border border-neutral-200 px-3 py-2 text-left hover:bg-neutral-50" onClick={() => onOpenDocument(entry.title, entry.path)}>
+                      <span className="block text-neutral-800">{entry.label}</span>
+                      <span className="mono mt-1 block truncate text-[11px] text-neutral-400">{entry.description}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
             <div className="mt-3 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
@@ -1419,8 +1738,8 @@ function WorkspaceDrawer({
               ) : (
                 <div className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-500">未扫描到 `.sql` 文件。</div>
               )}
-              {workspace.links.sql && (
-                <button className="mt-2 rounded-md border border-neutral-200 bg-white px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-50" onClick={() => onOpenPath(workspace.links.sql)}>
+              {sqlDirectoryPath && (
+                <button className="mt-2 rounded-md border border-neutral-200 bg-white px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-50" onClick={() => onOpenPath(sqlDirectoryPath)}>
                   打开 SQL 目录
                 </button>
               )}
@@ -1439,27 +1758,27 @@ function WorkspaceDrawer({
                         复制处理指令
                       </button>
                       {risk.includes("目标分支") && (
-                        <button className="rounded-md border border-amber-200 bg-white px-2 py-1 text-xs text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("branches.md", workspace.links.branches)}>
+                        <button className="rounded-md border border-amber-200 bg-white px-2 py-1 text-xs text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("branches.md", workspaceStandardDocumentPath(workspace, "branches"))}>
                           打开分支文档
                         </button>
                       )}
                       {risk.includes("分支不一致") && (
-                        <button className="rounded-md border border-amber-200 bg-white px-2 py-1 text-xs text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("branches.md", workspace.links.branches)}>
+                        <button className="rounded-md border border-amber-200 bg-white px-2 py-1 text-xs text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("branches.md", workspaceStandardDocumentPath(workspace, "branches"))}>
                           打开分支文档
                         </button>
                       )}
                       {risk.includes("服务范围") && (
-                        <button className="rounded-md border border-amber-200 bg-white px-2 py-1 text-xs text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("services.md", workspace.links.services)}>
+                        <button className="rounded-md border border-amber-200 bg-white px-2 py-1 text-xs text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("services.md", workspaceStandardDocumentPath(workspace, "services"))}>
                           打开服务文档
                         </button>
                       )}
                       {risk.includes("交付") && (
-                        <button className="rounded-md border border-amber-200 bg-white px-2 py-1 text-xs text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("交付记录.md", workspace.links.delivery)}>
+                        <button className="rounded-md border border-amber-200 bg-white px-2 py-1 text-xs text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("交付记录.md", workspaceStandardDocumentPath(workspace, "delivery"))}>
                           打开交付记录
                         </button>
                       )}
-                      {risk.includes("worktree") && workspace.links.worktreeScript && (
-                        <button className="rounded-md border border-amber-200 bg-white px-2 py-1 text-xs text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("worktree-commands.sh", workspace.links.worktreeScript)}>
+                      {risk.includes("worktree") && workspaceStandardDocumentPath(workspace, "worktreeScript") && (
+                        <button className="rounded-md border border-amber-200 bg-white px-2 py-1 text-xs text-amber-800 hover:bg-amber-100" onClick={() => onOpenDocument("worktree-commands.sh", workspaceStandardDocumentPath(workspace, "worktreeScript"))}>
                           打开 worktree 脚本
                         </button>
                       )}
@@ -2431,6 +2750,10 @@ export function App() {
   const [createOpen, setCreateOpen] = useState(false);
   const [worktreeSetupWorkspace, setWorktreeSetupWorkspace] = useState<Workspace>();
   const [worktreeSetupRunning, setWorktreeSetupRunning] = useState(false);
+  const [taskUpdatingId, setTaskUpdatingId] = useState("");
+  const [codexSessionsByWorkspace, setCodexSessionsByWorkspace] = useState<Record<string, CodexSessionLink[]>>({});
+  const [codexSessionsLoadingFolder, setCodexSessionsLoadingFolder] = useState("");
+  const [codexSessionOperationId, setCodexSessionOperationId] = useState("");
   const [refreshEnabled, setRefreshEnabled] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [drawerFolder, setDrawerFolder] = useState("");
@@ -2723,6 +3046,55 @@ export function App() {
     }
   }, [prependWorkspaceActivity]);
 
+  const setCodexSessionsForWorkspace = useCallback((workspace: Workspace, sessions: CodexSessionLink[]) => {
+    setCodexSessionsByWorkspace((currentSessions) => ({
+      ...currentSessions,
+      [workspace.folder]: sessions
+    }));
+  }, []);
+
+  const loadCodexSessions = useCallback(async (workspace: Workspace) => {
+    if (!isDesktopApp()) {
+      setCodexSessionsForWorkspace(workspace, []);
+      return;
+    }
+
+    setCodexSessionsLoadingFolder(workspace.folder);
+    try {
+      const response = await readCodexSessions(workspace.path);
+      setCodexSessionsForWorkspace(workspace, response?.sessions ?? []);
+    } catch (error) {
+      showToast(localOperationErrorMessage({
+        operation: "读取 Codex 会话绑定",
+        error,
+        targetPath: `${workspace.path}/codex-sessions.json`,
+        recovery: "确认工作区目录存在；如果文件格式损坏，可以先备份 codex-sessions.json 后重新绑定会话。"
+      }));
+    } finally {
+      setCodexSessionsLoadingFolder("");
+    }
+  }, [setCodexSessionsForWorkspace, showToast]);
+
+  useEffect(() => {
+    if (!drawerWorkspace) return;
+    void loadCodexSessions(drawerWorkspace);
+  }, [drawerWorkspace?.folder, drawerWorkspace?.path, loadCodexSessions]);
+
+  const codexSessionsForPrompt = async (workspace: Workspace) => {
+    if (Object.prototype.hasOwnProperty.call(codexSessionsByWorkspace, workspace.folder)) {
+      return codexSessionsByWorkspace[workspace.folder] ?? [];
+    }
+    if (!isDesktopApp()) return [];
+    try {
+      const response = await readCodexSessions(workspace.path);
+      const sessions = response?.sessions ?? [];
+      setCodexSessionsForWorkspace(workspace, sessions);
+      return sessions;
+    } catch {
+      return [];
+    }
+  };
+
   const toggleDetails = (folder: string) => {
     setExpanded((currentSet) => {
       const next = new Set(currentSet);
@@ -2749,7 +3121,8 @@ export function App() {
   };
 
   const copyInstruction = async (workspace: Workspace, action: "continue" | "git" | "delivery" | "risk" | "worktree" | "task") => {
-    await navigator.clipboard.writeText(codexInstruction(workspace, action));
+    const sessions = await codexSessionsForPrompt(workspace);
+    await navigator.clipboard.writeText(codexInstruction(workspace, action, sessions));
     void recordWorkspaceAction(workspace, "codex_instruction.copied", `Copied ${action} Codex instruction for ${workspace.name}`, {
       metadata: { instructionType: action }
     });
@@ -2757,12 +3130,167 @@ export function App() {
   };
 
   const copyAndOpenCodex = async (workspace: Workspace, action: "continue" | "git" | "delivery" | "risk") => {
-    await navigator.clipboard.writeText(codexInstruction(workspace, action));
+    const sessions = await codexSessionsForPrompt(workspace);
+    await navigator.clipboard.writeText(codexInstruction(workspace, action, sessions));
     await openExternalUrl(settings.codexUrl || "codex://");
     void recordWorkspaceAction(workspace, "codex_handoff.opened", `Copied ${action} instruction and opened Codex for ${workspace.name}`, {
       metadata: { instructionType: action, codexUrl: settings.codexUrl || "codex://" }
     });
     showToast(`已复制 ${workspace.name} 的指令并打开 Codex`);
+  };
+
+  const copyTaskInstruction = async (workspace: Workspace, task: WorkspaceTask) => {
+    const sessions = await codexSessionsForPrompt(workspace);
+    await navigator.clipboard.writeText(taskCodexInstruction(workspace, task, sessions));
+    void recordWorkspaceAction(workspace, "task_instruction.copied", `Copied task handoff for ${task.title}`, {
+      target: workspaceStandardDocumentPath(workspace, "tasks"),
+      metadata: { taskId: task.id, taskTitle: task.title, taskStatus: task.status }
+    });
+    showToast(`已复制任务接力：${task.title}`);
+  };
+
+  const copyAndOpenTaskCodex = async (workspace: Workspace, task: WorkspaceTask) => {
+    const sessions = await codexSessionsForPrompt(workspace);
+    await navigator.clipboard.writeText(taskCodexInstruction(workspace, task, sessions));
+    await openExternalUrl(settings.codexUrl || "codex://");
+    void recordWorkspaceAction(workspace, "task_handoff.opened", `Copied task handoff and opened Codex for ${task.title}`, {
+      target: workspaceStandardDocumentPath(workspace, "tasks"),
+      metadata: { taskId: task.id, taskTitle: task.title, taskStatus: task.status, codexUrl: settings.codexUrl || "codex://" }
+    });
+    showToast(`已复制任务接力并打开 Codex：${task.title}`);
+  };
+
+  const updateTaskStatus = async (workspace: Workspace, task: WorkspaceTask, status: "已完成" | "延期") => {
+    if (!isDesktopApp()) {
+      await copyTaskInstruction(workspace, task);
+      showToast("浏览器预览无法写回 tasks.md，已复制任务接力");
+      return;
+    }
+
+    setTaskUpdatingId(task.id);
+    try {
+      await updateWorkspaceTask({
+        workspacePath: workspace.path,
+        taskId: task.id,
+        status,
+        confirmed: true
+      });
+      showToast(`${task.title} 已标记为 ${status}`);
+      await refreshData();
+    } catch (error) {
+      showToast(localOperationErrorMessage({
+        operation: `更新任务 ${task.title}`,
+        error,
+        targetPath: workspaceStandardDocumentPath(workspace, "tasks"),
+        recovery: "确认 tasks.md 中该任务仍存在；如果工作区刚刚刷新过，请重新打开详情后再试。"
+      }));
+    } finally {
+      setTaskUpdatingId("");
+    }
+  };
+
+  const bindWorkspaceCodexSession = async (workspace: Workspace, input: { title: string; url: string; notes: string }) => {
+    if (!isDesktopApp()) {
+      showToast("绑定 Codex 会话需要在 Nexus Mac App 中使用");
+      return false;
+    }
+
+    setCodexSessionOperationId("bind");
+    try {
+      const response = await bindCodexSession({
+        workspacePath: workspace.path,
+        title: input.title,
+        url: input.url,
+        notes: input.notes,
+        confirmed: true
+      });
+      if (response) {
+        setCodexSessionsForWorkspace(workspace, response.sessions);
+        const sessionLabel = response.link?.title ?? (input.title || input.url);
+        prependWorkspaceActivity(workspace, response.updated ? "codex_session_link.updated" : "codex_session_link.bound", `${response.updated ? "Updated" : "Bound"} Codex session ${sessionLabel}`);
+      }
+      showToast(response?.updated ? "Codex 会话已更新" : "Codex 会话已绑定");
+      return true;
+    } catch (error) {
+      showToast(localOperationErrorMessage({
+        operation: "绑定 Codex 会话",
+        error,
+        targetPath: `${workspace.path}/codex-sessions.json`,
+        recovery: "确认链接带有有效 scheme，例如 codex:// 或 https://；确认后再重新绑定。"
+      }));
+      return false;
+    } finally {
+      setCodexSessionOperationId("");
+    }
+  };
+
+  const openWorkspaceCodexSession = async (workspace: Workspace, link: CodexSessionLink) => {
+    if (!isDesktopApp()) {
+      await openExternalUrl(link.url);
+      return;
+    }
+
+    setCodexSessionOperationId(link.id);
+    try {
+      const response = await openCodexSession({
+        workspacePath: workspace.path,
+        sessionId: link.id,
+        confirmed: true
+      });
+      if (response) {
+        setCodexSessionsForWorkspace(workspace, response.sessions);
+        prependWorkspaceActivity(workspace, "codex_session_link.opened", `Opened Codex session ${link.title}`);
+      }
+      showToast(`已打开 Codex 会话：${link.title}`);
+    } catch (error) {
+      showToast(localOperationErrorMessage({
+        operation: "打开 Codex 会话",
+        error,
+        targetPath: link.url,
+        recovery: "确认 Codex URL Scheme 可用；如果链接已失效，可以删除绑定后重新添加。"
+      }));
+    } finally {
+      setCodexSessionOperationId("");
+    }
+  };
+
+  const copyWorkspaceCodexSession = async (workspace: Workspace, link: CodexSessionLink) => {
+    await navigator.clipboard.writeText(link.url);
+    void recordWorkspaceAction(workspace, "codex_session_link.copied", `Copied Codex session ${link.title}`, {
+      target: link.url,
+      metadata: { sessionId: link.id, sessionTitle: link.title, sessionUrl: link.url }
+    });
+    showToast(`已复制 Codex 会话链接：${link.title}`);
+  };
+
+  const deleteWorkspaceCodexSession = async (workspace: Workspace, link: CodexSessionLink) => {
+    if (!isDesktopApp()) {
+      showToast("删除 Codex 会话绑定需要在 Nexus Mac App 中使用");
+      return;
+    }
+
+    setCodexSessionOperationId(link.id);
+    try {
+      const response = await deleteCodexSession({
+        workspacePath: workspace.path,
+        sessionId: link.id,
+        confirmed: true
+      });
+      if (response) {
+        setCodexSessionsForWorkspace(workspace, response.sessions);
+        prependWorkspaceActivity(workspace, "codex_session_link.deleted", `Deleted Codex session ${link.title}`);
+      }
+      showToast(`已删除 Codex 会话绑定：${link.title}`);
+    } catch (error) {
+      showToast(localOperationErrorMessage({
+        operation: "删除 Codex 会话绑定",
+        error,
+        targetPath: `${workspace.path}/codex-sessions.json`,
+        recovery: "刷新工作区详情后重试；删除只会移除 Nexus 本地绑定，不会删除 Codex 会话。"
+      }));
+    } finally {
+      setCodexSessionOperationId("");
+    }
   };
 
   const executeWorktreeSetup = async (workspace: Workspace) => {
@@ -2964,6 +3492,9 @@ export function App() {
         status: `${path}/STATUS.md`,
         services: `${path}/services.md`,
         branches: `${path}/branches.md`,
+        requirements: `${path}/requirements.md`,
+        acceptance: `${path}/acceptance.md`,
+        changes: `${path}/changes.md`,
         tasks: `${path}/tasks.md`,
         delivery: `${path}/交付记录.md`,
         handoff: `${path}/handoff.md`,
@@ -2985,7 +3516,7 @@ export function App() {
         sourceRoot: settings.sourceReposRoot,
         confirmedServices: input.services,
         candidateServices: [],
-        taskCounts: { done: 0, doing: 0, todo: 5, blocked: 0, deferred: 0 },
+        taskCounts: { done: 0, doing: 0, todo: 7, blocked: 0, deferred: 0 },
         decisionCount: 0,
         gitRows: input.services.map((service) => ({
           service,
@@ -3028,6 +3559,27 @@ export function App() {
             detail: input.services.length ? `缺少: ${input.services.join(", ")}` : "服务确认后再创建 worktree",
             status: "fail",
             action: "worktreeScript"
+          },
+          {
+            id: "requirements",
+            label: "需求规则 / Requirements",
+            detail: "requirements.md 仍包含待补充内容",
+            status: "warning",
+            action: "requirements"
+          },
+          {
+            id: "acceptance",
+            label: "验收清单 / Acceptance",
+            detail: "acceptance.md 仍包含待补充内容",
+            status: "warning",
+            action: "acceptance"
+          },
+          {
+            id: "changes",
+            label: "变更日志 / Changes",
+            detail: "changes.md 已创建，开发变更后追加记录",
+            status: "warning",
+            action: "changes"
           },
           {
             id: "delivery-record",
@@ -3084,7 +3636,8 @@ export function App() {
   };
 
   const copyRiskInstruction = async (workspace: Workspace, risk: string) => {
-    await navigator.clipboard.writeText(riskInstruction(workspace, risk));
+    const sessions = await codexSessionsForPrompt(workspace);
+    await navigator.clipboard.writeText(riskInstruction(workspace, risk, sessions));
     void recordWorkspaceAction(workspace, "risk_instruction.copied", `Copied risk instruction for ${risk}`, {
       metadata: { risk }
     });
@@ -3273,9 +3826,21 @@ export function App() {
         workspace={drawerWorkspace}
         onClose={() => setDrawerFolder("")}
         onCopyRiskInstruction={copyRiskInstruction}
+        onCopyTaskInstruction={copyTaskInstruction}
+        onCopyAndOpenTaskCodex={copyAndOpenTaskCodex}
+        onUpdateTask={updateTaskStatus}
+        codexSessions={drawerWorkspace ? codexSessionsByWorkspace[drawerWorkspace.folder] ?? [] : []}
+        codexSessionsLoading={drawerWorkspace ? codexSessionsLoadingFolder === drawerWorkspace.folder : false}
+        codexSessionOperationId={codexSessionOperationId}
+        onRefreshCodexSessions={loadCodexSessions}
+        onBindCodexSession={bindWorkspaceCodexSession}
+        onOpenCodexSession={openWorkspaceCodexSession}
+        onCopyCodexSession={copyWorkspaceCodexSession}
+        onDeleteCodexSession={deleteWorkspaceCodexSession}
         onRunSessionAction={runSessionAction}
         onOpenDocument={openDocument}
         onOpenPath={openConfiguredPath}
+        taskUpdatingId={taskUpdatingId}
       />
       <DocumentViewer document={document} onClose={() => setDocument(undefined)} onOpenExternal={openConfiguredPath} />
       {toast && <div className="fixed bottom-4 left-1/2 -translate-x-1/2 rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-700 shadow-[0_8px_24px_rgba(15,23,42,0.12)]" style={{ zIndex: 1100 }}>{toast}</div>}

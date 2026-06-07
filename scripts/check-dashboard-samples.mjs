@@ -4,7 +4,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const sampleFiles = ["src/data/workspaces.json"];
-const requiredLinks = ["folder", "workspace", "status", "services", "branches", "tasks", "delivery", "handoff"];
+const requiredLinks = ["folder", "workspace", "status", "services", "branches", "requirements", "acceptance", "changes", "tasks", "delivery", "handoff"];
 
 export function checkDashboardSample(filePath) {
   const findings = [];

@@ -174,6 +174,9 @@ fn expected_standard_document_relative_path(document_key: &str) -> Option<&'stat
         "status" => Some("STATUS.md"),
         "services" => Some("services.md"),
         "branches" => Some("branches.md"),
+        "requirements" => Some("requirements.md"),
+        "acceptance" => Some("acceptance.md"),
+        "changes" => Some("changes.md"),
         "tasks" => Some("tasks.md"),
         "delivery" => Some("交付记录.md"),
         "handoff" => Some("handoff.md"),
@@ -197,12 +200,21 @@ fn standard_document_template(document_key: &str) -> &'static str {
         "branches" => {
             "# Branches\n\n| 服务 | 目标分支 | 当前分支 | 说明 |\n| --- | --- | --- | --- |\n"
         }
+        "requirements" => {
+            "# Requirements\n\n## 需求概览\n\n- 需求名称: 待补充\n- 目标分支: 待确认\n- 涉及服务: 待确认\n\n## 业务规则\n\n| 编号 | 规则 | 来源 | 状态 |\n| --- | --- | --- | --- |\n| R1 | 待补充 | 待补充 | 待确认 |\n\n## 边界与不做范围\n\n| 编号 | 说明 | 原因 | 状态 |\n| --- | --- | --- | --- |\n\n## 兼容规则\n\n| 编号 | 兼容场景 | 处理方式 | 验收方式 |\n| --- | --- | --- | --- |\n\n## 待确认问题\n\n| 编号 | 问题 | 影响 | 结论 |\n| --- | --- | --- | --- |\n"
+        }
+        "acceptance" => {
+            "# Acceptance\n\n## 验收目标\n\n- 验收状态: 待补充\n\n## 验收清单\n\n| 编号 | 对应规则 | 验收方式 | 证据位置 | 状态 |\n| --- | --- | --- | --- | --- |\n| A1 | R1 | 待补充 | 待补充 | 待验证 |\n\n## 回归范围\n\n| 场景 | 服务 | 验证方式 | 状态 |\n| --- | --- | --- | --- |\n\n## 验收结论\n\n待补充。\n"
+        }
+        "changes" => {
+            "# Changes\n\n## 变更日志\n\n| 时间 | 类型 | 服务 | 文件/模块 | 说明 | 影响交付 |\n| --- | --- | --- | --- | --- | --- |\n| 待补充 | 待补充 | 待补充 | 待补充 | 待补充 | 待确认 |\n"
+        }
         "tasks" => "# Tasks\n\n| 任务 | 状态 | 说明 |\n| --- | --- | --- |\n",
         "delivery" => {
             "# 交付记录\n\n## 需求要点\n\n待补充。\n\n## 涉及服务\n\n待补充。\n\n## SQL / 配置\n\n- 是否有 SQL 变动：无\n- 正式 SQL 文件：无\n- 回滚 SQL 文件：无\n- 文件规则：如本文档任意位置记录 SQL 变更，或本段落记录 `变更类型：DDL/DML`、影响表、新增字段、回填脚本、数据修复等变更元数据，必须同步 `sql/` 下正式 SQL 与回滚 SQL 文件。\n\n## 验证记录\n\n待补充。\n\n## 风险与后续\n\n待补充。\n"
         }
         "handoff" => {
-            "# Handoff\n\n## Codex 上下文\n\n待补充。\n\n## 下一步\n\n- 读取 workspace.md、STATUS.md、services.md、branches.md、tasks.md 和交付记录。\n"
+            "# Handoff\n\n## Codex 上下文\n\n待补充。\n\n## 下一步\n\n- 读取 requirements.md、acceptance.md、changes.md、workspace.md、STATUS.md、services.md、branches.md、tasks.md 和交付记录。\n"
         }
         "bootstrap" => {
             "# Bootstrap Report\n\n- 状态: 待复核\n- 说明: 该文件由 Nexus 文档恢复流程创建，请补充真实初始化记录。\n"

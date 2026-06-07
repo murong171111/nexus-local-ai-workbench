@@ -125,6 +125,37 @@ pub struct WorkspaceSessionAction {
     pub document_key: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct WorkspaceDocumentReadiness {
+    key: &'static str,
+    label: &'static str,
+    path: &'static str,
+    exists: bool,
+    stale: bool,
+}
+
+impl WorkspaceDocumentReadiness {
+    fn detail(&self) -> String {
+        if !self.exists {
+            format!("缺少 {}", self.path)
+        } else if self.stale {
+            format!("{} 仍包含待补充内容", self.path)
+        } else {
+            format!("{} 已存在且无明显占位内容", self.path)
+        }
+    }
+
+    fn status(&self) -> &'static str {
+        if !self.exists {
+            "fail"
+        } else if self.stale {
+            "warning"
+        } else {
+            "pass"
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct SqlArtifactStatus {
     sql_dir_exists: bool,
@@ -434,7 +465,7 @@ pub fn create_workspace(
     write_file(
         &workspace.join("AGENTS.md"),
         &format!(
-            "# Workspace Agent Guide\n\n- 需求名称: {}\n- 工作区: {}\n- 开发目录: `repos/<service>`\n- 源仓库目录: `{}`\n\n## Rules\n\n- 代码改动优先发生在 `repos/<service>` worktree 中。\n- 每次代码、SQL、业务逻辑、接口、DTO、配置或验证变化后，检查并更新 `交付记录.md`。\n- 凡是 `交付记录.md` 任意位置声明实际 SQL 变更，必须在 `sql/` 下同步正式 SQL 文件和回滚 SQL 文件。\n- 交付收尾前必须复核 `交付记录.md` 和 `sql/`：不能只把 SQL 写在交付文档里。\n- 不直接切换源仓库分支，源仓库只作为 worktree 来源。\n",
+            "# Workspace Agent Guide\n\n- 需求名称: {}\n- 工作区: {}\n- 开发目录: `repos/<service>`\n- 源仓库目录: `{}`\n\n## Start Here\n\n每次继续需求前先读取：`requirements.md`、`acceptance.md`、`changes.md`、`workspace.md`、`STATUS.md`、`services.md`、`branches.md`、`tasks.md`、`handoff.md` 和 `交付记录.md`。\n\n## Rules\n\n- 需求规则、边界、验收标准变化时，优先更新 `requirements.md` 和 `acceptance.md`。\n- 代码改动优先发生在 `repos/<service>` worktree 中。\n- 每次代码、SQL、业务逻辑、接口、DTO、配置或验证变化后，检查并更新 `changes.md` 与 `交付记录.md`。\n- 凡是 `交付记录.md` 任意位置声明实际 SQL 变更，必须在 `sql/` 下同步正式 SQL 文件和回滚 SQL 文件。\n- 交付收尾前必须复核 `acceptance.md`、`交付记录.md` 和 `sql/`：不能只把 SQL 写在交付文档里。\n- 不直接切换源仓库分支，源仓库只作为 worktree 来源。\n",
             request.name,
             workspace.display(),
             request.source_repos_root
@@ -474,12 +505,24 @@ pub fn create_workspace(
         &branches_markdown(&services, target_branch, &request.source_repos_root),
     )?;
     write_file(
+        &workspace.join("requirements.md"),
+        &requirements_markdown(&request.name, target_branch, &services),
+    )?;
+    write_file(
+        &workspace.join("acceptance.md"),
+        &acceptance_markdown(&request.name),
+    )?;
+    write_file(
+        &workspace.join("changes.md"),
+        &changes_markdown(&request.name),
+    )?;
+    write_file(
         &workspace.join("plan.md"),
-        "# Plan\n\n## 分析步骤\n\n- [ ] 确认需求范围\n- [ ] 确认涉及服务\n- [ ] 确认目标分支\n- [ ] 创建 worktree\n- [ ] 编码与验证\n- [ ] 更新交付记录\n",
+        "# Plan\n\n## 分析步骤\n\n- [ ] 补齐需求规则\n- [ ] 建立验收清单\n- [ ] 确认涉及服务\n- [ ] 确认目标分支\n- [ ] 创建 worktree\n- [ ] 编码与验证\n- [ ] 记录变更日志\n- [ ] 更新交付记录\n",
     )?;
     write_file(
         &workspace.join("tasks.md"),
-        "# Tasks\n\n| 任务 | 状态 | 说明 |\n| --- | --- | --- |\n| 确认需求范围 | 待办 | 补充业务目标、入口、影响范围 |\n| 确认服务范围 | 待办 | 标记涉及服务和待验证服务 |\n| 确认目标分支 | 待办 | 多服务优先统一分支 |\n| 创建 worktree | 待办 | 分支确认后再执行 |\n| 更新交付记录 | 待办 | 代码/SQL/逻辑变更后必须更新；SQL 变更必须同步 sql/ 正式与回滚 SQL |\n",
+        "# Tasks\n\n| 任务 | 状态 | 说明 |\n| --- | --- | --- |\n| 补齐需求规则 | 待办 | 在 requirements.md 中补充业务规则、边界、兼容和待确认问题 |\n| 建立验收清单 | 待办 | 在 acceptance.md 中把规则映射到验证方式和证据 |\n| 确认服务范围 | 待办 | 标记涉及服务和待验证服务 |\n| 确认目标分支 | 待办 | 多服务优先统一分支 |\n| 创建 worktree | 待办 | 分支确认后再执行 |\n| 记录变更日志 | 待办 | 代码/SQL/逻辑变更后更新 changes.md |\n| 更新交付记录 | 待办 | 代码/SQL/逻辑变更后必须更新；SQL 变更必须同步 sql/ 正式与回滚 SQL |\n",
     )?;
     write_file(
         &workspace.join("decisions.md"),
@@ -487,7 +530,7 @@ pub fn create_workspace(
     )?;
     write_file(
         &workspace.join("handoff.md"),
-        "# Handoff\n\n## 当前状态\n\n待补充。\n\n## 后续继续方式\n\n请先读取 `AGENTS.md`、`STATUS.md`、`services.md`、`branches.md`、`tasks.md` 和 `交付记录.md`。\n\n## 收尾守门\n\n如果 `交付记录.md` 任意位置记录实际 SQL 变更，必须同步检查 `sql/` 下是否已有正式 SQL 文件和回滚 SQL 文件；缺一项都不能视为交付完成。\n",
+        "# Handoff\n\n## 当前状态\n\n待补充。\n\n## 后续继续方式\n\n请先读取 `AGENTS.md`、`requirements.md`、`acceptance.md`、`changes.md`、`STATUS.md`、`services.md`、`branches.md`、`tasks.md` 和 `交付记录.md`。\n\n## 收尾守门\n\n- `requirements.md` 中的业务规则必须能在 `acceptance.md` 找到对应验收方式。\n- 本轮代码/SQL/逻辑变化必须同步记录到 `changes.md`。\n- 如果 `交付记录.md` 任意位置记录实际 SQL 变更，必须同步检查 `sql/` 下是否已有正式 SQL 文件和回滚 SQL 文件；缺一项都不能视为交付完成。\n",
     )?;
     write_file(
         &workspace.join("delivery.md"),
@@ -808,9 +851,9 @@ Detail:
 {task_detail}
 
 Expected workflow:
-1. Read the workspace documents, especially `tasks.md`, `workspace.md`, `services.md`, `branches.md`, `handoff.md`, and `交付记录.md`.
+1. Read the workspace documents, especially `requirements.md`, `acceptance.md`, `changes.md`, `tasks.md`, `workspace.md`, `services.md`, `branches.md`, `handoff.md`, and `交付记录.md`.
 2. Inspect the relevant `repos/<service>` worktrees before editing.
-3. Keep code, SQL, and delivery-document changes aligned.
+3. Keep code, SQL, changes, acceptance, and delivery-document changes aligned.
 4. Report touched services, branches, verification, and any remaining risk.
 "#,
         workspace_name = request.workspace_name.trim(),
@@ -1113,6 +1156,21 @@ fn collect_workspace(
         String::new()
     };
     let delivery_stale = delivery_exists && delivery_needs_update(&delivery_text);
+    let requirements_readiness = workspace_document_readiness(
+        path,
+        "requirements",
+        "需求规则 / Requirements",
+        "requirements.md",
+    );
+    let acceptance_readiness =
+        workspace_document_readiness(path, "acceptance", "验收清单 / Acceptance", "acceptance.md");
+    let changes_readiness =
+        workspace_document_readiness(path, "changes", "变更日志 / Changes", "changes.md");
+    let v2_documents = [
+        requirements_readiness,
+        acceptance_readiness,
+        changes_readiness,
+    ];
     let sql_dir_exists = path.join("sql").exists();
     let sql_artifacts = sql_artifact_status(path, &delivery_text, delivery_exists, sql_dir_exists);
 
@@ -1145,6 +1203,18 @@ fn collect_workspace(
     links.insert(
         "branches".to_string(),
         path.join("branches.md").to_string_lossy().to_string(),
+    );
+    links.insert(
+        "requirements".to_string(),
+        path.join("requirements.md").to_string_lossy().to_string(),
+    );
+    links.insert(
+        "acceptance".to_string(),
+        path.join("acceptance.md").to_string_lossy().to_string(),
+    );
+    links.insert(
+        "changes".to_string(),
+        path.join("changes.md").to_string_lossy().to_string(),
     );
     links.insert(
         "tasks".to_string(),
@@ -1208,6 +1278,7 @@ fn collect_workspace(
         &branch_mismatches,
         delivery_exists,
         delivery_stale,
+        &v2_documents,
         &sql_artifacts,
         &task_counts,
     );
@@ -1219,6 +1290,7 @@ fn collect_workspace(
         &branch_mismatches,
         delivery_exists,
         delivery_stale,
+        &v2_documents,
         &sql_artifacts,
         &task_counts,
     );
@@ -1477,11 +1549,12 @@ fn workspace_health_checks(
     branch_mismatches: &[String],
     delivery_exists: bool,
     delivery_stale: bool,
+    v2_documents: &[WorkspaceDocumentReadiness],
     sql_artifacts: &SqlArtifactStatus,
     task_counts: &TaskCounts,
 ) -> Vec<WorkspaceHealthCheck> {
     let active_tasks = task_counts.doing + task_counts.todo;
-    vec![
+    let mut checks = vec![
         health_check(
             "service-scope",
             "服务范围 / Service scope",
@@ -1612,7 +1685,17 @@ fn workspace_health_checks(
             },
             "tasks",
         ),
-    ]
+    ];
+    checks.extend(v2_documents.iter().map(|document| {
+        health_check(
+            document.key,
+            document.label,
+            document.detail(),
+            document.status(),
+            document.key,
+        )
+    }));
+    checks
 }
 
 fn health_check(
@@ -1639,6 +1722,7 @@ fn workspace_session_actions(
     branch_mismatches: &[String],
     delivery_exists: bool,
     delivery_stale: bool,
+    v2_documents: &[WorkspaceDocumentReadiness],
     sql_artifacts: &SqlArtifactStatus,
     task_counts: &TaskCounts,
 ) -> Vec<WorkspaceSessionAction> {
@@ -1717,6 +1801,29 @@ fn workspace_session_actions(
             "recommended",
             "task",
             "tasks",
+        ));
+    }
+
+    for document in v2_documents
+        .iter()
+        .filter(|document| !document.exists || document.stale)
+    {
+        actions.push(session_action(
+            &format!("update-{}", document.key),
+            document.label,
+            document.detail(),
+            if document.key == "requirements" {
+                "high"
+            } else {
+                "medium"
+            },
+            if document.key == "requirements" {
+                "blocked"
+            } else {
+                "recommended"
+            },
+            "task",
+            document.key,
         ));
     }
 
@@ -2566,6 +2673,28 @@ fn delivery_needs_update(text: &str) -> bool {
         || normalized.contains("创建后需要确认")
 }
 
+fn workspace_document_readiness(
+    workspace: &Path,
+    key: &'static str,
+    label: &'static str,
+    relative_path: &'static str,
+) -> WorkspaceDocumentReadiness {
+    let path = workspace.join(relative_path);
+    let exists = path.is_file();
+    let text = if exists {
+        read_text_lossy(&path)
+    } else {
+        String::new()
+    };
+    WorkspaceDocumentReadiness {
+        key,
+        label,
+        path: relative_path,
+        exists,
+        stale: exists && delivery_needs_update(&text),
+    }
+}
+
 fn generated_at() -> String {
     chrono_like_now(true)
 }
@@ -2696,6 +2825,9 @@ fn initialization_file_receipt(workspace: &Path) -> Vec<WorkspaceInitializationF
         ("Status", "STATUS.md", "file"),
         ("Services", "services.md", "file"),
         ("Branches", "branches.md", "file"),
+        ("Requirements", "requirements.md", "file"),
+        ("Acceptance", "acceptance.md", "file"),
+        ("Changes", "changes.md", "file"),
         ("Plan", "plan.md", "file"),
         ("Tasks", "tasks.md", "file"),
         ("Decisions", "decisions.md", "file"),
@@ -2858,6 +2990,32 @@ fn branches_markdown(services: &[String], target_branch: &str, source_root: &str
     )
 }
 
+fn requirements_markdown(name: &str, target_branch: &str, services: &[String]) -> String {
+    let service_text = if services.is_empty() {
+        "待确认".to_string()
+    } else {
+        services.join(", ")
+    };
+    format!(
+        "# Requirements\n\n## 需求概览\n\n- 需求名称: {}\n- 目标分支: {}\n- 涉及服务: {}\n\n## 业务规则\n\n| 编号 | 规则 | 来源 | 状态 |\n| --- | --- | --- | --- |\n| R1 | 待补充 | 用户确认 / 需求文档 / 代码现状 | 待确认 |\n\n## 边界与不做范围\n\n| 编号 | 说明 | 原因 | 状态 |\n| --- | --- | --- | --- |\n| O1 | 待补充 | 待补充 | 待确认 |\n\n## 兼容规则\n\n| 编号 | 兼容场景 | 处理方式 | 验收方式 |\n| --- | --- | --- | --- |\n| C1 | 待补充 | 待补充 | 待补充 |\n\n## 待确认问题\n\n| 编号 | 问题 | 影响 | 结论 |\n| --- | --- | --- | --- |\n| Q1 | 待补充 | 待补充 | 待确认 |\n",
+        name, target_branch, service_text
+    )
+}
+
+fn acceptance_markdown(name: &str) -> String {
+    format!(
+        "# Acceptance\n\n## 验收目标\n\n- 需求名称: {}\n- 验收状态: 待补充\n\n## 验收清单\n\n| 编号 | 对应规则 | 验收方式 | 证据位置 | 状态 |\n| --- | --- | --- | --- | --- |\n| A1 | R1 | 待补充接口/页面/日志/SQL 验证方式 | 待补充 | 待验证 |\n\n## 回归范围\n\n| 场景 | 服务 | 验证方式 | 状态 |\n| --- | --- | --- | --- |\n| 待补充 | 待补充 | 待补充 | 待验证 |\n\n## 验收结论\n\n待补充。\n",
+        name
+    )
+}
+
+fn changes_markdown(name: &str) -> String {
+    format!(
+        "# Changes\n\n## 变更日志\n\n- 需求名称: {}\n- 记录规则: 每次代码、SQL、业务逻辑、接口、DTO、配置或验证变化后追加一行。\n\n| 时间 | 类型 | 服务 | 文件/模块 | 说明 | 影响交付 |\n| --- | --- | --- | --- | --- | --- |\n| 待补充 | 待补充 | 待补充 | 待补充 | 待补充 | 待确认 |\n\n## 待同步事项\n\n| 事项 | 需要同步到 | 状态 |\n| --- | --- | --- |\n| 待补充 | 交付记录.md / acceptance.md / sql/ | 待确认 |\n",
+        name
+    )
+}
+
 fn bootstrap_report(
     name: &str,
     folder: &str,
@@ -2882,7 +3040,7 @@ fn bootstrap_report(
             .join("\n")
     };
     format!(
-        "# Bootstrap Report\n\n- 需求名称: {}\n- 工作区: {}\n- 创建日期: {}\n- 目标分支: {}\n- 工作区路径: `{}`\n- 源仓库目录: `{}`\n\n## 服务范围\n\n{}\n\n## 初始风险\n\n{}\n\n## 下一步\n\n- [ ] 补充需求描述和影响范围。\n- [ ] 确认目标分支。\n- [ ] 复核 `scripts/worktree-commands.sh` 后创建 worktree。\n- [ ] 编码或 SQL 变更后更新 `交付记录.md`。\n- [ ] 若 `交付记录.md` 任意位置声明 SQL 变更，同步 `sql/` 下正式 SQL 和回滚 SQL 文件。\n",
+        "# Bootstrap Report\n\n- 需求名称: {}\n- 工作区: {}\n- 创建日期: {}\n- 目标分支: {}\n- 工作区路径: `{}`\n- 源仓库目录: `{}`\n\n## 服务范围\n\n{}\n\n## 初始风险\n\n{}\n\n## 下一步\n\n- [ ] 补充 `requirements.md` 的业务规则、边界和待确认问题。\n- [ ] 补充 `acceptance.md` 的验收方式和证据要求。\n- [ ] 确认目标分支。\n- [ ] 复核 `scripts/worktree-commands.sh` 后创建 worktree。\n- [ ] 编码或 SQL 变更后更新 `changes.md` 和 `交付记录.md`。\n- [ ] 若 `交付记录.md` 任意位置声明 SQL 变更，同步 `sql/` 下正式 SQL 和回滚 SQL 文件。\n",
         name,
         folder,
         today,
@@ -3022,7 +3180,7 @@ mod tests {
         assert_eq!(item.sql_documents.len(), 1);
         assert_eq!(item.sql_documents[0].relative_path, "SQL变更说明.md");
         assert_eq!(item.activities[0].title, "worktree 未创建: order");
-        assert_eq!(item.health_checks.len(), 9);
+        assert_eq!(item.health_checks.len(), 12);
         assert!(item.health_checks.iter().any(|check| {
             check.id == "worktree-ready" && check.status == "fail" && check.detail.contains("order")
         }));
@@ -3831,6 +3989,9 @@ mod tests {
             .iter()
             .any(|check| { check.id == "service-scope" && check.status == "pass" }));
         assert!(workspace.join("AGENTS.md").exists());
+        assert!(workspace.join("requirements.md").exists());
+        assert!(workspace.join("acceptance.md").exists());
+        assert!(workspace.join("changes.md").exists());
         assert!(workspace.join("repos").is_dir());
         assert!(workspace.join("sql").is_dir());
         assert!(workspace.join("scripts/worktree-commands.sh").exists());
@@ -3846,8 +4007,17 @@ mod tests {
         assert!(delivery.contains("正式 SQL 与回滚 SQL 文件"));
         assert!(delivery.contains("不能只把 SQL 留在本文档中"));
         let agents = fs::read_to_string(workspace.join("AGENTS.md")).unwrap();
-        assert!(agents.contains("交付收尾前必须复核 `交付记录.md` 和 `sql/`"));
+        assert!(agents.contains("requirements.md"));
+        assert!(agents.contains("changes.md"));
+        assert!(agents.contains("交付收尾前必须复核 `acceptance.md`、`交付记录.md` 和 `sql/`"));
+        let requirements = fs::read_to_string(workspace.join("requirements.md")).unwrap();
+        assert!(requirements.contains("## 业务规则"));
+        let acceptance = fs::read_to_string(workspace.join("acceptance.md")).unwrap();
+        assert!(acceptance.contains("## 验收清单"));
+        let changes = fs::read_to_string(workspace.join("changes.md")).unwrap();
+        assert!(changes.contains("## 变更日志"));
         let handoff = fs::read_to_string(workspace.join("handoff.md")).unwrap();
+        assert!(handoff.contains("requirements.md"));
         assert!(handoff.contains("缺一项都不能视为交付完成"));
         let script = fs::read_to_string(workspace.join("scripts/worktree-commands.sh")).unwrap();
         assert!(script.contains("worktree add"));

@@ -58,6 +58,26 @@ export type WorkspaceSqlDocument = {
   kind: "markdown" | string;
 };
 
+export type WorkspaceTask = {
+  id: string;
+  title: string;
+  status: string;
+  detail: string;
+  priority: "high" | "medium" | "normal" | "low" | string;
+  source: "workspace" | "agent" | string;
+  sourceEventId?: string;
+  sourceLine?: number;
+};
+
+export type CodexSessionLink = {
+  id: string;
+  title: string;
+  url: string;
+  notes: string;
+  createdAt: string;
+  lastOpenedAt?: string | null;
+};
+
 export type Workspace = {
   name: string;
   folder: string;
@@ -84,6 +104,7 @@ export type Workspace = {
   sqlFiles?: WorkspaceSqlFile[];
   sqlDocuments?: WorkspaceSqlDocument[];
   worktreeCommand: string;
+  tasks?: WorkspaceTask[];
   activities?: WorkspaceActivity[];
   healthChecks?: WorkspaceHealthCheck[];
   sessionActions?: WorkspaceSessionAction[];
