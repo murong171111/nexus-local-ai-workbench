@@ -95,6 +95,10 @@ struct RootView: View {
             TaskStatusUpdateSheet(update: update)
                 .environmentObject(appState)
         }
+        .sheet(item: $appState.pendingDemandTaskTransfer) { plan in
+            DemandTaskTransferSheet(plan: plan)
+                .environmentObject(appState)
+        }
         .sheet(item: $appState.pendingLifecycleStatusUpdate) { update in
             LifecycleStatusUpdateSheet(update: update)
                 .environmentObject(appState)
@@ -3502,7 +3506,8 @@ private struct WorkspaceDetailView: View {
     private var mainStage: WorkspaceMainStage {
         workspace.mainStage(
             demandIntakeStatus: appState.demandIntakeDisplayStatus(for: workspace),
-            demandReadiness: appState.demandIntakeReadiness(for: workspace)
+            demandReadiness: appState.demandIntakeReadiness(for: workspace),
+            demandTaskTransfer: appState.demandTaskTransferPlan(for: workspace)
         )
     }
 
@@ -3680,6 +3685,8 @@ private struct WorkspaceDetailView: View {
             Task {
                 await appState.loadDocument(path: path)
             }
+        case .transferDemandTasks:
+            appState.requestDemandTaskTransfer(in: workspace)
         case .worktree:
             appState.presentWorktreeSetup(for: workspace)
         case .riskPrompt:
@@ -4399,7 +4406,8 @@ private struct WorkspaceDetailMapView: View {
     private var mainStage: WorkspaceMainStage {
         workspace.mainStage(
             demandIntakeStatus: appState.demandIntakeDisplayStatus(for: workspace),
-            demandReadiness: appState.demandIntakeReadiness(for: workspace)
+            demandReadiness: appState.demandIntakeReadiness(for: workspace),
+            demandTaskTransfer: appState.demandTaskTransferPlan(for: workspace)
         )
     }
 
@@ -5789,6 +5797,10 @@ private struct WorkspaceDemandIntakeView: View {
         appState.demandIntakeReadiness(for: workspace)
     }
 
+    private var transferPlan: DemandTaskTransferPlan {
+        appState.demandTaskTransferPlan(for: workspace)
+    }
+
     private var isLoading: Bool {
         appState.demandIntakeLoadingWorkspaceID == workspace.id
     }
@@ -5850,6 +5862,18 @@ private struct WorkspaceDemandIntakeView: View {
                                 }
                             }
                         }
+                    }
+                }
+
+                DemandTaskTransferPreview(plan: transferPlan) {
+                    appState.requestDemandTaskTransfer(in: workspace)
+                } openIntakeTasksAction: {
+                    Task {
+                        await appState.loadDocument(path: transferPlan.intakeTasksPath)
+                    }
+                } openExecutionTasksAction: {
+                    Task {
+                        await appState.loadDocument(path: transferPlan.executionTasksPath)
                     }
                 }
 
@@ -6043,6 +6067,189 @@ private struct DemandIntakeReadinessRow: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(check.status.color.opacity(0.14))
         }
+    }
+}
+
+private struct DemandTaskTransferPreview: View {
+    let plan: DemandTaskTransferPlan
+    let transferAction: () -> Void
+    let openIntakeTasksAction: () -> Void
+    let openExecutionTasksAction: () -> Void
+
+    private var tone: Color {
+        if plan.hasTransferableItems {
+            return NexusPalette.accent
+        }
+        return plan.candidates.isEmpty ? NexusPalette.warning : NexusPalette.success
+    }
+
+    private var title: String {
+        if plan.hasTransferableItems {
+            return "待转入执行任务 / Ready to transfer"
+        }
+        return plan.candidates.isEmpty ? "需求任务待整理 / No intake tasks" : "执行任务已同步 / Already transferred"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 9) {
+                Image(systemName: plan.hasTransferableItems ? "arrow.down.doc" : "checklist")
+                    .foregroundStyle(tone)
+                    .frame(width: 15)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.caption.weight(.semibold))
+                    Text(plan.summary)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 8)
+
+                Button {
+                    transferAction()
+                } label: {
+                    Label("转入 tasks.md", systemImage: "arrow.down.circle")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.mini)
+                .disabled(!plan.hasTransferableItems)
+            }
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 88), spacing: 8)], alignment: .leading, spacing: 8) {
+                WorkflowMetric(label: "Intake", value: "\(plan.candidates.count)", tone: plan.candidates.isEmpty ? NexusPalette.warning : NexusPalette.accent)
+                WorkflowMetric(label: "Transfer", value: "\(plan.transferableItems.count)", tone: plan.hasTransferableItems ? NexusPalette.accent : .secondary)
+                WorkflowMetric(label: "Existing", value: "\(plan.duplicateCount)", tone: plan.duplicateCount > 0 ? NexusPalette.success : .secondary)
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    openIntakeTasksAction()
+                } label: {
+                    Label("需求/tasks.md", systemImage: "doc.text")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+
+                Button {
+                    openExecutionTasksAction()
+                } label: {
+                    Label("root tasks.md", systemImage: "checklist")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+            }
+        }
+        .padding(9)
+        .background(tone.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(tone.opacity(0.14))
+        }
+    }
+}
+
+private struct DemandTaskTransferSheet: View {
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmed = false
+    let plan: DemandTaskTransferPlan
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("转入执行任务 / Transfer tasks")
+                    .font(.title3.weight(.semibold))
+                Text("Nexus will append selected requirement-intake rows into root tasks.md after confirmation.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            SectionBlock(title: "写入摘要 / Summary") {
+                VStack(alignment: .leading, spacing: 8) {
+                    TaskStatusMetaRow(label: "Workspace", value: plan.workspaceName)
+                    TaskStatusMetaRow(label: "From", value: plan.intakeTasksPath)
+                    TaskStatusMetaRow(label: "To", value: plan.executionTasksPath)
+                    TaskStatusMetaRow(label: "Transfer", value: "\(plan.transferableItems.count) new · \(plan.duplicateCount) existing")
+                    Text(plan.summary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            SectionBlock(title: "将追加的任务 / New rows") {
+                if plan.transferableItems.isEmpty {
+                    Text("没有新的需求任务需要追加。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(plan.transferableItems.prefix(8)) { item in
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(spacing: 6) {
+                                    Text(item.title)
+                                        .font(.caption.weight(.semibold))
+                                        .lineLimit(1)
+                                    Text(item.priority)
+                                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                        .foregroundStyle(NexusPalette.accent)
+                                }
+                                Text(item.executionDetail)
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                            .padding(8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(NexusPalette.badge)
+                            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        }
+
+                        if plan.transferableItems.count > 8 {
+                            Text("另有 \(plan.transferableItems.count - 8) 个任务将一并追加。")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
+            Toggle("确认写入 root tasks.md / Confirm local write", isOn: $confirmed)
+
+            HStack {
+                Button("Cancel") {
+                    appState.pendingDemandTaskTransfer = nil
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Spacer()
+
+                Button(appState.isUpdatingTask ? "Writing" : "Transfer") {
+                    Task {
+                        await appState.confirmPendingDemandTaskTransfer(confirmed: confirmed)
+                        if appState.lastError == nil {
+                            dismiss()
+                        }
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!confirmed || !plan.hasTransferableItems || appState.isUpdatingTask)
+            }
+
+            if let error = appState.lastError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(NexusPalette.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(22)
+        .frame(width: 620)
     }
 }
 
@@ -6628,7 +6835,8 @@ private struct WorkspaceCommandCenterView: View {
     private var mainStage: WorkspaceMainStage {
         workspace.mainStage(
             demandIntakeStatus: demandIntakeDisplayStatus,
-            demandReadiness: appState.demandIntakeReadiness(for: workspace)
+            demandReadiness: appState.demandIntakeReadiness(for: workspace),
+            demandTaskTransfer: appState.demandTaskTransferPlan(for: workspace)
         )
     }
 
@@ -6969,6 +7177,8 @@ private struct WorkspaceCommandCenterView: View {
             return .document(key)
         case .path(let path):
             return .path(path)
+        case .transferDemandTasks:
+            return .transferDemandTasks
         case .worktree:
             return .worktree
         case .riskPrompt:
@@ -7007,6 +7217,8 @@ private struct WorkspaceCommandCenterView: View {
             Task {
                 await appState.loadDocument(path: path)
             }
+        case .transferDemandTasks:
+            appState.requestDemandTaskTransfer(in: workspace)
         case .riskPrompt:
             copyToPasteboard(appState.riskReviewPrompt(for: workspace))
             Task {
@@ -7159,6 +7371,7 @@ private enum CommandCenterPrimaryAction {
     case codex
     case document(String)
     case path(String)
+    case transferDemandTasks
     case riskPrompt
     case worktree
     case demandIntake

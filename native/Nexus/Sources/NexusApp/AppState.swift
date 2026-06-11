@@ -186,6 +186,7 @@ final class AppState: ObservableObject {
     @Published var agentEvents: [AgentEvent] = []
     @Published var selectedAgentEvent: AgentEvent?
     @Published var pendingTaskStatusUpdate: TaskStatusUpdate?
+    @Published var pendingDemandTaskTransfer: DemandTaskTransferPlan?
     @Published var pendingLifecycleStatusUpdate: LifecycleStatusUpdate?
     @Published var lastCreatedWorkspace: CreateWorkspaceResponse?
     @Published var pendingWorktreeSetupWorkspace: WorkspaceSummary?
@@ -808,6 +809,27 @@ final class AppState: ObservableObject {
             item.task.isActive && item.task.id != excludingTaskID
         }
         return activeItems.first { $0.workspaceID == preferredWorkspaceID } ?? activeItems.first
+    }
+
+    private func focusTransferredDemandTask(_ plan: DemandTaskTransferPlan) {
+        let transferredTitles = Set(plan.transferableItems.map(\.normalizedTitle))
+        guard let item = allTaskCenterItems.first(where: { item in
+            item.workspaceID == plan.workspaceID
+                && transferredTitles.contains(DemandTaskTransferItem.normalizeTitle(item.task.title))
+        }) else {
+            return
+        }
+        selectTaskCenterItem(item)
+    }
+
+    private func readOrCreateExecutionTasksDocument(at path: String) throws -> String {
+        let fileURL = URL(fileURLWithPath: path)
+        let parentURL = fileURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: parentURL, withIntermediateDirectories: true)
+        if FileManager.default.fileExists(atPath: path) {
+            return try String(contentsOfFile: path, encoding: .utf8)
+        }
+        return "# Tasks\n\n| 任务 | 状态 | 说明 |\n| --- | --- | --- |\n"
     }
 
     func persistLocalPaths() {
@@ -2512,6 +2534,85 @@ final class AppState: ObservableObject {
             status: demandIntakeDisplayStatus(for: workspace),
             workspace: workspace
         )
+    }
+
+    func demandTaskTransferPlan(for workspace: WorkspaceSummary) -> DemandTaskTransferPlan {
+        DemandTaskTransferPlan.resolve(
+            workspace: workspace,
+            status: demandIntakeDisplayStatus(for: workspace)
+        )
+    }
+
+    func requestDemandTaskTransfer(in workspace: WorkspaceSummary) {
+        pendingDemandTaskTransfer = demandTaskTransferPlan(for: workspace)
+        lastError = nil
+    }
+
+    func confirmPendingDemandTaskTransfer(confirmed: Bool) async {
+        guard let plan = pendingDemandTaskTransfer else {
+            return
+        }
+        guard confirmed else {
+            lastError = "需要确认后才会写入 tasks.md。"
+            return
+        }
+        guard plan.hasTransferableItems else {
+            lastError = "没有可转入 root tasks.md 的新需求任务。"
+            return
+        }
+
+        isUpdatingTask = true
+        lastError = nil
+        defer {
+            isUpdatingTask = false
+        }
+
+        do {
+            var content = try readOrCreateExecutionTasksDocument(at: plan.executionTasksPath)
+            if !content.contains("## Requirement Tasks") {
+                if !content.hasSuffix("\n") {
+                    content.append("\n")
+                }
+                content.append("\n## Requirement Tasks\n\n| 任务 | 状态 | 说明 |\n| --- | --- | --- |\n")
+            } else if !content.hasSuffix("\n") {
+                content.append("\n")
+            }
+
+            for item in plan.transferableItems {
+                content.append(item.markdownRow)
+                content.append("\n")
+            }
+
+            try content.write(toFile: plan.executionTasksPath, atomically: true, encoding: .utf8)
+            pendingDemandTaskTransfer = nil
+            await recordWorkspaceAction(
+                action: "demand_tasks.transferred",
+                target: plan.executionTasksPath,
+                summary: "Transferred \(plan.transferableItems.count) demand tasks into root tasks.md",
+                metadata: [
+                    "intakeTasksPath": plan.intakeTasksPath,
+                    "executionTasksPath": plan.executionTasksPath,
+                    "transferredCount": "\(plan.transferableItems.count)",
+                    "duplicateCount": "\(plan.duplicateCount)"
+                ],
+                workspaceOverride: workspaces.first { $0.id == plan.workspaceID }
+            )
+            await refreshFromBridge()
+            setTaskCenterFilter(.all)
+            focusWorkspace(id: plan.workspaceID)
+            focusTransferredDemandTask(plan)
+            markLocalWriteFeedback(
+                title: "需求任务已转入 / Demand tasks transferred",
+                detail: "\(plan.transferableItems.count) 个需求点已追加到 root tasks.md，开发任务以 root tasks.md 为准。",
+                workspaceID: plan.workspaceID,
+                workspaceName: plan.workspaceName,
+                documentPath: plan.executionTasksPath,
+                documentLabel: "打开 tasks.md",
+                systemImage: "checklist"
+            )
+        } catch {
+            lastError = error.localizedDescription
+        }
     }
 
     func refreshDemandIntakeStatus(for workspace: WorkspaceSummary) async {

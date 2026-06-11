@@ -441,6 +441,97 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(WorkspaceSqlSummary(workspace: unchecked).status, .review)
     }
 
+    func testDemandTaskTransferPlanFindsNewIntakeTasksAndUpdatesMainStage() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-demand-task-transfer-\(UUID().uuidString)")
+        let demandDir = root.appendingPathComponent("需求")
+        try FileManager.default.createDirectory(at: demandDir, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        try "# 需求确认卡\n\n- 真实需求目标：补齐交易快照。\n- 用户流程：保存订单时写入快照。\n- 验收标准：可查询历史快照。\n".write(
+            to: demandDir.appendingPathComponent("requirement.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# 待确认问题\n\n## P0 阻塞开发\n\n- [x] 已确认无需新增字段。\n".write(
+            to: demandDir.appendingPathComponent("questions.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# 本次开发范围\n\n- [x] 本文件已冻结本次开发范围。\n".write(
+            to: demandDir.appendingPathComponent("scope.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try """
+        # 需求列表
+
+        | 需求点 | 状态 | 优先级 | 来源 | 说明 |
+        | --- | --- | --- | --- | --- |
+        | 整理 requirement.md | 待办 | P0 | 需求预检 | 模板任务 |
+        | 新增交易快照写入 | 待办 | P0 | 蓝湖 | 保存订单时记录快照 |
+        | 已有执行任务 | 待办 | P1 | 需求预检 | 已经转入 root tasks.md |
+        | 已完成的需求点 | 已完成 | P2 | 需求预检 | 不应转入 |
+        """.write(
+            to: demandDir.appendingPathComponent("tasks.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# 需求交付\n\n- 预检完成。\n".write(
+            to: demandDir.appendingPathComponent("delivery.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try """
+        # Tasks
+
+        | 任务 | 状态 | 说明 |
+        | --- | --- | --- |
+        | 已有执行任务 | 待办 | priority=medium |
+        """.write(
+            to: root.appendingPathComponent("tasks.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "demand-transfer",
+            name: "Demand Transfer",
+            path: root.path,
+            tasks: [
+                WorkspaceTask(
+                    id: "existing",
+                    title: "已有执行任务",
+                    status: "待办",
+                    detail: "priority=medium",
+                    priority: "medium",
+                    source: "workspace",
+                    sourceEventID: nil,
+                    sourceLine: 5
+                )
+            ]
+        )
+        let status = demandIntakeStatus(at: demandDir)
+        let readiness = DemandIntakeReadinessEvidence.resolve(status: status, workspace: workspace)
+        let plan = DemandTaskTransferPlan.resolve(workspace: workspace, status: status)
+        let stage = workspace.mainStage(
+            demandIntakeStatus: status,
+            demandReadiness: readiness,
+            demandTaskTransfer: plan
+        )
+
+        XCTAssertTrue(readiness.ready)
+        XCTAssertEqual(plan.candidates.map(\.title), ["新增交易快照写入", "已有执行任务"])
+        XCTAssertEqual(plan.transferableItems.map(\.title), ["新增交易快照写入"])
+        XCTAssertEqual(plan.duplicateCount, 1)
+        XCTAssertTrue(plan.transferableItems[0].markdownRow.contains("priority=high"))
+        XCTAssertEqual(stage.id, .development)
+        XCTAssertEqual(stage.primaryAction, .transferDemandTasks)
+    }
+
     func testWorkflowPathStatusLabelsStayChineseFirst() {
         XCTAssertEqual(WorkflowPathStatus.ready.displayLabel, "就绪 / ready")
         XCTAssertEqual(WorkflowPathStatus.review.displayLabel, "复核 / review")
@@ -1196,6 +1287,33 @@ final class ModelBehaviorTests: XCTestCase {
                     sourceLine: nil
                 )
             ]
+        )
+    }
+
+    private func demandIntakeStatus(at demandDir: URL) -> DemandIntakeStatus {
+        let files: [(String, String, String)] = [
+            ("requirement", "需求确认卡", "requirement.md"),
+            ("questions", "待确认问题", "questions.md"),
+            ("scope", "开发范围", "scope.md"),
+            ("tasks", "需求列表", "tasks.md"),
+            ("delivery", "需求交付", "delivery.md")
+        ]
+        let statuses = files.map { key, label, filename in
+            let path = demandDir.appendingPathComponent(filename).path
+            return DemandIntakeFileStatus(
+                key: key,
+                label: label,
+                filename: filename,
+                path: path,
+                exists: FileManager.default.fileExists(atPath: path)
+            )
+        }
+        return DemandIntakeStatus(
+            directoryPath: demandDir.path,
+            exists: true,
+            ready: statuses.allSatisfy(\.exists),
+            missingCount: statuses.filter { !$0.exists }.count,
+            files: statuses
         )
     }
 
