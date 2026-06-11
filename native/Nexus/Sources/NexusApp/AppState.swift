@@ -2507,6 +2507,13 @@ final class AppState: ObservableObject {
         demandIntakeStatus(for: workspace) ?? Self.fallbackDemandIntakeStatus(for: workspace)
     }
 
+    func demandIntakeReadiness(for workspace: WorkspaceSummary) -> DemandIntakeReadinessEvidence {
+        DemandIntakeReadinessEvidence.resolve(
+            status: demandIntakeDisplayStatus(for: workspace),
+            workspace: workspace
+        )
+    }
+
     func refreshDemandIntakeStatus(for workspace: WorkspaceSummary) async {
         demandIntakeLoadingWorkspaceID = workspace.id
         lastError = nil

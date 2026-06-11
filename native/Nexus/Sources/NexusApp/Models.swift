@@ -458,6 +458,255 @@ struct WorkspaceMainStage: Hashable {
     }
 }
 
+struct DemandIntakeReadinessCheck: Hashable, Identifiable {
+    let id: String
+    let label: String
+    let detail: String
+    let status: WorkflowPathStatus
+    let systemImage: String
+    let path: String?
+}
+
+struct DemandIntakeReadinessEvidence: Hashable {
+    let status: WorkflowPathStatus
+    let reason: String
+    let evidence: [String]
+    let checks: [DemandIntakeReadinessCheck]
+    let unresolvedP0Count: Int
+    let requirementHasContent: Bool
+    let scopeFrozen: Bool
+    let requirementTasksReady: Bool
+
+    var ready: Bool {
+        status == .ready
+    }
+
+    var blockerChecks: [DemandIntakeReadinessCheck] {
+        checks.filter { $0.status == .blocked || $0.status == .review }
+    }
+
+    static func resolve(status: DemandIntakeStatus, workspace: WorkspaceSummary) -> DemandIntakeReadinessEvidence {
+        if !status.exists {
+            return DemandIntakeReadinessEvidence(
+                status: .blocked,
+                reason: "当前工作区还没有 需求/ 目录。先初始化需求预检，再整理蓝湖材料和补充说明。",
+                evidence: ["需求/"],
+                checks: [
+                    DemandIntakeReadinessCheck(
+                        id: "directory",
+                        label: "需求目录 / Demand folder",
+                        detail: "固定目录 需求/ 尚未创建。",
+                        status: .blocked,
+                        systemImage: "folder.badge.plus",
+                        path: status.directoryPath
+                    )
+                ],
+                unresolvedP0Count: 0,
+                requirementHasContent: false,
+                scopeFrozen: false,
+                requirementTasksReady: false
+            )
+        }
+
+        if !status.ready {
+            let missingFiles = status.files.filter { !$0.exists }
+            return DemandIntakeReadinessEvidence(
+                status: .review,
+                reason: "需求目录已存在，但仍缺 \(status.missingCount) 个固定文件。先补齐 requirement、questions、scope、tasks 和 delivery。",
+                evidence: status.files.map { "需求/\($0.filename)" },
+                checks: missingFiles.map { file in
+                    DemandIntakeReadinessCheck(
+                        id: "missing-\(file.key)",
+                        label: file.label,
+                        detail: "\(file.filename) 尚未创建。",
+                        status: .blocked,
+                        systemImage: "doc.badge.plus",
+                        path: file.path
+                    )
+                },
+                unresolvedP0Count: 0,
+                requirementHasContent: false,
+                scopeFrozen: false,
+                requirementTasksReady: false
+            )
+        }
+
+        let requirementFile = status.files.first { $0.key == "requirement" }
+        let questionsFile = status.files.first { $0.key == "questions" }
+        let scopeFile = status.files.first { $0.key == "scope" }
+        let tasksFile = status.files.first { $0.key == "tasks" }
+        let requirement = readText(at: requirementFile?.path)
+        let questions = readText(at: questionsFile?.path)
+        let scope = readText(at: scopeFile?.path)
+        let tasks = readText(at: tasksFile?.path)
+
+        let requirementHasContent = hasMeaningfulRequirementContent(requirement)
+        let unresolvedP0Count = unresolvedP0Items(in: questions).count
+        let scopeFrozen = isScopeFrozen(scope)
+        let requirementTasksReady = hasRequirementTaskItems(tasks)
+
+        let checks = [
+            DemandIntakeReadinessCheck(
+                id: "requirement-content",
+                label: "需求内容 / Requirement",
+                detail: requirementHasContent ? "requirement.md 已包含非占位需求内容。" : "requirement.md 仍像骨架模板，请先补充真实需求目标、流程和验收标准。",
+                status: requirementHasContent ? .ready : .blocked,
+                systemImage: requirementHasContent ? "doc.text.magnifyingglass" : "doc.badge.ellipsis",
+                path: requirementFile?.path
+            ),
+            DemandIntakeReadinessCheck(
+                id: "p0-questions",
+                label: "P0 问题 / P0",
+                detail: unresolvedP0Count == 0 ? "questions.md 中没有发现未解决 P0 阻塞项。" : "questions.md 中仍有 \(unresolvedP0Count) 个未解决 P0 项。",
+                status: unresolvedP0Count == 0 ? .ready : .blocked,
+                systemImage: unresolvedP0Count == 0 ? "checkmark.circle" : "exclamationmark.triangle",
+                path: questionsFile?.path
+            ),
+            DemandIntakeReadinessCheck(
+                id: "scope-freeze",
+                label: "范围冻结 / Scope",
+                detail: scopeFrozen ? "scope.md 已标记本次开发范围冻结。" : "scope.md 尚未显式冻结；开发前请勾选冻结项或写明范围已冻结。",
+                status: scopeFrozen ? .ready : .blocked,
+                systemImage: scopeFrozen ? "scope" : "scope",
+                path: scopeFile?.path
+            ),
+            DemandIntakeReadinessCheck(
+                id: "requirement-tasks",
+                label: "需求列表 / Tasks",
+                detail: requirementTasksReady ? "需求/tasks.md 已包含非模板需求点，可作为执行任务来源。" : "需求/tasks.md 仍只有预检模板任务，请先拆出真实需求点。",
+                status: requirementTasksReady ? .ready : .review,
+                systemImage: "checklist",
+                path: tasksFile?.path
+            )
+        ]
+
+        let blockingChecks = checks.filter { $0.status == .blocked }
+        let reviewChecks = checks.filter { $0.status == .review }
+        let resolvedStatus: WorkflowPathStatus
+        let reason: String
+        if blockingChecks.isEmpty && reviewChecks.isEmpty {
+            resolvedStatus = .ready
+            reason = "需求预检内容已就绪，可以继续范围冻结和服务分支确认。"
+        } else if !blockingChecks.isEmpty {
+            resolvedStatus = .blocked
+            reason = blockingChecks.map(\.detail).joined(separator: " ")
+        } else {
+            resolvedStatus = .review
+            reason = reviewChecks.map(\.detail).joined(separator: " ")
+        }
+
+        return DemandIntakeReadinessEvidence(
+            status: resolvedStatus,
+            reason: reason,
+            evidence: status.files.map { "需求/\($0.filename)" },
+            checks: checks,
+            unresolvedP0Count: unresolvedP0Count,
+            requirementHasContent: requirementHasContent,
+            scopeFrozen: scopeFrozen,
+            requirementTasksReady: requirementTasksReady
+        )
+    }
+
+    private static func readText(at path: String?) -> String {
+        guard let path else { return "" }
+        return (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+    }
+
+    private static func hasMeaningfulRequirementContent(_ text: String) -> Bool {
+        meaningfulLines(in: text).count >= 3
+    }
+
+    private static func unresolvedP0Items(in text: String) -> [String] {
+        var inP0Section = false
+        var items: [String] = []
+
+        for rawLine in text.components(separatedBy: .newlines) {
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            let lowercased = line.lowercased()
+            if line.hasPrefix("##") {
+                inP0Section = lowercased.contains("p0")
+                continue
+            }
+            guard inP0Section || lowercased.contains("p0") else { continue }
+            guard looksLikeOpenQuestion(line) else { continue }
+            items.append(line)
+        }
+
+        return items
+    }
+
+    private static func looksLikeOpenQuestion(_ line: String) -> Bool {
+        let lowercased = line.lowercased()
+        guard !line.isEmpty, !line.hasPrefix("| ---") else { return false }
+        if lowercased.contains("清零前") || lowercased.contains("结论") {
+            return false
+        }
+        let resolvedMarkers = ["[x]", "已解决", "已确认", "无", "暂无", "none", "resolved", "closed", "done"]
+        if resolvedMarkers.contains(where: { lowercased.contains($0) }) {
+            return false
+        }
+        return line.hasPrefix("-")
+            || line.hasPrefix("*")
+            || line.hasPrefix("|")
+            || lowercased.contains("p0")
+    }
+
+    private static func isScopeFrozen(_ text: String) -> Bool {
+        text.components(separatedBy: .newlines).contains { rawLine in
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            let lowercased = line.lowercased()
+            if lowercased.contains("[ ]") && line.contains("冻结") {
+                return false
+            }
+            if lowercased.contains("[x]") && line.contains("冻结") {
+                return true
+            }
+            if line.contains("范围已冻结") || line.contains("已冻结本次开发范围") {
+                return true
+            }
+            if line.contains("冻结状态") && line.contains("已冻结") {
+                return true
+            }
+            return lowercased.contains("scope frozen")
+        }
+    }
+
+    private static func hasRequirementTaskItems(_ text: String) -> Bool {
+        text.components(separatedBy: .newlines).contains { rawLine in
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard line.hasPrefix("|") else { return false }
+            guard !line.contains("---") else { return false }
+            let templateRows = ["整理 requirement.md", "整理 questions.md", "冻结 scope.md", "需求点"]
+            guard !templateRows.contains(where: { line.contains($0) }) else { return false }
+            return !placeholderOnly(line)
+        }
+    }
+
+    private static func meaningfulLines(in text: String) -> [String] {
+        text.components(separatedBy: .newlines).compactMap { rawLine in
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !line.isEmpty else { return nil }
+            guard !line.hasPrefix("#"), !line.hasPrefix("| ---"), !line.hasPrefix(">") else { return nil }
+            guard !placeholderOnly(line) else { return nil }
+            return line
+        }
+    }
+
+    private static func placeholderOnly(_ line: String) -> Bool {
+        let lowercased = line.lowercased()
+        let placeholders = [
+            "待整理",
+            "待确认",
+            "待补充",
+            "暂无",
+            "todo",
+            "tbd",
+            "placeholder"
+        ]
+        return placeholders.contains { lowercased.contains($0) }
+    }
+}
+
 enum AgentActionSurfaceKind: String, Hashable {
     case approval
     case answer
@@ -1383,7 +1632,10 @@ struct WorkspaceSummary: Identifiable, Hashable {
         }
     }
 
-    func mainStage(demandIntakeStatus: DemandIntakeStatus? = nil) -> WorkspaceMainStage {
+    func mainStage(
+        demandIntakeStatus: DemandIntakeStatus? = nil,
+        demandReadiness: DemandIntakeReadinessEvidence? = nil
+    ) -> WorkspaceMainStage {
         if isArchived {
             return WorkspaceMainStage(
                 id: .archived,
@@ -1398,7 +1650,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
             )
         }
 
-        let demandGate = Self.demandGate(for: self, status: demandIntakeStatus)
+        let demandGate = Self.demandGate(for: self, status: demandIntakeStatus, readiness: demandReadiness)
         if demandGate.status != .ready {
             return WorkspaceMainStage(
                 id: .demandIntake,
@@ -1556,8 +1808,13 @@ struct WorkspaceSummary: Identifiable, Hashable {
 
     private static func demandGate(
         for workspace: WorkspaceSummary,
-        status: DemandIntakeStatus?
+        status: DemandIntakeStatus?,
+        readiness: DemandIntakeReadinessEvidence?
     ) -> (status: WorkflowPathStatus, reason: String, evidence: [String]) {
+        if let readiness {
+            return (readiness.status, readiness.reason, readiness.evidence)
+        }
+
         if let status {
             let evidence = status.files.map { "需求/\($0.filename)" }
             if status.ready {

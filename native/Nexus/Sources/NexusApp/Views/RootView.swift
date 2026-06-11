@@ -3500,7 +3500,10 @@ private struct WorkspaceDetailView: View {
     let scrollToSection: (WorkspaceDetailSection) -> Void
 
     private var mainStage: WorkspaceMainStage {
-        workspace.mainStage(demandIntakeStatus: appState.demandIntakeDisplayStatus(for: workspace))
+        workspace.mainStage(
+            demandIntakeStatus: appState.demandIntakeDisplayStatus(for: workspace),
+            demandReadiness: appState.demandIntakeReadiness(for: workspace)
+        )
     }
 
     var body: some View {
@@ -4394,7 +4397,10 @@ private struct WorkspaceDetailMapView: View {
     }
 
     private var mainStage: WorkspaceMainStage {
-        workspace.mainStage(demandIntakeStatus: appState.demandIntakeDisplayStatus(for: workspace))
+        workspace.mainStage(
+            demandIntakeStatus: appState.demandIntakeDisplayStatus(for: workspace),
+            demandReadiness: appState.demandIntakeReadiness(for: workspace)
+        )
     }
 
     var body: some View {
@@ -5779,6 +5785,10 @@ private struct WorkspaceDemandIntakeView: View {
         appState.demandIntakeDisplayStatus(for: workspace)
     }
 
+    private var readiness: DemandIntakeReadinessEvidence {
+        appState.demandIntakeReadiness(for: workspace)
+    }
+
     private var isLoading: Bool {
         appState.demandIntakeLoadingWorkspaceID == workspace.id
     }
@@ -5791,13 +5801,17 @@ private struct WorkspaceDemandIntakeView: View {
         SectionBlock(title: "需求预检 / Demand intake") {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: status.ready ? "checkmark.seal" : "text.badge.checkmark")
+                    Image(systemName: readiness.ready ? "checkmark.seal" : "text.badge.checkmark")
                         .foregroundStyle(statusColor)
                         .frame(width: 16)
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text(statusTitle)
                             .font(.subheadline.weight(.semibold))
+                        Text(readiness.reason)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                         Text(status.directoryPath)
                             .font(.system(size: 10, design: .monospaced))
                             .foregroundStyle(.secondary)
@@ -5821,7 +5835,22 @@ private struct WorkspaceDemandIntakeView: View {
                 LazyVGrid(columns: metricColumns, alignment: .leading, spacing: 8) {
                     WorkflowMetric(label: "目录", value: status.exists ? "exists" : "missing", tone: status.exists ? NexusPalette.success : NexusPalette.warning)
                     WorkflowMetric(label: "文件", value: "\(readyFileCount)/\(status.files.count)", tone: status.ready ? NexusPalette.success : NexusPalette.warning)
-                    WorkflowMetric(label: "缺失", value: "\(status.missingCount)", tone: status.missingCount == 0 ? NexusPalette.success : NexusPalette.warning)
+                    WorkflowMetric(label: "内容", value: readiness.requirementHasContent ? "ready" : "draft", tone: readiness.requirementHasContent ? NexusPalette.success : NexusPalette.warning)
+                    WorkflowMetric(label: "P0", value: "\(readiness.unresolvedP0Count)", tone: readiness.unresolvedP0Count == 0 ? NexusPalette.success : NexusPalette.danger)
+                    WorkflowMetric(label: "范围", value: readiness.scopeFrozen ? "frozen" : "open", tone: readiness.scopeFrozen ? NexusPalette.success : NexusPalette.danger)
+                    WorkflowMetric(label: "任务", value: readiness.requirementTasksReady ? "ready" : "draft", tone: readiness.requirementTasksReady ? NexusPalette.success : NexusPalette.warning)
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(readiness.checks) { check in
+                        DemandIntakeReadinessRow(check: check) {
+                            if let path = check.path {
+                                Task {
+                                    await appState.loadDocument(path: path)
+                                }
+                            }
+                        }
+                    }
                 }
 
                 LazyVGrid(columns: fileColumns, alignment: .leading, spacing: 8) {
@@ -5929,20 +5958,17 @@ private struct WorkspaceDemandIntakeView: View {
     }
 
     private var statusTitle: String {
-        if status.ready {
+        if readiness.ready {
             return "需求预检已就绪"
         }
         if status.exists {
-            return "需求预检文件待补齐"
+            return status.ready ? "需求预检内容待确认" : "需求预检文件待补齐"
         }
         return "需求预检待初始化"
     }
 
     private var statusColor: Color {
-        if status.ready {
-            return NexusPalette.success
-        }
-        return status.exists ? NexusPalette.warning : NexusPalette.accent
+        readiness.status.color
     }
 
     private var readyFileCount: Int {
@@ -5963,6 +5989,60 @@ private struct WorkspaceDemandIntakeView: View {
 
     private var actionColumns: [GridItem] {
         [GridItem(.adaptive(minimum: 112), spacing: 8, alignment: .leading)]
+    }
+}
+
+private struct DemandIntakeReadinessRow: View {
+    let check: DemandIntakeReadinessCheck
+    let openAction: () -> Void
+
+    private var canOpen: Bool {
+        guard let path = check.path else { return false }
+        return path.hasSuffix(".md") && FileManager.default.fileExists(atPath: path)
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: check.systemImage)
+                .foregroundStyle(check.status.color)
+                .frame(width: 15)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(check.label)
+                        .font(.caption.weight(.semibold))
+                    Text(check.status.displayLabel)
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(check.status.color)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(check.status.color.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                }
+                Text(check.detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 8)
+
+            Button {
+                openAction()
+            } label: {
+                Label("打开", systemImage: "doc.text")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.mini)
+            .disabled(!canOpen)
+        }
+        .padding(9)
+        .background(check.status.color.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(check.status.color.opacity(0.14))
+        }
     }
 }
 
@@ -6546,7 +6626,10 @@ private struct WorkspaceCommandCenterView: View {
     }
 
     private var mainStage: WorkspaceMainStage {
-        workspace.mainStage(demandIntakeStatus: demandIntakeDisplayStatus)
+        workspace.mainStage(
+            demandIntakeStatus: demandIntakeDisplayStatus,
+            demandReadiness: appState.demandIntakeReadiness(for: workspace)
+        )
     }
 
     private var primaryStep: CommandCenterPrimaryStep {
