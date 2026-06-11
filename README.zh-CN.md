@@ -273,6 +273,9 @@ widget/NexusWidget/NexusWidget.swift
 ## 文档
 
 - [完整产品形态](docs/product-shape.zh-CN.md)
+- [Swift Native-only 路线图](docs/native-swift-only-roadmap.md)
+- [主流程契约](docs/main-workflow.md)
+- [主流程审计](docs/main-workflow-audit.zh-CN.md)
 - [架构说明](docs/architecture.md)
 - [原生架构目标](docs/native-architecture.md)
 - [原生迁移计划](docs/plans/2026-05-27-native-mac-migration.md)
