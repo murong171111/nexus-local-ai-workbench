@@ -271,6 +271,9 @@ Building and shipping the actual `.appex` requires a full Xcode project with a W
 ## Documentation
 
 - [Product shape](docs/product-shape.zh-CN.md)
+- [Native Swift-only roadmap](docs/native-swift-only-roadmap.md)
+- [Main workflow contract](docs/main-workflow.md)
+- [Main workflow audit](docs/main-workflow-audit.zh-CN.md)
 - [Architecture](docs/architecture.md)
 - [Native architecture target](docs/native-architecture.md)
 - [Native migration plan](docs/plans/2026-05-27-native-mac-migration.md)

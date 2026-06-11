@@ -1,14 +1,18 @@
 # Roadmap
 
-This roadmap describes the next product and engineering steps for Nexus. The current Tauri app remains the preview app, but future roadmap work should move toward the native architecture documented in `docs/adr/0001-native-swiftui-rust-core.md`, `docs/native-architecture.md`, and the product shape in `docs/product-shape.zh-CN.md`.
+This roadmap describes the next product and engineering steps for Nexus. The product direction has moved to Swift Native-only for new feature work. See `docs/native-swift-only-roadmap.md` and `docs/main-workflow.md` for the current roadmap and M1 workflow contract.
+
+React, Tauri, Rust, and TypeScript are now legacy/reference surfaces for new product workflow work. They may receive critical maintenance, public-data safety fixes, and migration support, but new workflow features should be implemented in Swift/SwiftUI/AppKit/WidgetKit.
+
+For the current main-workflow convergence audit, see `docs/main-workflow-audit.zh-CN.md`. It narrows the near-term product goal to the requirement lifecycle path: create workspace -> demand intake -> scope freeze -> service/branch confirmation -> worktree setup -> development tasks -> delivery check -> archive.
 
 ## Architecture Direction
 
-- Mac-first product experience: SwiftUI + AppKit.
-- Portable local engine: Rust Core.
+- Mac-first product experience: SwiftUI + AppKit as the primary implementation surface.
+- Native Apple-platform local logic for new workflow rules, using Swift/Foundation/AppKit APIs.
 - Local searchable state: SQLite + FTS, rebuildable from workspace Markdown files.
 - Apple ecosystem surfaces: WidgetKit first, iPad/iPhone companion views later.
-- Current Tauri implementation: keep as working preview until the native Mac shell reaches core workflow parity.
+- Current Tauri/React/Rust implementation: keep as frozen legacy/reference until the native Mac shell reaches core workflow parity and deletion conditions are met.
 
 ## 0.1.x: Public Preview Hardening
 
