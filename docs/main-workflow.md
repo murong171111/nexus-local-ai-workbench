@@ -349,7 +349,7 @@ The current Native shell already has enough structure to receive the M1 workflow
 - Workspace list: `WorkspaceListView` and `WorkspaceCard` show workspace identity, branch, lifecycle, service/task/worktree signals, and risk.
 - Workspace detail: `WorkspaceDetailView` already composes Detail Map, Command Center, Codex Sessions, Demand Intake, Lifecycle, Workflow, Services, Risk Review, Documents, and Activity.
 - Documents: `WorkspaceDocumentsHubView` already opens standard workspace documents and scanned SQL artifacts with preview/source behavior.
-- Demand intake: `WorkspaceDemandIntakeView` already initializes and opens the fixed `需求/` archive files.
+- Demand intake: `WorkspaceDemandIntakeView` already initializes and opens the fixed `需求/` archive files, and the Native shell now reads `需求/*.md` for requirement content, unresolved P0 questions, scope freeze markers, and requirement-task readiness.
 - Git/worktree: `ServiceGitStatusSectionView` and `WorktreeSetupSheet` already expose service-level status and confirmed worktree setup.
 
 M1 should refine these surfaces around a single Swift-owned stage model before splitting files aggressively.
@@ -411,7 +411,7 @@ Target files:
 Plan:
 
 - Keep fixed `需求/` initialization.
-- Add readiness fields for P0 questions, frozen scope, and task transfer.
+- Add readiness fields for P0 questions, frozen scope, and task transfer. `[started with Swift-owned Markdown evidence for requirement content, P0, scope freeze, and intake task rows]`
 - Add "transfer requirement tasks" as a later confirmed write action.
 - Keep AI invocation out of Nexus M1.
 
