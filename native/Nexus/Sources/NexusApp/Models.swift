@@ -356,6 +356,108 @@ struct WorkspaceSqlSummary: Hashable {
     }
 }
 
+enum WorkspaceMainStageID: String, CaseIterable, Hashable {
+    case created
+    case demandIntake = "demand_intake"
+    case scopeFreeze = "scope_freeze"
+    case serviceBranchConfirm = "service_branch_confirm"
+    case worktreeSetup = "worktree_setup"
+    case development
+    case deliveryCheck = "delivery_check"
+    case archived
+
+    var label: String {
+        switch self {
+        case .created:
+            "已建档 / Created"
+        case .demandIntake:
+            "需求预检 / Demand intake"
+        case .scopeFreeze:
+            "范围冻结 / Scope freeze"
+        case .serviceBranchConfirm:
+            "服务分支 / Service & branch"
+        case .worktreeSetup:
+            "Worktree 准备 / Worktree"
+        case .development:
+            "开发任务 / Development"
+        case .deliveryCheck:
+            "交付检查 / Delivery"
+        case .archived:
+            "归档 / Archive"
+        }
+    }
+
+    var shortLabel: String {
+        switch self {
+        case .created:
+            "建档"
+        case .demandIntake:
+            "预检"
+        case .scopeFreeze:
+            "范围"
+        case .serviceBranchConfirm:
+            "服务/分支"
+        case .worktreeSetup:
+            "Worktree"
+        case .development:
+            "开发"
+        case .deliveryCheck:
+            "交付"
+        case .archived:
+            "归档"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .created:
+            "folder.badge.plus"
+        case .demandIntake:
+            "text.badge.checkmark"
+        case .scopeFreeze:
+            "scope"
+        case .serviceBranchConfirm:
+            "arrow.triangle.branch"
+        case .worktreeSetup:
+            "wrench.and.screwdriver"
+        case .development:
+            "hammer"
+        case .deliveryCheck:
+            "shippingbox"
+        case .archived:
+            "archivebox"
+        }
+    }
+}
+
+enum WorkspaceMainStageAction: Hashable {
+    case demandIntake
+    case document(String)
+    case path(String)
+    case worktree
+    case riskPrompt
+    case localCheck
+    case deliveryHandoff
+    case validationHandoff
+    case codex
+}
+
+struct WorkspaceMainStage: Hashable {
+    let id: WorkspaceMainStageID
+    let status: WorkflowPathStatus
+    let title: String
+    let reason: String
+    let primaryActionLabel: String
+    let primaryActionSystemImage: String
+    let primaryAction: WorkspaceMainStageAction
+    let evidence: [String]
+    let nextStageAllowed: Bool
+
+    var evidenceSummary: String {
+        evidence.isEmpty ? "No evidence yet" : evidence.joined(separator: " · ")
+    }
+}
+
 enum AgentActionSurfaceKind: String, Hashable {
     case approval
     case answer
@@ -1278,6 +1380,270 @@ struct WorkspaceSummary: Identifiable, Hashable {
             return [.developing]
         default:
             return [.developing, .delivery, .blocked]
+        }
+    }
+
+    func mainStage(demandIntakeStatus: DemandIntakeStatus? = nil) -> WorkspaceMainStage {
+        if isArchived {
+            return WorkspaceMainStage(
+                id: .archived,
+                status: .archived,
+                title: "已归档 / Archived",
+                reason: "这个工作区已退出活跃开发流。需要恢复时先查看交接和交付证据。",
+                primaryActionLabel: "查看交接",
+                primaryActionSystemImage: "doc.text",
+                primaryAction: .document("handoff"),
+                evidence: compactEvidence("handoff.md", documentLinks["delivery"] ?? "交付记录.md"),
+                nextStageAllowed: false
+            )
+        }
+
+        let demandGate = Self.demandGate(for: self, status: demandIntakeStatus)
+        if demandGate.status != .ready {
+            return WorkspaceMainStage(
+                id: .demandIntake,
+                status: demandGate.status,
+                title: "完成需求预检 / Demand intake",
+                reason: demandGate.reason,
+                primaryActionLabel: "打开预检",
+                primaryActionSystemImage: "text.badge.checkmark",
+                primaryAction: .demandIntake,
+                evidence: demandGate.evidence,
+                nextStageAllowed: false
+            )
+        }
+
+        if lifecycle.stage == "scoping" {
+            return WorkspaceMainStage(
+                id: .scopeFreeze,
+                status: .next,
+                title: "冻结开发范围 / Scope freeze",
+                reason: "需求预检已就绪，先在 scope.md 中确认本次做什么、不做什么，再进入服务和分支确认。",
+                primaryActionLabel: "打开范围",
+                primaryActionSystemImage: "scope",
+                primaryAction: .path("\(normalizedPath)/需求/scope.md"),
+                evidence: compactEvidence("需求/scope.md", "需求/questions.md", "需求/tasks.md"),
+                nextStageAllowed: false
+            )
+        }
+
+        let branchConfirmed = Self.hasConfirmedTargetBranch(branch)
+        let missingSourceServices = services.filter { !$0.sourceExists }
+        if !branchConfirmed || services.isEmpty || !missingSourceServices.isEmpty {
+            let title: String
+            let reason: String
+            let action: WorkspaceMainStageAction
+            let actionLabel: String
+            let actionSystemImage: String
+            if !branchConfirmed {
+                title = "确认目标分支 / Confirm branch"
+                reason = "目标分支仍未确认。先补齐 branches.md 或 workspace.md，后续 worktree 和交付检查才有可靠基准。"
+                action = .document("branches")
+                actionLabel = "打开分支"
+                actionSystemImage = "arrow.triangle.branch"
+            } else if services.isEmpty {
+                title = "确认服务范围 / Confirm services"
+                reason = "服务范围为空。先确认涉及服务，Nexus 才能检查 worktree、风险和交付影响面。"
+                action = .document("services")
+                actionLabel = "打开服务"
+                actionSystemImage = "square.stack.3d.up"
+            } else {
+                title = "修正源仓库 / Source repos"
+                reason = "存在源仓库不可读或未初始化的服务：\(missingSourceServices.map(\.name).joined(separator: ", "))。"
+                action = .document("services")
+                actionLabel = "打开服务"
+                actionSystemImage = "square.stack.3d.up"
+            }
+
+            return WorkspaceMainStage(
+                id: .serviceBranchConfirm,
+                status: .blocked,
+                title: title,
+                reason: reason,
+                primaryActionLabel: actionLabel,
+                primaryActionSystemImage: actionSystemImage,
+                primaryAction: action,
+                evidence: compactEvidence("branches.md", "services.md", "workspace.md"),
+                nextStageAllowed: false
+            )
+        }
+
+        let missingWorktrees = services.filter { !$0.worktreeExists }
+        if !missingWorktrees.isEmpty {
+            return WorkspaceMainStage(
+                id: .worktreeSetup,
+                status: .next,
+                title: "准备隔离 worktree / Setup worktrees",
+                reason: "\(missingWorktrees.count) 个服务还没有 workspace-local worktree：\(missingWorktrees.map(\.name).joined(separator: ", "))。",
+                primaryActionLabel: "创建 worktree",
+                primaryActionSystemImage: "wrench.and.screwdriver",
+                primaryAction: .worktree,
+                evidence: compactEvidence("scripts/worktree-commands.sh", "repos/", "source-repos/"),
+                nextStageAllowed: false
+            )
+        }
+
+        if riskLevel == .high || !risks.isEmpty {
+            return WorkspaceMainStage(
+                id: .development,
+                status: riskLevel == .high ? .blocked : .review,
+                title: "复核开发风险 / Review risks",
+                reason: "当前存在 \(risks.count) 个风险信号。先复核风险上下文，再决定是否继续开发或进入交付。",
+                primaryActionLabel: "风险交接",
+                primaryActionSystemImage: "point.3.connected.trianglepath.dotted",
+                primaryAction: .riskPrompt,
+                evidence: compactEvidence("STATUS.md", risks.first?.title, risks.first?.detail),
+                nextStageAllowed: riskLevel != .high
+            )
+        }
+
+        let workflowSummary = WorkspaceWorkflowSummary(workspace: self)
+        if workflowSummary.taskStatus != .ready {
+            let blocked = workflowSummary.blockedTaskCount
+            return WorkspaceMainStage(
+                id: .development,
+                status: blocked > 0 ? .blocked : .next,
+                title: blocked > 0 ? "处理阻塞任务 / Resolve tasks" : "推进开发任务 / Development tasks",
+                reason: blocked > 0
+                    ? "\(blocked) 个任务仍处于阻塞状态。先打开 tasks.md，确认完成、延期或继续拆解。"
+                    : "\(workflowSummary.openTaskCount) 个任务仍未关闭。后续开发按照 tasks.md 中未完成项推进。",
+                primaryActionLabel: "打开任务",
+                primaryActionSystemImage: "checklist",
+                primaryAction: .document("tasks"),
+                evidence: compactEvidence("tasks.md", "需求/tasks.md"),
+                nextStageAllowed: false
+            )
+        }
+
+        let sqlSummary = WorkspaceSqlSummary(workspace: self)
+        if sqlSummary.status == .blocked {
+            return WorkspaceMainStage(
+                id: .deliveryCheck,
+                status: .blocked,
+                title: "补齐 SQL 交付 / SQL artifacts",
+                reason: sqlSummary.detail,
+                primaryActionLabel: sqlSummary.actionLabel,
+                primaryActionSystemImage: "cylinder.split.1x2",
+                primaryAction: .document("sql"),
+                evidence: compactEvidence("sql/", documentLinks["delivery"] ?? "交付记录.md"),
+                nextStageAllowed: false
+            )
+        }
+
+        return WorkspaceMainStage(
+            id: .deliveryCheck,
+            status: workflowSummary.deliveryStatus,
+            title: Self.deliveryStageTitle(for: workflowSummary.deliveryStatus),
+            reason: workflowSummary.deliveryDetail,
+            primaryActionLabel: workflowSummary.deliveryRoute.displayLabel,
+            primaryActionSystemImage: Self.deliveryStageSymbol(for: workflowSummary.deliveryStatus),
+            primaryAction: Self.mainAction(for: workflowSummary.deliveryRoute),
+            evidence: compactEvidence("交付记录.md", "sql/", "handoff.md"),
+            nextStageAllowed: workflowSummary.deliveryStatus == .ready
+        )
+    }
+
+    private var normalizedPath: String {
+        path.hasSuffix("/") ? String(path.dropLast()) : path
+    }
+
+    private func compactEvidence(_ values: String?...) -> [String] {
+        values.compactMap { value in
+            let cleaned = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return cleaned.isEmpty ? nil : cleaned
+        }
+    }
+
+    private static func demandGate(
+        for workspace: WorkspaceSummary,
+        status: DemandIntakeStatus?
+    ) -> (status: WorkflowPathStatus, reason: String, evidence: [String]) {
+        if let status {
+            let evidence = status.files.map { "需求/\($0.filename)" }
+            if status.ready {
+                return (.ready, "需求预检文件已就绪，可以继续冻结范围。", evidence)
+            }
+            if status.exists {
+                return (
+                    .review,
+                    "需求目录已存在，但仍缺 \(status.missingCount) 个固定文件。先补齐 requirement、questions、scope、tasks 和 delivery。",
+                    evidence
+                )
+            }
+            return (
+                .blocked,
+                "当前工作区还没有 需求/ 目录。先初始化需求预检，再把蓝湖材料和补充说明沉淀到 Markdown。",
+                ["需求/"]
+            )
+        }
+
+        if let check = workspace.healthChecks.first(where: { $0.id == "demand-intake" || $0.action == "demandIntake" }) {
+            switch check.status.lowercased() {
+            case "pass", "ok", "ready":
+                return (.ready, check.detail, ["需求/requirement.md", "需求/questions.md", "需求/scope.md"])
+            case "fail", "blocked", "blocker":
+                return (.blocked, check.detail, ["需求/"])
+            default:
+                return (.review, check.detail, ["需求/"])
+            }
+        }
+
+        return (
+            .pending,
+            "尚未读取需求预检状态。刷新工作区后确认 需求/ 目录和固定文件是否齐全。",
+            ["需求/"]
+        )
+    }
+
+    private static func hasConfirmedTargetBranch(_ branch: String) -> Bool {
+        let normalized = branch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return false }
+        return !normalized.contains("待确认")
+            && !normalized.contains("pending")
+            && !normalized.contains("todo")
+            && normalized != "-"
+    }
+
+    private static func deliveryStageTitle(for status: WorkflowPathStatus) -> String {
+        switch status {
+        case .ready:
+            "交付检查通过 / Delivery ready"
+        case .archived:
+            "已归档 / Archived"
+        case .blocked:
+            "交付阻塞 / Delivery blocked"
+        case .review, .next:
+            "整理交付 / Prepare delivery"
+        case .pending:
+            "运行交付检查 / Check delivery"
+        }
+    }
+
+    private static func deliveryStageSymbol(for status: WorkflowPathStatus) -> String {
+        switch status {
+        case .ready:
+            "checkmark.seal"
+        case .blocked:
+            "xmark.octagon"
+        case .archived:
+            "archivebox"
+        case .review, .next:
+            "shippingbox"
+        case .pending:
+            "doc.text"
+        }
+    }
+
+    private static func mainAction(for route: WorkflowDeliveryRoute) -> WorkspaceMainStageAction {
+        switch route {
+        case .runLocalCheck:
+            .localCheck
+        case .updateDelivery:
+            .deliveryHandoff
+        case .validationHandoff:
+            .validationHandoff
+        case .openDelivery:
+            .document("delivery")
         }
     }
 
