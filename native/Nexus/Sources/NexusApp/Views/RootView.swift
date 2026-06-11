@@ -2545,6 +2545,7 @@ private struct WorkspaceCard: View {
     let togglePinned: () -> Void
 
     var body: some View {
+        let mainStage = workspace.mainStage()
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -2579,8 +2580,11 @@ private struct WorkspaceCard: View {
 
             LifecycleCompactView(lifecycle: workspace.lifecycle)
 
+            WorkspaceMainStageInlineView(stage: mainStage)
+
             HStack(spacing: 16) {
                 Metric(label: "服务 / Services", value: "\(workspace.services.count)")
+                Metric(label: "主路径 / Stage", value: mainStage.id.shortLabel)
                 Metric(label: "任务 / Tasks", value: "\(workspace.tasks.filter(\.isActive).count) active")
                 Metric(label: "Worktree", value: workspace.worktreeState)
                 Metric(label: "最近活动 / Activity", value: workspace.activities.first?.title ?? "No recent activity")
@@ -2600,6 +2604,40 @@ private struct WorkspaceCard: View {
             return workspace.isArchived ? NexusPalette.accent.opacity(0.65) : NexusPalette.accent
         }
         return workspace.isArchived ? NexusPalette.border.opacity(0.65) : NexusPalette.border
+    }
+}
+
+private struct WorkspaceMainStageInlineView: View {
+    let stage: WorkspaceMainStage
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: stage.id.systemImage)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(stage.status.color)
+                .frame(width: 15)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(stage.id.label)
+                        .font(.caption.weight(.semibold))
+                    Text(stage.status.displayLabel)
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(stage.status.color)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(stage.status.color.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                }
+                Text(stage.reason)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding(9)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
@@ -3461,6 +3499,10 @@ private struct WorkspaceDetailView: View {
     let workspace: WorkspaceSummary
     let scrollToSection: (WorkspaceDetailSection) -> Void
 
+    private var mainStage: WorkspaceMainStage {
+        workspace.mainStage(demandIntakeStatus: appState.demandIntakeDisplayStatus(for: workspace))
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 6) {
@@ -3473,6 +3515,10 @@ private struct WorkspaceDetailView: View {
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
+            }
+
+            WorkspaceMainStageSummaryView(stage: mainStage) {
+                run(mainStage.primaryAction)
             }
 
             WorkspaceDetailMapView(workspace: workspace) { section in
@@ -3613,6 +3659,77 @@ private struct WorkspaceDetailView: View {
         }
     }
 
+    private func run(_ action: WorkspaceMainStageAction) {
+        switch action {
+        case .demandIntake:
+            scrollToSection(.demand)
+        case .document(let key):
+            if key == "sql" {
+                Task {
+                    await appState.openSqlReviewDocument(in: workspace)
+                }
+                return
+            }
+            Task {
+                await appState.loadDocument(path: documentPath(for: key))
+            }
+        case .path(let path):
+            Task {
+                await appState.loadDocument(path: path)
+            }
+        case .worktree:
+            appState.presentWorktreeSetup(for: workspace)
+        case .riskPrompt:
+            copyToPasteboard(appState.riskReviewPrompt(for: workspace))
+            Task {
+                await appState.recordRiskReviewHandoffCopied(for: workspace)
+            }
+        case .localCheck:
+            Task {
+                await appState.runLocalAutomationCheck(actor: "Nexus Main Stage")
+            }
+        case .deliveryHandoff:
+            Task {
+                await appState.openDeliveryUpdateInCodex(workspace)
+            }
+        case .validationHandoff:
+            Task {
+                await appState.openValidationPrHandoffInCodex(workspace)
+            }
+        case .codex:
+            Task {
+                await appState.openWorkspaceInCodex(workspace)
+            }
+        }
+    }
+
+    private func documentPath(for key: String) -> String {
+        if let path = workspace.documentLinks[key] {
+            return path
+        }
+
+        switch key {
+        case "workspace":
+            return "\(workspace.path)/workspace.md"
+        case "status":
+            return "\(workspace.path)/STATUS.md"
+        case "services":
+            return "\(workspace.path)/services.md"
+        case "branches":
+            return "\(workspace.path)/branches.md"
+        case "tasks":
+            return "\(workspace.path)/tasks.md"
+        case "delivery":
+            return "\(workspace.path)/交付记录.md"
+        case "handoff":
+            return "\(workspace.path)/handoff.md"
+        case "worktreeScript":
+            return "\(workspace.path)/scripts/worktree-commands.sh"
+        default:
+            return workspace.documentLinks["handoff"] ?? "\(workspace.path)/handoff.md"
+        }
+    }
+
     private func copyTaskHandoff(_ task: WorkspaceTask, in workspace: WorkspaceSummary) {
         Task {
             await appState.openTaskInCodex(task, in: workspace)
@@ -3622,6 +3739,70 @@ private struct WorkspaceDetailView: View {
     private var riskReviewChecks: [WorkspaceHealthCheck] {
         workspace.healthChecks.filter { check in
             check.id != "delivery-record" && check.action != "delivery"
+        }
+    }
+}
+
+private struct WorkspaceMainStageSummaryView: View {
+    let stage: WorkspaceMainStage
+    let action: () -> Void
+
+    var body: some View {
+        SectionBlock(title: "主流程状态 / Main workflow") {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: stage.id.systemImage)
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(stage.status.color)
+                        .frame(width: 24)
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack(spacing: 7) {
+                            Text(stage.id.label)
+                                .font(.subheadline.weight(.semibold))
+                            Text(stage.status.displayLabel)
+                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(stage.status.color)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 2)
+                                .background(stage.status.color.opacity(0.1))
+                                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        }
+
+                        Text(stage.reason)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer()
+
+                    Button(action: action) {
+                        Label(stage.primaryActionLabel, systemImage: stage.primaryActionSystemImage)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+
+                HStack(spacing: 8) {
+                    WorkflowMetric(label: "Stage", value: stage.id.shortLabel, tone: stage.status.color)
+                    WorkflowMetric(label: "Next", value: stage.nextStageAllowed ? "allowed" : "blocked", tone: stage.nextStageAllowed ? NexusPalette.success : stage.status.color)
+                }
+
+                if !stage.evidence.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("证据 / Evidence")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        ForEach(stage.evidence.prefix(4), id: \.self) { evidence in
+                            Label(evidence, systemImage: "doc.text")
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -4212,6 +4393,10 @@ private struct WorkspaceDetailMapView: View {
         workspace.services.filter { !$0.worktreeExists }.count
     }
 
+    private var mainStage: WorkspaceMainStage {
+        workspace.mainStage(demandIntakeStatus: appState.demandIntakeDisplayStatus(for: workspace))
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 8) {
@@ -4316,26 +4501,14 @@ private struct WorkspaceDetailMapView: View {
     }
 
     private var commandTone: Color {
-        if workspace.isArchived {
-            return .secondary
-        }
-        if !hasConfirmedTargetBranch(workspace.branch) || workspace.services.isEmpty {
-            return NexusPalette.danger
-        }
-        if missingWorktreeCount > 0 || !workspace.risks.isEmpty || openTaskCount > 0 {
-            return NexusPalette.warning
-        }
-        return NexusPalette.success
+        mainStage.status.color
     }
 
-    private var demandStatus: DemandIntakeStatus? {
-        appState.demandIntakeStatus(for: workspace)
+    private var demandStatus: DemandIntakeStatus {
+        appState.demandIntakeDisplayStatus(for: workspace)
     }
 
     private var demandDetail: String {
-        guard let demandStatus else {
-            return "待检查"
-        }
         if demandStatus.ready {
             return "已就绪"
         }
@@ -4343,9 +4516,6 @@ private struct WorkspaceDetailMapView: View {
     }
 
     private var demandTone: Color {
-        guard let demandStatus else {
-            return .secondary
-        }
         if demandStatus.ready {
             return NexusPalette.success
         }
@@ -4353,25 +4523,7 @@ private struct WorkspaceDetailMapView: View {
     }
 
     private var primaryPathDetail: String {
-        if workspace.isArchived {
-            return "已归档"
-        }
-        if !hasConfirmedTargetBranch(workspace.branch) {
-            return "分支"
-        }
-        if workspace.services.isEmpty {
-            return "服务"
-        }
-        if missingWorktreeCount > 0 {
-            return "worktree"
-        }
-        if !workspace.risks.isEmpty {
-            return "风险"
-        }
-        if openTaskCount > 0 {
-            return "任务"
-        }
-        return "就绪"
+        mainStage.id.shortLabel
     }
 
     private func hasConfirmedTargetBranch(_ branch: String) -> Bool {
@@ -6288,6 +6440,10 @@ private struct WorkspaceCommandCenterView: View {
         appState.demandIntakeStatus(for: workspace)
     }
 
+    private var demandIntakeDisplayStatus: DemandIntakeStatus {
+        appState.demandIntakeDisplayStatus(for: workspace)
+    }
+
     private var demandIntakeReady: Bool {
         if let demandIntakeStatus {
             return demandIntakeStatus.ready
@@ -6295,20 +6451,17 @@ private struct WorkspaceCommandCenterView: View {
         if let demandIntakeCheck {
             return demandIntakeCheck.status == "pass"
         }
-        return true
+        return demandIntakeDisplayStatus.ready
     }
 
     private var demandIntakePathStatus: WorkflowPathStatus {
         if demandIntakeReady {
             return .ready
         }
-        if let demandIntakeStatus {
-            return demandIntakeStatus.exists ? .review : .blocked
-        }
         if let demandIntakeCheck, demandIntakeCheck.status == "fail" {
             return .blocked
         }
-        return .review
+        return demandIntakeDisplayStatus.exists ? .review : .blocked
     }
 
     private var demandIntakeValue: String {
@@ -6319,7 +6472,7 @@ private struct WorkspaceCommandCenterView: View {
             return demandIntakeStatus.exists ? "缺 \(demandIntakeStatus.missingCount)" : "待初始化"
         }
         guard let demandIntakeCheck else {
-            return "未检查"
+            return demandIntakeDisplayStatus.exists ? "缺 \(demandIntakeDisplayStatus.missingCount)" : "待初始化"
         }
         return demandIntakeCheck.status == "pass" ? "已就绪" : "待处理"
     }
@@ -6392,135 +6545,14 @@ private struct WorkspaceCommandCenterView: View {
         }
     }
 
+    private var mainStage: WorkspaceMainStage {
+        workspace.mainStage(demandIntakeStatus: demandIntakeDisplayStatus)
+    }
+
     private var primaryStep: CommandCenterPrimaryStep {
-        if workspace.isArchived {
-            return CommandCenterPrimaryStep(
-                title: "已归档 / Archived",
-                detail: "这个工作区已退出活跃流。需要恢复时先查看 handoff 和交付记录，再决定是否重新进入开发。",
-                status: .archived,
-                systemImage: "archivebox",
-                actionLabel: "查看文档",
-                actionSystemImage: "doc.text",
-                tone: .secondary,
-                action: .document("handoff")
-            )
-        }
-
-        if !demandIntakeReady {
-            return CommandCenterPrimaryStep(
-                title: "完成需求预检 / Demand intake",
-                detail: demandIntakeCheck?.detail ?? "开发前先补齐 workspace-local 需求预检文件，把蓝湖和补充说明整理成 requirement、questions、scope、tasks 和 delivery。",
-                status: demandIntakePathStatus,
-                systemImage: "text.badge.checkmark",
-                actionLabel: "打开预检",
-                actionSystemImage: "text.badge.checkmark",
-                tone: demandIntakeTone,
-                action: .demandIntake
-            )
-        }
-
-        if !Self.hasConfirmedTargetBranch(workspace.branch) {
-            return CommandCenterPrimaryStep(
-                title: "确认目标分支 / Confirm branch",
-                detail: "分支仍是待确认状态。先补齐 branches.md 或 workspace.md，后续 worktree 和交付检查才有可靠基准。",
-                status: .blocked,
-                systemImage: "arrow.triangle.branch",
-                actionLabel: "打开分支",
-                actionSystemImage: "doc.text",
-                tone: NexusPalette.danger,
-                action: .document("branches")
-            )
-        }
-
-        if workspace.services.isEmpty {
-            return CommandCenterPrimaryStep(
-                title: "确认服务范围 / Confirm services",
-                detail: "服务范围为空。先确认涉及服务，Nexus 才能检查 worktree、风险和交付影响面。",
-                status: .blocked,
-                systemImage: "square.stack.3d.up",
-                actionLabel: "打开服务",
-                actionSystemImage: "doc.text",
-                tone: NexusPalette.danger,
-                action: .document("services")
-            )
-        }
-
-        if missingWorktreeCount > 0 {
-            return CommandCenterPrimaryStep(
-                title: "创建缺失 worktree / Setup worktrees",
-                detail: "\(missingWorktreeCount) 个服务还没有 workspace-local worktree。先完成隔离工作副本，再进入代码修改。",
-                status: .next,
-                systemImage: "arrow.triangle.branch",
-                actionLabel: "创建 worktree",
-                actionSystemImage: "wrench.and.screwdriver",
-                tone: NexusPalette.warning,
-                action: .worktree
-            )
-        }
-
-        if workspace.riskLevel == .high || !workspace.risks.isEmpty {
-            return CommandCenterPrimaryStep(
-                title: "复核风险 / Review risks",
-                detail: "当前存在 \(workspace.risks.count) 个风险信号。建议先复制风险复核上下文交给 Codex，再决定是否继续交付。",
-                status: workspace.riskLevel == .high ? .blocked : .review,
-                systemImage: "exclamationmark.triangle",
-                actionLabel: "风险交接",
-                actionSystemImage: "point.3.connected.trianglepath.dotted",
-                tone: workspace.riskLevel == .high ? NexusPalette.danger : NexusPalette.warning,
-                action: .riskPrompt
-            )
-        }
-
-        if blockedTaskCount > 0 {
-            return CommandCenterPrimaryStep(
-                title: "处理阻塞任务 / Resolve blocked tasks",
-                detail: "\(blockedTaskCount) 个任务仍处于阻塞状态。先打开 tasks.md，确认完成、延期或继续拆解。",
-                status: .blocked,
-                systemImage: "checklist",
-                actionLabel: "打开任务",
-                actionSystemImage: "checklist",
-                tone: NexusPalette.danger,
-                action: .document("tasks")
-            )
-        }
-
-        if openTaskCount > 0 {
-            return CommandCenterPrimaryStep(
-                title: "处理活跃任务 / Review tasks",
-                detail: "\(openTaskCount) 个任务仍未关闭。开发前后都可以从这里确认任务状态和交付影响。",
-                status: .next,
-                systemImage: "checklist",
-                actionLabel: "打开任务",
-                actionSystemImage: "checklist",
-                tone: NexusPalette.accent,
-                action: .document("tasks")
-            )
-        }
-
-        if workspace.lifecycle.stage == "delivery" {
-            return CommandCenterPrimaryStep(
-                title: "整理交付 / Prepare delivery",
-                detail: "任务和 worktree 已基本就绪。现在把交付记录、SQL、验证和风险说明交给 Codex 做最后整理。",
-                status: .next,
-                systemImage: "shippingbox",
-                actionLabel: "交付交接",
-                actionSystemImage: "point.3.connected.trianglepath.dotted",
-                tone: NexusPalette.warning,
-                action: .deliveryHandoff
-            )
-        }
-
-        return CommandCenterPrimaryStep(
-            title: latestCodexSessionLink == nil ? "继续开发 / Continue with Codex" : "回到 Codex 会话 / Resume Codex session",
-            detail: latestCodexSessionLink == nil
-                ? "当前主流程没有明显阻塞。可以把工作区上下文交给 Codex 继续开发或复核。"
-                : "当前主流程没有明显阻塞，且已有 \(codexSessionLinks.count) 个绑定会话。优先回到最近会话，避免重新解释上下文。",
-            status: .ready,
-            systemImage: latestCodexSessionLink == nil ? "point.3.connected.trianglepath.dotted" : "link",
-            actionLabel: latestCodexSessionLink == nil ? "交接 Codex" : "打开会话",
-            actionSystemImage: latestCodexSessionLink == nil ? "point.3.connected.trianglepath.dotted" : "arrow.up.forward.app",
-            tone: NexusPalette.success,
-            action: latestCodexSessionLink.map(CommandCenterPrimaryAction.codexSession) ?? .codex
+        CommandCenterPrimaryStep(
+            stage: mainStage,
+            action: commandCenterAction(for: mainStage.primaryAction)
         )
     }
 
@@ -6846,6 +6878,29 @@ private struct WorkspaceCommandCenterView: View {
         runPrimaryAction(step.action)
     }
 
+    private func commandCenterAction(for action: WorkspaceMainStageAction) -> CommandCenterPrimaryAction {
+        switch action {
+        case .demandIntake:
+            return .demandIntake
+        case .document(let key):
+            return .document(key)
+        case .path(let path):
+            return .path(path)
+        case .worktree:
+            return .worktree
+        case .riskPrompt:
+            return .riskPrompt
+        case .localCheck:
+            return .localCheck
+        case .deliveryHandoff:
+            return .deliveryHandoff
+        case .validationHandoff:
+            return .validationHandoff
+        case .codex:
+            return latestCodexSessionLink.map(CommandCenterPrimaryAction.codexSession) ?? .codex
+        }
+    }
+
     private func runPrimaryAction(_ action: CommandCenterPrimaryAction) {
         switch action {
         case .codex:
@@ -6853,9 +6908,19 @@ private struct WorkspaceCommandCenterView: View {
                 await appState.openWorkspaceInCodex(workspace)
             }
         case .document(let key):
+            if key == "sql" {
+                Task {
+                    await appState.openSqlReviewDocument(in: workspace)
+                }
+                return
+            }
             let path = workspace.documentLinks[key]
                 ?? workspace.documentLinks["handoff"]
                 ?? "\(workspace.path)/handoff.md"
+            Task {
+                await appState.loadDocument(path: path)
+            }
+        case .path(let path):
             Task {
                 await appState.loadDocument(path: path)
             }
@@ -7010,6 +7075,7 @@ private struct WorkspaceCommandCenterView: View {
 private enum CommandCenterPrimaryAction {
     case codex
     case document(String)
+    case path(String)
     case riskPrompt
     case worktree
     case demandIntake
@@ -7029,6 +7095,39 @@ private struct CommandCenterPrimaryStep {
     let actionSystemImage: String
     let tone: Color
     let action: CommandCenterPrimaryAction
+
+    init(
+        title: String,
+        detail: String,
+        status: WorkflowPathStatus,
+        systemImage: String,
+        actionLabel: String,
+        actionSystemImage: String,
+        tone: Color,
+        action: CommandCenterPrimaryAction
+    ) {
+        self.title = title
+        self.detail = detail
+        self.status = status
+        self.systemImage = systemImage
+        self.actionLabel = actionLabel
+        self.actionSystemImage = actionSystemImage
+        self.tone = tone
+        self.action = action
+    }
+
+    init(stage: WorkspaceMainStage, action: CommandCenterPrimaryAction) {
+        self.init(
+            title: stage.title,
+            detail: stage.reason,
+            status: stage.status,
+            systemImage: stage.id.systemImage,
+            actionLabel: stage.primaryActionLabel,
+            actionSystemImage: stage.primaryActionSystemImage,
+            tone: stage.status.color,
+            action: action
+        )
+    }
 }
 
 private struct CommandCenterPrimaryStepView: View {
