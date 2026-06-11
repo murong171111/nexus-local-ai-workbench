@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Added
 
+- Native demand-intake can now transfer real rows from workspace-local `需求/tasks.md` into root `tasks.md` after explicit confirmation, skipping template, completed, deferred, and already-existing tasks.
 - Native demand-intake readiness now reads workspace-local `需求/*.md` content for non-placeholder requirement details, unresolved P0 questions, explicit scope-freeze markers, and real requirement task rows before the main path can advance.
 - Rust Core now includes workspace-local demand-intake readiness in health checks and recommended session actions, with native Command Center and next-step queue routing directly back to the demand preflight section.
 - Native demand-intake preflight can now copy a `$lanhu-demand-intake` prompt or copy it and open Codex, including workspace paths, material notes, and bound Codex session links with audit feedback.

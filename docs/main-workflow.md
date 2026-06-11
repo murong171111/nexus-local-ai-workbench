@@ -412,7 +412,7 @@ Plan:
 
 - Keep fixed `需求/` initialization.
 - Add readiness fields for P0 questions, frozen scope, and task transfer. `[started with Swift-owned Markdown evidence for requirement content, P0, scope freeze, and intake task rows]`
-- Add "transfer requirement tasks" as a later confirmed write action.
+- Add "transfer requirement tasks" as a confirmed write action. `[started with Swift-owned transfer from 需求/tasks.md to root tasks.md, skipping existing, template, completed, and deferred rows]`
 - Keep AI invocation out of Nexus M1.
 
 ### Git / Worktree Status
