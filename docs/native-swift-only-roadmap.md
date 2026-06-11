@@ -135,6 +135,66 @@ This round does not delete legacy code. It creates the Native-only route and the
 - `docs/main-workflow-audit.zh-CN.md` as supporting audit context
 - ROADMAP entry pointing future work to the new Native Swift-only direction
 
+## Overall Route After Direction Lock
+
+After this documentation round, Nexus should move in this order. The route is intentionally sequential: later slices should not pull attention away from the main workflow before M1 proves the product can guide one real requirement end to end.
+
+### 1. Direction Lock
+
+- Treat this document and `docs/main-workflow.md` as the current source of roadmap truth.
+- Keep React, Tauri, Rust, and TypeScript frozen for product workflow features.
+- Keep old code in place as reference and migration evidence.
+- Avoid deleting or reshaping legacy directories until the deletion conditions are met.
+
+### 2. Swift Native M1
+
+- Build the daily-use Native shell around the main requirement path.
+- Cover workspace list, workspace detail, document entry points, demand intake, service/branch confirmation, git/worktree status, delivery readiness, and archive eligibility.
+- Make every workspace detail show the current stage, reason, evidence, and one recommended next action.
+
+### 3. Main Workflow Rules
+
+- Make demand intake the first gate after workspace creation.
+- Prevent the primary path from recommending worktree/development before P0 questions and scope freeze are handled.
+- Define root `tasks.md` as the execution source and `需求/tasks.md` as demand-intake input.
+- Use the same delivery gate for delivery and archive.
+
+### 4. Swift Local Core
+
+- Move workspace scanning, document inventory, Markdown parsing, git/worktree inspection, readiness, risk, delivery, archive, audit, settings, search/index, and widget snapshot logic into Swift-owned domain/storage/integration modules.
+- Use Foundation, FileManager, Process, Codable, OSLog, UserDefaults, SQLite-capable storage, and AppKit integration before introducing non-Apple runtime dependencies.
+- Treat Rust/TypeScript behavior as migration fixtures, not new implementation targets.
+
+### 5. Native Confirmed Writes
+
+- Add write capabilities only after the corresponding read/status model is stable.
+- Prioritize workspace creation, demand intake initialization, scope freeze, requirement-task transfer, task status, lifecycle status, delivery evidence, archive, and restore.
+- Every write must show what will change, require confirmation, preserve existing human-written files, and append audit evidence.
+
+### 6. Codex And Agent Collaboration
+
+- Keep AI collaboration as stage-aware handoff, review, and continuation support.
+- Bind multiple Codex sessions to a workspace, but identify the current continuation session separately from historical analysis/PR sessions.
+- Generate minimal context from the current stage, blocker, evidence files, and latest local checks.
+- Do not make Nexus directly invoke AI in M1.
+
+### 7. Mac System Experience
+
+- Add menu bar status, WidgetKit snapshots, local notifications, Finder/Terminal/IDE/Codex launches, deep links, and team profile sharing after the main path is stable.
+- Keep these surfaces as entry points back into the Native main workflow, not separate workflow owners.
+
+### 8. Legacy Retirement
+
+- Stop adding preview-era product scope immediately.
+- Remove legacy release paths only after Native covers M1 and can be locally installed without Tauri.
+- Delete React/Tauri/Rust/TypeScript in controlled slices after replacement coverage, Swift tests, release docs, and one real end-to-end workspace lifecycle prove readiness.
+
+### 9. Distribution And Companion Platforms
+
+- Handle signing, notarization, update channels, and release automation after Native M1/M2 are stable.
+- Keep iPad/iPhone as companion views for status, document review, risks, tasks, notifications, and approvals.
+- Do not move local git/worktree authority away from Mac unless a future remote execution model is explicitly designed.
+
 ## Parallel Workstreams
 
 The following workstreams can run in parallel, but they must converge on the same M1 main path.

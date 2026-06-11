@@ -14,7 +14,50 @@ For the current main-workflow convergence audit, see `docs/main-workflow-audit.z
 - Apple ecosystem surfaces: WidgetKit first, iPad/iPhone companion views later.
 - Current Tauri/React/Rust implementation: keep as frozen legacy/reference until the native Mac shell reaches core workflow parity and deletion conditions are met.
 
+## Current Authoritative Route
+
+The active roadmap is now Native Swift-only. The older 0.1-0.7 sections below remain as historical baseline and migration evidence, but they are no longer the place to add new product workflow scope when they mention React, Tauri, Rust, or TypeScript implementation work.
+
+1. **Direction lock**
+   - Keep `docs/native-swift-only-roadmap.md` and `docs/main-workflow.md` as the product and implementation contract for new work.
+   - Freeze React/Tauri/Rust/TypeScript feature development.
+   - Do not delete legacy code in this phase.
+
+2. **Swift Native M1**
+   - Implement the main requirement path in Swift/SwiftUI: workspace list, workspace detail, document entry points, demand intake, service/branch status, git/worktree status, delivery readiness, and archive gate.
+   - Show one current stage, one blocker summary, and one recommended next action for each workspace.
+
+3. **Main workflow rules**
+   - Enforce demand intake before development.
+   - Treat scope freeze as the entry gate for service/branch/worktree work.
+   - Make root `tasks.md` the execution task source, with `需求/tasks.md` as intake input only.
+   - Reuse delivery readiness for archive eligibility.
+
+4. **Swift local core**
+   - Move workspace scanning, Markdown parsing, git/worktree inspection, readiness, delivery gates, audit, settings, and widget snapshot writing into Swift-owned domain/storage/integration modules.
+   - Use old Rust/TypeScript behavior only as migration evidence or test fixtures.
+
+5. **Confirmed writes**
+   - Add Native confirmed write paths only after the read/status flow is stable: workspace creation, demand intake initialization, scope freeze, task transfer, task/lifecycle writeback, delivery evidence updates, and archive/restore.
+   - Every local write must have explicit user confirmation and audit evidence.
+
+6. **Codex and Agent collaboration**
+   - Keep Codex/Agent work as handoff and review support around the main path.
+   - Prefer minimal stage-aware handoff context over broad prompt dumps.
+
+7. **Mac system experience**
+   - Add menu bar, WidgetKit, notifications, Finder/Terminal/IDE/Codex launches, and profile sharing after the main path is stable.
+
+8. **Legacy retirement**
+   - Remove Web/Tauri/Rust/TypeScript only after the deletion conditions in `docs/native-swift-only-roadmap.md` are met and a real workspace has completed the Native end-to-end lifecycle.
+
+9. **Distribution and companion platforms**
+   - Handle signing, notarization, auto-update, and iPad/iPhone companion views after M1/M2 are stable.
+   - Mobile surfaces should remain status, review, document, and approval companions rather than local git/worktree authorities.
+
 ## 0.1.x: Public Preview Hardening
+
+The remaining sections are legacy baseline notes from the preview-era roadmap. Use them to understand existing capabilities and migration obligations, not as authorization to add new non-Swift workflow features.
 
 - Add automated CI validation for pull requests and pushes to `main`. `[done with GitHub Actions for environment diagnostics, Node, Rust, Swift widget/native, Tauri checks, and public-data privacy checks]`
 - Add automated release builds for Apple Silicon and Intel macOS. `[started with tag/workflow_dispatch DMG builds for aarch64 and x86_64]`
