@@ -1169,6 +1169,9 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertEqual(delivery.status, .pending)
         XCTAssertEqual(delivery.primaryAction, .localCheck)
+        XCTAssertEqual(delivery.resolutionPlan.prefix(2).map(\.action), [.runCheck, .runCheck])
+        XCTAssertEqual(delivery.resolutionPlan.first?.checkID, "delivery-record")
+        XCTAssertTrue(delivery.resolutionPlan.first?.handoffHint.contains("运行本地检查") == true)
         XCTAssertEqual(stage.id, .deliveryCheck)
         XCTAssertEqual(stage.primaryAction, .localCheck)
     }
@@ -1194,6 +1197,9 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertEqual(delivery.status, .blocked)
         XCTAssertEqual(delivery.primaryAction, .document("sql"))
+        XCTAssertEqual(delivery.resolutionPlan.first?.action, .resolveBlocker)
+        XCTAssertEqual(delivery.resolutionPlan.first?.checkID, "sql")
+        XCTAssertTrue(delivery.resolutionPlan.first?.handoffHint.contains("回滚 SQL") == true)
         XCTAssertEqual(stage.id, .deliveryCheck)
         XCTAssertEqual(stage.status, .blocked)
         XCTAssertEqual(stage.primaryAction, .document("sql"))
@@ -1224,6 +1230,9 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertEqual(delivery.status, .blocked)
         XCTAssertEqual(delivery.primaryAction, .riskPrompt)
+        XCTAssertEqual(delivery.resolutionPlan.first?.action, .resolveBlocker)
+        XCTAssertEqual(delivery.resolutionPlan.first?.checkID, "risks")
+        XCTAssertTrue(delivery.resolutionPlan.first?.handoffHint.contains("风险结论") == true)
         XCTAssertEqual(stage.id, .deliveryCheck)
         XCTAssertEqual(stage.primaryAction, .riskPrompt)
     }
@@ -1249,6 +1258,9 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertEqual(delivery.status, .ready)
         XCTAssertEqual(delivery.primaryAction, .document("delivery"))
+        XCTAssertTrue(delivery.resolutionPlan.allSatisfy { $0.action == .passed })
+        XCTAssertEqual(Array(delivery.resolutionPlan.map(\.checkID).prefix(3)), ["branch", "services", "tasks"])
+        XCTAssertTrue(delivery.resolutionPlan.contains { $0.checkID == "delivery-record" && $0.handoffHint.contains("PR") })
         XCTAssertEqual(delivery.blockerCount, 0)
         XCTAssertEqual(stage.id, .archived)
         XCTAssertEqual(stage.primaryAction, .lifecycle(.delivery))

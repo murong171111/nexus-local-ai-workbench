@@ -366,6 +366,76 @@ struct DeliveryGateCheck: Hashable, Identifiable {
     let action: WorkspaceMainStageAction
 }
 
+enum DeliveryResolutionPlanAction: Hashable {
+    case resolveBlocker
+    case runCheck
+    case review
+    case passed
+
+    var displayLabel: String {
+        switch self {
+        case .resolveBlocker:
+            "resolve"
+        case .runCheck:
+            "check"
+        case .review:
+            "review"
+        case .passed:
+            "passed"
+        }
+    }
+
+    var status: WorkflowPathStatus {
+        switch self {
+        case .resolveBlocker:
+            .blocked
+        case .runCheck:
+            .pending
+        case .review:
+            .review
+        case .passed:
+            .ready
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .resolveBlocker:
+            "xmark.octagon"
+        case .runCheck:
+            "checklist"
+        case .review:
+            "exclamationmark.triangle"
+        case .passed:
+            "checkmark.circle"
+        }
+    }
+
+    var sortRank: Int {
+        switch self {
+        case .resolveBlocker:
+            0
+        case .runCheck:
+            1
+        case .review:
+            2
+        case .passed:
+            3
+        }
+    }
+}
+
+struct DeliveryResolutionPlanItem: Hashable, Identifiable {
+    let id: String
+    let checkID: String
+    let title: String
+    let action: DeliveryResolutionPlanAction
+    let detail: String
+    let evidencePath: String?
+    let gateAction: WorkspaceMainStageAction
+    let handoffHint: String
+}
+
 struct DeliveryGateEvidence: Hashable {
     let status: WorkflowPathStatus
     let title: String
@@ -373,6 +443,7 @@ struct DeliveryGateEvidence: Hashable {
     let value: String
     let evidence: [String]
     let checks: [DeliveryGateCheck]
+    let resolutionPlan: [DeliveryResolutionPlanItem]
     let primaryActionLabel: String
     let primaryActionSystemImage: String
     let primaryAction: WorkspaceMainStageAction
@@ -392,6 +463,7 @@ struct DeliveryGateEvidence: Hashable {
                 value: "已归档",
                 evidence: ["交付记录.md", "handoff.md"],
                 checks: [],
+                resolutionPlan: [],
                 primaryActionLabel: "打开交付",
                 primaryActionSystemImage: "archivebox",
                 primaryAction: .document("delivery"),
@@ -456,6 +528,7 @@ struct DeliveryGateEvidence: Hashable {
             value: value,
             evidence: deliveryEvidence(workspace: workspace, checks: checks),
             checks: checks,
+            resolutionPlan: buildResolutionPlan(checks: checks),
             primaryActionLabel: actionLabel(for: action, status: status),
             primaryActionSystemImage: actionSystemImage(for: action, status: status),
             primaryAction: action,
@@ -481,6 +554,108 @@ struct DeliveryGateEvidence: Hashable {
             sqlCheck(workspace: workspace, sql: sql),
             dirty
         ]
+    }
+
+    private static func buildResolutionPlan(checks: [DeliveryGateCheck]) -> [DeliveryResolutionPlanItem] {
+        checks.map { check in
+            let action = resolutionAction(for: check.status)
+            return DeliveryResolutionPlanItem(
+                id: "\(action.displayLabel)-\(check.id)",
+                checkID: check.id,
+                title: check.label,
+                action: action,
+                detail: check.detail,
+                evidencePath: check.path,
+                gateAction: check.action,
+                handoffHint: resolutionHint(for: check, action: action)
+            )
+        }
+        .sorted { left, right in
+            if left.action.sortRank != right.action.sortRank {
+                return left.action.sortRank < right.action.sortRank
+            }
+            return deliveryPlanSortRank(for: left.checkID) < deliveryPlanSortRank(for: right.checkID)
+        }
+    }
+
+    private static func resolutionAction(for status: WorkflowPathStatus) -> DeliveryResolutionPlanAction {
+        switch status {
+        case .blocked:
+            .resolveBlocker
+        case .pending:
+            .runCheck
+        case .review, .next:
+            .review
+        case .ready, .archived:
+            .passed
+        }
+    }
+
+    private static func deliveryPlanSortRank(for checkID: String) -> Int {
+        switch checkID {
+        case "branch":
+            0
+        case "services":
+            1
+        case "tasks":
+            2
+        case "risks":
+            3
+        case "delivery-record":
+            4
+        case "sql":
+            5
+        case "dirty-services":
+            6
+        default:
+            99
+        }
+    }
+
+    private static func resolutionHint(
+        for check: DeliveryGateCheck,
+        action: DeliveryResolutionPlanAction
+    ) -> String {
+        switch check.id {
+        case "branch":
+            return action == .passed
+                ? "目标分支证据已可用，交付记录引用该分支即可。"
+                : "在 branches.md 或 workspace.md 确认目标分支后重新运行本地检查。"
+        case "services":
+            return action == .passed
+                ? "服务和 worktree 证据已可用，交付记录引用涉及服务即可。"
+                : "补齐 services.md 和 workspace-local worktree 后重新运行本地检查。"
+        case "tasks":
+            return action == .passed
+                ? "root tasks.md 已清理，无需写回；交付记录可引用已完成任务。"
+                : "在 root tasks.md 将任务写回为已完成、延期或拆分后再交付。"
+        case "risks":
+            return action == .passed
+                ? "风险复核通过，交付记录可写明当前无活动风险。"
+                : "把风险结论写回 STATUS.md 或交付记录，必要时复制风险交接给 Codex。"
+        case "delivery-record":
+            if action == .runCheck {
+                return "运行本地检查，生成交付记录状态后再判断是否需要补写。"
+            }
+            return action == .passed
+                ? "交付记录可用，后续只需追加本地验证、PR、CI 或发布结果。"
+                : "补齐代码变更、新逻辑、配置、SQL 影响和验证记录后更新交付记录。"
+        case "sql":
+            if action == .runCheck {
+                return "运行本地检查确认交付记录是否声明 SQL 变更。"
+            }
+            return action == .passed
+                ? "SQL 产物通过，可在交付/PR 交接中引用正式和回滚文件。"
+                : "在 sql/ 补齐正式 SQL 和回滚 SQL，或在交付记录明确无 SQL 变更。"
+        case "dirty-services":
+            return action == .passed
+                ? "服务 Git 状态清洁，无需额外处理。"
+                : "提交、暂存或记录服务改动结论，避免本地改动漏进交付。"
+        default:
+            return action == .passed
+                ? "该检查已通过，保留当前证据。"
+                : "按检查详情处理后重新运行本地检查。"
+        }
     }
 
     private static func branchCheck(workspace: WorkspaceSummary) -> DeliveryGateCheck {
