@@ -731,7 +731,70 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(serviceBranch.servicesConfirmed)
         XCTAssertTrue(serviceBranch.branchPolicyRecorded)
         XCTAssertTrue(serviceBranch.missingSourceServices.isEmpty)
+        XCTAssertTrue(serviceBranch.targetBranchMissingServices.isEmpty)
         XCTAssertNotEqual(stage.id, .serviceBranchConfirm)
+    }
+
+    func testServiceBranchEvidenceBlocksUnavailableTargetBranch() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "service-branch-unavailable-target",
+            branch: "feature/missing-branch",
+            services: [
+                ServiceStatus(
+                    name: "order",
+                    branch: "feature/missing-branch",
+                    worktree: "missing",
+                    gitSummary: "remote missing: origin/feature/missing-branch",
+                    worktreeExists: false,
+                    sourceExists: true
+                )
+            ]
+        )
+        let serviceBranch = ServiceBranchEvidence.resolve(workspace: workspace)
+        let stage = workspace.mainStage(
+            demandReadiness: readyDemandReadiness(),
+            scopeFreeze: readyScopeFreeze(),
+            serviceBranch: serviceBranch
+        )
+
+        XCTAssertEqual(serviceBranch.status, .blocked)
+        XCTAssertEqual(serviceBranch.targetBranchMissingServices, ["order"])
+        XCTAssertEqual(serviceBranch.checks.first { $0.id == "target-branch-availability" }?.status, .blocked)
+        XCTAssertEqual(stage.id, .serviceBranchConfirm)
+        XCTAssertEqual(stage.primaryAction, .document("branches"))
+    }
+
+    func testServiceBranchEvidenceKeepsMissingWorktreeInWorktreeGate() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "service-branch-missing-worktree",
+            branch: "feature/service-branch",
+            services: [
+                ServiceStatus(
+                    name: "order",
+                    branch: "feature/service-branch",
+                    worktree: "missing",
+                    gitSummary: "source clean",
+                    worktreeExists: false,
+                    sourceExists: true
+                )
+            ]
+        )
+        let serviceBranch = ServiceBranchEvidence.resolve(workspace: workspace)
+        let worktree = WorktreeSetupEvidence.resolve(workspace: workspace)
+        let stage = workspace.mainStage(
+            demandReadiness: readyDemandReadiness(),
+            scopeFreeze: readyScopeFreeze(),
+            serviceBranch: serviceBranch,
+            worktreeSetup: worktree
+        )
+
+        XCTAssertEqual(serviceBranch.status, .ready)
+        XCTAssertTrue(serviceBranch.targetBranchMissingServices.isEmpty)
+        XCTAssertEqual(worktree.status, .next)
+        XCTAssertEqual(worktree.missingServices, ["order"])
+        XCTAssertEqual(stage.id, .worktreeSetup)
     }
 
     func testWorktreeSetupEvidenceRoutesMissingWorktreesToSetup() throws {
@@ -2198,7 +2261,8 @@ final class ModelBehaviorTests: XCTestCase {
             branchConfirmed: true,
             servicesConfirmed: true,
             branchPolicyRecorded: true,
-            missingSourceServices: []
+            missingSourceServices: [],
+            targetBranchMissingServices: []
         )
     }
 

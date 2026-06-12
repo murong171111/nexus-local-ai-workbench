@@ -4039,6 +4039,7 @@ private struct ServiceBranchEvidencePreview: View {
                 WorkflowMetric(label: "Branch", value: evidence.branchConfirmed ? "ready" : "pending", tone: evidence.branchConfirmed ? NexusPalette.success : NexusPalette.danger)
                 WorkflowMetric(label: "Services", value: evidence.servicesConfirmed ? "ready" : "pending", tone: evidence.servicesConfirmed ? NexusPalette.success : NexusPalette.danger)
                 WorkflowMetric(label: "Sources", value: "\(evidence.missingSourceServices.count)", tone: evidence.missingSourceServices.isEmpty ? NexusPalette.success : NexusPalette.danger)
+                WorkflowMetric(label: "Target", value: "\(evidence.targetBranchMissingServices.count)", tone: evidence.targetBranchMissingServices.isEmpty ? NexusPalette.success : NexusPalette.danger)
                 WorkflowMetric(label: "Policy", value: evidence.branchPolicyRecorded ? "ready" : "review", tone: evidence.branchPolicyRecorded ? NexusPalette.success : NexusPalette.warning)
             }
 
@@ -7359,6 +7360,9 @@ private struct WorkspaceCommandCenterView: View {
         }
         if !evidence.missingSourceServices.isEmpty {
             return "源仓库缺 \(evidence.missingSourceServices.count)"
+        }
+        if !evidence.targetBranchMissingServices.isEmpty {
+            return "分支缺 \(evidence.targetBranchMissingServices.count)"
         }
         if !evidence.branchPolicyRecorded {
             return "策略待记录"

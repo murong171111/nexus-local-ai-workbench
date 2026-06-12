@@ -1629,6 +1629,7 @@ struct ServiceBranchEvidence: Hashable {
     let servicesConfirmed: Bool
     let branchPolicyRecorded: Bool
     let missingSourceServices: [String]
+    let targetBranchMissingServices: [String]
 
     var ready: Bool {
         status == .ready
@@ -1644,6 +1645,9 @@ struct ServiceBranchEvidence: Hashable {
         if !missingSourceServices.isEmpty {
             return "修正源仓库 / Source repos"
         }
+        if !targetBranchMissingServices.isEmpty {
+            return "修正目标分支 / Target branch"
+        }
         if !branchPolicyRecorded {
             return "记录分支策略 / Branch policy"
         }
@@ -1651,21 +1655,21 @@ struct ServiceBranchEvidence: Hashable {
     }
 
     var primaryActionLabel: String {
-        if !branchConfirmed || !branchPolicyRecorded {
+        if !branchConfirmed || !branchPolicyRecorded || !targetBranchMissingServices.isEmpty {
             return "打开分支"
         }
         return "打开服务"
     }
 
     var primaryActionSystemImage: String {
-        if !branchConfirmed || !branchPolicyRecorded {
+        if !branchConfirmed || !branchPolicyRecorded || !targetBranchMissingServices.isEmpty {
             return "arrow.triangle.branch"
         }
         return "square.stack.3d.up"
     }
 
     var primaryAction: WorkspaceMainStageAction {
-        if !branchConfirmed || !branchPolicyRecorded {
+        if !branchConfirmed || !branchPolicyRecorded || !targetBranchMissingServices.isEmpty {
             return .document("branches")
         }
         return .document("services")
@@ -1683,6 +1687,11 @@ struct ServiceBranchEvidence: Hashable {
         let missingSourceServices = workspace.services
             .filter { !$0.sourceExists }
             .map(\.name)
+        let targetBranchMissingServices = branchConfirmed
+            ? workspace.services
+                .filter { $0.sourceExists && targetBranchUnavailable($0, target: workspace.branch) }
+                .map(\.name)
+            : []
         let branchPolicyRecorded = branchConfirmed
             && (!branchesDocumentExists || hasBranchPolicy(in: branchesText, branch: workspace.branch))
 
@@ -1714,6 +1723,16 @@ struct ServiceBranchEvidence: Hashable {
                 status: missingSourceServices.isEmpty ? .ready : .blocked,
                 systemImage: missingSourceServices.isEmpty ? "externaldrive" : "externaldrive.badge.xmark",
                 path: servicesPath
+            ),
+            ServiceBranchCheck(
+                id: "target-branch-availability",
+                label: "分支可用 / Availability",
+                detail: targetBranchMissingServices.isEmpty
+                    ? targetBranchAvailableDetail(branchConfirmed: branchConfirmed, targetBranch: workspace.branch)
+                    : "这些服务缺少目标分支或远端引用不可用：\(targetBranchMissingServices.joined(separator: ", "))。",
+                status: targetBranchMissingServices.isEmpty ? .ready : .blocked,
+                systemImage: targetBranchMissingServices.isEmpty ? "checkmark.seal" : "exclamationmark.triangle",
+                path: branchesPath
             ),
             ServiceBranchCheck(
                 id: "branch-policy",
@@ -1752,7 +1771,8 @@ struct ServiceBranchEvidence: Hashable {
             branchConfirmed: branchConfirmed,
             servicesConfirmed: servicesConfirmed,
             branchPolicyRecorded: branchPolicyRecorded,
-            missingSourceServices: missingSourceServices
+            missingSourceServices: missingSourceServices,
+            targetBranchMissingServices: targetBranchMissingServices
         )
     }
 
@@ -1799,6 +1819,50 @@ struct ServiceBranchEvidence: Hashable {
             return "services.md 已声明本需求无需代码服务。"
         }
         return "已确认 \(workspace.services.count) 个服务：\(workspace.services.map(\.name).joined(separator: ", "))。"
+    }
+
+    private static func targetBranchAvailableDetail(branchConfirmed: Bool, targetBranch: String) -> String {
+        if branchConfirmed {
+            return "已确认服务未报告目标分支缺失：\(targetBranch)。"
+        }
+        return "目标分支未确认，分支可用性会在确认后检查。"
+    }
+
+    private static func targetBranchUnavailable(_ service: ServiceStatus, target: String) -> Bool {
+        let fields = [service.branch, service.gitSummary]
+            .map {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            }
+            .filter { !$0.isEmpty }
+        guard !fields.isEmpty else { return false }
+        let missingMarkers = [
+            "remote missing",
+            "branch missing",
+            "target missing",
+            "missing branch",
+            "not found",
+            "no such ref",
+            "unknown revision",
+            "远端不存在",
+            "远端缺失",
+            "分支不存在",
+            "目标分支不存在",
+            "未找到分支"
+        ]
+        guard let matchingField = fields.first(where: { field in
+            missingMarkers.contains(where: { field.contains($0) })
+        }) else {
+            return false
+        }
+
+        let normalizedTarget = target
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "origin/", with: "")
+        guard !normalizedTarget.isEmpty else { return true }
+        return matchingField.contains(normalizedTarget)
+            || matchingField.contains("branch")
+            || matchingField.contains("分支")
     }
 
     private static func placeholderOnly(_ line: String) -> Bool {

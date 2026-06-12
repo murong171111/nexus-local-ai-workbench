@@ -12,7 +12,7 @@ Nexus 是一个面向 macOS 的本地 AI 开发工作台，用来管理需求工
 - 以工作区卡片展示需求目录、分支、服务范围、风险等级、最近活动和 worktree 状态。
 - 支持在应用内创建符合 `ks-project-demand-workspace` 约定的需求工作区，包含源仓库扫描、服务勾选、手动补充、创建前预检、创建确认摘要和创建后的下一步引导。
 - 支持在工作区详情中执行 `需求预检`：检查或初始化固定 `需求/` 目录，生成 `requirement.md`、`questions.md`、`scope.md`、`tasks.md` 和 `delivery.md`，并复制 `$lanhu-demand-intake` Codex 预检提示词。原生壳会读取这些 Markdown，检查需求内容、未解决 P0、scope 状态和真实需求任务，并通过独立的范围冻结门禁检查本次实现、不实现、待确认 P0、冻结标记，以及范围变更是否记录原因和影响，确认后可把真实需求行转入根 `tasks.md`；Nexus 仍不直接解析蓝湖或调用 AI。
-- 原生服务/分支确认门禁会检查 `services.md`、`branches.md`、工作区服务行、源仓库可用性和分支策略，确认后才进入 worktree 准备。
+- 原生服务/分支确认门禁会检查 `services.md`、`branches.md`、工作区服务行、源仓库可用性、目标分支可用性和分支策略，确认后才进入 worktree 准备。
 - 原生 worktree 准备证据会检查缺失的 workspace-local worktree、分支不一致、源仓库可用性和创建命令可见性，确认这些证据后才继续进入开发。
 - 原生开发任务证据会坚持 root `tasks.md` 是执行任务源，自动选择下一条活跃任务，阻塞未解决的任务 blocker，并能从主流程或 Command Center 直接打开任务行定位。
 - 原生交付门禁证据会在交付就绪前统一检查任务、风险、服务/worktree、交付记录、SQL 产物、未提交服务和本地检查状态。
