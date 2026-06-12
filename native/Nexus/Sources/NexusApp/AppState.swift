@@ -2551,6 +2551,10 @@ final class AppState: ObservableObject {
         WorktreeSetupEvidence.resolve(workspace: workspace)
     }
 
+    func developmentTaskEvidence(for workspace: WorkspaceSummary) -> DevelopmentTaskEvidence {
+        DevelopmentTaskEvidence.resolve(workspace: workspace)
+    }
+
     func demandTaskTransferPlan(for workspace: WorkspaceSummary) -> DemandTaskTransferPlan {
         DemandTaskTransferPlan.resolve(
             workspace: workspace,

@@ -744,6 +744,146 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertNotEqual(stage.id, .worktreeSetup)
     }
 
+    func testDevelopmentTaskEvidenceRoutesNextActiveTask() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "development-next-task",
+            tasks: [
+                WorkspaceTask(
+                    id: "later-low",
+                    title: "Later low task",
+                    status: "todo",
+                    detail: "Can wait",
+                    priority: "low",
+                    source: "workspace",
+                    sourceEventID: nil,
+                    sourceLine: 30
+                ),
+                WorkspaceTask(
+                    id: "first-high",
+                    title: "Implement first high priority task",
+                    status: "doing",
+                    detail: "Start here",
+                    priority: "high",
+                    source: "workspace",
+                    sourceEventID: nil,
+                    sourceLine: 12
+                ),
+                WorkspaceTask(
+                    id: "second-high",
+                    title: "Second high priority task",
+                    status: "todo",
+                    detail: "After first",
+                    priority: "high",
+                    source: "workspace",
+                    sourceEventID: nil,
+                    sourceLine: 18
+                )
+            ]
+        )
+        let evidence = DevelopmentTaskEvidence.resolve(workspace: workspace)
+        let stage = workspace.mainStage(
+            demandReadiness: readyDemandReadiness(),
+            scopeFreeze: readyScopeFreeze(),
+            serviceBranch: readyServiceBranch(for: workspace),
+            worktreeSetup: WorktreeSetupEvidence.resolve(workspace: workspace),
+            developmentTasks: evidence
+        )
+
+        XCTAssertEqual(evidence.status, .next)
+        XCTAssertEqual(evidence.nextTask?.id, "first-high")
+        XCTAssertEqual(evidence.taskValue, "开 3")
+        XCTAssertEqual(stage.id, .development)
+        XCTAssertEqual(stage.primaryAction, .task("first-high"))
+        XCTAssertTrue(stage.reason.contains("Implement first high priority task"))
+    }
+
+    func testDevelopmentTaskEvidenceBlocksOnBlockedTasks() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "development-blocked-task",
+            tasks: [
+                WorkspaceTask(
+                    id: "blocked-task",
+                    title: "Resolve approval blocker",
+                    status: "blocked",
+                    detail: "blocked by product confirmation",
+                    priority: "low",
+                    source: "workspace",
+                    sourceEventID: nil,
+                    sourceLine: 8
+                ),
+                WorkspaceTask(
+                    id: "active-task",
+                    title: "Normal active task",
+                    status: "todo",
+                    detail: "Ready after blocker",
+                    priority: "high",
+                    source: "workspace",
+                    sourceEventID: nil,
+                    sourceLine: 9
+                )
+            ]
+        )
+        let evidence = DevelopmentTaskEvidence.resolve(workspace: workspace)
+        let stage = workspace.mainStage(
+            demandReadiness: readyDemandReadiness(),
+            scopeFreeze: readyScopeFreeze(),
+            serviceBranch: readyServiceBranch(for: workspace),
+            worktreeSetup: WorktreeSetupEvidence.resolve(workspace: workspace),
+            developmentTasks: evidence
+        )
+
+        XCTAssertEqual(evidence.status, .blocked)
+        XCTAssertEqual(evidence.blockedTasks.map(\.id), ["blocked-task"])
+        XCTAssertEqual(stage.id, .development)
+        XCTAssertEqual(stage.status, .blocked)
+        XCTAssertEqual(stage.primaryAction, .task("blocked-task"))
+    }
+
+    func testDevelopmentTaskEvidenceLetsCleanTasksEnterDeliveryGate() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "development-clean-tasks",
+            tasks: [
+                WorkspaceTask(
+                    id: "done-task",
+                    title: "Done task",
+                    status: "done",
+                    detail: "Complete",
+                    priority: "high",
+                    source: "workspace",
+                    sourceEventID: nil,
+                    sourceLine: 4
+                ),
+                WorkspaceTask(
+                    id: "deferred-task",
+                    title: "Deferred task",
+                    status: "延期",
+                    detail: "deferred until later demand",
+                    priority: "medium",
+                    source: "workspace",
+                    sourceEventID: nil,
+                    sourceLine: 5
+                )
+            ]
+        )
+        let evidence = DevelopmentTaskEvidence.resolve(workspace: workspace)
+        let stage = workspace.mainStage(
+            demandReadiness: readyDemandReadiness(),
+            scopeFreeze: readyScopeFreeze(),
+            serviceBranch: readyServiceBranch(for: workspace),
+            worktreeSetup: WorktreeSetupEvidence.resolve(workspace: workspace),
+            developmentTasks: evidence
+        )
+
+        XCTAssertEqual(evidence.status, .ready)
+        XCTAssertNil(evidence.nextTask)
+        XCTAssertEqual(evidence.doneTaskCount, 1)
+        XCTAssertEqual(evidence.deferredTaskCount, 1)
+        XCTAssertEqual(stage.id, .deliveryCheck)
+    }
+
     func testDemandTaskTransferPlanFindsNewIntakeTasksAndUpdatesMainStage() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-demand-task-transfer-\(UUID().uuidString)")

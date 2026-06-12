@@ -434,6 +434,7 @@ enum WorkspaceMainStageAction: Hashable {
     case demandIntake
     case document(String)
     case path(String)
+    case task(String)
     case transferDemandTasks
     case worktree
     case riskPrompt
@@ -1350,6 +1351,186 @@ struct WorktreeSetupEvidence: Hashable {
             return "当前工作区没有需要创建的服务 worktree。"
         }
         return "\(workspace.services.count) 个服务均已有 workspace-local worktree。"
+    }
+}
+
+struct DevelopmentTaskCheck: Hashable, Identifiable {
+    let id: String
+    let label: String
+    let detail: String
+    let status: WorkflowPathStatus
+    let systemImage: String
+    let path: String?
+    let taskID: String?
+}
+
+struct DevelopmentTaskEvidence: Hashable {
+    let status: WorkflowPathStatus
+    let reason: String
+    let evidence: [String]
+    let checks: [DevelopmentTaskCheck]
+    let tasksPath: String
+    let activeTasks: [WorkspaceTask]
+    let blockedTasks: [WorkspaceTask]
+    let deferredTaskCount: Int
+    let doneTaskCount: Int
+    let nextTask: WorkspaceTask?
+
+    var ready: Bool {
+        status == .ready
+    }
+
+    var title: String {
+        if !blockedTasks.isEmpty {
+            return "处理阻塞任务 / Resolve tasks"
+        }
+        if nextTask != nil {
+            return "继续开发任务 / Continue task"
+        }
+        return "开发任务已清理 / Tasks clear"
+    }
+
+    var primaryActionLabel: String {
+        if !blockedTasks.isEmpty {
+            return "处理阻塞"
+        }
+        if nextTask != nil {
+            return "继续任务"
+        }
+        return "打开任务"
+    }
+
+    var primaryActionSystemImage: String {
+        if !blockedTasks.isEmpty {
+            return "pause.circle"
+        }
+        if nextTask != nil {
+            return "play.circle"
+        }
+        return "checklist.checked"
+    }
+
+    var primaryAction: WorkspaceMainStageAction {
+        if let nextTask {
+            return .task(nextTask.id)
+        }
+        return .document("tasks")
+    }
+
+    var taskValue: String {
+        if !blockedTasks.isEmpty {
+            return "阻 \(blockedTasks.count) / 开 \(activeTasks.count)"
+        }
+        if !activeTasks.isEmpty {
+            return "开 \(activeTasks.count)"
+        }
+        return "已清理"
+    }
+
+    static func resolve(workspace: WorkspaceSummary) -> DevelopmentTaskEvidence {
+        let tasksPath = workspace.documentLinks["tasks"] ?? "\(workspace.path)/tasks.md"
+        let activeTasks = workspace.tasks
+            .filter(\.isActive)
+            .sorted(by: taskSort)
+        let blockedTasks = activeTasks
+            .filter(\.isBlocked)
+            .sorted(by: taskSort)
+        let deferredCount = workspace.tasks.filter(\.isDeferred).count
+        let doneCount = workspace.tasks.filter(\.isDone).count
+        let nextTask = blockedTasks.first ?? activeTasks.first
+
+        let checks = [
+            DevelopmentTaskCheck(
+                id: "execution-source",
+                label: "执行来源 / Source",
+                detail: "root tasks.md 是开发执行任务源；需求/tasks.md 只作为预检任务输入。",
+                status: .ready,
+                systemImage: "checklist",
+                path: tasksPath,
+                taskID: nil
+            ),
+            DevelopmentTaskCheck(
+                id: "blocked-tasks",
+                label: "阻塞任务 / Blockers",
+                detail: blockedTasks.isEmpty
+                    ? "当前没有阻塞任务。"
+                    : "\(blockedTasks.count) 个阻塞任务需要先处理：\(blockedTasks.prefix(3).map(\.title).joined(separator: ", "))。",
+                status: blockedTasks.isEmpty ? .ready : .blocked,
+                systemImage: blockedTasks.isEmpty ? "checkmark.circle" : "pause.circle",
+                path: tasksPath,
+                taskID: blockedTasks.first?.id
+            ),
+            DevelopmentTaskCheck(
+                id: "active-tasks",
+                label: "活跃任务 / Active",
+                detail: activeTasks.isEmpty
+                    ? "root tasks.md 没有活跃任务。"
+                    : "\(activeTasks.count) 个活跃任务；下一条：\(nextTask?.title ?? "未定位")。",
+                status: activeTasks.isEmpty ? .ready : .next,
+                systemImage: activeTasks.isEmpty ? "checkmark.circle" : "play.circle",
+                path: tasksPath,
+                taskID: nextTask?.id
+            ),
+            DevelopmentTaskCheck(
+                id: "closed-tasks",
+                label: "已完成/延期 / Closed",
+                detail: "\(doneCount) 个已完成，\(deferredCount) 个延期；延期任务不阻塞当前开发主路径。",
+                status: .ready,
+                systemImage: "tray.full",
+                path: tasksPath,
+                taskID: nil
+            )
+        ]
+
+        let status: WorkflowPathStatus
+        let reason: String
+        if !blockedTasks.isEmpty {
+            status = .blocked
+            reason = "\(blockedTasks.count) 个任务仍处于阻塞状态。先定位 root tasks.md 中的阻塞任务，确认完成、延期或拆分处理。"
+        } else if let nextTask {
+            status = .next
+            reason = "下一条开发任务：\(nextTask.title)。后续开发按照 root tasks.md 中未完成项推进。"
+        } else {
+            status = .ready
+            reason = "root tasks.md 当前没有活跃任务，可以进入交付检查。"
+        }
+
+        return DevelopmentTaskEvidence(
+            status: status,
+            reason: reason,
+            evidence: taskEvidence(nextTask: nextTask),
+            checks: checks,
+            tasksPath: tasksPath,
+            activeTasks: activeTasks,
+            blockedTasks: blockedTasks,
+            deferredTaskCount: deferredCount,
+            doneTaskCount: doneCount,
+            nextTask: nextTask
+        )
+    }
+
+    private static func taskEvidence(nextTask: WorkspaceTask?) -> [String] {
+        var evidence = ["tasks.md", "需求/tasks.md"]
+        if let nextTask {
+            evidence.append(nextTask.sourceLine.map { "tasks.md:L\($0)" } ?? nextTask.title)
+        }
+        return evidence
+    }
+
+    private static func taskSort(lhs: WorkspaceTask, rhs: WorkspaceTask) -> Bool {
+        if lhs.priorityRank != rhs.priorityRank {
+            return lhs.priorityRank < rhs.priorityRank
+        }
+        switch (lhs.sourceLine, rhs.sourceLine) {
+        case let (left?, right?) where left != right:
+            return left < right
+        case (.some, nil):
+            return true
+        case (nil, .some):
+            return false
+        default:
+            return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
+        }
     }
 }
 
@@ -2500,6 +2681,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
         scopeFreeze: ScopeFreezeEvidence? = nil,
         serviceBranch: ServiceBranchEvidence? = nil,
         worktreeSetup: WorktreeSetupEvidence? = nil,
+        developmentTasks: DevelopmentTaskEvidence? = nil,
         demandTaskTransfer: DemandTaskTransferPlan? = nil
     ) -> WorkspaceMainStage {
         if isArchived {
@@ -2604,24 +2786,22 @@ struct WorkspaceSummary: Identifiable, Hashable {
             )
         }
 
-        let workflowSummary = WorkspaceWorkflowSummary(workspace: self)
-        if workflowSummary.taskStatus != .ready {
-            let blocked = workflowSummary.blockedTaskCount
+        let taskGate = developmentTasks ?? DevelopmentTaskEvidence.resolve(workspace: self)
+        if taskGate.status != .ready {
             return WorkspaceMainStage(
                 id: .development,
-                status: blocked > 0 ? .blocked : .next,
-                title: blocked > 0 ? "处理阻塞任务 / Resolve tasks" : "推进开发任务 / Development tasks",
-                reason: blocked > 0
-                    ? "\(blocked) 个任务仍处于阻塞状态。先打开 tasks.md，确认完成、延期或继续拆解。"
-                    : "\(workflowSummary.openTaskCount) 个任务仍未关闭。后续开发按照 tasks.md 中未完成项推进。",
-                primaryActionLabel: "打开任务",
-                primaryActionSystemImage: "checklist",
-                primaryAction: .document("tasks"),
-                evidence: compactEvidence("tasks.md", "需求/tasks.md"),
+                status: taskGate.status,
+                title: taskGate.title,
+                reason: taskGate.reason,
+                primaryActionLabel: taskGate.primaryActionLabel,
+                primaryActionSystemImage: taskGate.primaryActionSystemImage,
+                primaryAction: taskGate.primaryAction,
+                evidence: taskGate.evidence,
                 nextStageAllowed: false
             )
         }
 
+        let workflowSummary = WorkspaceWorkflowSummary(workspace: self)
         let sqlSummary = WorkspaceSqlSummary(workspace: self)
         if sqlSummary.status == .blocked {
             return WorkspaceMainStage(
