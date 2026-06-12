@@ -1889,12 +1889,63 @@ struct WorktreeSetupCheck: Hashable, Identifiable {
     let path: String?
 }
 
+enum WorktreeSetupPlanAction: String, Hashable {
+    case create
+    case skip
+    case blocked
+
+    var displayLabel: String {
+        switch self {
+        case .create:
+            return "创建 / Create"
+        case .skip:
+            return "跳过 / Skip"
+        case .blocked:
+            return "阻塞 / Blocked"
+        }
+    }
+
+    var status: WorkflowPathStatus {
+        switch self {
+        case .create:
+            return .next
+        case .skip:
+            return .ready
+        case .blocked:
+            return .blocked
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .create:
+            return "plus.rectangle.on.folder"
+        case .skip:
+            return "checkmark.circle"
+        case .blocked:
+            return "exclamationmark.triangle"
+        }
+    }
+}
+
+struct WorktreeSetupPlanItem: Hashable, Identifiable {
+    let id: String
+    let serviceName: String
+    let action: WorktreeSetupPlanAction
+    let targetBranch: String
+    let targetPath: String
+    let sourceAvailable: Bool
+    let currentBranch: String
+    let reason: String
+}
+
 struct WorktreeSetupEvidence: Hashable {
     let status: WorkflowPathStatus
     let reason: String
     let evidence: [String]
     let checks: [WorktreeSetupCheck]
     let setupScriptPath: String
+    let setupPlan: [WorktreeSetupPlanItem]
     let missingServices: [String]
     let branchMismatchServices: [String]
     let missingSourceServices: [String]
@@ -1972,6 +2023,7 @@ struct WorktreeSetupEvidence: Hashable {
             ?? "\(workspace.path)/scripts/worktree-commands.sh"
         let setupScriptExists = FileManager.default.fileExists(atPath: setupScriptPath)
         let branchConfirmed = hasConfirmedTargetBranch(workspace.branch)
+        let setupPlan = buildSetupPlan(workspace: workspace, branchConfirmed: branchConfirmed)
         let missingServices = workspace.services
             .filter { !$0.worktreeExists }
             .map(\.name)
@@ -2027,6 +2079,14 @@ struct WorktreeSetupEvidence: Hashable {
                 path: workspace.documentLinks["branches"] ?? "\(workspace.path)/branches.md"
             ),
             WorktreeSetupCheck(
+                id: "setup-plan",
+                label: "创建计划 / Plan",
+                detail: setupPlanDetail(setupPlan, workspace: workspace),
+                status: setupPlanStatus(setupPlan, workspace: workspace),
+                systemImage: setupPlanSystemImage(setupPlan, workspace: workspace),
+                path: setupScriptPath
+            ),
+            WorktreeSetupCheck(
                 id: "setup-script",
                 label: "创建脚本 / Commands",
                 detail: setupScriptExists
@@ -2062,6 +2122,7 @@ struct WorktreeSetupEvidence: Hashable {
             evidence: ["repos/<service>", "source-repos/", "scripts/worktree-commands.sh"],
             checks: checks,
             setupScriptPath: setupScriptPath,
+            setupPlan: setupPlan,
             missingServices: missingServices,
             branchMismatchServices: branchMismatchServices,
             missingSourceServices: missingSourceServices,
@@ -2093,6 +2154,137 @@ struct WorktreeSetupEvidence: Hashable {
         }
         return normalizedBranch == normalizedTarget
             || normalizedBranch.hasSuffix("/\(normalizedTarget)")
+    }
+
+    private static func buildSetupPlan(
+        workspace: WorkspaceSummary,
+        branchConfirmed: Bool
+    ) -> [WorktreeSetupPlanItem] {
+        workspace.services.map { service in
+            let targetPath = Self.localWorktreePath(for: service, in: workspace)
+            let targetBranch = workspace.branch.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            if !branchConfirmed {
+                return WorktreeSetupPlanItem(
+                    id: service.name,
+                    serviceName: service.name,
+                    action: .blocked,
+                    targetBranch: targetBranch,
+                    targetPath: targetPath,
+                    sourceAvailable: service.sourceExists,
+                    currentBranch: service.branch,
+                    reason: "目标分支未确认，不能生成可执行 worktree 创建计划。"
+                )
+            }
+
+            if !service.sourceExists {
+                return WorktreeSetupPlanItem(
+                    id: service.name,
+                    serviceName: service.name,
+                    action: .blocked,
+                    targetBranch: targetBranch,
+                    targetPath: targetPath,
+                    sourceAvailable: false,
+                    currentBranch: service.branch,
+                    reason: "source repo 不可用，不能从源仓库创建 workspace-local worktree。"
+                )
+            }
+
+            if service.worktreeExists && !branchMatches(service.branch, target: workspace.branch) {
+                return WorktreeSetupPlanItem(
+                    id: service.name,
+                    serviceName: service.name,
+                    action: .blocked,
+                    targetBranch: targetBranch,
+                    targetPath: targetPath,
+                    sourceAvailable: true,
+                    currentBranch: service.branch,
+                    reason: "已存在 worktree，但当前分支是 \(service.branch)，需要先修正到目标分支。"
+                )
+            }
+
+            if service.worktreeExists {
+                return WorktreeSetupPlanItem(
+                    id: service.name,
+                    serviceName: service.name,
+                    action: .skip,
+                    targetBranch: targetBranch,
+                    targetPath: targetPath,
+                    sourceAvailable: true,
+                    currentBranch: service.branch,
+                    reason: "workspace-local worktree 已存在，本次创建会跳过。"
+                )
+            }
+
+            return WorktreeSetupPlanItem(
+                id: service.name,
+                serviceName: service.name,
+                action: .create,
+                targetBranch: targetBranch,
+                targetPath: targetPath,
+                sourceAvailable: true,
+                currentBranch: service.branch,
+                reason: "将创建到 repos/\(service.name)，并使用目标分支 \(targetBranch)。"
+            )
+        }
+    }
+
+    private static func setupPlanDetail(
+        _ plan: [WorktreeSetupPlanItem],
+        workspace: WorkspaceSummary
+    ) -> String {
+        guard !plan.isEmpty else {
+            return workspace.services.isEmpty
+                ? "当前工作区没有需要创建的服务 worktree。"
+                : "暂无可审计的 worktree 创建计划。"
+        }
+        let createCount = plan.filter { $0.action == .create }.count
+        let skipCount = plan.filter { $0.action == .skip }.count
+        let blockedCount = plan.filter { $0.action == .blocked }.count
+        return "创建 \(createCount)，跳过 \(skipCount)，阻塞 \(blockedCount)。每个服务都带目标路径、分支和原因。"
+    }
+
+    private static func setupPlanStatus(
+        _ plan: [WorktreeSetupPlanItem],
+        workspace: WorkspaceSummary
+    ) -> WorkflowPathStatus {
+        guard !plan.isEmpty else {
+            return workspace.services.isEmpty ? .ready : .review
+        }
+        if plan.contains(where: { $0.action == .blocked }) {
+            return .blocked
+        }
+        if plan.contains(where: { $0.action == .create }) {
+            return .next
+        }
+        return .ready
+    }
+
+    private static func setupPlanSystemImage(
+        _ plan: [WorktreeSetupPlanItem],
+        workspace: WorkspaceSummary
+    ) -> String {
+        switch setupPlanStatus(plan, workspace: workspace) {
+        case .blocked:
+            return "exclamationmark.triangle"
+        case .pending:
+            return "clock"
+        case .next:
+            return "list.bullet.clipboard"
+        case .review:
+            return "doc.badge.ellipsis"
+        case .ready:
+            return "checkmark.circle"
+        case .archived:
+            return "archivebox"
+        }
+    }
+
+    private static func localWorktreePath(for service: ServiceStatus, in workspace: WorkspaceSummary) -> String {
+        URL(fileURLWithPath: workspace.path, isDirectory: true)
+            .appendingPathComponent("repos", isDirectory: true)
+            .appendingPathComponent(service.name, isDirectory: true)
+            .path
     }
 
     private static func normalizeBranch(_ branch: String) -> String {

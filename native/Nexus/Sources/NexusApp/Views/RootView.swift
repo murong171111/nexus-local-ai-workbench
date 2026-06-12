@@ -4144,7 +4144,24 @@ private struct WorktreeSetupEvidencePreview: View {
                 WorkflowMetric(label: "Missing", value: "\(evidence.missingServices.count)", tone: evidence.missingServices.isEmpty ? NexusPalette.success : NexusPalette.warning)
                 WorkflowMetric(label: "Mismatch", value: "\(evidence.branchMismatchServices.count)", tone: evidence.branchMismatchServices.isEmpty ? NexusPalette.success : NexusPalette.danger)
                 WorkflowMetric(label: "Sources", value: "\(evidence.missingSourceServices.count)", tone: evidence.missingSourceServices.isEmpty ? NexusPalette.success : NexusPalette.danger)
+                WorkflowMetric(label: "Plan", value: "\(planCreateCount)/\(planBlockedCount)", tone: planBlockedCount == 0 ? NexusPalette.success : NexusPalette.danger)
                 WorkflowMetric(label: "Script", value: evidence.setupScriptExists ? "yes" : "review", tone: evidence.setupScriptExists ? NexusPalette.success : NexusPalette.warning)
+            }
+
+            if !evidence.setupPlan.isEmpty {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("创建计划 / Setup plan")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    ForEach(evidence.setupPlan.prefix(5)) { item in
+                        WorktreeSetupPlanRow(item: item)
+                    }
+                    if evidence.setupPlan.count > 5 {
+                        Text("+ \(evidence.setupPlan.count - 5) 个服务")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -4177,6 +4194,50 @@ private struct WorktreeSetupEvidencePreview: View {
         default:
             action(.open(evidence.setupScriptPath))
         }
+    }
+
+    private var planCreateCount: Int {
+        evidence.setupPlan.filter { $0.action == .create }.count
+    }
+
+    private var planBlockedCount: Int {
+        evidence.setupPlan.filter { $0.action == .blocked }.count
+    }
+}
+
+private struct WorktreeSetupPlanRow: View {
+    let item: WorktreeSetupPlanItem
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: item.action.systemImage)
+                .foregroundStyle(item.action.status.color)
+                .frame(width: 14)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(item.serviceName)
+                        .font(.caption2.weight(.semibold))
+                    Text(item.action.displayLabel)
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(item.action.status.color)
+                }
+                Text(item.reason)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("\(item.targetBranch) -> \(item.targetPath)")
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer(minLength: 8)
+        }
+        .padding(8)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 }
 
