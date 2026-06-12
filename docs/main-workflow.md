@@ -407,6 +407,7 @@ Plan:
   - update timing
   - gate participation
   - create policy
+- Surface the metadata in Native Documents Hub cards. `[started with WorkspaceDocumentRole]`
 - Keep SQL artifacts as review-only dynamic entries.
 - Add clear distinction between Markdown preview and SQL source review.
 

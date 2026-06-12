@@ -5788,6 +5788,7 @@ private struct WorkspaceDocumentEntry: Identifiable {
     let systemImage: String
     let fallbackRelativePath: String
     let canCreateMissing: Bool
+    let role: WorkspaceDocumentRole
 
     init(
         key: String,
@@ -5795,7 +5796,8 @@ private struct WorkspaceDocumentEntry: Identifiable {
         description: String,
         systemImage: String,
         fallbackRelativePath: String,
-        canCreateMissing: Bool = true
+        canCreateMissing: Bool = true,
+        role: WorkspaceDocumentRole? = nil
     ) {
         self.key = key
         self.label = label
@@ -5803,6 +5805,7 @@ private struct WorkspaceDocumentEntry: Identifiable {
         self.systemImage = systemImage
         self.fallbackRelativePath = fallbackRelativePath
         self.canCreateMissing = canCreateMissing
+        self.role = role ?? WorkspaceDocumentRole.standard(for: key)
     }
 
     var id: String { key }
@@ -5903,7 +5906,8 @@ private struct WorkspaceDocumentsHubView: View {
                 description: file.kindLabel,
                 systemImage: "doc.text",
                 fallbackRelativePath: "sql/\(file.relativePath)",
-                canCreateMissing: false
+                canCreateMissing: false,
+                role: WorkspaceDocumentRole.sqlArtifact(for: "sql-doc/\(file.relativePath)")
             )
             return ResolvedWorkspaceDocumentEntry(entry: entry, path: file.path)
         }
@@ -5914,7 +5918,8 @@ private struct WorkspaceDocumentsHubView: View {
                 description: file.kindLabel,
                 systemImage: file.kind == "rollback" ? "arrow.uturn.backward.circle" : "doc.plaintext",
                 fallbackRelativePath: "sql/\(file.relativePath)",
-                canCreateMissing: false
+                canCreateMissing: false,
+                role: WorkspaceDocumentRole.sqlArtifact(for: "sql/\(file.relativePath)")
             )
             return ResolvedWorkspaceDocumentEntry(entry: entry, path: file.path)
         }
@@ -5936,7 +5941,7 @@ private struct WorkspaceDocumentsHubView: View {
         SectionBlock(title: "文档入口 / Documents") {
             VStack(alignment: .leading, spacing: 12) {
                 WorkspaceDocumentGroupHeader(title: "标准文档 / Standard", count: standardDocumentEntries.count)
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 116), spacing: 8)], alignment: .leading, spacing: 8) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 184), spacing: 8)], alignment: .leading, spacing: 8) {
                     ForEach(standardDocumentEntries) { entry in
                         documentButton(for: entry)
                     }
@@ -5946,7 +5951,7 @@ private struct WorkspaceDocumentsHubView: View {
                 if sqlDocumentEntries.isEmpty {
                     WorkspaceSqlDocumentsEmptyState()
                 } else {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8)], alignment: .leading, spacing: 8) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 184), spacing: 8)], alignment: .leading, spacing: 8) {
                         ForEach(sqlDocumentEntries) { entry in
                             documentButton(for: entry)
                         }
@@ -6026,6 +6031,7 @@ private struct ResolvedWorkspaceDocumentEntry: Identifiable {
     var label: String { entry.label }
     var description: String { entry.description }
     var systemImage: String { entry.systemImage }
+    var role: WorkspaceDocumentRole { entry.role }
 }
 
 private struct WorkspaceDocumentGroupHeader: View {
@@ -6696,31 +6702,49 @@ private struct WorkspaceDocumentEntryTile: View {
     let isLoading: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 6) {
-                if isLoading {
-                    ProgressView()
-                        .controlSize(.small)
-                        .frame(width: 14, height: 14)
-                } else {
-                    Image(systemName: entry.systemImage)
-                        .font(.caption)
-                        .foregroundStyle(isActive ? NexusPalette.accent : .secondary)
-                        .frame(width: 14)
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .top, spacing: 6) {
+                HStack(spacing: 6) {
+                    if isLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                            .frame(width: 14, height: 14)
+                    } else {
+                        Image(systemName: entry.systemImage)
+                            .font(.caption)
+                            .foregroundStyle(isActive ? NexusPalette.accent : .secondary)
+                            .frame(width: 14)
+                    }
+
+                    Text(entry.label)
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
                 }
 
-                Text(entry.label)
-                    .font(.caption.weight(.semibold))
+                Spacer(minLength: 4)
+
+                Text(entry.role.gateLabel)
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(entry.role.participatesInGate ? NexusPalette.accent : .secondary)
                     .lineLimit(1)
             }
 
-            Text(entry.description)
+            Text(entry.role.purpose)
                 .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Label(entry.role.updateTiming, systemImage: "clock.arrow.circlepath")
+                    .lineLimit(2)
+                Label(entry.role.createPolicy, systemImage: entry.entry.canCreateMissing ? "doc.badge.plus" : "eye")
+                    .lineLimit(2)
+            }
+            .font(.system(size: 10))
+            .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(8)
+        .padding(9)
         .background(isActive ? NexusPalette.selected : NexusPalette.badge)
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         .overlay {

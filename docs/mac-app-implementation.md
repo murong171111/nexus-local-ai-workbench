@@ -65,6 +65,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added native search scope controls for workspace, state, workflow, SQL, and document search modes.
 - Added native Markdown document preview with preview/source modes, active-document highlighting, and local document-open recovery inside the SwiftUI workspace detail panel.
 - Added scanned SQL artifact entries to the native Documents Hub so `sql/*.sql` files can be reviewed in-app beside standard workspace documents.
+- Added native document responsibility metadata for Documents Hub entries, covering purpose, update timing, gate participation, and create policy for standard documents and SQL artifacts.
 - Added locally persisted pinned workspaces in the native SwiftUI shell, including card-level pin actions and a sidebar pinned section.
 - Added a native Settings sheet from the sidebar with persisted local roots, save-and-reload, and reset-defaults actions.
 - Added actionable native session rows for document follow-ups and confirmed worktree setup, including a local-write confirmation sheet and created/skipped/failed result summary.

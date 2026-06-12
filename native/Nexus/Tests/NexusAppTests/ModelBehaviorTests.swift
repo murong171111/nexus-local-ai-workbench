@@ -378,6 +378,33 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(workspace.sqlDocuments.first?.kindLabel, "SQL 说明文档 / Markdown")
     }
 
+    func testWorkspaceDocumentRoleMapsStandardGateResponsibilities() {
+        let tasks = WorkspaceDocumentRole.standard(for: "tasks")
+        let delivery = WorkspaceDocumentRole.standard(for: "delivery")
+        let handoff = WorkspaceDocumentRole.standard(for: "handoff")
+        let unknown = WorkspaceDocumentRole.standard(for: "custom")
+
+        XCTAssertEqual(tasks.purpose, "唯一的工程执行任务来源，参与 Task Center 和交付阻塞判断。")
+        XCTAssertEqual(tasks.gate, "development, delivery_check")
+        XCTAssertTrue(tasks.participatesInGate)
+        XCTAssertEqual(delivery.gateLabel, "delivery_check, archived")
+        XCTAssertTrue(delivery.updateTiming.contains("SQL"))
+        XCTAssertFalse(handoff.participatesInGate)
+        XCTAssertEqual(handoff.gateLabel, "参考 / Reference")
+        XCTAssertEqual(unknown.key, "custom")
+        XCTAssertFalse(unknown.participatesInGate)
+    }
+
+    func testWorkspaceDocumentRoleTreatsSqlArtifactsAsReviewOnlyGateEvidence() {
+        let role = WorkspaceDocumentRole.sqlArtifact(for: "sql/V5__add_pay_log.sql")
+
+        XCTAssertEqual(role.gate, "delivery_check, archived")
+        XCTAssertEqual(role.gateLabel, "delivery_check, archived")
+        XCTAssertTrue(role.participatesInGate)
+        XCTAssertTrue(role.purpose.contains("可回退"))
+        XCTAssertTrue(role.createPolicy.contains("不会自动生成 SQL 产物"))
+    }
+
     func testWorkspaceSqlSummaryPromotesSqlToTopLevelStatus() {
         let missingRollback = workspaceForWorkflowSummary(
             stage: "delivery",

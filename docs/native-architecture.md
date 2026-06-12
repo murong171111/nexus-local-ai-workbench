@@ -35,7 +35,7 @@ The first native shell scaffold is available at `native/Nexus`. It is a Swift Pa
 - Create-workspace UX for scanning source repositories, filtering service candidates, accepting manual fallback services, showing pending scope, preflighting workspaces root readiness, folder validity, destination collisions, environment health, and scope warnings before confirmation, verifying generated files and initial status through an initialization receipt, and guiding the user to the next safe step after creation.
 - Workspace demand-intake preflight that reads the workspace-local `需求/` archive status, initializes missing requirement/question/scope/task/delivery templates only after explicit confirmation, routes generated files back into the document preview and local-write feedback loop, can hand `$lanhu-demand-intake` prompts to Codex with existing session links, and is surfaced from Command Center before development starts.
 - Workspace workflow summary that keeps task status, delivery-record status, document opens, local checks, and Codex handoff together instead of scattering them across unrelated sections.
-- Workspace Documents Hub that maps standard workspace files and scanned `sql/*.sql` artifacts to native preview/source rendering and avoids stale previews when the selected workspace changes.
+- Workspace Documents Hub that maps standard workspace files and scanned `sql/*.sql` artifacts to native preview/source rendering, shows each document's purpose, update timing, gate participation, and create policy, and avoids stale previews when the selected workspace changes.
 
 ### Rust Core
 
