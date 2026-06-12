@@ -356,6 +356,452 @@ struct WorkspaceSqlSummary: Hashable {
     }
 }
 
+struct DeliveryGateCheck: Hashable, Identifiable {
+    let id: String
+    let label: String
+    let detail: String
+    let status: WorkflowPathStatus
+    let systemImage: String
+    let path: String?
+    let action: WorkspaceMainStageAction
+}
+
+struct DeliveryGateEvidence: Hashable {
+    let status: WorkflowPathStatus
+    let title: String
+    let reason: String
+    let value: String
+    let evidence: [String]
+    let checks: [DeliveryGateCheck]
+    let primaryActionLabel: String
+    let primaryActionSystemImage: String
+    let primaryAction: WorkspaceMainStageAction
+    let blockerCount: Int
+    let warningCount: Int
+
+    var ready: Bool {
+        status == .ready
+    }
+
+    static func resolve(workspace: WorkspaceSummary) -> DeliveryGateEvidence {
+        if workspace.isArchived {
+            return DeliveryGateEvidence(
+                status: .archived,
+                title: "已归档 / Archived",
+                reason: "这个工作区已退出活跃交付流。需要恢复时先查看交付记录和 handoff。",
+                value: "已归档",
+                evidence: ["交付记录.md", "handoff.md"],
+                checks: [],
+                primaryActionLabel: "打开交付",
+                primaryActionSystemImage: "archivebox",
+                primaryAction: .document("delivery"),
+                blockerCount: 0,
+                warningCount: 0
+            )
+        }
+
+        let checks = deliveryChecks(workspace: workspace)
+        let blockers = checks.filter { $0.status == .blocked }
+        let pending = checks.filter { $0.status == .pending }
+        let reviews = checks.filter { $0.status == .review || $0.status == .next }
+
+        let status: WorkflowPathStatus
+        let title: String
+        let value: String
+        let primaryCheck: DeliveryGateCheck?
+        if !blockers.isEmpty {
+            status = .blocked
+            title = "交付阻塞 / Delivery blocked"
+            value = "阻 \(blockers.count)"
+            primaryCheck = blockers.first
+        } else if !pending.isEmpty {
+            status = .pending
+            title = "运行交付检查 / Check delivery"
+            value = "待检查"
+            primaryCheck = pending.first
+        } else if !reviews.isEmpty {
+            status = .review
+            title = "整理交付 / Prepare delivery"
+            value = "复核 \(reviews.count)"
+            primaryCheck = reviews.first
+        } else if workspace.lifecycle.stage == "done" {
+            status = .ready
+            title = "确认 PR 与 CI / Confirm PR and CI"
+            value = "已完成"
+            primaryCheck = nil
+        } else {
+            status = .ready
+            title = "交付检查通过 / Delivery ready"
+            value = "可交付"
+            primaryCheck = nil
+        }
+
+        let reason: String
+        let action: WorkspaceMainStageAction
+        if let primaryCheck {
+            reason = primaryCheck.detail
+            action = primaryCheck.action
+        } else if workspace.lifecycle.stage == "done" {
+            reason = "生命周期已标记完成。下一步复核本地验证、PR、CI、发布和遗留风险。"
+            action = .validationHandoff
+        } else {
+            reason = "任务、风险、服务/worktree、交付记录和 SQL 检查暂无硬阻塞。"
+            action = .document("delivery")
+        }
+
+        return DeliveryGateEvidence(
+            status: status,
+            title: title,
+            reason: reason,
+            value: value,
+            evidence: deliveryEvidence(workspace: workspace, checks: checks),
+            checks: checks,
+            primaryActionLabel: actionLabel(for: action, status: status),
+            primaryActionSystemImage: actionSystemImage(for: action, status: status),
+            primaryAction: action,
+            blockerCount: blockers.count,
+            warningCount: reviews.count + pending.count
+        )
+    }
+
+    private static func deliveryChecks(workspace: WorkspaceSummary) -> [DeliveryGateCheck] {
+        let worktree = WorktreeSetupEvidence.resolve(workspace: workspace)
+        let tasks = DevelopmentTaskEvidence.resolve(workspace: workspace)
+        let sql = WorkspaceSqlSummary(workspace: workspace)
+        let delivery = deliveryRecordCheck(workspace: workspace)
+        let risks = riskCheck(workspace: workspace)
+        let dirty = dirtyServiceCheck(workspace: workspace)
+
+        return [
+            branchCheck(workspace: workspace),
+            serviceWorktreeCheck(workspace: workspace, worktree: worktree),
+            taskCheck(workspace: workspace, tasks: tasks),
+            risks,
+            delivery,
+            sqlCheck(workspace: workspace, sql: sql),
+            dirty
+        ]
+    }
+
+    private static func branchCheck(workspace: WorkspaceSummary) -> DeliveryGateCheck {
+        if hasConfirmedTargetBranch(workspace.branch) {
+            return DeliveryGateCheck(
+                id: "branch",
+                label: "目标分支 / Branch",
+                detail: "目标分支已确认：\(workspace.branch)。",
+                status: .ready,
+                systemImage: "arrow.triangle.branch",
+                path: workspace.documentLinks["branches"] ?? "\(workspace.path)/branches.md",
+                action: .document("branches")
+            )
+        }
+
+        return DeliveryGateCheck(
+            id: "branch",
+            label: "目标分支 / Branch",
+            detail: "目标分支仍待确认，交付检查无法判断代码是否在正确的开发线上。",
+            status: .blocked,
+            systemImage: "arrow.triangle.branch",
+            path: workspace.documentLinks["branches"] ?? "\(workspace.path)/branches.md",
+            action: .document("branches")
+        )
+    }
+
+    private static func serviceWorktreeCheck(
+        workspace: WorkspaceSummary,
+        worktree: WorktreeSetupEvidence
+    ) -> DeliveryGateCheck {
+        if workspace.services.isEmpty {
+            return DeliveryGateCheck(
+                id: "services",
+                label: "服务与 worktree / Services",
+                detail: "服务范围待确认，无法判断交付涉及的代码范围。",
+                status: .blocked,
+                systemImage: "square.stack.3d.up",
+                path: workspace.documentLinks["services"] ?? "\(workspace.path)/services.md",
+                action: .document("services")
+            )
+        }
+
+        if worktree.status == .ready {
+            return DeliveryGateCheck(
+                id: "services",
+                label: "服务与 worktree / Services",
+                detail: "\(workspace.services.count) 个服务均已有 workspace-local worktree，且分支与目标分支一致。",
+                status: .ready,
+                systemImage: "square.stack.3d.up",
+                path: workspace.documentLinks["services"] ?? "\(workspace.path)/services.md",
+                action: .document("services")
+            )
+        }
+
+        return DeliveryGateCheck(
+            id: "services",
+            label: "服务与 worktree / Services",
+            detail: worktree.reason,
+            status: worktree.status == .blocked ? .blocked : .review,
+            systemImage: worktree.primaryActionSystemImage,
+            path: workspace.documentLinks["services"] ?? "\(workspace.path)/services.md",
+            action: worktree.primaryAction
+        )
+    }
+
+    private static func taskCheck(
+        workspace: WorkspaceSummary,
+        tasks: DevelopmentTaskEvidence
+    ) -> DeliveryGateCheck {
+        if !tasks.blockedTasks.isEmpty {
+            return DeliveryGateCheck(
+                id: "tasks",
+                label: "任务状态 / Tasks",
+                detail: "\(tasks.blockedTasks.count) 个任务仍处于阻塞状态，交付前需要完成、延期或拆分处理。",
+                status: .blocked,
+                systemImage: "checklist",
+                path: tasks.tasksPath,
+                action: tasks.primaryAction
+            )
+        }
+
+        if !tasks.activeTasks.isEmpty {
+            return DeliveryGateCheck(
+                id: "tasks",
+                label: "任务状态 / Tasks",
+                detail: "\(tasks.activeTasks.count) 个任务仍在活跃队列，交付前需要确认是否完成或延期。",
+                status: .review,
+                systemImage: "checklist",
+                path: tasks.tasksPath,
+                action: tasks.primaryAction
+            )
+        }
+
+        return DeliveryGateCheck(
+            id: "tasks",
+            label: "任务状态 / Tasks",
+            detail: "root tasks.md 当前没有活跃任务。",
+            status: .ready,
+            systemImage: "checklist.checked",
+            path: tasks.tasksPath,
+            action: .document("tasks")
+        )
+    }
+
+    private static func riskCheck(workspace: WorkspaceSummary) -> DeliveryGateCheck {
+        if workspace.risks.isEmpty {
+            return DeliveryGateCheck(
+                id: "risks",
+                label: "风险复核 / Risks",
+                detail: "当前没有活动风险。",
+                status: .ready,
+                systemImage: "checkmark.shield",
+                path: workspace.documentLinks["status"] ?? "\(workspace.path)/STATUS.md",
+                action: .document("status")
+            )
+        }
+
+        return DeliveryGateCheck(
+            id: "risks",
+            label: "风险复核 / Risks",
+            detail: "\(workspace.risks.count) 个风险信号需要复核：\(workspace.risks.first?.title ?? "风险待复核")。",
+            status: workspace.riskLevel == .high ? .blocked : .review,
+            systemImage: "exclamationmark.triangle",
+            path: workspace.documentLinks["status"] ?? "\(workspace.path)/STATUS.md",
+            action: .riskPrompt
+        )
+    }
+
+    private static func deliveryRecordCheck(workspace: WorkspaceSummary) -> DeliveryGateCheck {
+        let path = workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md"
+        if let check = workspace.healthChecks.first(where: { $0.id == "delivery-record" || $0.action == "delivery" }) {
+            let normalized = check.status.lowercased()
+            let status: WorkflowPathStatus
+            switch normalized {
+            case "pass", "ok":
+                status = .ready
+            case "warning", "review":
+                status = .review
+            default:
+                status = .blocked
+            }
+            return DeliveryGateCheck(
+                id: "delivery-record",
+                label: "交付记录 / Delivery",
+                detail: check.detail,
+                status: status,
+                systemImage: "doc.text",
+                path: path,
+                action: status == .ready ? .document("delivery") : .deliveryHandoff
+            )
+        }
+
+        if let deliveryRisk = workspace.risks.first(where: { risk in
+            let normalized = "\(risk.title) \(risk.detail)".lowercased()
+            return normalized.contains("交付") || normalized.contains("delivery")
+        }) {
+            return DeliveryGateCheck(
+                id: "delivery-record",
+                label: "交付记录 / Delivery",
+                detail: deliveryRisk.detail,
+                status: .review,
+                systemImage: "doc.text",
+                path: path,
+                action: .deliveryHandoff
+            )
+        }
+
+        return DeliveryGateCheck(
+            id: "delivery-record",
+            label: "交付记录 / Delivery",
+            detail: "尚未生成交付记录检查结果。运行本地检查确认代码、逻辑、配置、SQL 和验证记录是否完整。",
+            status: .pending,
+            systemImage: "doc.text.magnifyingglass",
+            path: path,
+            action: .localCheck
+        )
+    }
+
+    private static func sqlCheck(
+        workspace: WorkspaceSummary,
+        sql: WorkspaceSqlSummary
+    ) -> DeliveryGateCheck {
+        let path = workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md"
+        let action: WorkspaceMainStageAction = sql.status == .pending ? .localCheck : .document("sql")
+        return DeliveryGateCheck(
+            id: "sql",
+            label: "SQL 产物 / SQL",
+            detail: sql.detail,
+            status: sql.status,
+            systemImage: "cylinder.split.1x2",
+            path: path,
+            action: action
+        )
+    }
+
+    private static func dirtyServiceCheck(workspace: WorkspaceSummary) -> DeliveryGateCheck {
+        let dirty = dirtyServices(in: workspace)
+        if dirty.isEmpty {
+            return DeliveryGateCheck(
+                id: "dirty-services",
+                label: "服务 Git 状态 / Git",
+                detail: "当前没有检测到未提交服务。",
+                status: .ready,
+                systemImage: "arrow.triangle.branch",
+                path: workspace.documentLinks["services"] ?? "\(workspace.path)/services.md",
+                action: .document("services")
+            )
+        }
+
+        return DeliveryGateCheck(
+            id: "dirty-services",
+            label: "服务 Git 状态 / Git",
+            detail: "\(dirty.count) 个服务存在未提交状态：\(dirty.map(\.name).joined(separator: ", "))。",
+            status: .review,
+            systemImage: "arrow.triangle.branch",
+            path: workspace.documentLinks["services"] ?? "\(workspace.path)/services.md",
+            action: .codex
+        )
+    }
+
+    private static func deliveryEvidence(workspace: WorkspaceSummary, checks: [DeliveryGateCheck]) -> [String] {
+        var values = [
+            workspace.documentLinks["delivery"] ?? "交付记录.md",
+            workspace.documentLinks["tasks"] ?? "tasks.md",
+            "sql/",
+            "repos/<service>"
+        ]
+        if let firstIssue = checks.first(where: { $0.status == .blocked || $0.status == .review || $0.status == .pending }) {
+            values.append(firstIssue.label)
+        }
+        return values
+    }
+
+    private static func actionLabel(for action: WorkspaceMainStageAction, status: WorkflowPathStatus) -> String {
+        switch action {
+        case .localCheck:
+            return "运行检查"
+        case .deliveryHandoff:
+            return "交付交接"
+        case .validationHandoff:
+            return "PR 交接"
+        case .riskPrompt:
+            return "风险交接"
+        case .worktree:
+            return "创建 worktree"
+        case .document(let key):
+            if key == "sql" {
+                return status == .blocked ? "SQL 交接" : "复查 SQL"
+            }
+            if key == "delivery" {
+                return "打开交付"
+            }
+            if key == "tasks" {
+                return "打开任务"
+            }
+            return "打开文档"
+        case .task:
+            return "打开任务"
+        case .path:
+            return "打开文档"
+        case .codex:
+            return "交接 Codex"
+        case .demandIntake:
+            return "打开预检"
+        case .transferDemandTasks:
+            return "转入任务"
+        }
+    }
+
+    private static func actionSystemImage(for action: WorkspaceMainStageAction, status: WorkflowPathStatus) -> String {
+        switch action {
+        case .localCheck:
+            return "checklist"
+        case .deliveryHandoff, .validationHandoff, .riskPrompt, .codex:
+            return "point.3.connected.trianglepath.dotted"
+        case .worktree:
+            return "wrench.and.screwdriver"
+        case .document(let key):
+            if key == "sql" {
+                return "cylinder.split.1x2"
+            }
+            if key == "tasks" {
+                return "checklist"
+            }
+            return status == .ready ? "doc.text.magnifyingglass" : "doc.text"
+        case .task:
+            return "text.line.first.and.arrowtriangle.forward"
+        case .path:
+            return "doc.text"
+        case .demandIntake:
+            return "text.badge.checkmark"
+        case .transferDemandTasks:
+            return "arrow.down.doc"
+        }
+    }
+
+    private static func hasConfirmedTargetBranch(_ branch: String) -> Bool {
+        let normalized = branch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return false }
+        return !normalized.contains("待确认")
+            && !normalized.contains("pending")
+            && !normalized.contains("todo")
+            && normalized != "-"
+    }
+
+    private static func dirtyServices(in workspace: WorkspaceSummary) -> [ServiceStatus] {
+        workspace.services.filter { service in
+            let normalized = "\(service.gitSummary) \(service.worktree)".lowercased()
+            return normalized.contains("dirty")
+                || normalized.contains("modified")
+                || normalized.contains("uncommitted")
+                || normalized.contains("未提交")
+                || normalized.contains("有改动")
+                || normalized.contains("不是 git")
+                || normalized.contains("not git")
+                || normalized.contains("检查失败")
+                || normalized.contains("failed")
+        }
+    }
+}
+
 enum WorkspaceMainStageID: String, CaseIterable, Hashable {
     case created
     case demandIntake = "demand_intake"
@@ -2682,6 +3128,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
         serviceBranch: ServiceBranchEvidence? = nil,
         worktreeSetup: WorktreeSetupEvidence? = nil,
         developmentTasks: DevelopmentTaskEvidence? = nil,
+        deliveryGate: DeliveryGateEvidence? = nil,
         demandTaskTransfer: DemandTaskTransferPlan? = nil
     ) -> WorkspaceMainStage {
         if isArchived {
@@ -2772,20 +3219,6 @@ struct WorkspaceSummary: Identifiable, Hashable {
             )
         }
 
-        if riskLevel == .high || !risks.isEmpty {
-            return WorkspaceMainStage(
-                id: .development,
-                status: riskLevel == .high ? .blocked : .review,
-                title: "复核开发风险 / Review risks",
-                reason: "当前存在 \(risks.count) 个风险信号。先复核风险上下文，再决定是否继续开发或进入交付。",
-                primaryActionLabel: "风险交接",
-                primaryActionSystemImage: "point.3.connected.trianglepath.dotted",
-                primaryAction: .riskPrompt,
-                evidence: compactEvidence("STATUS.md", risks.first?.title, risks.first?.detail),
-                nextStageAllowed: riskLevel != .high
-            )
-        }
-
         let taskGate = developmentTasks ?? DevelopmentTaskEvidence.resolve(workspace: self)
         if taskGate.status != .ready {
             return WorkspaceMainStage(
@@ -2801,32 +3234,17 @@ struct WorkspaceSummary: Identifiable, Hashable {
             )
         }
 
-        let workflowSummary = WorkspaceWorkflowSummary(workspace: self)
-        let sqlSummary = WorkspaceSqlSummary(workspace: self)
-        if sqlSummary.status == .blocked {
-            return WorkspaceMainStage(
-                id: .deliveryCheck,
-                status: .blocked,
-                title: "补齐 SQL 交付 / SQL artifacts",
-                reason: sqlSummary.detail,
-                primaryActionLabel: sqlSummary.actionLabel,
-                primaryActionSystemImage: "cylinder.split.1x2",
-                primaryAction: .document("sql"),
-                evidence: compactEvidence("sql/", documentLinks["delivery"] ?? "交付记录.md"),
-                nextStageAllowed: false
-            )
-        }
-
+        let delivery = deliveryGate ?? DeliveryGateEvidence.resolve(workspace: self)
         return WorkspaceMainStage(
             id: .deliveryCheck,
-            status: workflowSummary.deliveryStatus,
-            title: Self.deliveryStageTitle(for: workflowSummary.deliveryStatus),
-            reason: workflowSummary.deliveryDetail,
-            primaryActionLabel: workflowSummary.deliveryRoute.displayLabel,
-            primaryActionSystemImage: Self.deliveryStageSymbol(for: workflowSummary.deliveryStatus),
-            primaryAction: Self.mainAction(for: workflowSummary.deliveryRoute),
-            evidence: compactEvidence("交付记录.md", "sql/", "handoff.md"),
-            nextStageAllowed: workflowSummary.deliveryStatus == .ready
+            status: delivery.status,
+            title: delivery.title,
+            reason: delivery.reason,
+            primaryActionLabel: delivery.primaryActionLabel,
+            primaryActionSystemImage: delivery.primaryActionSystemImage,
+            primaryAction: delivery.primaryAction,
+            evidence: delivery.evidence,
+            nextStageAllowed: delivery.ready
         )
     }
 
