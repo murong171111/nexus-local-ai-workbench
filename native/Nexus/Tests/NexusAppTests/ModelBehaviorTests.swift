@@ -884,6 +884,108 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(stage.id, .deliveryCheck)
     }
 
+    func testDeliveryGateEvidenceRequiresLocalChecksBeforeDeliveryReady() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "delivery-local-check-pending"
+        )
+        let delivery = DeliveryGateEvidence.resolve(workspace: workspace)
+        let stage = workspace.mainStage(
+            demandReadiness: readyDemandReadiness(),
+            scopeFreeze: readyScopeFreeze(),
+            serviceBranch: readyServiceBranch(for: workspace),
+            worktreeSetup: WorktreeSetupEvidence.resolve(workspace: workspace),
+            developmentTasks: DevelopmentTaskEvidence.resolve(workspace: workspace),
+            deliveryGate: delivery
+        )
+
+        XCTAssertEqual(delivery.status, .pending)
+        XCTAssertEqual(delivery.primaryAction, .localCheck)
+        XCTAssertEqual(stage.id, .deliveryCheck)
+        XCTAssertEqual(stage.primaryAction, .localCheck)
+    }
+
+    func testDeliveryGateEvidenceBlocksMissingSqlArtifacts() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "delivery-sql-blocked",
+            healthChecks: [
+                WorkspaceHealthCheck(id: "delivery-record", label: "交付记录", detail: "交付记录可用", status: "pass", action: "delivery"),
+                WorkspaceHealthCheck(id: "sql-directory", label: "SQL", detail: "交付记录声明 SQL 变更，但 sql/ 缺少回滚 SQL。", status: "fail", action: "sql")
+            ]
+        )
+        let delivery = DeliveryGateEvidence.resolve(workspace: workspace)
+        let stage = workspace.mainStage(
+            demandReadiness: readyDemandReadiness(),
+            scopeFreeze: readyScopeFreeze(),
+            serviceBranch: readyServiceBranch(for: workspace),
+            worktreeSetup: WorktreeSetupEvidence.resolve(workspace: workspace),
+            developmentTasks: DevelopmentTaskEvidence.resolve(workspace: workspace),
+            deliveryGate: delivery
+        )
+
+        XCTAssertEqual(delivery.status, .blocked)
+        XCTAssertEqual(delivery.primaryAction, .document("sql"))
+        XCTAssertEqual(stage.id, .deliveryCheck)
+        XCTAssertEqual(stage.status, .blocked)
+        XCTAssertEqual(stage.primaryAction, .document("sql"))
+    }
+
+    func testDeliveryGateEvidenceBlocksHighRiskBeforeDelivery() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "delivery-risk-blocked",
+            riskLevel: .high,
+            healthChecks: [
+                WorkspaceHealthCheck(id: "delivery-record", label: "交付记录", detail: "交付记录可用", status: "pass", action: "delivery"),
+                WorkspaceHealthCheck(id: "sql-directory", label: "SQL", detail: "SQL 产物匹配。", status: "pass", action: "sql")
+            ],
+            risks: [
+                RiskAlert(title: "高风险逻辑变更", detail: "结算链路需要复核。")
+            ]
+        )
+        let delivery = DeliveryGateEvidence.resolve(workspace: workspace)
+        let stage = workspace.mainStage(
+            demandReadiness: readyDemandReadiness(),
+            scopeFreeze: readyScopeFreeze(),
+            serviceBranch: readyServiceBranch(for: workspace),
+            worktreeSetup: WorktreeSetupEvidence.resolve(workspace: workspace),
+            developmentTasks: DevelopmentTaskEvidence.resolve(workspace: workspace),
+            deliveryGate: delivery
+        )
+
+        XCTAssertEqual(delivery.status, .blocked)
+        XCTAssertEqual(delivery.primaryAction, .riskPrompt)
+        XCTAssertEqual(stage.id, .deliveryCheck)
+        XCTAssertEqual(stage.primaryAction, .riskPrompt)
+    }
+
+    func testDeliveryGateEvidenceAllowsReadyDeliveryToOpenRecord() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "delivery-ready",
+            healthChecks: [
+                WorkspaceHealthCheck(id: "delivery-record", label: "交付记录", detail: "交付记录可用", status: "pass", action: "delivery"),
+                WorkspaceHealthCheck(id: "sql-directory", label: "SQL", detail: "未声明 SQL 变更。", status: "pass", action: "sql")
+            ]
+        )
+        let delivery = DeliveryGateEvidence.resolve(workspace: workspace)
+        let stage = workspace.mainStage(
+            demandReadiness: readyDemandReadiness(),
+            scopeFreeze: readyScopeFreeze(),
+            serviceBranch: readyServiceBranch(for: workspace),
+            worktreeSetup: WorktreeSetupEvidence.resolve(workspace: workspace),
+            developmentTasks: DevelopmentTaskEvidence.resolve(workspace: workspace),
+            deliveryGate: delivery
+        )
+
+        XCTAssertEqual(delivery.status, .ready)
+        XCTAssertEqual(delivery.primaryAction, .document("delivery"))
+        XCTAssertEqual(delivery.blockerCount, 0)
+        XCTAssertEqual(stage.id, .deliveryCheck)
+        XCTAssertTrue(stage.nextStageAllowed)
+    }
+
     func testDemandTaskTransferPlanFindsNewIntakeTasksAndUpdatesMainStage() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-demand-task-transfer-\(UUID().uuidString)")
@@ -1702,6 +1804,7 @@ final class ModelBehaviorTests: XCTestCase {
         folder: String? = nil,
         path: String? = nil,
         branch: String = "feature/workflow-summary",
+        riskLevel: RiskLevel? = nil,
         healthChecks: [WorkspaceHealthCheck] = [],
         risks: [RiskAlert] = [],
         sqlFiles: [WorkspaceSqlFile] = [],
@@ -1720,7 +1823,7 @@ final class ModelBehaviorTests: XCTestCase {
             path: workspacePath,
             branch: branch,
             state: .developing,
-            riskLevel: risks.isEmpty ? .low : .medium,
+            riskLevel: riskLevel ?? (risks.isEmpty ? .low : .medium),
             aiState: "Ready",
             worktreeState: "Ready",
             documentLinks: ["delivery": "\(workspacePath)/交付记录.md"],

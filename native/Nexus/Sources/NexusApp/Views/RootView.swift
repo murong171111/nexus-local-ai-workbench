@@ -3511,6 +3511,7 @@ private struct WorkspaceDetailView: View {
             serviceBranch: appState.serviceBranchEvidence(for: workspace),
             worktreeSetup: appState.worktreeSetupEvidence(for: workspace),
             developmentTasks: appState.developmentTaskEvidence(for: workspace),
+            deliveryGate: appState.deliveryGateEvidence(for: workspace),
             demandTaskTransfer: appState.demandTaskTransferPlan(for: workspace)
         )
     }
@@ -4668,6 +4669,7 @@ private struct WorkspaceDetailMapView: View {
             serviceBranch: appState.serviceBranchEvidence(for: workspace),
             worktreeSetup: appState.worktreeSetupEvidence(for: workspace),
             developmentTasks: appState.developmentTaskEvidence(for: workspace),
+            deliveryGate: appState.deliveryGateEvidence(for: workspace),
             demandTaskTransfer: appState.demandTaskTransferPlan(for: workspace)
         )
     }
@@ -7172,20 +7174,11 @@ private struct WorkspaceCommandCenterView: View {
     }
 
     private var deliveryTone: Color {
-        workflowSummary.deliveryStatus.color
+        deliveryGateEvidence.status.color
     }
 
     private var deliveryPrimaryAction: CommandCenterPrimaryAction {
-        switch workflowSummary.deliveryRoute {
-        case .runLocalCheck:
-            .localCheck
-        case .updateDelivery:
-            .deliveryHandoff
-        case .validationHandoff:
-            .validationHandoff
-        case .openDelivery:
-            .document("delivery")
-        }
+        commandCenterAction(for: deliveryGateEvidence.primaryAction)
     }
 
     private var lifecycleTone: Color {
@@ -7209,6 +7202,7 @@ private struct WorkspaceCommandCenterView: View {
             serviceBranch: serviceBranchEvidence,
             worktreeSetup: worktreeSetupEvidence,
             developmentTasks: developmentTaskEvidence,
+            deliveryGate: deliveryGateEvidence,
             demandTaskTransfer: appState.demandTaskTransferPlan(for: workspace)
         )
     }
@@ -7227,6 +7221,10 @@ private struct WorkspaceCommandCenterView: View {
 
     private var developmentTaskEvidence: DevelopmentTaskEvidence {
         appState.developmentTaskEvidence(for: workspace)
+    }
+
+    private var deliveryGateEvidence: DeliveryGateEvidence {
+        appState.deliveryGateEvidence(for: workspace)
     }
 
     private var primaryStep: CommandCenterPrimaryStep {
@@ -7387,12 +7385,13 @@ private struct WorkspaceCommandCenterView: View {
     }
 
     private var deliveryPathItem: CommandCenterPathItem {
-        CommandCenterPathItem(
+        let evidence = deliveryGateEvidence
+        return CommandCenterPathItem(
             title: "交付 / Delivery",
-            detail: workflowSummary.deliveryValue,
-            status: workflowSummary.deliveryStatus,
+            detail: evidence.value,
+            status: evidence.status,
             systemImage: deliverySymbol,
-            actionLabel: workflowSummary.deliveryRoute.displayLabel,
+            actionLabel: evidence.primaryActionLabel,
             action: deliveryPrimaryAction
         )
     }
@@ -7487,7 +7486,7 @@ private struct WorkspaceCommandCenterView: View {
                     WorkflowMetric(label: "预检", value: demandIntakeValue, tone: demandIntakeTone)
                     WorkflowMetric(label: "任务", value: workflowSummary.taskValue, tone: taskTone)
                     WorkflowMetric(label: "SQL", value: sqlSummary.value, tone: sqlStatusTone)
-                    WorkflowMetric(label: "交付", value: workflowSummary.deliveryValue, tone: deliveryTone)
+                    WorkflowMetric(label: "交付", value: deliveryGateEvidence.value, tone: deliveryTone)
                     WorkflowMetric(label: "会话", value: codexSessionValue, tone: codexSessionTone)
                 }
 
@@ -7706,7 +7705,7 @@ private struct WorkspaceCommandCenterView: View {
     }
 
     private var deliverySymbol: String {
-        switch workflowSummary.deliveryStatus {
+        switch deliveryGateEvidence.status {
         case .ready:
             return "checkmark.seal"
         case .review, .next:
@@ -9189,6 +9188,10 @@ private struct WorkflowStatusView: View {
         appState.developmentTaskEvidence(for: workspace)
     }
 
+    private var deliveryGate: DeliveryGateEvidence {
+        appState.deliveryGateEvidence(for: workspace)
+    }
+
     private var blockedTasks: [WorkspaceTask] {
         openTasks.filter(\.isBlocked)
     }
@@ -9682,6 +9685,10 @@ private struct WorkflowStatusView: View {
                     }
                 )
 
+                DeliveryGateEvidenceCardView(evidence: deliveryGate) { action in
+                    runDeliveryGateAction(action)
+                }
+
                 DeliveryFocusCardView(step: deliveryFocusStep) {
                     runDeliveryFocusAction(deliveryFocusStep.action)
                 }
@@ -9865,6 +9872,79 @@ private struct WorkflowStatusView: View {
             lifecycleAction(.delivery)
         case .markDone:
             lifecycleAction(.done)
+        }
+    }
+
+    private func runDeliveryGateAction(_ action: WorkspaceMainStageAction) {
+        switch action {
+        case .demandIntake:
+            Task {
+                await appState.loadDocument(path: documentPath(for: "handoff", fallback: "handoff.md"))
+            }
+        case .document(let key):
+            if key == "sql" {
+                Task {
+                    await appState.openSqlReviewDocument(in: workspace)
+                }
+                return
+            }
+            let fallback: String
+            switch key {
+            case "branches":
+                fallback = "branches.md"
+            case "services":
+                fallback = "services.md"
+            case "tasks":
+                fallback = "tasks.md"
+            case "status":
+                fallback = "STATUS.md"
+            case "delivery":
+                fallback = "交付记录.md"
+            default:
+                fallback = "handoff.md"
+            }
+            Task {
+                await appState.loadDocument(path: documentPath(for: key, fallback: fallback))
+            }
+        case .path(let path):
+            Task {
+                await appState.loadDocument(path: path)
+            }
+        case .task(let id):
+            if let task = workspace.tasks.first(where: { $0.id == id }) {
+                openTaskDocumentAction(task)
+            } else {
+                Task {
+                    await appState.loadDocument(path: tasksPath)
+                }
+            }
+        case .transferDemandTasks:
+            Task {
+                await appState.loadDocument(path: tasksPath)
+            }
+        case .worktree:
+            appState.presentWorktreeSetup(for: workspace)
+        case .riskPrompt:
+            copyToPasteboard(appState.riskReviewPrompt(for: workspace))
+            Task {
+                await appState.recordRiskReviewHandoffCopied(for: workspace)
+            }
+        case .localCheck:
+            Task {
+                await appState.runLocalAutomationCheck(actor: "Nexus Delivery Gate")
+            }
+        case .deliveryHandoff:
+            Task {
+                await appState.openDeliveryUpdateInCodex(workspace)
+            }
+        case .validationHandoff:
+            Task {
+                await appState.openValidationPrHandoffInCodex(workspace)
+            }
+        case .codex:
+            Task {
+                await appState.openWorkspaceInCodex(workspace)
+            }
         }
     }
 
@@ -11114,6 +11194,114 @@ private struct DevelopmentTaskCheckRow: View {
         .padding(8)
         .background(NexusPalette.badge)
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+}
+
+private struct DeliveryGateEvidenceCardView: View {
+    let evidence: DeliveryGateEvidence
+    let action: (WorkspaceMainStageAction) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 9) {
+                Image(systemName: evidence.primaryActionSystemImage)
+                    .foregroundStyle(evidence.status.color)
+                    .frame(width: 16)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(evidence.title)
+                        .font(.subheadline.weight(.semibold))
+                    Text(evidence.reason)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 8)
+
+                Button {
+                    action(evidence.primaryAction)
+                } label: {
+                    Label(evidence.primaryActionLabel, systemImage: evidence.primaryActionSystemImage)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], alignment: .leading, spacing: 8) {
+                WorkflowMetric(label: "Status", value: evidence.value, tone: evidence.status.color)
+                WorkflowMetric(label: "Blockers", value: "\(evidence.blockerCount)", tone: evidence.blockerCount == 0 ? NexusPalette.success : NexusPalette.danger)
+                WorkflowMetric(label: "Review", value: "\(evidence.warningCount)", tone: evidence.warningCount == 0 ? NexusPalette.success : NexusPalette.warning)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(evidence.checks) { check in
+                    DeliveryGateCheckRow(check: check) {
+                        action(check.action)
+                    }
+                }
+            }
+        }
+        .padding(10)
+        .background(evidence.status.color.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(evidence.status.color.opacity(0.14))
+        }
+    }
+}
+
+private struct DeliveryGateCheckRow: View {
+    let check: DeliveryGateCheck
+    let action: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: check.systemImage)
+                .foregroundStyle(check.status.color)
+                .frame(width: 14)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(check.label)
+                        .font(.caption2.weight(.semibold))
+                    Text(check.status.displayLabel)
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(check.status.color)
+                }
+                Text(check.detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 8)
+
+            Button(action: action) {
+                Image(systemName: rowActionImage)
+            }
+            .buttonStyle(.borderless)
+            .help("处理交付检查项 / Handle delivery gate item")
+        }
+        .padding(8)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+
+    private var rowActionImage: String {
+        switch check.action {
+        case .localCheck:
+            return "checklist"
+        case .riskPrompt, .deliveryHandoff, .validationHandoff, .codex:
+            return "point.3.connected.trianglepath.dotted"
+        case .worktree:
+            return "wrench.and.screwdriver"
+        case .task:
+            return "text.line.first.and.arrowtriangle.forward"
+        case .document, .path, .demandIntake, .transferDemandTasks:
+            return "doc.text"
+        }
     }
 }
 

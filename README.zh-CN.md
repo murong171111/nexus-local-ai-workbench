@@ -15,6 +15,7 @@ Nexus 是一个面向 macOS 的本地 AI 开发工作台，用来管理需求工
 - 原生服务/分支确认门禁会检查 `services.md`、`branches.md`、工作区服务行、源仓库可用性和分支策略，确认后才进入 worktree 准备。
 - 原生 worktree 准备证据会检查缺失的 workspace-local worktree、分支不一致、源仓库可用性和创建命令可见性，确认这些证据后才继续进入开发。
 - 原生开发任务证据会坚持 root `tasks.md` 是执行任务源，自动选择下一条活跃任务，阻塞未解决的任务 blocker，并能从主流程或 Command Center 直接打开任务行定位。
+- 原生交付门禁证据会在交付就绪前统一检查任务、风险、服务/worktree、交付记录、SQL 产物、未提交服务和本地检查状态。
 - 支持在应用内预览 Markdown 文档，包括状态、服务范围、分支说明、任务、决策和交付记录。
 - 支持配置本地工作区目录、源仓库目录和交付文档目录。
 - 支持导出和导入团队配置 Profile，便于分享路径约定、Codex URL 和 IDE URL 模板；首次启动向导和原生 Settings 都可以直接导入 Profile。
@@ -49,6 +50,7 @@ Nexus 是一个面向 macOS 的本地 AI 开发工作台，用来管理需求工
 - 原生工作区详情顶部提供状态概览，把生命周期、分支、服务、风险、任务、SQL、交付、Codex 会话和最近本地检查状态放在进入详情后的第一屏；概览卡片可直接进入匹配动作，例如打开分支/服务/任务/SQL/交付文档、创建 worktree、风险交接、绑定或打开 Codex 会话、运行本地检查。
 - 原生工作区详情的服务区块会汇总服务范围、缺失 worktree 和未提交服务，并在每个服务行提供 worktree、源仓库、IDE、确认创建 worktree 和服务级 Codex 交接动作。
 - 原生工作区详情的 Workflow 会先展示 root `tasks.md` 的开发任务证据卡，把活跃、阻塞、已完成和延期任务证据放在交付清理动作之前。
+- 原生工作区详情的 Workflow 也会在详细 checklist 前展示交付门禁证据卡，先给出交付 blocker 和单一下一步动作。
 - 原生剪贴板反馈会明确 workspace、生命周期、风险、任务、自动化、Agent 事件、会话链接或任务定位上下文已经复制，并根据上下文提示下一步。
 - 原生侧边栏的 Agent Events 现在以 Agent Inbox 展示，按 `需要处理 / Attention` 和 `最近事件 / Recent` 分组，让 permission、question、tool-review 和 error 事件优先出现；没有事件时会显示清晰的空状态。Inbox 下方的 `Agent Workflow / 流转` 会把事件处理和 Agent 来源任务串起来，展示待处理事件数、Agent 任务数，并可直接聚焦任务中心的 Agent 筛选。Agent Event 详情支持复制 Codex 继续上下文，也支持复制后直接打开 Codex，并为复制/打开两条路径记录本地审计；permission、question 和 tool-review 事件会显示 Agent 动作面，可复制批准、拒绝、答复或复核模板，但不会执行 metadata 里的命令。Agent 任务草稿写入或发现已存在后，详情内会保留结果卡，可继续聚焦对应 Agent 任务或打开 `tasks.md`，右侧检查器也会显示统一的本地写入反馈。
 - 原生右侧检查器会把本地操作错误收敛为统一的操作反馈卡，支持关闭、复制错误、刷新、环境检查和打开 Settings；预览 App 的失败 toast 也会补充操作名、目标路径和恢复建议。

@@ -280,6 +280,7 @@ If `交付记录.md` declares a real SQL change anywhere, including SQL metadata
 
 Native M1 UI:
 
+- a delivery-gate evidence card summarizes task, risk, service/worktree, delivery-record, SQL, dirty-service, and local-check status before the detailed checklist
 - checklist groups blockers before passed evidence
 - each row opens the nearest document or local check
 - validation/PR handoff is separate from general workspace handoff
@@ -358,6 +359,7 @@ The current Native shell already has enough structure to receive the M1 workflow
 - Service/branch: `ServiceBranchEvidence` now reads the Swift workspace summary and Markdown paths to gate target branch, service scope, source repo availability, and branch policy before worktree setup.
 - Git/worktree: `WorktreeSetupEvidence` gates the handoff from service/branch confirmation into development, while `ServiceGitStatusSectionView` and `WorktreeSetupSheet` expose service-level status, evidence, and confirmed worktree setup.
 - Development tasks: `DevelopmentTaskEvidence` now gates development after worktree setup, treats root `tasks.md` as the execution source, chooses the next active or blocked task, and reuses task source locators for main workflow actions.
+- Delivery check: `DeliveryGateEvidence` now gates delivery after development tasks, combining task, risk, service/worktree, delivery-record, SQL, dirty-service, and local-check signals into one Swift-owned next action.
 
 M1 should refine these surfaces around a single Swift-owned stage model before splitting files aggressively.
 
@@ -467,9 +469,9 @@ Target files:
 
 Plan:
 
-- Build a single `DeliveryGate` model.
-- Reuse it for delivery and archive.
-- Keep SQL formal/rollback guard as a hard blocker.
+- Build a single `DeliveryGate` model. `[started with DeliveryGateEvidence]`
+- Reuse it for delivery and archive. `[started for active delivery and archived state]`
+- Keep SQL formal/rollback guard as a hard blocker. `[started through SQL health check evidence]`
 - Show PR/CI evidence as optional until GitHub integration is explicitly added.
 
 ## Document Responsibility Map
