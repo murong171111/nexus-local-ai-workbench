@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Added
 
+- Native validation/PR evidence now summarizes local-check, delivery-record, task/risk, PR/CI, and lifecycle signals before archive decisions, keeping PR/CI as visible review evidence until direct GitHub integration exists.
 - Native delivery-gate evidence now includes a Swift-owned resolution plan that orders delivery blockers, pending checks, review items, and passed evidence with handoff/writeback guidance.
 - Native development-task evidence now includes a Swift-owned task plan that classifies each task as resolve blocker, continue, queued, or closed with writeback guidance.
 - Native worktree setup results now classify failed services into recovery actions such as source repo fixes, branch/fetch review, branch occupancy, or worktree command review, and include those actions in the Codex handoff.

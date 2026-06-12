@@ -283,6 +283,7 @@ If `交付记录.md` declares a real SQL change anywhere, including SQL metadata
 Native M1 UI:
 
 - a delivery-gate evidence card summarizes task, risk, service/worktree, delivery-record, SQL, dirty-service, and local-check status before the detailed checklist, then renders an ordered resolution plan for blockers, pending checks, review items, and passed evidence
+- a validation/PR evidence card sits between delivery and archive, summarizing local-check, delivery-record, task/risk, PR/CI, and lifecycle readiness without requiring direct GitHub integration
 - checklist groups blockers before passed evidence
 - each row opens the nearest document or local check
 - validation/PR handoff is separate from general workspace handoff
@@ -475,7 +476,7 @@ Plan:
 - Build a single `DeliveryGate` model. `[started with DeliveryGateEvidence]`
 - Reuse it for delivery and archive. `[started with ArchiveGateEvidence in Command Center and Workflow]`
 - Keep SQL formal/rollback guard as a hard blocker. `[started through SQL health check evidence]`
-- Show PR/CI evidence as optional until GitHub integration is explicitly added.
+- Show PR/CI evidence as optional until GitHub integration is explicitly added. `[started with ValidationPrEvidence]`
 
 ## Document Responsibility Map
 
