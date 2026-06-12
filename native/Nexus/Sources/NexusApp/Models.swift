@@ -2427,12 +2427,84 @@ struct DevelopmentTaskCheck: Hashable, Identifiable {
     let taskID: String?
 }
 
+enum DevelopmentTaskPlanAction: String, Hashable {
+    case resolveBlocker
+    case continueTask
+    case queued
+    case closed
+
+    var displayLabel: String {
+        switch self {
+        case .resolveBlocker:
+            return "处理阻塞 / Resolve"
+        case .continueTask:
+            return "当前推进 / Continue"
+        case .queued:
+            return "排队 / Queued"
+        case .closed:
+            return "已关闭 / Closed"
+        }
+    }
+
+    var status: WorkflowPathStatus {
+        switch self {
+        case .resolveBlocker:
+            return .blocked
+        case .continueTask:
+            return .next
+        case .queued:
+            return .review
+        case .closed:
+            return .ready
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .resolveBlocker:
+            return "pause.circle"
+        case .continueTask:
+            return "play.circle"
+        case .queued:
+            return "text.line.first.and.arrowtriangle.forward"
+        case .closed:
+            return "checkmark.circle"
+        }
+    }
+
+    var sortRank: Int {
+        switch self {
+        case .resolveBlocker:
+            return 0
+        case .continueTask:
+            return 1
+        case .queued:
+            return 2
+        case .closed:
+            return 3
+        }
+    }
+}
+
+struct DevelopmentTaskPlanItem: Hashable, Identifiable {
+    let id: String
+    let taskID: String
+    let title: String
+    let action: DevelopmentTaskPlanAction
+    let priority: String
+    let statusText: String
+    let sourceLine: Int?
+    let reason: String
+    let writebackHint: String
+}
+
 struct DevelopmentTaskEvidence: Hashable {
     let status: WorkflowPathStatus
     let reason: String
     let evidence: [String]
     let checks: [DevelopmentTaskCheck]
     let tasksPath: String
+    let taskPlan: [DevelopmentTaskPlanItem]
     let activeTasks: [WorkspaceTask]
     let blockedTasks: [WorkspaceTask]
     let deferredTaskCount: Int
@@ -2501,6 +2573,7 @@ struct DevelopmentTaskEvidence: Hashable {
         let deferredCount = workspace.tasks.filter(\.isDeferred).count
         let doneCount = workspace.tasks.filter(\.isDone).count
         let nextTask = blockedTasks.first ?? activeTasks.first
+        let taskPlan = buildTaskPlan(tasks: workspace.tasks, nextTask: nextTask)
 
         let checks = [
             DevelopmentTaskCheck(
@@ -2564,12 +2637,71 @@ struct DevelopmentTaskEvidence: Hashable {
             evidence: taskEvidence(nextTask: nextTask),
             checks: checks,
             tasksPath: tasksPath,
+            taskPlan: taskPlan,
             activeTasks: activeTasks,
             blockedTasks: blockedTasks,
             deferredTaskCount: deferredCount,
             doneTaskCount: doneCount,
             nextTask: nextTask
         )
+    }
+
+    private static func buildTaskPlan(tasks: [WorkspaceTask], nextTask: WorkspaceTask?) -> [DevelopmentTaskPlanItem] {
+        tasks
+            .map { task -> DevelopmentTaskPlanItem in
+                let action: DevelopmentTaskPlanAction
+                let reason: String
+                let writebackHint: String
+
+                if task.isBlocked {
+                    action = .resolveBlocker
+                    reason = "该任务处于阻塞状态，必须先确认完成、延期或拆分，交付前不能忽略。"
+                    writebackHint = "解除阻塞后在 root tasks.md 中标记为进行中、已完成或延期。"
+                } else if task.isActive && task.id == nextTask?.id {
+                    action = .continueTask
+                    reason = "这是当前主路径推荐的下一条任务，优先级和行号排序最靠前。"
+                    writebackHint = "完成后将该行状态写回为已完成；暂不做则写回延期并说明原因。"
+                } else if task.isActive {
+                    action = .queued
+                    reason = "该任务仍在活跃队列，但排在当前任务之后。"
+                    writebackHint = "保持待办；轮到它时再推进，或明确延期。"
+                } else {
+                    action = .closed
+                    reason = task.isDeferred
+                        ? "延期任务不阻塞当前开发主路径。"
+                        : "已完成任务不阻塞当前开发主路径。"
+                    writebackHint = "无需写回；需要恢复时再把状态改回待办或进行中。"
+                }
+
+                return DevelopmentTaskPlanItem(
+                    id: task.id,
+                    taskID: task.id,
+                    title: task.title,
+                    action: action,
+                    priority: task.priorityLabel,
+                    statusText: task.status,
+                    sourceLine: task.sourceLine,
+                    reason: reason,
+                    writebackHint: writebackHint
+                )
+            }
+            .sorted(by: taskPlanSort)
+    }
+
+    private static func taskPlanSort(lhs: DevelopmentTaskPlanItem, rhs: DevelopmentTaskPlanItem) -> Bool {
+        if lhs.action.sortRank != rhs.action.sortRank {
+            return lhs.action.sortRank < rhs.action.sortRank
+        }
+        switch (lhs.sourceLine, rhs.sourceLine) {
+        case let (left?, right?) where left != right:
+            return left < right
+        case (.some, nil):
+            return true
+        case (nil, .some):
+            return false
+        default:
+            return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
+        }
     }
 
     private static func taskEvidence(nextTask: WorkspaceTask?) -> [String] {

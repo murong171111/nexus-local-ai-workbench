@@ -360,7 +360,7 @@ The current Native shell already has enough structure to receive the M1 workflow
 - Demand intake: `WorkspaceDemandIntakeView` already initializes and opens the fixed `需求/` archive files, and the Native shell now reads `需求/*.md` for requirement content, unresolved P0 questions, visible scope status, and requirement-task readiness.
 - Service/branch: `ServiceBranchEvidence` now reads the Swift workspace summary and Markdown paths to gate target branch, service scope, source repo availability, target branch availability, and branch policy before worktree setup.
 - Git/worktree: `WorktreeSetupEvidence` gates the handoff from service/branch confirmation into development, including a service-level create/skip/blocked setup plan, while `ServiceGitStatusSectionView` and `WorktreeSetupSheet` expose service-level status, evidence, and confirmed worktree setup.
-- Development tasks: `DevelopmentTaskEvidence` now gates development after worktree setup, treats root `tasks.md` as the execution source, chooses the next active or blocked task, and reuses task source locators for main workflow actions.
+- Development tasks: `DevelopmentTaskEvidence` now gates development after worktree setup, treats root `tasks.md` as the execution source, chooses the next active or blocked task, exposes a task plan for resolve/continue/queued/closed work, and reuses task source locators for main workflow actions.
 - Delivery check: `DeliveryGateEvidence` now gates delivery after development tasks, combining task, risk, service/worktree, delivery-record, SQL, dirty-service, and local-check signals into one Swift-owned next action.
 
 M1 should refine these surfaces around a single Swift-owned stage model before splitting files aggressively.

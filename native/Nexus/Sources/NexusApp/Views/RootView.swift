@@ -11372,7 +11372,26 @@ private struct DevelopmentTaskEvidenceCardView: View {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], alignment: .leading, spacing: 8) {
                 WorkflowMetric(label: "Active", value: "\(evidence.activeTasks.count)", tone: evidence.activeTasks.isEmpty ? NexusPalette.success : NexusPalette.accent)
                 WorkflowMetric(label: "Blocked", value: "\(evidence.blockedTasks.count)", tone: evidence.blockedTasks.isEmpty ? NexusPalette.success : NexusPalette.danger)
+                WorkflowMetric(label: "Plan", value: "\(evidence.taskPlan.count)", tone: evidence.taskPlan.contains { $0.action == .resolveBlocker } ? NexusPalette.danger : NexusPalette.success)
                 WorkflowMetric(label: "Closed", value: "\(evidence.doneTaskCount + evidence.deferredTaskCount)", tone: .secondary)
+            }
+
+            if !evidence.taskPlan.isEmpty {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("任务推进计划 / Task plan")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    ForEach(evidence.taskPlan.prefix(5)) { item in
+                        DevelopmentTaskPlanRow(item: item) {
+                            openTaskAction(item.taskID)
+                        }
+                    }
+                    if evidence.taskPlan.count > 5 {
+                        Text("+ \(evidence.taskPlan.count - 5) 个任务")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -11402,6 +11421,49 @@ private struct DevelopmentTaskEvidenceCardView: View {
         } else {
             openTasksAction()
         }
+    }
+}
+
+private struct DevelopmentTaskPlanRow: View {
+    let item: DevelopmentTaskPlanItem
+    let openTask: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: item.action.systemImage)
+                .foregroundStyle(item.action.status.color)
+                .frame(width: 14)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(item.title)
+                        .font(.caption2.weight(.semibold))
+                        .lineLimit(1)
+                    Text(item.action.displayLabel)
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(item.action.status.color)
+                }
+                Text(item.reason)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("\(item.priority) · \(item.statusText) · \(item.sourceLine.map { "L\($0)" } ?? "L?") · \(item.writebackHint)")
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 8)
+
+            Button(action: openTask) {
+                Image(systemName: "text.line.first.and.arrowtriangle.forward")
+            }
+            .buttonStyle(.borderless)
+            .help("定位任务行 / Locate task")
+        }
+        .padding(8)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 }
 
