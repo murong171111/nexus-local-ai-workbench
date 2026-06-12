@@ -3507,6 +3507,7 @@ private struct WorkspaceDetailView: View {
         workspace.mainStage(
             demandIntakeStatus: appState.demandIntakeDisplayStatus(for: workspace),
             demandReadiness: appState.demandIntakeReadiness(for: workspace),
+            scopeFreeze: appState.scopeFreezeEvidence(for: workspace),
             demandTaskTransfer: appState.demandTaskTransferPlan(for: workspace)
         )
     }
@@ -4407,6 +4408,7 @@ private struct WorkspaceDetailMapView: View {
         workspace.mainStage(
             demandIntakeStatus: appState.demandIntakeDisplayStatus(for: workspace),
             demandReadiness: appState.demandIntakeReadiness(for: workspace),
+            scopeFreeze: appState.scopeFreezeEvidence(for: workspace),
             demandTaskTransfer: appState.demandTaskTransferPlan(for: workspace)
         )
     }
@@ -5801,6 +5803,10 @@ private struct WorkspaceDemandIntakeView: View {
         appState.demandTaskTransferPlan(for: workspace)
     }
 
+    private var scopeFreeze: ScopeFreezeEvidence {
+        appState.scopeFreezeEvidence(for: workspace)
+    }
+
     private var isLoading: Bool {
         appState.demandIntakeLoadingWorkspaceID == workspace.id
     }
@@ -5862,6 +5868,12 @@ private struct WorkspaceDemandIntakeView: View {
                                 }
                             }
                         }
+                    }
+                }
+
+                ScopeFreezePreview(evidence: scopeFreeze) {
+                    Task {
+                        await appState.loadDocument(path: scopeFreeze.scopePath)
                     }
                 }
 
@@ -6067,6 +6079,104 @@ private struct DemandIntakeReadinessRow: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(check.status.color.opacity(0.14))
         }
+    }
+}
+
+private struct ScopeFreezePreview: View {
+    let evidence: ScopeFreezeEvidence
+    let openAction: () -> Void
+
+    private var title: String {
+        evidence.ready ? "范围已冻结 / Scope frozen" : "范围待冻结 / Scope freeze"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 9) {
+                Image(systemName: evidence.ready ? "checkmark.seal" : "scope")
+                    .foregroundStyle(evidence.status.color)
+                    .frame(width: 15)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.caption.weight(.semibold))
+                    Text(evidence.reason)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 8)
+
+                Button {
+                    openAction()
+                } label: {
+                    Label("打开 scope.md", systemImage: "scope")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+            }
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 88), spacing: 8)], alignment: .leading, spacing: 8) {
+                WorkflowMetric(label: "In", value: evidence.hasInScope ? "ready" : "draft", tone: evidence.hasInScope ? NexusPalette.success : NexusPalette.warning)
+                WorkflowMetric(label: "Out", value: evidence.hasOutOfScope ? "ready" : "draft", tone: evidence.hasOutOfScope ? NexusPalette.success : NexusPalette.warning)
+                WorkflowMetric(label: "P0", value: "\(evidence.unresolvedP0Count)", tone: evidence.unresolvedP0Count == 0 ? NexusPalette.success : NexusPalette.danger)
+                WorkflowMetric(label: "Freeze", value: evidence.scopeFrozen ? "yes" : "no", tone: evidence.scopeFrozen ? NexusPalette.success : NexusPalette.danger)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(evidence.checks) { check in
+                    ScopeFreezeCheckRow(check: check, openAction: openAction)
+                }
+            }
+        }
+        .padding(9)
+        .background(evidence.status.color.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(evidence.status.color.opacity(0.14))
+        }
+    }
+}
+
+private struct ScopeFreezeCheckRow: View {
+    let check: ScopeFreezeCheck
+    let openAction: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: check.systemImage)
+                .foregroundStyle(check.status.color)
+                .frame(width: 14)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(check.label)
+                        .font(.caption2.weight(.semibold))
+                    Text(check.status.displayLabel)
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(check.status.color)
+                }
+                Text(check.detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 8)
+
+            Button {
+                openAction()
+            } label: {
+                Image(systemName: "doc.text")
+            }
+            .buttonStyle(.borderless)
+            .help("打开 scope.md / Open scope.md")
+        }
+        .padding(8)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 }
 
@@ -6836,8 +6946,13 @@ private struct WorkspaceCommandCenterView: View {
         workspace.mainStage(
             demandIntakeStatus: demandIntakeDisplayStatus,
             demandReadiness: appState.demandIntakeReadiness(for: workspace),
+            scopeFreeze: scopeFreezeEvidence,
             demandTaskTransfer: appState.demandTaskTransferPlan(for: workspace)
         )
+    }
+
+    private var scopeFreezeEvidence: ScopeFreezeEvidence {
+        appState.scopeFreezeEvidence(for: workspace)
     }
 
     private var primaryStep: CommandCenterPrimaryStep {
@@ -6873,35 +6988,25 @@ private struct WorkspaceCommandCenterView: View {
     }
 
     private var scopePathItem: CommandCenterPathItem {
-        if !Self.hasConfirmedTargetBranch(workspace.branch) {
+        let evidence = scopeFreezeEvidence
+        if evidence.status != .ready {
             return CommandCenterPathItem(
                 title: "范围 / Scope",
-                detail: "分支待确认",
-                status: .blocked,
-                systemImage: "arrow.triangle.branch",
-                actionLabel: "打开分支",
-                action: .document("branches")
-            )
-        }
-
-        if workspace.services.isEmpty {
-            return CommandCenterPathItem(
-                title: "范围 / Scope",
-                detail: "服务待确认",
-                status: .blocked,
-                systemImage: "square.stack.3d.up",
-                actionLabel: "打开服务",
-                action: .document("services")
+                detail: evidence.status == .blocked ? "待冻结" : "待复核",
+                status: evidence.status,
+                systemImage: "scope",
+                actionLabel: "打开范围",
+                action: .path(evidence.scopePath)
             )
         }
 
         return CommandCenterPathItem(
             title: "范围 / Scope",
-            detail: "\(workspace.services.count) 个服务",
+            detail: "已冻结",
             status: .ready,
             systemImage: "scope",
-            actionLabel: "打开服务",
-            action: .document("services")
+            actionLabel: "打开范围",
+            action: .path(evidence.scopePath)
         )
     }
 

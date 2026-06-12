@@ -566,8 +566,8 @@ struct DemandIntakeReadinessEvidence: Hashable {
             DemandIntakeReadinessCheck(
                 id: "scope-freeze",
                 label: "范围冻结 / Scope",
-                detail: scopeFrozen ? "scope.md 已标记本次开发范围冻结。" : "scope.md 尚未显式冻结；开发前请勾选冻结项或写明范围已冻结。",
-                status: scopeFrozen ? .ready : .blocked,
+                detail: scopeFrozen ? "scope.md 已标记本次开发范围冻结。" : "scope.md 尚未冻结；需求预检完成后会进入独立的范围冻结阶段。",
+                status: scopeFrozen ? .ready : .pending,
                 systemImage: scopeFrozen ? "scope" : "scope",
                 path: scopeFile?.path
             ),
@@ -587,7 +587,9 @@ struct DemandIntakeReadinessEvidence: Hashable {
         let reason: String
         if blockingChecks.isEmpty && reviewChecks.isEmpty {
             resolvedStatus = .ready
-            reason = "需求预检内容已就绪，可以继续范围冻结和服务分支确认。"
+            reason = scopeFrozen
+                ? "需求预检内容已就绪，可以继续服务分支确认。"
+                : "需求预检内容已就绪，下一步进入范围冻结。"
         } else if !blockingChecks.isEmpty {
             resolvedStatus = .blocked
             reason = blockingChecks.map(\.detail).joined(separator: " ")
@@ -690,6 +692,212 @@ struct DemandIntakeReadinessEvidence: Hashable {
             guard !line.hasPrefix("#"), !line.hasPrefix("| ---"), !line.hasPrefix(">") else { return nil }
             guard !placeholderOnly(line) else { return nil }
             return line
+        }
+    }
+
+    private static func placeholderOnly(_ line: String) -> Bool {
+        let lowercased = line.lowercased()
+        let placeholders = [
+            "待整理",
+            "待确认",
+            "待补充",
+            "暂无",
+            "todo",
+            "tbd",
+            "placeholder"
+        ]
+        return placeholders.contains { lowercased.contains($0) }
+    }
+}
+
+struct ScopeFreezeCheck: Hashable, Identifiable {
+    let id: String
+    let label: String
+    let detail: String
+    let status: WorkflowPathStatus
+    let systemImage: String
+    let path: String?
+}
+
+struct ScopeFreezeEvidence: Hashable {
+    let status: WorkflowPathStatus
+    let reason: String
+    let evidence: [String]
+    let checks: [ScopeFreezeCheck]
+    let scopePath: String
+    let hasInScope: Bool
+    let hasOutOfScope: Bool
+    let scopeFrozen: Bool
+    let unresolvedP0Count: Int
+
+    var ready: Bool {
+        status == .ready
+    }
+
+    static func resolve(status: DemandIntakeStatus, workspace: WorkspaceSummary) -> ScopeFreezeEvidence {
+        let scopePath = status.files.first { $0.key == "scope" }?.path
+            ?? "\(workspace.path)/需求/scope.md"
+        let text = readText(at: scopePath)
+
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return ScopeFreezeEvidence(
+                status: .blocked,
+                reason: "尚未读取到 需求/scope.md。先打开范围文档，确认本次做什么、不做什么和待确认项。",
+                evidence: ["需求/scope.md"],
+                checks: [
+                    ScopeFreezeCheck(
+                        id: "scope-file",
+                        label: "范围文档 / Scope file",
+                        detail: "scope.md 为空或不可读。",
+                        status: .blocked,
+                        systemImage: "doc.badge.ellipsis",
+                        path: scopePath
+                    )
+                ],
+                scopePath: scopePath,
+                hasInScope: false,
+                hasOutOfScope: false,
+                scopeFrozen: false,
+                unresolvedP0Count: 0
+            )
+        }
+
+        let hasInScope = hasSectionContent(
+            in: text,
+            headingMarkers: ["已确认并实现", "本次实现", "本次做", "in scope", "included"]
+        )
+        let hasOutOfScope = hasSectionContent(
+            in: text,
+            headingMarkers: ["暂不实现", "不做", "out of scope", "excluded"]
+        )
+        let pendingP0Items = unresolvedPendingP0Items(in: text)
+        let scopeFrozen = isScopeFrozen(text)
+
+        let checks = [
+            ScopeFreezeCheck(
+                id: "in-scope",
+                label: "本次实现 / In scope",
+                detail: hasInScope ? "scope.md 已写明本次确认实现的范围。" : "scope.md 缺少非占位的“已确认并实现 / 本次做”内容。",
+                status: hasInScope ? .ready : .review,
+                systemImage: "checklist",
+                path: scopePath
+            ),
+            ScopeFreezeCheck(
+                id: "out-of-scope",
+                label: "暂不实现 / Out",
+                detail: hasOutOfScope ? "scope.md 已写明暂不实现或排除范围。" : "scope.md 缺少非占位的“暂不实现 / 不做”内容。",
+                status: hasOutOfScope ? .ready : .review,
+                systemImage: "minus.circle",
+                path: scopePath
+            ),
+            ScopeFreezeCheck(
+                id: "pending-p0",
+                label: "待确认 P0 / Pending P0",
+                detail: pendingP0Items.isEmpty ? "未发现仍开放的 P0 范围项。" : "仍有 \(pendingP0Items.count) 个 P0 范围项未解决或未显式延期。",
+                status: pendingP0Items.isEmpty ? .ready : .blocked,
+                systemImage: pendingP0Items.isEmpty ? "checkmark.circle" : "exclamationmark.triangle",
+                path: scopePath
+            ),
+            ScopeFreezeCheck(
+                id: "freeze-marker",
+                label: "冻结标记 / Freeze",
+                detail: scopeFrozen ? "scope.md 已勾选或声明本次开发范围已冻结。" : "scope.md 尚未显式冻结；请勾选冻结项或写明范围已冻结。",
+                status: scopeFrozen ? .ready : .blocked,
+                systemImage: "scope",
+                path: scopePath
+            )
+        ]
+
+        let blockers = checks.filter { $0.status == .blocked }
+        let reviews = checks.filter { $0.status == .review }
+        let resolvedStatus: WorkflowPathStatus
+        let reason: String
+        if !blockers.isEmpty {
+            resolvedStatus = .blocked
+            reason = blockers.map(\.detail).joined(separator: " ")
+        } else if !reviews.isEmpty {
+            resolvedStatus = .review
+            reason = reviews.map(\.detail).joined(separator: " ")
+        } else {
+            resolvedStatus = .ready
+            reason = "scope.md 已写明本次做什么、不做什么，并且没有开放 P0 范围项，可以进入服务和分支确认。"
+        }
+
+        return ScopeFreezeEvidence(
+            status: resolvedStatus,
+            reason: reason,
+            evidence: ["需求/scope.md"],
+            checks: checks,
+            scopePath: scopePath,
+            hasInScope: hasInScope,
+            hasOutOfScope: hasOutOfScope,
+            scopeFrozen: scopeFrozen,
+            unresolvedP0Count: pendingP0Items.count
+        )
+    }
+
+    private static func readText(at path: String) -> String {
+        (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+    }
+
+    private static func hasSectionContent(in text: String, headingMarkers: [String]) -> Bool {
+        let lines = sectionLines(in: text, headingMarkers: headingMarkers)
+        return lines.contains { line in
+            let cleaned = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !cleaned.isEmpty, !cleaned.hasPrefix("| ---") else { return false }
+            return !placeholderOnly(cleaned)
+        }
+    }
+
+    private static func unresolvedPendingP0Items(in text: String) -> [String] {
+        sectionLines(in: text, headingMarkers: ["仍待确认", "待确认", "待定", "pending"])
+            .filter { line in
+                let lowercased = line.lowercased()
+                guard lowercased.contains("p0") else { return false }
+                guard !placeholderOnly(line) else { return false }
+                let resolvedMarkers = ["[x]", "已解决", "已确认", "无", "暂无", "none", "resolved", "closed", "done", "延期", "deferred", "非阻塞", "accepted"]
+                return !resolvedMarkers.contains { lowercased.contains($0) }
+            }
+    }
+
+    private static func sectionLines(in text: String, headingMarkers: [String]) -> [String] {
+        var isInsideTargetSection = false
+        var lines: [String] = []
+
+        for rawLine in text.components(separatedBy: .newlines) {
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            let lowercased = line.lowercased()
+            if line.hasPrefix("#") {
+                isInsideTargetSection = headingMarkers.contains { marker in
+                    lowercased.contains(marker.lowercased())
+                }
+                continue
+            }
+            if isInsideTargetSection {
+                lines.append(line)
+            }
+        }
+
+        return lines
+    }
+
+    private static func isScopeFrozen(_ text: String) -> Bool {
+        text.components(separatedBy: .newlines).contains { rawLine in
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            let lowercased = line.lowercased()
+            if lowercased.contains("[ ]") && line.contains("冻结") {
+                return false
+            }
+            if lowercased.contains("[x]") && line.contains("冻结") {
+                return true
+            }
+            if line.contains("范围已冻结") || line.contains("已冻结本次开发范围") {
+                return true
+            }
+            if line.contains("冻结状态") && line.contains("已冻结") {
+                return true
+            }
+            return lowercased.contains("scope frozen")
         }
     }
 
@@ -1852,6 +2060,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
     func mainStage(
         demandIntakeStatus: DemandIntakeStatus? = nil,
         demandReadiness: DemandIntakeReadinessEvidence? = nil,
+        scopeFreeze: ScopeFreezeEvidence? = nil,
         demandTaskTransfer: DemandTaskTransferPlan? = nil
     ) -> WorkspaceMainStage {
         if isArchived {
@@ -1883,16 +2092,17 @@ struct WorkspaceSummary: Identifiable, Hashable {
             )
         }
 
-        if lifecycle.stage == "scoping" {
+        let scopeGate = scopeFreeze ?? demandIntakeStatus.map { ScopeFreezeEvidence.resolve(status: $0, workspace: self) }
+        if let scopeGate, scopeGate.status != .ready {
             return WorkspaceMainStage(
                 id: .scopeFreeze,
-                status: .next,
+                status: scopeGate.status,
                 title: "冻结开发范围 / Scope freeze",
-                reason: "需求预检已就绪，先在 scope.md 中确认本次做什么、不做什么，再进入服务和分支确认。",
+                reason: scopeGate.reason,
                 primaryActionLabel: "打开范围",
                 primaryActionSystemImage: "scope",
-                primaryAction: .path("\(normalizedPath)/需求/scope.md"),
-                evidence: compactEvidence("需求/scope.md", "需求/questions.md", "需求/tasks.md"),
+                primaryAction: .path(scopeGate.scopePath),
+                evidence: scopeGate.evidence,
                 nextStageAllowed: false
             )
         }

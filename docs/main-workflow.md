@@ -89,14 +89,13 @@ Readiness:
 - five standard files exist directly under `需求/`
 - `requirement.md` has meaningful requirement content
 - P0 questions in `questions.md` are resolved or explicitly accepted as blockers
-- `scope.md` has a frozen scope marker
+- `scope.md` exists and its current freeze status is visible, but final freeze is owned by the Scope Freeze stage
 - `需求/tasks.md` has requirement points ready to transfer
 
 Blocked when:
 
 - any standard file is missing
 - P0 questions remain unresolved
-- scope is not frozen
 - requirement points have not been turned into executable tasks
 
 Native M1 UI:
@@ -411,7 +410,8 @@ Target files:
 Plan:
 
 - Keep fixed `需求/` initialization.
-- Add readiness fields for P0 questions, frozen scope, and task transfer. `[started with Swift-owned Markdown evidence for requirement content, P0, scope freeze, and intake task rows]`
+- Add readiness fields for P0 questions, scope status, and task transfer. `[started with Swift-owned Markdown evidence for requirement content, P0, visible scope status, and intake task rows]`
+- Add Swift-owned Scope Freeze evidence for `需求/scope.md` in-scope, out-of-scope, pending P0, and freeze marker checks. `[started]`
 - Add "transfer requirement tasks" as a confirmed write action. `[started with Swift-owned transfer from 需求/tasks.md to root tasks.md, skipping existing, template, completed, and deferred rows]`
 - Keep AI invocation out of Nexus M1.
 

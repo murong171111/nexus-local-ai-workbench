@@ -2536,6 +2536,13 @@ final class AppState: ObservableObject {
         )
     }
 
+    func scopeFreezeEvidence(for workspace: WorkspaceSummary) -> ScopeFreezeEvidence {
+        ScopeFreezeEvidence.resolve(
+            status: demandIntakeDisplayStatus(for: workspace),
+            workspace: workspace
+        )
+    }
+
     func demandTaskTransferPlan(for workspace: WorkspaceSummary) -> DemandTaskTransferPlan {
         DemandTaskTransferPlan.resolve(
             workspace: workspace,
