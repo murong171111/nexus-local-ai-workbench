@@ -916,6 +916,213 @@ struct ScopeFreezeEvidence: Hashable {
     }
 }
 
+struct ServiceBranchCheck: Hashable, Identifiable {
+    let id: String
+    let label: String
+    let detail: String
+    let status: WorkflowPathStatus
+    let systemImage: String
+    let path: String?
+}
+
+struct ServiceBranchEvidence: Hashable {
+    let status: WorkflowPathStatus
+    let reason: String
+    let evidence: [String]
+    let checks: [ServiceBranchCheck]
+    let servicesPath: String
+    let branchesPath: String
+    let branchConfirmed: Bool
+    let servicesConfirmed: Bool
+    let branchPolicyRecorded: Bool
+    let missingSourceServices: [String]
+
+    var ready: Bool {
+        status == .ready
+    }
+
+    var title: String {
+        if !branchConfirmed {
+            return "确认目标分支 / Confirm branch"
+        }
+        if !servicesConfirmed {
+            return "确认服务范围 / Confirm services"
+        }
+        if !missingSourceServices.isEmpty {
+            return "修正源仓库 / Source repos"
+        }
+        if !branchPolicyRecorded {
+            return "记录分支策略 / Branch policy"
+        }
+        return "服务分支已确认 / Service & branch ready"
+    }
+
+    var primaryActionLabel: String {
+        if !branchConfirmed || !branchPolicyRecorded {
+            return "打开分支"
+        }
+        return "打开服务"
+    }
+
+    var primaryActionSystemImage: String {
+        if !branchConfirmed || !branchPolicyRecorded {
+            return "arrow.triangle.branch"
+        }
+        return "square.stack.3d.up"
+    }
+
+    var primaryAction: WorkspaceMainStageAction {
+        if !branchConfirmed || !branchPolicyRecorded {
+            return .document("branches")
+        }
+        return .document("services")
+    }
+
+    static func resolve(workspace: WorkspaceSummary) -> ServiceBranchEvidence {
+        let servicesPath = workspace.documentLinks["services"] ?? "\(workspace.path)/services.md"
+        let branchesPath = workspace.documentLinks["branches"] ?? "\(workspace.path)/branches.md"
+        let servicesText = readText(at: servicesPath)
+        let branchesText = readText(at: branchesPath)
+        let branchesDocumentExists = FileManager.default.fileExists(atPath: branchesPath)
+
+        let branchConfirmed = hasConfirmedTargetBranch(workspace.branch)
+        let servicesConfirmed = !workspace.services.isEmpty || serviceScopeExplicitlyEmpty(servicesText)
+        let missingSourceServices = workspace.services
+            .filter { !$0.sourceExists }
+            .map(\.name)
+        let branchPolicyRecorded = branchConfirmed
+            && (!branchesDocumentExists || hasBranchPolicy(in: branchesText, branch: workspace.branch))
+
+        let checks = [
+            ServiceBranchCheck(
+                id: "target-branch",
+                label: "目标分支 / Branch",
+                detail: branchConfirmed ? "目标分支已确认：\(workspace.branch)。" : "目标分支仍是占位或为空，请补齐 branches.md 或 workspace.md。",
+                status: branchConfirmed ? .ready : .blocked,
+                systemImage: "arrow.triangle.branch",
+                path: branchesPath
+            ),
+            ServiceBranchCheck(
+                id: "service-scope",
+                label: "服务范围 / Services",
+                detail: servicesConfirmed
+                    ? serviceScopeDetail(workspace: workspace)
+                    : "服务范围为空且未写明本需求无代码服务；先确认涉及服务或明确无需服务 worktree。",
+                status: servicesConfirmed ? .ready : .blocked,
+                systemImage: "square.stack.3d.up",
+                path: servicesPath
+            ),
+            ServiceBranchCheck(
+                id: "source-repos",
+                label: "源仓库 / Sources",
+                detail: missingSourceServices.isEmpty
+                    ? "已确认服务都有可用 source repo 记录。"
+                    : "这些服务的 source repo 不可用：\(missingSourceServices.joined(separator: ", "))。",
+                status: missingSourceServices.isEmpty ? .ready : .blocked,
+                systemImage: missingSourceServices.isEmpty ? "externaldrive" : "externaldrive.badge.xmark",
+                path: servicesPath
+            ),
+            ServiceBranchCheck(
+                id: "branch-policy",
+                label: "分支策略 / Policy",
+                detail: branchPolicyRecorded
+                    ? "分支策略已记录或已从工作区扫描结果继承。"
+                    : "branches.md 尚未记录目标分支、基线或分支创建/沿用策略。",
+                status: branchPolicyRecorded ? .ready : .review,
+                systemImage: "point.3.connected.trianglepath.dotted",
+                path: branchesPath
+            )
+        ]
+
+        let blockers = checks.filter { $0.status == .blocked }
+        let reviews = checks.filter { $0.status == .review }
+        let resolvedStatus: WorkflowPathStatus
+        let reason: String
+        if !blockers.isEmpty {
+            resolvedStatus = .blocked
+            reason = blockers.map(\.detail).joined(separator: " ")
+        } else if !reviews.isEmpty {
+            resolvedStatus = .review
+            reason = reviews.map(\.detail).joined(separator: " ")
+        } else {
+            resolvedStatus = .ready
+            reason = "服务范围、目标分支、source repo 和分支策略已具备，可以进入 worktree 准备。"
+        }
+
+        return ServiceBranchEvidence(
+            status: resolvedStatus,
+            reason: reason,
+            evidence: ["services.md", "branches.md", "source-repos/"],
+            checks: checks,
+            servicesPath: servicesPath,
+            branchesPath: branchesPath,
+            branchConfirmed: branchConfirmed,
+            servicesConfirmed: servicesConfirmed,
+            branchPolicyRecorded: branchPolicyRecorded,
+            missingSourceServices: missingSourceServices
+        )
+    }
+
+    private static func readText(at path: String) -> String {
+        (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+    }
+
+    private static func hasConfirmedTargetBranch(_ branch: String) -> Bool {
+        let normalized = branch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return false }
+        return !normalized.contains("待确认")
+            && !normalized.contains("未确认")
+            && !normalized.contains("pending")
+            && !normalized.contains("tbd")
+            && !normalized.contains("todo")
+    }
+
+    private static func hasBranchPolicy(in text: String, branch: String) -> Bool {
+        let normalizedBranch = branch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let meaningfulLines = text.components(separatedBy: .newlines).map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+        }.filter { line in
+            !line.isEmpty && !line.hasPrefix("#") && !line.hasPrefix("| ---") && !placeholderOnly(line)
+        }
+
+        return meaningfulLines.contains { line in
+            let lowercased = line.lowercased()
+            if !normalizedBranch.isEmpty && lowercased.contains(normalizedBranch) {
+                return true
+            }
+            let markers = ["目标分支", "分支策略", "基线", "统一分支", "新建分支", "沿用分支", "branch", "baseline"]
+            return markers.contains { lowercased.contains($0.lowercased()) }
+        }
+    }
+
+    private static func serviceScopeExplicitlyEmpty(_ text: String) -> Bool {
+        let normalized = text.lowercased()
+        let markers = ["无需服务", "无代码服务", "不涉及服务", "仅文档", "no service", "docs only", "documentation only"]
+        return markers.contains { normalized.contains($0) }
+    }
+
+    private static func serviceScopeDetail(workspace: WorkspaceSummary) -> String {
+        if workspace.services.isEmpty {
+            return "services.md 已声明本需求无需代码服务。"
+        }
+        return "已确认 \(workspace.services.count) 个服务：\(workspace.services.map(\.name).joined(separator: ", "))。"
+    }
+
+    private static func placeholderOnly(_ line: String) -> Bool {
+        let lowercased = line.lowercased()
+        let placeholders = [
+            "待整理",
+            "待确认",
+            "待补充",
+            "暂无",
+            "todo",
+            "tbd",
+            "placeholder"
+        ]
+        return placeholders.contains { lowercased.contains($0) }
+    }
+}
+
 struct DemandTaskTransferItem: Identifiable, Hashable {
     let title: String
     let intakeStatus: String
@@ -2061,6 +2268,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
         demandIntakeStatus: DemandIntakeStatus? = nil,
         demandReadiness: DemandIntakeReadinessEvidence? = nil,
         scopeFreeze: ScopeFreezeEvidence? = nil,
+        serviceBranch: ServiceBranchEvidence? = nil,
         demandTaskTransfer: DemandTaskTransferPlan? = nil
     ) -> WorkspaceMainStage {
         if isArchived {
@@ -2107,43 +2315,17 @@ struct WorkspaceSummary: Identifiable, Hashable {
             )
         }
 
-        let branchConfirmed = Self.hasConfirmedTargetBranch(branch)
-        let missingSourceServices = services.filter { !$0.sourceExists }
-        if !branchConfirmed || services.isEmpty || !missingSourceServices.isEmpty {
-            let title: String
-            let reason: String
-            let action: WorkspaceMainStageAction
-            let actionLabel: String
-            let actionSystemImage: String
-            if !branchConfirmed {
-                title = "确认目标分支 / Confirm branch"
-                reason = "目标分支仍未确认。先补齐 branches.md 或 workspace.md，后续 worktree 和交付检查才有可靠基准。"
-                action = .document("branches")
-                actionLabel = "打开分支"
-                actionSystemImage = "arrow.triangle.branch"
-            } else if services.isEmpty {
-                title = "确认服务范围 / Confirm services"
-                reason = "服务范围为空。先确认涉及服务，Nexus 才能检查 worktree、风险和交付影响面。"
-                action = .document("services")
-                actionLabel = "打开服务"
-                actionSystemImage = "square.stack.3d.up"
-            } else {
-                title = "修正源仓库 / Source repos"
-                reason = "存在源仓库不可读或未初始化的服务：\(missingSourceServices.map(\.name).joined(separator: ", "))。"
-                action = .document("services")
-                actionLabel = "打开服务"
-                actionSystemImage = "square.stack.3d.up"
-            }
-
+        let serviceBranchGate = serviceBranch ?? ServiceBranchEvidence.resolve(workspace: self)
+        if serviceBranchGate.status != .ready {
             return WorkspaceMainStage(
                 id: .serviceBranchConfirm,
-                status: .blocked,
-                title: title,
-                reason: reason,
-                primaryActionLabel: actionLabel,
-                primaryActionSystemImage: actionSystemImage,
-                primaryAction: action,
-                evidence: compactEvidence("branches.md", "services.md", "workspace.md"),
+                status: serviceBranchGate.status,
+                title: serviceBranchGate.title,
+                reason: serviceBranchGate.reason,
+                primaryActionLabel: serviceBranchGate.primaryActionLabel,
+                primaryActionSystemImage: serviceBranchGate.primaryActionSystemImage,
+                primaryAction: serviceBranchGate.primaryAction,
+                evidence: serviceBranchGate.evidence,
                 nextStageAllowed: false
             )
         }

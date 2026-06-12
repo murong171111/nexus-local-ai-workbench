@@ -171,6 +171,8 @@ Blocked when:
 Native M1 UI:
 
 - service rows distinguish source repo and workspace worktree
+- a service/branch evidence card explains target branch, service scope, source repo, and branch policy readiness
+- Command Center includes an explicit service/branch step between scope freeze and worktree setup
 - branch mismatch is a blocker or warning depending on stage
 - source repo remains read-only by default
 
@@ -348,7 +350,8 @@ The current Native shell already has enough structure to receive the M1 workflow
 - Workspace list: `WorkspaceListView` and `WorkspaceCard` show workspace identity, branch, lifecycle, service/task/worktree signals, and risk.
 - Workspace detail: `WorkspaceDetailView` already composes Detail Map, Command Center, Codex Sessions, Demand Intake, Lifecycle, Workflow, Services, Risk Review, Documents, and Activity.
 - Documents: `WorkspaceDocumentsHubView` already opens standard workspace documents and scanned SQL artifacts with preview/source behavior.
-- Demand intake: `WorkspaceDemandIntakeView` already initializes and opens the fixed `需求/` archive files, and the Native shell now reads `需求/*.md` for requirement content, unresolved P0 questions, scope freeze markers, and requirement-task readiness.
+- Demand intake: `WorkspaceDemandIntakeView` already initializes and opens the fixed `需求/` archive files, and the Native shell now reads `需求/*.md` for requirement content, unresolved P0 questions, visible scope status, and requirement-task readiness.
+- Service/branch: `ServiceBranchEvidence` now reads the Swift workspace summary and Markdown paths to gate target branch, service scope, source repo availability, and branch policy before worktree setup.
 - Git/worktree: `ServiceGitStatusSectionView` and `WorktreeSetupSheet` already expose service-level status and confirmed worktree setup.
 
 M1 should refine these surfaces around a single Swift-owned stage model before splitting files aggressively.
