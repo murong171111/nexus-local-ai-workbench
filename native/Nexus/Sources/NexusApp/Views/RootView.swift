@@ -11540,6 +11540,25 @@ private struct DeliveryGateEvidenceCardView: View {
                 WorkflowMetric(label: "Status", value: evidence.value, tone: evidence.status.color)
                 WorkflowMetric(label: "Blockers", value: "\(evidence.blockerCount)", tone: evidence.blockerCount == 0 ? NexusPalette.success : NexusPalette.danger)
                 WorkflowMetric(label: "Review", value: "\(evidence.warningCount)", tone: evidence.warningCount == 0 ? NexusPalette.success : NexusPalette.warning)
+                WorkflowMetric(label: "Plan", value: "\(evidence.resolutionPlan.count)", tone: evidence.resolutionPlan.contains { $0.action == .resolveBlocker } ? NexusPalette.danger : NexusPalette.success)
+            }
+
+            if !evidence.resolutionPlan.isEmpty {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("交付处理计划 / Resolution plan")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    ForEach(evidence.resolutionPlan.prefix(5)) { item in
+                        DeliveryResolutionPlanRow(item: item) {
+                            action(item.gateAction)
+                        }
+                    }
+                    if evidence.resolutionPlan.count > 5 {
+                        Text("+ \(evidence.resolutionPlan.count - 5) 个检查项")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -11556,6 +11575,68 @@ private struct DeliveryGateEvidenceCardView: View {
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(evidence.status.color.opacity(0.14))
+        }
+    }
+}
+
+private struct DeliveryResolutionPlanRow: View {
+    let item: DeliveryResolutionPlanItem
+    let action: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: item.action.systemImage)
+                .foregroundStyle(item.action.status.color)
+                .frame(width: 14)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(item.title)
+                        .font(.caption2.weight(.semibold))
+                        .lineLimit(1)
+                    Text(item.action.displayLabel)
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(item.action.status.color)
+                }
+                Text(item.detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(item.handoffHint)
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 8)
+
+            Button(action: action) {
+                Image(systemName: rowActionImage)
+            }
+            .buttonStyle(.borderless)
+            .help("处理交付计划项 / Handle delivery plan item")
+        }
+        .padding(8)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+
+    private var rowActionImage: String {
+        switch item.gateAction {
+        case .lifecycle(let transition):
+            return transition.systemImage
+        case .localCheck:
+            return "checklist"
+        case .riskPrompt, .deliveryHandoff, .validationHandoff, .codex:
+            return "point.3.connected.trianglepath.dotted"
+        case .worktree:
+            return "wrench.and.screwdriver"
+        case .task:
+            return "text.line.first.and.arrowtriangle.forward"
+        case .document(let key):
+            return key == "sql" ? "cylinder.split.1x2" : "doc.text"
+        case .path, .demandIntake, .transferDemandTasks:
+            return "doc.text"
         }
     }
 }
