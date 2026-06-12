@@ -3512,6 +3512,7 @@ private struct WorkspaceDetailView: View {
             worktreeSetup: appState.worktreeSetupEvidence(for: workspace),
             developmentTasks: appState.developmentTaskEvidence(for: workspace),
             deliveryGate: appState.deliveryGateEvidence(for: workspace),
+            archiveGate: appState.archiveGateEvidence(for: workspace),
             demandTaskTransfer: appState.demandTaskTransferPlan(for: workspace)
         )
     }
@@ -3674,6 +3675,8 @@ private struct WorkspaceDetailView: View {
 
     private func run(_ action: WorkspaceMainStageAction) {
         switch action {
+        case .lifecycle(let transition):
+            appState.requestLifecycleStatusUpdate(transition, in: workspace)
         case .demandIntake:
             scrollToSection(.demand)
         case .document(let key):
@@ -4670,6 +4673,7 @@ private struct WorkspaceDetailMapView: View {
             worktreeSetup: appState.worktreeSetupEvidence(for: workspace),
             developmentTasks: appState.developmentTaskEvidence(for: workspace),
             deliveryGate: appState.deliveryGateEvidence(for: workspace),
+            archiveGate: appState.archiveGateEvidence(for: workspace),
             demandTaskTransfer: appState.demandTaskTransferPlan(for: workspace)
         )
     }
@@ -7181,6 +7185,10 @@ private struct WorkspaceCommandCenterView: View {
         commandCenterAction(for: deliveryGateEvidence.primaryAction)
     }
 
+    private var archivePrimaryAction: CommandCenterPrimaryAction {
+        commandCenterAction(for: archiveGateEvidence.primaryAction)
+    }
+
     private var lifecycleTone: Color {
         switch workspace.lifecycle.stage {
         case "blocked":
@@ -7203,6 +7211,7 @@ private struct WorkspaceCommandCenterView: View {
             worktreeSetup: worktreeSetupEvidence,
             developmentTasks: developmentTaskEvidence,
             deliveryGate: deliveryGateEvidence,
+            archiveGate: archiveGateEvidence,
             demandTaskTransfer: appState.demandTaskTransferPlan(for: workspace)
         )
     }
@@ -7227,6 +7236,10 @@ private struct WorkspaceCommandCenterView: View {
         appState.deliveryGateEvidence(for: workspace)
     }
 
+    private var archiveGateEvidence: ArchiveGateEvidence {
+        appState.archiveGateEvidence(for: workspace)
+    }
+
     private var primaryStep: CommandCenterPrimaryStep {
         CommandCenterPrimaryStep(
             stage: mainStage,
@@ -7244,6 +7257,7 @@ private struct WorkspaceCommandCenterView: View {
             taskPathItem,
             sqlPathItem,
             deliveryPathItem,
+            archivePathItem,
             codexSessionPathItem,
             handoffPathItem
         ]
@@ -7396,6 +7410,18 @@ private struct WorkspaceCommandCenterView: View {
         )
     }
 
+    private var archivePathItem: CommandCenterPathItem {
+        let evidence = archiveGateEvidence
+        return CommandCenterPathItem(
+            title: "归档 / Archive",
+            detail: evidence.value,
+            status: evidence.status,
+            systemImage: archiveSymbol,
+            actionLabel: evidence.primaryActionLabel,
+            action: archivePrimaryAction
+        )
+    }
+
     private var sqlPathItem: CommandCenterPathItem {
         let action: CommandCenterPrimaryAction = sqlSummary.status == .pending
             ? .localCheck
@@ -7487,6 +7513,7 @@ private struct WorkspaceCommandCenterView: View {
                     WorkflowMetric(label: "任务", value: workflowSummary.taskValue, tone: taskTone)
                     WorkflowMetric(label: "SQL", value: sqlSummary.value, tone: sqlStatusTone)
                     WorkflowMetric(label: "交付", value: deliveryGateEvidence.value, tone: deliveryTone)
+                    WorkflowMetric(label: "归档", value: archiveGateEvidence.value, tone: archiveTone)
                     WorkflowMetric(label: "会话", value: codexSessionValue, tone: codexSessionTone)
                 }
 
@@ -7552,7 +7579,7 @@ private struct WorkspaceCommandCenterView: View {
                     )
                 }
 
-                Text("主路径用于决定下一步；工作流路径用于定位范围、worktree、风险、任务、交付和会话状态。")
+                Text("主路径用于决定下一步；工作流路径用于定位范围、worktree、风险、任务、交付、归档和会话状态。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -7574,6 +7601,8 @@ private struct WorkspaceCommandCenterView: View {
 
     private func commandCenterAction(for action: WorkspaceMainStageAction) -> CommandCenterPrimaryAction {
         switch action {
+        case .lifecycle(let transition):
+            return .lifecycle(transition)
         case .demandIntake:
             return .demandIntake
         case .document(let key):
@@ -7601,6 +7630,8 @@ private struct WorkspaceCommandCenterView: View {
 
     private func runPrimaryAction(_ action: CommandCenterPrimaryAction) {
         switch action {
+        case .lifecycle(let transition):
+            appState.requestLifecycleStatusUpdate(transition, in: workspace)
         case .codex:
             Task {
                 await appState.openWorkspaceInCodex(workspace)
@@ -7719,6 +7750,21 @@ private struct WorkspaceCommandCenterView: View {
         }
     }
 
+    private var archiveSymbol: String {
+        switch archiveGateEvidence.status {
+        case .ready, .archived:
+            return "archivebox"
+        case .next:
+            return archiveGateEvidence.primaryActionSystemImage
+        case .review:
+            return "exclamationmark.arrow.triangle.2.circlepath"
+        case .blocked:
+            return "xmark.octagon"
+        case .pending:
+            return "doc.text.magnifyingglass"
+        }
+    }
+
     private var sqlStatusTone: Color {
         switch sqlSummary.status {
         case .ready:
@@ -7731,6 +7777,21 @@ private struct WorkspaceCommandCenterView: View {
             return .secondary
         case .next:
             return NexusPalette.accent
+        case .archived:
+            return .secondary
+        }
+    }
+
+    private var archiveTone: Color {
+        switch archiveGateEvidence.status {
+        case .ready:
+            return NexusPalette.success
+        case .next:
+            return NexusPalette.accent
+        case .review, .pending:
+            return NexusPalette.warning
+        case .blocked:
+            return NexusPalette.danger
         case .archived:
             return .secondary
         }
@@ -7783,6 +7844,7 @@ private struct WorkspaceCommandCenterView: View {
 }
 
 private enum CommandCenterPrimaryAction {
+    case lifecycle(LifecycleTransition)
     case codex
     case document(String)
     case path(String)
@@ -9192,6 +9254,10 @@ private struct WorkflowStatusView: View {
         appState.deliveryGateEvidence(for: workspace)
     }
 
+    private var archiveGate: ArchiveGateEvidence {
+        appState.archiveGateEvidence(for: workspace)
+    }
+
     private var blockedTasks: [WorkspaceTask] {
         openTasks.filter(\.isBlocked)
     }
@@ -9689,6 +9755,10 @@ private struct WorkflowStatusView: View {
                     runDeliveryGateAction(action)
                 }
 
+                ArchiveGateEvidenceCardView(evidence: archiveGate) { action in
+                    runDeliveryGateAction(action)
+                }
+
                 DeliveryFocusCardView(step: deliveryFocusStep) {
                     runDeliveryFocusAction(deliveryFocusStep.action)
                 }
@@ -9877,6 +9947,8 @@ private struct WorkflowStatusView: View {
 
     private func runDeliveryGateAction(_ action: WorkspaceMainStageAction) {
         switch action {
+        case .lifecycle(let transition):
+            lifecycleAction(transition)
         case .demandIntake:
             Task {
                 await appState.loadDocument(path: documentPath(for: "handoff", fallback: "handoff.md"))
@@ -11291,6 +11363,118 @@ private struct DeliveryGateCheckRow: View {
 
     private var rowActionImage: String {
         switch check.action {
+        case .lifecycle(let transition):
+            return transition.systemImage
+        case .localCheck:
+            return "checklist"
+        case .riskPrompt, .deliveryHandoff, .validationHandoff, .codex:
+            return "point.3.connected.trianglepath.dotted"
+        case .worktree:
+            return "wrench.and.screwdriver"
+        case .task:
+            return "text.line.first.and.arrowtriangle.forward"
+        case .document, .path, .demandIntake, .transferDemandTasks:
+            return "doc.text"
+        }
+    }
+}
+
+private struct ArchiveGateEvidenceCardView: View {
+    let evidence: ArchiveGateEvidence
+    let action: (WorkspaceMainStageAction) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 9) {
+                Image(systemName: evidence.primaryActionSystemImage)
+                    .foregroundStyle(evidence.status.color)
+                    .frame(width: 16)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(evidence.title)
+                        .font(.subheadline.weight(.semibold))
+                    Text(evidence.reason)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 8)
+
+                Button {
+                    action(evidence.primaryAction)
+                } label: {
+                    Label(evidence.primaryActionLabel, systemImage: evidence.primaryActionSystemImage)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], alignment: .leading, spacing: 8) {
+                WorkflowMetric(label: "Archive", value: evidence.value, tone: evidence.status.color)
+                WorkflowMetric(label: "Blockers", value: "\(evidence.blockerCount)", tone: evidence.blockerCount == 0 ? NexusPalette.success : NexusPalette.danger)
+                WorkflowMetric(label: "Review", value: "\(evidence.warningCount)", tone: evidence.warningCount == 0 ? NexusPalette.success : NexusPalette.warning)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(evidence.checks) { check in
+                    ArchiveGateCheckRow(check: check) {
+                        action(check.action)
+                    }
+                }
+            }
+        }
+        .padding(10)
+        .background(evidence.status.color.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(evidence.status.color.opacity(0.14))
+        }
+    }
+}
+
+private struct ArchiveGateCheckRow: View {
+    let check: ArchiveGateCheck
+    let action: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: check.systemImage)
+                .foregroundStyle(check.status.color)
+                .frame(width: 14)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(check.label)
+                        .font(.caption2.weight(.semibold))
+                    Text(check.status.displayLabel)
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(check.status.color)
+                }
+                Text(check.detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 8)
+
+            Button(action: action) {
+                Image(systemName: rowActionImage)
+            }
+            .buttonStyle(.borderless)
+            .help("处理归档门禁项 / Handle archive gate item")
+        }
+        .padding(8)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+
+    private var rowActionImage: String {
+        switch check.action {
+        case .lifecycle(let transition):
+            return transition.systemImage
         case .localCheck:
             return "checklist"
         case .riskPrompt, .deliveryHandoff, .validationHandoff, .codex:

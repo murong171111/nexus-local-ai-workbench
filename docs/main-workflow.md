@@ -470,7 +470,7 @@ Target files:
 Plan:
 
 - Build a single `DeliveryGate` model. `[started with DeliveryGateEvidence]`
-- Reuse it for delivery and archive. `[started for active delivery and archived state]`
+- Reuse it for delivery and archive. `[started with ArchiveGateEvidence in Command Center and Workflow]`
 - Keep SQL formal/rollback guard as a hard blocker. `[started through SQL health check evidence]`
 - Show PR/CI evidence as optional until GitHub integration is explicitly added.
 
@@ -510,5 +510,5 @@ M1 is complete when:
 - Demand intake blocks development until scope and P0 questions are handled.
 - Root `tasks.md` is the only execution task source.
 - Worktree status distinguishes source repo, worktree, branch, dirty, and clean states.
-- Delivery and archive use the same hard SQL and task/risk/git gates.
+- Delivery and archive use the same hard SQL and task/risk/git gates, and archive actions are routed through confirmed lifecycle writeback.
 - Legacy React/Tauri/Rust/TypeScript code has no new product workflow features added after this roadmap.
