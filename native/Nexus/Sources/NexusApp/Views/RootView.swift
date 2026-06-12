@@ -3510,6 +3510,7 @@ private struct WorkspaceDetailView: View {
             scopeFreeze: appState.scopeFreezeEvidence(for: workspace),
             serviceBranch: appState.serviceBranchEvidence(for: workspace),
             worktreeSetup: appState.worktreeSetupEvidence(for: workspace),
+            developmentTasks: appState.developmentTaskEvidence(for: workspace),
             demandTaskTransfer: appState.demandTaskTransferPlan(for: workspace)
         )
     }
@@ -3687,6 +3688,16 @@ private struct WorkspaceDetailView: View {
         case .path(let path):
             Task {
                 await appState.loadDocument(path: path)
+            }
+        case .task(let id):
+            if let task = workspace.tasks.first(where: { $0.id == id }) {
+                Task {
+                    await appState.openTaskSource(task, in: workspace)
+                }
+            } else {
+                Task {
+                    await appState.loadDocument(path: documentPath(for: "tasks"))
+                }
             }
         case .transferDemandTasks:
             appState.requestDemandTaskTransfer(in: workspace)
@@ -4656,6 +4667,7 @@ private struct WorkspaceDetailMapView: View {
             scopeFreeze: appState.scopeFreezeEvidence(for: workspace),
             serviceBranch: appState.serviceBranchEvidence(for: workspace),
             worktreeSetup: appState.worktreeSetupEvidence(for: workspace),
+            developmentTasks: appState.developmentTaskEvidence(for: workspace),
             demandTaskTransfer: appState.demandTaskTransferPlan(for: workspace)
         )
     }
@@ -7196,6 +7208,7 @@ private struct WorkspaceCommandCenterView: View {
             scopeFreeze: scopeFreezeEvidence,
             serviceBranch: serviceBranchEvidence,
             worktreeSetup: worktreeSetupEvidence,
+            developmentTasks: developmentTaskEvidence,
             demandTaskTransfer: appState.demandTaskTransferPlan(for: workspace)
         )
     }
@@ -7210,6 +7223,10 @@ private struct WorkspaceCommandCenterView: View {
 
     private var worktreeSetupEvidence: WorktreeSetupEvidence {
         appState.worktreeSetupEvidence(for: workspace)
+    }
+
+    private var developmentTaskEvidence: DevelopmentTaskEvidence {
+        appState.developmentTaskEvidence(for: workspace)
     }
 
     private var primaryStep: CommandCenterPrimaryStep {
@@ -7358,13 +7375,14 @@ private struct WorkspaceCommandCenterView: View {
     }
 
     private var taskPathItem: CommandCenterPathItem {
-        CommandCenterPathItem(
+        let evidence = developmentTaskEvidence
+        return CommandCenterPathItem(
             title: "任务 / Tasks",
-            detail: workflowSummary.taskValue,
-            status: workflowSummary.taskStatus,
-            systemImage: workflowSummary.taskStatus == .ready ? "checklist.checked" : "checklist",
-            actionLabel: "打开任务",
-            action: .document("tasks")
+            detail: evidence.taskValue,
+            status: evidence.status,
+            systemImage: evidence.primaryActionSystemImage,
+            actionLabel: evidence.primaryActionLabel,
+            action: commandCenterAction(for: evidence.primaryAction)
         )
     }
 
@@ -7563,6 +7581,8 @@ private struct WorkspaceCommandCenterView: View {
             return .document(key)
         case .path(let path):
             return .path(path)
+        case .task(let id):
+            return .task(id)
         case .transferDemandTasks:
             return .transferDemandTasks
         case .worktree:
@@ -7602,6 +7622,16 @@ private struct WorkspaceCommandCenterView: View {
         case .path(let path):
             Task {
                 await appState.loadDocument(path: path)
+            }
+        case .task(let id):
+            if let task = workspace.tasks.first(where: { $0.id == id }) {
+                Task {
+                    await appState.openTaskSource(task, in: workspace)
+                }
+            } else {
+                Task {
+                    await appState.loadDocument(path: workspace.documentLinks["tasks"] ?? "\(workspace.path)/tasks.md")
+                }
             }
         case .transferDemandTasks:
             appState.requestDemandTaskTransfer(in: workspace)
@@ -7757,6 +7787,7 @@ private enum CommandCenterPrimaryAction {
     case codex
     case document(String)
     case path(String)
+    case task(String)
     case transferDemandTasks
     case riskPrompt
     case worktree
@@ -9154,6 +9185,10 @@ private struct WorkflowStatusView: View {
         workspace.tasks.filter(\.isActive)
     }
 
+    private var taskEvidence: DevelopmentTaskEvidence {
+        appState.developmentTaskEvidence(for: workspace)
+    }
+
     private var blockedTasks: [WorkspaceTask] {
         openTasks.filter(\.isBlocked)
     }
@@ -9629,6 +9664,24 @@ private struct WorkflowStatusView: View {
     var body: some View {
         SectionBlock(title: "任务与交付 / Workflow") {
             VStack(alignment: .leading, spacing: 12) {
+                DevelopmentTaskEvidenceCardView(
+                    evidence: taskEvidence,
+                    openTaskAction: { taskID in
+                        if let task = workspace.tasks.first(where: { $0.id == taskID }) {
+                            openTaskDocumentAction(task)
+                        } else {
+                            Task {
+                                await appState.loadDocument(path: tasksPath)
+                            }
+                        }
+                    },
+                    openTasksAction: {
+                        Task {
+                            await appState.loadDocument(path: tasksPath)
+                        }
+                    }
+                )
+
                 DeliveryFocusCardView(step: deliveryFocusStep) {
                     runDeliveryFocusAction(deliveryFocusStep.action)
                 }
@@ -10955,6 +11008,112 @@ private struct WorkspaceTaskRow: View {
         default:
             return Color.gray
         }
+    }
+}
+
+private struct DevelopmentTaskEvidenceCardView: View {
+    let evidence: DevelopmentTaskEvidence
+    let openTaskAction: (String) -> Void
+    let openTasksAction: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 9) {
+                Image(systemName: evidence.primaryActionSystemImage)
+                    .foregroundStyle(evidence.status.color)
+                    .frame(width: 16)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(evidence.title)
+                        .font(.subheadline.weight(.semibold))
+                    Text(evidence.reason)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 8)
+
+                Button {
+                    runPrimaryAction()
+                } label: {
+                    Label(evidence.primaryActionLabel, systemImage: evidence.primaryActionSystemImage)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], alignment: .leading, spacing: 8) {
+                WorkflowMetric(label: "Active", value: "\(evidence.activeTasks.count)", tone: evidence.activeTasks.isEmpty ? NexusPalette.success : NexusPalette.accent)
+                WorkflowMetric(label: "Blocked", value: "\(evidence.blockedTasks.count)", tone: evidence.blockedTasks.isEmpty ? NexusPalette.success : NexusPalette.danger)
+                WorkflowMetric(label: "Closed", value: "\(evidence.doneTaskCount + evidence.deferredTaskCount)", tone: .secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(evidence.checks.prefix(4)) { check in
+                    DevelopmentTaskCheckRow(check: check) {
+                        if let taskID = check.taskID {
+                            openTaskAction(taskID)
+                        } else {
+                            openTasksAction()
+                        }
+                    }
+                }
+            }
+        }
+        .padding(10)
+        .background(evidence.status.color.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(evidence.status.color.opacity(0.14))
+        }
+    }
+
+    private func runPrimaryAction() {
+        if let taskID = evidence.nextTask?.id {
+            openTaskAction(taskID)
+        } else {
+            openTasksAction()
+        }
+    }
+}
+
+private struct DevelopmentTaskCheckRow: View {
+    let check: DevelopmentTaskCheck
+    let action: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: check.systemImage)
+                .foregroundStyle(check.status.color)
+                .frame(width: 14)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(check.label)
+                        .font(.caption2.weight(.semibold))
+                    Text(check.status.displayLabel)
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(check.status.color)
+                }
+                Text(check.detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 8)
+
+            Button(action: action) {
+                Image(systemName: check.taskID == nil ? "doc.text" : "text.line.first.and.arrowtriangle.forward")
+            }
+            .buttonStyle(.borderless)
+            .help(check.taskID == nil ? "打开 tasks.md / Open tasks.md" : "定位任务行 / Locate task")
+        }
+        .padding(8)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 }
 

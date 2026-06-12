@@ -245,6 +245,8 @@ Native M1 UI:
 - Task Center never treats two files as equal execution sources
 - transfer action requires confirmation and appends audit
 - task row can open `tasks.md` at the source line
+- a development-task evidence card summarizes active, blocked, completed, and deferred root `tasks.md` rows
+- Command Center task step opens the next active task source locator instead of only opening the document
 
 ### 7. Delivery Check
 
@@ -355,6 +357,7 @@ The current Native shell already has enough structure to receive the M1 workflow
 - Demand intake: `WorkspaceDemandIntakeView` already initializes and opens the fixed `需求/` archive files, and the Native shell now reads `需求/*.md` for requirement content, unresolved P0 questions, visible scope status, and requirement-task readiness.
 - Service/branch: `ServiceBranchEvidence` now reads the Swift workspace summary and Markdown paths to gate target branch, service scope, source repo availability, and branch policy before worktree setup.
 - Git/worktree: `WorktreeSetupEvidence` gates the handoff from service/branch confirmation into development, while `ServiceGitStatusSectionView` and `WorktreeSetupSheet` expose service-level status, evidence, and confirmed worktree setup.
+- Development tasks: `DevelopmentTaskEvidence` now gates development after worktree setup, treats root `tasks.md` as the execution source, chooses the next active or blocked task, and reuses task source locators for main workflow actions.
 
 M1 should refine these surfaces around a single Swift-owned stage model before splitting files aggressively.
 
@@ -419,6 +422,21 @@ Plan:
 - Add Swift-owned Scope Freeze evidence for `需求/scope.md` in-scope, out-of-scope, pending P0, and freeze marker checks. `[started]`
 - Add "transfer requirement tasks" as a confirmed write action. `[started with Swift-owned transfer from 需求/tasks.md to root tasks.md, skipping existing, template, completed, and deferred rows]`
 - Keep AI invocation out of Nexus M1.
+
+### Development Tasks
+
+Target files:
+
+- current `WorkspaceCommandCenterView`
+- current `WorkflowStatusView`
+- future Swift-native task inspector
+
+Plan:
+
+- Keep root `tasks.md` as the only execution task source. `[started with DevelopmentTaskEvidence]`
+- Route the main workflow and Command Center task step to the next active or blocked task locator. `[started]`
+- Keep complete/defer mutations behind the existing confirmation sheets.
+- Keep `需求/tasks.md` visible as intake evidence, not as an execution queue.
 
 ### Git / Worktree Status
 
