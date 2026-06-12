@@ -3508,6 +3508,7 @@ private struct WorkspaceDetailView: View {
             demandIntakeStatus: appState.demandIntakeDisplayStatus(for: workspace),
             demandReadiness: appState.demandIntakeReadiness(for: workspace),
             scopeFreeze: appState.scopeFreezeEvidence(for: workspace),
+            serviceBranch: appState.serviceBranchEvidence(for: workspace),
             demandTaskTransfer: appState.demandTaskTransferPlan(for: workspace)
         )
     }
@@ -3867,6 +3868,10 @@ private struct ServiceGitStatusSectionView: View {
         workspace.documentLinks["services"] ?? "\(workspace.path)/services.md"
     }
 
+    private var serviceBranchEvidence: ServiceBranchEvidence {
+        appState.serviceBranchEvidence(for: workspace)
+    }
+
     var body: some View {
         SectionBlock(title: "服务 Git 状态 / Services") {
             VStack(alignment: .leading, spacing: 11) {
@@ -3882,6 +3887,12 @@ private struct ServiceGitStatusSectionView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                ServiceBranchEvidencePreview(evidence: serviceBranchEvidence) { path in
+                    Task {
+                        await appState.loadDocument(path: path)
                     }
                 }
 
@@ -3959,6 +3970,105 @@ private struct ServiceGitStatusSectionView: View {
             return NexusPalette.warning
         }
         return NexusPalette.success
+    }
+}
+
+private struct ServiceBranchEvidencePreview: View {
+    let evidence: ServiceBranchEvidence
+    let openDocument: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 9) {
+                Image(systemName: evidence.ready ? "checkmark.seal" : "square.stack.3d.up")
+                    .foregroundStyle(evidence.status.color)
+                    .frame(width: 15)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(evidence.title)
+                        .font(.caption.weight(.semibold))
+                    Text(evidence.reason)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 8)
+
+                Button {
+                    openDocument(evidence.primaryAction == .document("branches") ? evidence.branchesPath : evidence.servicesPath)
+                } label: {
+                    Label(evidence.primaryActionLabel, systemImage: evidence.primaryActionSystemImage)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+            }
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], alignment: .leading, spacing: 8) {
+                WorkflowMetric(label: "Branch", value: evidence.branchConfirmed ? "ready" : "pending", tone: evidence.branchConfirmed ? NexusPalette.success : NexusPalette.danger)
+                WorkflowMetric(label: "Services", value: evidence.servicesConfirmed ? "ready" : "pending", tone: evidence.servicesConfirmed ? NexusPalette.success : NexusPalette.danger)
+                WorkflowMetric(label: "Sources", value: "\(evidence.missingSourceServices.count)", tone: evidence.missingSourceServices.isEmpty ? NexusPalette.success : NexusPalette.danger)
+                WorkflowMetric(label: "Policy", value: evidence.branchPolicyRecorded ? "ready" : "review", tone: evidence.branchPolicyRecorded ? NexusPalette.success : NexusPalette.warning)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(evidence.checks) { check in
+                    ServiceBranchCheckRow(check: check) { path in
+                        openDocument(path)
+                    }
+                }
+            }
+        }
+        .padding(9)
+        .background(evidence.status.color.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(evidence.status.color.opacity(0.14))
+        }
+    }
+}
+
+private struct ServiceBranchCheckRow: View {
+    let check: ServiceBranchCheck
+    let openDocument: (String) -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: check.systemImage)
+                .foregroundStyle(check.status.color)
+                .frame(width: 14)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(check.label)
+                        .font(.caption2.weight(.semibold))
+                    Text(check.status.displayLabel)
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(check.status.color)
+                }
+                Text(check.detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 8)
+
+            Button {
+                if let path = check.path {
+                    openDocument(path)
+                }
+            } label: {
+                Image(systemName: "doc.text")
+            }
+            .buttonStyle(.borderless)
+            .disabled(check.path == nil)
+            .help("打开证据文档 / Open evidence document")
+        }
+        .padding(8)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 }
 
@@ -4409,6 +4519,7 @@ private struct WorkspaceDetailMapView: View {
             demandIntakeStatus: appState.demandIntakeDisplayStatus(for: workspace),
             demandReadiness: appState.demandIntakeReadiness(for: workspace),
             scopeFreeze: appState.scopeFreezeEvidence(for: workspace),
+            serviceBranch: appState.serviceBranchEvidence(for: workspace),
             demandTaskTransfer: appState.demandTaskTransferPlan(for: workspace)
         )
     }
@@ -6947,12 +7058,17 @@ private struct WorkspaceCommandCenterView: View {
             demandIntakeStatus: demandIntakeDisplayStatus,
             demandReadiness: appState.demandIntakeReadiness(for: workspace),
             scopeFreeze: scopeFreezeEvidence,
+            serviceBranch: serviceBranchEvidence,
             demandTaskTransfer: appState.demandTaskTransferPlan(for: workspace)
         )
     }
 
     private var scopeFreezeEvidence: ScopeFreezeEvidence {
         appState.scopeFreezeEvidence(for: workspace)
+    }
+
+    private var serviceBranchEvidence: ServiceBranchEvidence {
+        appState.serviceBranchEvidence(for: workspace)
     }
 
     private var primaryStep: CommandCenterPrimaryStep {
@@ -6964,8 +7080,9 @@ private struct WorkspaceCommandCenterView: View {
 
     private var sessionPathItems: [CommandCenterPathItem] {
         [
-            scopePathItem,
             demandPathItem,
+            scopePathItem,
+            serviceBranchPathItem,
             worktreePathItem,
             riskPathItem,
             taskPathItem,
@@ -7010,6 +7127,18 @@ private struct WorkspaceCommandCenterView: View {
         )
     }
 
+    private var serviceBranchPathItem: CommandCenterPathItem {
+        let evidence = serviceBranchEvidence
+        return CommandCenterPathItem(
+            title: "服务/分支",
+            detail: serviceBranchPathDetail(evidence),
+            status: evidence.status,
+            systemImage: evidence.primaryActionSystemImage,
+            actionLabel: evidence.primaryActionLabel,
+            action: commandCenterAction(for: evidence.primaryAction)
+        )
+    }
+
     private var worktreePathItem: CommandCenterPathItem {
         if workspace.services.isEmpty {
             return CommandCenterPathItem(
@@ -7041,6 +7170,22 @@ private struct WorkspaceCommandCenterView: View {
             actionLabel: "打开脚本",
             action: .document("worktreeScript")
         )
+    }
+
+    private func serviceBranchPathDetail(_ evidence: ServiceBranchEvidence) -> String {
+        if !evidence.branchConfirmed {
+            return "分支待确认"
+        }
+        if !evidence.servicesConfirmed {
+            return "服务待确认"
+        }
+        if !evidence.missingSourceServices.isEmpty {
+            return "源仓库缺 \(evidence.missingSourceServices.count)"
+        }
+        if !evidence.branchPolicyRecorded {
+            return "策略待记录"
+        }
+        return "\(workspace.services.count) 服务"
     }
 
     private var riskPathItem: CommandCenterPathItem {

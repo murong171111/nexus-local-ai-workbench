@@ -2543,6 +2543,10 @@ final class AppState: ObservableObject {
         )
     }
 
+    func serviceBranchEvidence(for workspace: WorkspaceSummary) -> ServiceBranchEvidence {
+        ServiceBranchEvidence.resolve(workspace: workspace)
+    }
+
     func demandTaskTransferPlan(for workspace: WorkspaceSummary) -> DemandTaskTransferPlan {
         DemandTaskTransferPlan.resolve(
             workspace: workspace,

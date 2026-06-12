@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Added
 
+- Native service/branch evidence now owns the gate between scope freeze and worktree setup, checking target branch confirmation, service scope, source repo availability, and branch policy before continuing.
 - Native scope-freeze evidence now owns the `需求/scope.md` gate after demand intake, checking in-scope, out-of-scope, unresolved P0 pending items, and the freeze marker before service/branch confirmation.
 - Native demand-intake can now transfer real rows from workspace-local `需求/tasks.md` into root `tasks.md` after explicit confirmation, skipping template, completed, deferred, and already-existing tasks.
 - Native demand-intake readiness now reads workspace-local `需求/*.md` content for non-placeholder requirement details, unresolved P0 questions, scope status, and real requirement task rows before handing off to the scope-freeze stage.

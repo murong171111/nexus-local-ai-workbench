@@ -523,6 +523,90 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(stage.primaryAction, .path(demandDir.appendingPathComponent("scope.md").path))
     }
 
+    func testServiceBranchEvidenceBlocksMissingBranchAndServiceScope() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "service-branch-missing",
+            branch: "待确认",
+            services: []
+        )
+        let serviceBranch = ServiceBranchEvidence.resolve(workspace: workspace)
+        let stage = workspace.mainStage(
+            demandReadiness: readyDemandReadiness(),
+            scopeFreeze: readyScopeFreeze(),
+            serviceBranch: serviceBranch
+        )
+
+        XCTAssertEqual(serviceBranch.status, .blocked)
+        XCTAssertFalse(serviceBranch.branchConfirmed)
+        XCTAssertFalse(serviceBranch.servicesConfirmed)
+        XCTAssertEqual(stage.id, .serviceBranchConfirm)
+        XCTAssertEqual(stage.primaryAction, .document("branches"))
+    }
+
+    func testServiceBranchEvidenceAllowsReadyWorkspacePastServiceBranchGate() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-service-branch-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try """
+        # Branches
+
+        - 目标分支: feature/service-branch
+        - 基线: master
+        - 分支策略: 多服务沿用同一需求分支。
+        """.write(
+            to: root.appendingPathComponent("branches.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try """
+        # Services
+
+        ## 已确认相关
+
+        | 服务 | 源仓库 | 说明 |
+        | --- | --- | --- |
+        | order | ~/source-repos/order | core |
+        """.write(
+            to: root.appendingPathComponent("services.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "service-branch-ready",
+            path: root.path,
+            branch: "feature/service-branch",
+            services: [
+                ServiceStatus(
+                    name: "order",
+                    branch: "feature/service-branch",
+                    worktree: "ready",
+                    gitSummary: "clean",
+                    worktreeExists: true,
+                    sourceExists: true
+                )
+            ]
+        )
+        let serviceBranch = ServiceBranchEvidence.resolve(workspace: workspace)
+        let stage = workspace.mainStage(
+            demandReadiness: readyDemandReadiness(),
+            scopeFreeze: readyScopeFreeze(),
+            serviceBranch: serviceBranch
+        )
+
+        XCTAssertEqual(serviceBranch.status, .ready)
+        XCTAssertTrue(serviceBranch.branchConfirmed)
+        XCTAssertTrue(serviceBranch.servicesConfirmed)
+        XCTAssertTrue(serviceBranch.branchPolicyRecorded)
+        XCTAssertTrue(serviceBranch.missingSourceServices.isEmpty)
+        XCTAssertNotEqual(stage.id, .serviceBranchConfirm)
+    }
+
     func testDemandTaskTransferPlanFindsNewIntakeTasksAndUpdatesMainStage() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-demand-task-transfer-\(UUID().uuidString)")
@@ -1340,6 +1424,7 @@ final class ModelBehaviorTests: XCTestCase {
         name: String = "Workflow Summary",
         folder: String? = nil,
         path: String? = nil,
+        branch: String = "feature/workflow-summary",
         healthChecks: [WorkspaceHealthCheck] = [],
         risks: [RiskAlert] = [],
         sqlFiles: [WorkspaceSqlFile] = [],
@@ -1356,7 +1441,7 @@ final class ModelBehaviorTests: XCTestCase {
             name: name,
             folder: workspaceFolder,
             path: workspacePath,
-            branch: "feature/workflow-summary",
+            branch: branch,
             state: .developing,
             riskLevel: risks.isEmpty ? .low : .medium,
             aiState: "Ready",
@@ -1390,6 +1475,33 @@ final class ModelBehaviorTests: XCTestCase {
                     sourceLine: nil
                 )
             ]
+        )
+    }
+
+    private func readyDemandReadiness() -> DemandIntakeReadinessEvidence {
+        DemandIntakeReadinessEvidence(
+            status: .ready,
+            reason: "ready",
+            evidence: ["需求/"],
+            checks: [],
+            unresolvedP0Count: 0,
+            requirementHasContent: true,
+            scopeFrozen: true,
+            requirementTasksReady: true
+        )
+    }
+
+    private func readyScopeFreeze() -> ScopeFreezeEvidence {
+        ScopeFreezeEvidence(
+            status: .ready,
+            reason: "ready",
+            evidence: ["需求/scope.md"],
+            checks: [],
+            scopePath: "/tmp/scope.md",
+            hasInScope: true,
+            hasOutOfScope: true,
+            scopeFrozen: true,
+            unresolvedP0Count: 0
         )
     }
 

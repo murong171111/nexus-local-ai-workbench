@@ -12,6 +12,7 @@ Nexus 是一个面向 macOS 的本地 AI 开发工作台，用来管理需求工
 - 以工作区卡片展示需求目录、分支、服务范围、风险等级、最近活动和 worktree 状态。
 - 支持在应用内创建符合 `ks-project-demand-workspace` 约定的需求工作区，包含源仓库扫描、服务勾选、手动补充、创建前预检、创建确认摘要和创建后的下一步引导。
 - 支持在工作区详情中执行 `需求预检`：检查或初始化固定 `需求/` 目录，生成 `requirement.md`、`questions.md`、`scope.md`、`tasks.md` 和 `delivery.md`，并复制 `$lanhu-demand-intake` Codex 预检提示词。原生壳会读取这些 Markdown，检查需求内容、未解决 P0、scope 状态和真实需求任务，并通过独立的范围冻结门禁检查本次实现、不实现、待确认 P0 和冻结标记，确认后可把真实需求行转入根 `tasks.md`；Nexus 仍不直接解析蓝湖或调用 AI。
+- 原生服务/分支确认门禁会检查 `services.md`、`branches.md`、工作区服务行、源仓库可用性和分支策略，确认后才进入 worktree 准备。
 - 支持在应用内预览 Markdown 文档，包括状态、服务范围、分支说明、任务、决策和交付记录。
 - 支持配置本地工作区目录、源仓库目录和交付文档目录。
 - 支持导出和导入团队配置 Profile，便于分享路径约定、Codex URL 和 IDE URL 模板；首次启动向导和原生 Settings 都可以直接导入 Profile。
@@ -137,7 +138,7 @@ Nexus 默认识别每个需求工作区下的 Markdown 文档和本地 worktree 
 
 创建完成后，Nexus 会自动选中新工作区、清理旧的文档预览，并在右侧详情中展示下一步清单。第一步建议先在 `需求预检` 区块初始化 `需求/`，填写需求名称、蓝湖链接和补充说明，复制 `$lanhu-demand-intake` 提示词给 Codex 整理 `requirement.md`、`questions.md`，并在 `需求/tasks.md` 建立未完成需求列表。原生壳会检查整理后的 Markdown 是否已经包含非占位需求内容、P0 是否清零，以及 `需求/tasks.md` 是否有真实需求点。下一道原生门禁是 `范围冻结`，它会读取 `需求/scope.md` 中本次实现、暂不实现、待确认 P0 和冻结标记。当 `需求/tasks.md` 中已经有真实需求行时，Nexus 可以在明确确认后把它们转入根 `tasks.md`；任务中心和交付门禁仍以根 `tasks.md` 为准。Nexus 不会自动解析蓝湖，也不会直接调用 AI；真正的需求理解和问题分级仍由后续 Codex 会话完成。
 
-完成需求预检并冻结 `需求/scope.md` 后，再继续确认服务范围、目标分支、worktree、`handoff.md` 和首次本地检查。待确认服务或分支会直接打开对应文档，服务和分支已确认后才进入 worktree 创建流程。
+完成需求预检并冻结 `需求/scope.md` 后，再继续确认服务范围、目标分支、worktree、`handoff.md` 和首次本地检查。原生服务/分支门禁会解释 `services.md`、`branches.md`、source repo 和分支策略是否就绪，待确认服务或分支会直接打开对应文档，服务和分支已确认后才进入 worktree 创建流程。
 
 Nexus 不会在创建工作区时自动创建 worktree。你需要先确认分支和服务范围，再使用原生 worktree 创建动作执行已确认的本地 `git fetch` 和 `git worktree add` 流程。在执行前，Nexus 会展示预检结果：目标分支是否已确认、哪些服务缺失 worktree、源仓库是否存在、将写入哪个 `repos/<service>` 目录。执行完成后，Nexus 会刷新工作区状态，以中文优先展示已创建、已跳过、失败的服务结果，并提供 Finder、带结果的 Codex 交接和本地检查后续入口。从结果卡运行本地检查后，会直接在卡片内显示检查摘要。
 
