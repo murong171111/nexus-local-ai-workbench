@@ -3509,6 +3509,7 @@ private struct WorkspaceDetailView: View {
             demandReadiness: appState.demandIntakeReadiness(for: workspace),
             scopeFreeze: appState.scopeFreezeEvidence(for: workspace),
             serviceBranch: appState.serviceBranchEvidence(for: workspace),
+            worktreeSetup: appState.worktreeSetupEvidence(for: workspace),
             demandTaskTransfer: appState.demandTaskTransferPlan(for: workspace)
         )
     }
@@ -3872,6 +3873,10 @@ private struct ServiceGitStatusSectionView: View {
         appState.serviceBranchEvidence(for: workspace)
     }
 
+    private var worktreeSetupEvidence: WorktreeSetupEvidence {
+        appState.worktreeSetupEvidence(for: workspace)
+    }
+
     var body: some View {
         SectionBlock(title: "服务 Git 状态 / Services") {
             VStack(alignment: .leading, spacing: 11) {
@@ -3893,6 +3898,17 @@ private struct ServiceGitStatusSectionView: View {
                 ServiceBranchEvidencePreview(evidence: serviceBranchEvidence) { path in
                     Task {
                         await appState.loadDocument(path: path)
+                    }
+                }
+
+                WorktreeSetupEvidencePreview(evidence: worktreeSetupEvidence) { action in
+                    switch action {
+                    case .open(let path):
+                        Task {
+                            await appState.loadDocument(path: path)
+                        }
+                    case .setup:
+                        appState.presentWorktreeSetup(for: workspace)
                     }
                 }
 
@@ -4031,6 +4047,125 @@ private struct ServiceBranchEvidencePreview: View {
 
 private struct ServiceBranchCheckRow: View {
     let check: ServiceBranchCheck
+    let openDocument: (String) -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: check.systemImage)
+                .foregroundStyle(check.status.color)
+                .frame(width: 14)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(check.label)
+                        .font(.caption2.weight(.semibold))
+                    Text(check.status.displayLabel)
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(check.status.color)
+                }
+                Text(check.detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 8)
+
+            Button {
+                if let path = check.path {
+                    openDocument(path)
+                }
+            } label: {
+                Image(systemName: "doc.text")
+            }
+            .buttonStyle(.borderless)
+            .disabled(check.path == nil)
+            .help("打开证据文档 / Open evidence document")
+        }
+        .padding(8)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+}
+
+private enum WorktreeSetupEvidenceAction {
+    case open(String)
+    case setup
+}
+
+private struct WorktreeSetupEvidencePreview: View {
+    let evidence: WorktreeSetupEvidence
+    let action: (WorktreeSetupEvidenceAction) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 9) {
+                Image(systemName: evidence.ready ? "checkmark.seal" : evidence.primaryActionSystemImage)
+                    .foregroundStyle(evidence.status.color)
+                    .frame(width: 15)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(evidence.title)
+                        .font(.caption.weight(.semibold))
+                    Text(evidence.reason)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 8)
+
+                Button {
+                    runPrimaryAction()
+                } label: {
+                    Label(evidence.primaryActionLabel, systemImage: evidence.primaryActionSystemImage)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+            }
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], alignment: .leading, spacing: 8) {
+                WorkflowMetric(label: "Missing", value: "\(evidence.missingServices.count)", tone: evidence.missingServices.isEmpty ? NexusPalette.success : NexusPalette.warning)
+                WorkflowMetric(label: "Mismatch", value: "\(evidence.branchMismatchServices.count)", tone: evidence.branchMismatchServices.isEmpty ? NexusPalette.success : NexusPalette.danger)
+                WorkflowMetric(label: "Sources", value: "\(evidence.missingSourceServices.count)", tone: evidence.missingSourceServices.isEmpty ? NexusPalette.success : NexusPalette.danger)
+                WorkflowMetric(label: "Script", value: evidence.setupScriptExists ? "yes" : "review", tone: evidence.setupScriptExists ? NexusPalette.success : NexusPalette.warning)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(evidence.checks) { check in
+                    WorktreeSetupCheckRow(check: check) { path in
+                        action(.open(path))
+                    }
+                }
+            }
+        }
+        .padding(9)
+        .background(evidence.status.color.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(evidence.status.color.opacity(0.14))
+        }
+    }
+
+    private func runPrimaryAction() {
+        switch evidence.primaryAction {
+        case .worktree:
+            action(.setup)
+        case .document("branches"):
+            action(.open(evidence.checks.first { $0.id == "target-branch" }?.path ?? ""))
+        case .document("services"):
+            action(.open(evidence.checks.first { $0.id == "source-repos" }?.path ?? ""))
+        case .document("worktreeScript"):
+            action(.open(evidence.setupScriptPath))
+        default:
+            action(.open(evidence.setupScriptPath))
+        }
+    }
+}
+
+private struct WorktreeSetupCheckRow: View {
+    let check: WorktreeSetupCheck
     let openDocument: (String) -> Void
 
     var body: some View {
@@ -4520,6 +4655,7 @@ private struct WorkspaceDetailMapView: View {
             demandReadiness: appState.demandIntakeReadiness(for: workspace),
             scopeFreeze: appState.scopeFreezeEvidence(for: workspace),
             serviceBranch: appState.serviceBranchEvidence(for: workspace),
+            worktreeSetup: appState.worktreeSetupEvidence(for: workspace),
             demandTaskTransfer: appState.demandTaskTransferPlan(for: workspace)
         )
     }
@@ -7059,6 +7195,7 @@ private struct WorkspaceCommandCenterView: View {
             demandReadiness: appState.demandIntakeReadiness(for: workspace),
             scopeFreeze: scopeFreezeEvidence,
             serviceBranch: serviceBranchEvidence,
+            worktreeSetup: worktreeSetupEvidence,
             demandTaskTransfer: appState.demandTaskTransferPlan(for: workspace)
         )
     }
@@ -7069,6 +7206,10 @@ private struct WorkspaceCommandCenterView: View {
 
     private var serviceBranchEvidence: ServiceBranchEvidence {
         appState.serviceBranchEvidence(for: workspace)
+    }
+
+    private var worktreeSetupEvidence: WorktreeSetupEvidence {
+        appState.worktreeSetupEvidence(for: workspace)
     }
 
     private var primaryStep: CommandCenterPrimaryStep {
@@ -7140,35 +7281,14 @@ private struct WorkspaceCommandCenterView: View {
     }
 
     private var worktreePathItem: CommandCenterPathItem {
-        if workspace.services.isEmpty {
-            return CommandCenterPathItem(
-                title: "Worktree",
-                detail: "等待服务范围",
-                status: .pending,
-                systemImage: "arrow.triangle.branch",
-                actionLabel: "打开服务",
-                action: .document("services")
-            )
-        }
-
-        if missingWorktreeCount > 0 {
-            return CommandCenterPathItem(
-                title: "Worktree",
-                detail: "缺 \(missingWorktreeCount) 个",
-                status: .review,
-                systemImage: "arrow.triangle.branch",
-                actionLabel: "创建 worktree",
-                action: .worktree
-            )
-        }
-
+        let evidence = worktreeSetupEvidence
         return CommandCenterPathItem(
             title: "Worktree",
-            detail: "已就绪",
-            status: .ready,
-            systemImage: "arrow.triangle.branch",
-            actionLabel: "打开脚本",
-            action: .document("worktreeScript")
+            detail: worktreePathDetail(evidence),
+            status: evidence.status,
+            systemImage: evidence.primaryActionSystemImage,
+            actionLabel: evidence.primaryActionLabel,
+            action: commandCenterAction(for: evidence.primaryAction)
         )
     }
 
@@ -7186,6 +7306,22 @@ private struct WorkspaceCommandCenterView: View {
             return "策略待记录"
         }
         return "\(workspace.services.count) 服务"
+    }
+
+    private func worktreePathDetail(_ evidence: WorktreeSetupEvidence) -> String {
+        if !evidence.branchConfirmed {
+            return "分支待确认"
+        }
+        if !evidence.missingSourceServices.isEmpty {
+            return "源仓库缺 \(evidence.missingSourceServices.count)"
+        }
+        if !evidence.branchMismatchServices.isEmpty {
+            return "分支不一致 \(evidence.branchMismatchServices.count)"
+        }
+        if !evidence.missingServices.isEmpty {
+            return "缺 \(evidence.missingServices.count) 个"
+        }
+        return "已就绪"
     }
 
     private var riskPathItem: CommandCenterPathItem {

@@ -1123,6 +1123,236 @@ struct ServiceBranchEvidence: Hashable {
     }
 }
 
+struct WorktreeSetupCheck: Hashable, Identifiable {
+    let id: String
+    let label: String
+    let detail: String
+    let status: WorkflowPathStatus
+    let systemImage: String
+    let path: String?
+}
+
+struct WorktreeSetupEvidence: Hashable {
+    let status: WorkflowPathStatus
+    let reason: String
+    let evidence: [String]
+    let checks: [WorktreeSetupCheck]
+    let setupScriptPath: String
+    let missingServices: [String]
+    let branchMismatchServices: [String]
+    let missingSourceServices: [String]
+    let branchConfirmed: Bool
+    let setupScriptExists: Bool
+
+    var ready: Bool {
+        status == .ready
+    }
+
+    var hasMissingWorktrees: Bool {
+        !missingServices.isEmpty
+    }
+
+    var title: String {
+        if !branchConfirmed {
+            return "确认目标分支 / Confirm branch"
+        }
+        if !missingSourceServices.isEmpty {
+            return "修正源仓库 / Source repos"
+        }
+        if !branchMismatchServices.isEmpty {
+            return "修正 worktree 分支 / Branch mismatch"
+        }
+        if !missingServices.isEmpty {
+            return "准备隔离 worktree / Setup worktrees"
+        }
+        return "Worktree 已就绪 / Worktrees ready"
+    }
+
+    var primaryActionLabel: String {
+        if !branchConfirmed {
+            return "打开分支"
+        }
+        if !missingSourceServices.isEmpty {
+            return "打开服务"
+        }
+        if !branchMismatchServices.isEmpty {
+            return "打开服务"
+        }
+        if !missingServices.isEmpty {
+            return "创建 worktree"
+        }
+        return setupScriptExists ? "打开脚本" : "打开服务"
+    }
+
+    var primaryActionSystemImage: String {
+        if !branchConfirmed || !branchMismatchServices.isEmpty {
+            return "arrow.triangle.branch"
+        }
+        if !missingSourceServices.isEmpty {
+            return "square.stack.3d.up"
+        }
+        if !missingServices.isEmpty {
+            return "wrench.and.screwdriver"
+        }
+        return setupScriptExists ? "terminal" : "checkmark.seal"
+    }
+
+    var primaryAction: WorkspaceMainStageAction {
+        if !branchConfirmed || !branchMismatchServices.isEmpty {
+            return .document("branches")
+        }
+        if !missingSourceServices.isEmpty {
+            return .document("services")
+        }
+        if !missingServices.isEmpty {
+            return .worktree
+        }
+        return setupScriptExists ? .document("worktreeScript") : .document("services")
+    }
+
+    static func resolve(workspace: WorkspaceSummary) -> WorktreeSetupEvidence {
+        let setupScriptPath = workspace.documentLinks["worktreeScript"]
+            ?? "\(workspace.path)/scripts/worktree-commands.sh"
+        let setupScriptExists = FileManager.default.fileExists(atPath: setupScriptPath)
+        let branchConfirmed = hasConfirmedTargetBranch(workspace.branch)
+        let missingServices = workspace.services
+            .filter { !$0.worktreeExists }
+            .map(\.name)
+        let missingSourceServices = workspace.services
+            .filter { !$0.sourceExists }
+            .map(\.name)
+        let branchMismatchServices: [String] = branchConfirmed
+            ? workspace.services.compactMap { service in
+                guard service.worktreeExists, !branchMatches(service.branch, target: workspace.branch) else {
+                    return nil
+                }
+                return "\(service.name)(\(service.branch))"
+            }
+            : []
+
+        let checks = [
+            WorktreeSetupCheck(
+                id: "target-branch",
+                label: "目标分支 / Branch",
+                detail: branchConfirmed ? "目标分支已确认：\(workspace.branch)。" : "目标分支仍未确认，不能创建 workspace-local worktree。",
+                status: branchConfirmed ? .ready : .blocked,
+                systemImage: "arrow.triangle.branch",
+                path: workspace.documentLinks["branches"] ?? "\(workspace.path)/branches.md"
+            ),
+            WorktreeSetupCheck(
+                id: "source-repos",
+                label: "源仓库 / Sources",
+                detail: missingSourceServices.isEmpty
+                    ? "已确认服务都有可用 source repo。"
+                    : "这些服务的 source repo 不可用：\(missingSourceServices.joined(separator: ", "))。",
+                status: missingSourceServices.isEmpty ? .ready : .blocked,
+                systemImage: missingSourceServices.isEmpty ? "externaldrive" : "externaldrive.badge.xmark",
+                path: workspace.documentLinks["services"] ?? "\(workspace.path)/services.md"
+            ),
+            WorktreeSetupCheck(
+                id: "workspace-worktrees",
+                label: "工作区 worktree / Worktrees",
+                detail: missingServices.isEmpty
+                    ? worktreeReadyDetail(workspace: workspace)
+                    : "缺失 \(missingServices.count) 个 workspace-local worktree：\(missingServices.joined(separator: ", "))。",
+                status: missingServices.isEmpty ? .ready : .next,
+                systemImage: missingServices.isEmpty ? "checkmark.circle" : "wrench.and.screwdriver",
+                path: setupScriptPath
+            ),
+            WorktreeSetupCheck(
+                id: "branch-alignment",
+                label: "分支一致 / Alignment",
+                detail: branchMismatchServices.isEmpty
+                    ? "已存在的 worktree 与目标分支一致，或尚待创建。"
+                    : "这些 worktree 不在目标分支：\(branchMismatchServices.joined(separator: ", "))。",
+                status: branchMismatchServices.isEmpty ? .ready : .blocked,
+                systemImage: branchMismatchServices.isEmpty ? "checkmark.circle" : "arrow.triangle.branch",
+                path: workspace.documentLinks["branches"] ?? "\(workspace.path)/branches.md"
+            ),
+            WorktreeSetupCheck(
+                id: "setup-script",
+                label: "创建脚本 / Commands",
+                detail: setupScriptExists
+                    ? "scripts/worktree-commands.sh 可用于复核预期命令；确认 sheet 也会列出执行计划。"
+                    : "暂未找到 scripts/worktree-commands.sh；确认 sheet 仍会展示将执行的 worktree 计划。",
+                status: setupScriptExists || missingServices.isEmpty ? .ready : .review,
+                systemImage: setupScriptExists ? "terminal" : "doc.badge.ellipsis",
+                path: setupScriptPath
+            )
+        ]
+
+        let blockers = checks.filter { $0.status == .blocked }
+        let reviews = checks.filter { $0.status == .review }
+        let resolvedStatus: WorkflowPathStatus
+        let reason: String
+        if !blockers.isEmpty {
+            resolvedStatus = .blocked
+            reason = blockers.map(\.detail).joined(separator: " ")
+        } else if !missingServices.isEmpty {
+            resolvedStatus = .next
+            reason = "\(missingServices.count) 个服务还没有 workspace-local worktree：\(missingServices.joined(separator: ", "))。先在确认 sheet 复核命令，再执行创建。"
+        } else if !reviews.isEmpty {
+            resolvedStatus = .review
+            reason = reviews.map(\.detail).joined(separator: " ")
+        } else {
+            resolvedStatus = .ready
+            reason = "确认服务均已有 workspace-local worktree，且已存在 worktree 的分支与目标分支一致。"
+        }
+
+        return WorktreeSetupEvidence(
+            status: resolvedStatus,
+            reason: reason,
+            evidence: ["repos/<service>", "source-repos/", "scripts/worktree-commands.sh"],
+            checks: checks,
+            setupScriptPath: setupScriptPath,
+            missingServices: missingServices,
+            branchMismatchServices: branchMismatchServices,
+            missingSourceServices: missingSourceServices,
+            branchConfirmed: branchConfirmed,
+            setupScriptExists: setupScriptExists
+        )
+    }
+
+    private static func hasConfirmedTargetBranch(_ branch: String) -> Bool {
+        let normalized = branch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return false }
+        return !normalized.contains("待确认")
+            && !normalized.contains("未确认")
+            && !normalized.contains("pending")
+            && !normalized.contains("tbd")
+            && !normalized.contains("todo")
+    }
+
+    private static func branchMatches(_ branch: String, target: String) -> Bool {
+        let normalizedBranch = normalizeBranch(branch)
+        let normalizedTarget = normalizeBranch(target)
+        guard !normalizedBranch.isEmpty, !normalizedTarget.isEmpty else {
+            return true
+        }
+        guard !normalizedBranch.contains("missing"),
+              !normalizedBranch.contains("待确认"),
+              !normalizedBranch.contains("pending") else {
+            return true
+        }
+        return normalizedBranch == normalizedTarget
+            || normalizedBranch.hasSuffix("/\(normalizedTarget)")
+    }
+
+    private static func normalizeBranch(_ branch: String) -> String {
+        branch
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "origin/", with: "")
+    }
+
+    private static func worktreeReadyDetail(workspace: WorkspaceSummary) -> String {
+        if workspace.services.isEmpty {
+            return "当前工作区没有需要创建的服务 worktree。"
+        }
+        return "\(workspace.services.count) 个服务均已有 workspace-local worktree。"
+    }
+}
+
 struct DemandTaskTransferItem: Identifiable, Hashable {
     let title: String
     let intakeStatus: String
@@ -2269,6 +2499,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
         demandReadiness: DemandIntakeReadinessEvidence? = nil,
         scopeFreeze: ScopeFreezeEvidence? = nil,
         serviceBranch: ServiceBranchEvidence? = nil,
+        worktreeSetup: WorktreeSetupEvidence? = nil,
         demandTaskTransfer: DemandTaskTransferPlan? = nil
     ) -> WorkspaceMainStage {
         if isArchived {
@@ -2330,17 +2561,17 @@ struct WorkspaceSummary: Identifiable, Hashable {
             )
         }
 
-        let missingWorktrees = services.filter { !$0.worktreeExists }
-        if !missingWorktrees.isEmpty {
+        let worktreeGate = worktreeSetup ?? WorktreeSetupEvidence.resolve(workspace: self)
+        if worktreeGate.status != .ready {
             return WorkspaceMainStage(
                 id: .worktreeSetup,
-                status: .next,
-                title: "准备隔离 worktree / Setup worktrees",
-                reason: "\(missingWorktrees.count) 个服务还没有 workspace-local worktree：\(missingWorktrees.map(\.name).joined(separator: ", "))。",
-                primaryActionLabel: "创建 worktree",
-                primaryActionSystemImage: "wrench.and.screwdriver",
-                primaryAction: .worktree,
-                evidence: compactEvidence("scripts/worktree-commands.sh", "repos/", "source-repos/"),
+                status: worktreeGate.status,
+                title: worktreeGate.title,
+                reason: worktreeGate.reason,
+                primaryActionLabel: worktreeGate.primaryActionLabel,
+                primaryActionSystemImage: worktreeGate.primaryActionSystemImage,
+                primaryAction: worktreeGate.primaryAction,
+                evidence: worktreeGate.evidence,
                 nextStageAllowed: false
             )
         }

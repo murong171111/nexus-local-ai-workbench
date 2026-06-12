@@ -607,6 +607,143 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertNotEqual(stage.id, .serviceBranchConfirm)
     }
 
+    func testWorktreeSetupEvidenceRoutesMissingWorktreesToSetup() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-worktree-missing-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("scripts"),
+            withIntermediateDirectories: true
+        )
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try "#!/usr/bin/env bash\n".write(
+            to: root.appendingPathComponent("scripts/worktree-commands.sh"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "worktree-missing",
+            path: root.path,
+            branch: "feature/worktree",
+            services: [
+                ServiceStatus(
+                    name: "order",
+                    branch: "feature/worktree",
+                    worktree: "missing",
+                    gitSummary: "source clean",
+                    worktreeExists: false,
+                    sourceExists: true
+                )
+            ]
+        )
+        let worktree = WorktreeSetupEvidence.resolve(workspace: workspace)
+        let stage = workspace.mainStage(
+            demandReadiness: readyDemandReadiness(),
+            scopeFreeze: readyScopeFreeze(),
+            serviceBranch: readyServiceBranch(for: workspace),
+            worktreeSetup: worktree
+        )
+
+        XCTAssertEqual(worktree.status, .next)
+        XCTAssertEqual(worktree.missingServices, ["order"])
+        XCTAssertTrue(worktree.branchMismatchServices.isEmpty)
+        XCTAssertEqual(stage.id, .worktreeSetup)
+        XCTAssertEqual(stage.primaryAction, .worktree)
+    }
+
+    func testWorktreeSetupEvidenceBlocksBranchMismatch() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "worktree-mismatch",
+            branch: "feature/worktree",
+            services: [
+                ServiceStatus(
+                    name: "order",
+                    branch: "dev",
+                    worktree: "ready",
+                    gitSummary: "clean",
+                    worktreeExists: true,
+                    sourceExists: true
+                )
+            ]
+        )
+        let worktree = WorktreeSetupEvidence.resolve(workspace: workspace)
+        let stage = workspace.mainStage(
+            demandReadiness: readyDemandReadiness(),
+            scopeFreeze: readyScopeFreeze(),
+            serviceBranch: readyServiceBranch(for: workspace),
+            worktreeSetup: worktree
+        )
+
+        XCTAssertEqual(worktree.status, .blocked)
+        XCTAssertEqual(worktree.branchMismatchServices, ["order(dev)"])
+        XCTAssertEqual(stage.id, .worktreeSetup)
+        XCTAssertEqual(stage.primaryAction, .document("branches"))
+    }
+
+    func testWorktreeSetupEvidenceBlocksMissingSourceRepos() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "worktree-source-missing",
+            branch: "feature/worktree",
+            services: [
+                ServiceStatus(
+                    name: "order",
+                    branch: "feature/worktree",
+                    worktree: "missing",
+                    gitSummary: "source missing",
+                    worktreeExists: false,
+                    sourceExists: false
+                )
+            ]
+        )
+        let worktree = WorktreeSetupEvidence.resolve(workspace: workspace)
+        let stage = workspace.mainStage(
+            demandReadiness: readyDemandReadiness(),
+            scopeFreeze: readyScopeFreeze(),
+            serviceBranch: readyServiceBranch(for: workspace),
+            worktreeSetup: worktree
+        )
+
+        XCTAssertEqual(worktree.status, .blocked)
+        XCTAssertEqual(worktree.missingSourceServices, ["order"])
+        XCTAssertEqual(stage.id, .worktreeSetup)
+        XCTAssertEqual(stage.primaryAction, .document("services"))
+    }
+
+    func testWorktreeSetupEvidenceAllowsReadyWorktreesPastSetupGate() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "worktree-ready",
+            branch: "feature/worktree",
+            services: [
+                ServiceStatus(
+                    name: "order",
+                    branch: "origin/feature/worktree",
+                    worktree: "ready",
+                    gitSummary: "clean",
+                    worktreeExists: true,
+                    sourceExists: true
+                )
+            ]
+        )
+        let worktree = WorktreeSetupEvidence.resolve(workspace: workspace)
+        let stage = workspace.mainStage(
+            demandReadiness: readyDemandReadiness(),
+            scopeFreeze: readyScopeFreeze(),
+            serviceBranch: readyServiceBranch(for: workspace),
+            worktreeSetup: worktree
+        )
+
+        XCTAssertEqual(worktree.status, .ready)
+        XCTAssertTrue(worktree.missingServices.isEmpty)
+        XCTAssertTrue(worktree.branchMismatchServices.isEmpty)
+        XCTAssertNotEqual(stage.id, .worktreeSetup)
+    }
+
     func testDemandTaskTransferPlanFindsNewIntakeTasksAndUpdatesMainStage() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-demand-task-transfer-\(UUID().uuidString)")
@@ -1502,6 +1639,21 @@ final class ModelBehaviorTests: XCTestCase {
             hasOutOfScope: true,
             scopeFrozen: true,
             unresolvedP0Count: 0
+        )
+    }
+
+    private func readyServiceBranch(for workspace: WorkspaceSummary) -> ServiceBranchEvidence {
+        ServiceBranchEvidence(
+            status: .ready,
+            reason: "ready",
+            evidence: ["services.md", "branches.md"],
+            checks: [],
+            servicesPath: "\(workspace.path)/services.md",
+            branchesPath: "\(workspace.path)/branches.md",
+            branchConfirmed: true,
+            servicesConfirmed: true,
+            branchPolicyRecorded: true,
+            missingSourceServices: []
         )
     }
 

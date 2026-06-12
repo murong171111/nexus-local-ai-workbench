@@ -207,6 +207,8 @@ Blocked when:
 
 Native M1 UI:
 
+- a worktree setup evidence card explains missing worktrees, branch mismatches, source repo availability, and setup command visibility
+- Command Center worktree step uses the same evidence instead of only counting missing worktrees
 - setup sheet lists service, source path, target path, target branch, and expected command
 - result distinguishes created, skipped, and failed
 - failed services can be retried individually in later slices
@@ -352,7 +354,7 @@ The current Native shell already has enough structure to receive the M1 workflow
 - Documents: `WorkspaceDocumentsHubView` already opens standard workspace documents and scanned SQL artifacts with preview/source behavior.
 - Demand intake: `WorkspaceDemandIntakeView` already initializes and opens the fixed `需求/` archive files, and the Native shell now reads `需求/*.md` for requirement content, unresolved P0 questions, visible scope status, and requirement-task readiness.
 - Service/branch: `ServiceBranchEvidence` now reads the Swift workspace summary and Markdown paths to gate target branch, service scope, source repo availability, and branch policy before worktree setup.
-- Git/worktree: `ServiceGitStatusSectionView` and `WorktreeSetupSheet` already expose service-level status and confirmed worktree setup.
+- Git/worktree: `WorktreeSetupEvidence` gates the handoff from service/branch confirmation into development, while `ServiceGitStatusSectionView` and `WorktreeSetupSheet` expose service-level status, evidence, and confirmed worktree setup.
 
 M1 should refine these surfaces around a single Swift-owned stage model before splitting files aggressively.
 
