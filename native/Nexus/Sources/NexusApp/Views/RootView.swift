@@ -6393,6 +6393,11 @@ private struct ScopeFreezePreview: View {
                 WorkflowMetric(label: "Out", value: evidence.hasOutOfScope ? "ready" : "draft", tone: evidence.hasOutOfScope ? NexusPalette.success : NexusPalette.warning)
                 WorkflowMetric(label: "P0", value: "\(evidence.unresolvedP0Count)", tone: evidence.unresolvedP0Count == 0 ? NexusPalette.success : NexusPalette.danger)
                 WorkflowMetric(label: "Freeze", value: evidence.scopeFrozen ? "yes" : "no", tone: evidence.scopeFrozen ? NexusPalette.success : NexusPalette.danger)
+                WorkflowMetric(
+                    label: "Change",
+                    value: evidence.scopeChangeDeclared ? (evidence.scopeChangeAudited ? "logged" : "review") : "none",
+                    tone: evidence.scopeChangeAudited ? NexusPalette.success : NexusPalette.warning
+                )
             }
 
             VStack(alignment: .leading, spacing: 8) {

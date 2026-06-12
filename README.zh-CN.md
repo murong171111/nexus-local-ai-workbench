@@ -11,7 +11,7 @@ Nexus 是一个面向 macOS 的本地 AI 开发工作台，用来管理需求工
 - 基于 Tauri、React、TailwindCSS 构建的原生 macOS 应用，并包含 Swift WidgetKit 小组件源码。
 - 以工作区卡片展示需求目录、分支、服务范围、风险等级、最近活动和 worktree 状态。
 - 支持在应用内创建符合 `ks-project-demand-workspace` 约定的需求工作区，包含源仓库扫描、服务勾选、手动补充、创建前预检、创建确认摘要和创建后的下一步引导。
-- 支持在工作区详情中执行 `需求预检`：检查或初始化固定 `需求/` 目录，生成 `requirement.md`、`questions.md`、`scope.md`、`tasks.md` 和 `delivery.md`，并复制 `$lanhu-demand-intake` Codex 预检提示词。原生壳会读取这些 Markdown，检查需求内容、未解决 P0、scope 状态和真实需求任务，并通过独立的范围冻结门禁检查本次实现、不实现、待确认 P0 和冻结标记，确认后可把真实需求行转入根 `tasks.md`；Nexus 仍不直接解析蓝湖或调用 AI。
+- 支持在工作区详情中执行 `需求预检`：检查或初始化固定 `需求/` 目录，生成 `requirement.md`、`questions.md`、`scope.md`、`tasks.md` 和 `delivery.md`，并复制 `$lanhu-demand-intake` Codex 预检提示词。原生壳会读取这些 Markdown，检查需求内容、未解决 P0、scope 状态和真实需求任务，并通过独立的范围冻结门禁检查本次实现、不实现、待确认 P0、冻结标记，以及范围变更是否记录原因和影响，确认后可把真实需求行转入根 `tasks.md`；Nexus 仍不直接解析蓝湖或调用 AI。
 - 原生服务/分支确认门禁会检查 `services.md`、`branches.md`、工作区服务行、源仓库可用性和分支策略，确认后才进入 worktree 准备。
 - 原生 worktree 准备证据会检查缺失的 workspace-local worktree、分支不一致、源仓库可用性和创建命令可见性，确认这些证据后才继续进入开发。
 - 原生开发任务证据会坚持 root `tasks.md` 是执行任务源，自动选择下一条活跃任务，阻塞未解决的任务 blocker，并能从主流程或 Command Center 直接打开任务行定位。
@@ -141,7 +141,7 @@ Nexus 默认识别每个需求工作区下的 Markdown 文档和本地 worktree 
 
 创建前会展示目标路径、分支、服务范围摘要，并要求确认本地写入。预检会提前标出会导致创建失败的阻塞项，例如工作区根目录为空、根路径不是目录、目录名非法或目标目录已存在；服务范围待确认、目标分支待确认、环境检查未运行或部分服务未在源仓库扫描中出现，会显示为 review 项，不阻止先建档。创建动作会写入标准 Markdown 文档，并把选中的服务记录到 `services.md` 和 `branches.md`。同时会生成 `bootstrap-report.md`、`scripts/worktree-commands.sh`，写入一条本地审计事件，并返回初始化回执，用来确认标准文件、目录、初始 `STATUS.md`、服务范围、目标分支和 worktree 准备状态。
 
-创建完成后，Nexus 会自动选中新工作区、清理旧的文档预览，并在右侧详情中展示下一步清单。第一步建议先在 `需求预检` 区块初始化 `需求/`，填写需求名称、蓝湖链接和补充说明，复制 `$lanhu-demand-intake` 提示词给 Codex 整理 `requirement.md`、`questions.md`，并在 `需求/tasks.md` 建立未完成需求列表。原生壳会检查整理后的 Markdown 是否已经包含非占位需求内容、P0 是否清零，以及 `需求/tasks.md` 是否有真实需求点。下一道原生门禁是 `范围冻结`，它会读取 `需求/scope.md` 中本次实现、暂不实现、待确认 P0 和冻结标记。当 `需求/tasks.md` 中已经有真实需求行时，Nexus 可以在明确确认后把它们转入根 `tasks.md`；任务中心和交付门禁仍以根 `tasks.md` 为准。Nexus 不会自动解析蓝湖，也不会直接调用 AI；真正的需求理解和问题分级仍由后续 Codex 会话完成。
+创建完成后，Nexus 会自动选中新工作区、清理旧的文档预览，并在右侧详情中展示下一步清单。第一步建议先在 `需求预检` 区块初始化 `需求/`，填写需求名称、蓝湖链接和补充说明，复制 `$lanhu-demand-intake` 提示词给 Codex 整理 `requirement.md`、`questions.md`，并在 `需求/tasks.md` 建立未完成需求列表。原生壳会检查整理后的 Markdown 是否已经包含非占位需求内容、P0 是否清零，以及 `需求/tasks.md` 是否有真实需求点。下一道原生门禁是 `范围冻结`，它会读取 `需求/scope.md` 中本次实现、暂不实现、待确认 P0、冻结标记和范围变更记录；如果文档提到范围变更，但缺少变更原因或影响服务/任务/SQL/交付说明，会进入复核状态。当 `需求/tasks.md` 中已经有真实需求行时，Nexus 可以在明确确认后把它们转入根 `tasks.md`；任务中心和交付门禁仍以根 `tasks.md` 为准。Nexus 不会自动解析蓝湖，也不会直接调用 AI；真正的需求理解和问题分级仍由后续 Codex 会话完成。
 
 完成需求预检并冻结 `需求/scope.md` 后，再继续确认服务范围、目标分支、worktree、`handoff.md` 和首次本地检查。原生服务/分支门禁会解释 `services.md`、`branches.md`、source repo 和分支策略是否就绪，待确认服务或分支会直接打开对应文档，服务和分支已确认后才进入 worktree 创建流程。
 

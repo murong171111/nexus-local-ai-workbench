@@ -1376,6 +1376,8 @@ struct ScopeFreezeEvidence: Hashable {
     let hasInScope: Bool
     let hasOutOfScope: Bool
     let scopeFrozen: Bool
+    let scopeChangeDeclared: Bool
+    let scopeChangeAudited: Bool
     let unresolvedP0Count: Int
 
     var ready: Bool {
@@ -1406,6 +1408,8 @@ struct ScopeFreezeEvidence: Hashable {
                 hasInScope: false,
                 hasOutOfScope: false,
                 scopeFrozen: false,
+                scopeChangeDeclared: false,
+                scopeChangeAudited: false,
                 unresolvedP0Count: 0
             )
         }
@@ -1420,6 +1424,8 @@ struct ScopeFreezeEvidence: Hashable {
         )
         let pendingP0Items = unresolvedPendingP0Items(in: text)
         let scopeFrozen = isScopeFrozen(text)
+        let scopeChangeDeclared = declaresScopeChange(text)
+        let scopeChangeAudited = !scopeChangeDeclared || hasScopeChangeAudit(text)
 
         let checks = [
             ScopeFreezeCheck(
@@ -1453,6 +1459,18 @@ struct ScopeFreezeEvidence: Hashable {
                 status: scopeFrozen ? .ready : .blocked,
                 systemImage: "scope",
                 path: scopePath
+            ),
+            ScopeFreezeCheck(
+                id: "scope-change-audit",
+                label: "变更记录 / Change",
+                detail: scopeChangeDeclared
+                    ? (scopeChangeAudited
+                        ? "scope.md 已记录范围变更，并包含原因和影响说明。"
+                        : "scope.md 提到范围变更，但缺少原因或影响说明。")
+                    : "未发现范围变更声明；当前冻结范围无需额外变更记录。",
+                status: scopeChangeAudited ? .ready : .review,
+                systemImage: scopeChangeAudited ? "clock.arrow.circlepath" : "exclamationmark.arrow.triangle.2.circlepath",
+                path: scopePath
             )
         ]
 
@@ -1480,6 +1498,8 @@ struct ScopeFreezeEvidence: Hashable {
             hasInScope: hasInScope,
             hasOutOfScope: hasOutOfScope,
             scopeFrozen: scopeFrozen,
+            scopeChangeDeclared: scopeChangeDeclared,
+            scopeChangeAudited: scopeChangeAudited,
             unresolvedP0Count: pendingP0Items.count
         )
     }
@@ -1547,6 +1567,31 @@ struct ScopeFreezeEvidence: Hashable {
             }
             return lowercased.contains("scope frozen")
         }
+    }
+
+    private static func declaresScopeChange(_ text: String) -> Bool {
+        let normalized = text.lowercased()
+        let markers = [
+            "范围变更",
+            "范围变化",
+            "范围调整",
+            "范围追加",
+            "追加范围",
+            "新增范围",
+            "scope change",
+            "scope changed",
+            "change request"
+        ]
+        return markers.contains { normalized.contains($0.lowercased()) }
+    }
+
+    private static func hasScopeChangeAudit(_ text: String) -> Bool {
+        let normalized = text.lowercased()
+        let reasonMarkers = ["原因", "为什么", "背景", "reason", "rationale", "why"]
+        let impactMarkers = ["影响", "涉及服务", "影响服务", "任务", "sql", "交付", "impact", "affected", "service", "task"]
+        let hasReason = reasonMarkers.contains { normalized.contains($0.lowercased()) }
+        let hasImpact = impactMarkers.contains { normalized.contains($0.lowercased()) }
+        return hasReason && hasImpact
     }
 
     private static func placeholderOnly(_ line: String) -> Bool {

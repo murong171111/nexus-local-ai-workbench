@@ -124,6 +124,7 @@ Readiness:
 
 - scope includes "in", "out", and "pending" sections
 - pending P0 scope items are empty or explicitly deferred
+- declared scope changes include reason and affected service/task/SQL/delivery impact
 - impacted services are confirmed or marked as intentionally unknown
 - target branch strategy is confirmed or marked pending with a blocker
 
@@ -422,7 +423,7 @@ Plan:
 
 - Keep fixed `需求/` initialization.
 - Add readiness fields for P0 questions, scope status, and task transfer. `[started with Swift-owned Markdown evidence for requirement content, P0, visible scope status, and intake task rows]`
-- Add Swift-owned Scope Freeze evidence for `需求/scope.md` in-scope, out-of-scope, pending P0, and freeze marker checks. `[started]`
+- Add Swift-owned Scope Freeze evidence for `需求/scope.md` in-scope, out-of-scope, pending P0, freeze marker, and audited scope-change checks. `[started]`
 - Add "transfer requirement tasks" as a confirmed write action. `[started with Swift-owned transfer from 需求/tasks.md to root tasks.md, skipping existing, template, completed, and deferred rows]`
 - Keep AI invocation out of Nexus M1.
 

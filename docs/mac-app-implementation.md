@@ -46,6 +46,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Routed native SQL readiness actions to SQL artifact review when artifacts exist, or to the SQL-aware delivery handoff when formal/rollback SQL is missing.
 - Added native Workflow validation/PR handoff with local checks, delivery, SQL, tasks, services/worktrees, PR summary requirements, clipboard feedback, and local audit logging.
 - Added SQL artifact enforcement so delivery records that declare SQL changes anywhere in the Markdown, including SQL-section change metadata, require both formal SQL and rollback SQL files under `sql/`.
+- Added native scope-change audit evidence so `需求/scope.md` scope changes must include reason and affected service/task/SQL/delivery impact before the scope-freeze gate is ready.
 - Added native archive gate evidence in Command Center and Workflow; archive now reuses delivery hard checks and routes entering delivery, marking done, or archiving through confirmed lifecycle writeback.
 - Added native local-write feedback after task and lifecycle writebacks, including source-document review and follow-up check actions.
 - Added affected-workspace focus from native local-write feedback so task-center writebacks can return users to the refreshed workspace detail.
