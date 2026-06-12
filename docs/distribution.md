@@ -65,6 +65,7 @@ src-tauri/target/release/bundle/dmg/Nexus_0.1.0_aarch64.dmg
   - SQL readiness blocks delivery when `交付记录.md` declares SQL changes anywhere in the document, including SQL-section change metadata such as `变更类型：DDL/DML` or affected tables, but `sql/` does not contain both formal SQL and rollback SQL files.
   - Scope freeze readiness now treats declared scope changes as review items unless `需求/scope.md` records both the change reason and affected service/task/SQL/delivery impact.
   - Workflow starts with a delivery focus card that routes the next action to branch/service documents, worktree setup, task review, risk handoff, delivery records, local checks, Codex, lifecycle confirmation, or post-done PR/CI review.
+  - Development task evidence shows a task plan that marks blockers, the current task, queued tasks, and closed/deferred tasks with writeback guidance.
   - Task status and lifecycle writebacks show a dismissible local-write feedback card with affected-workspace focus, source-document review, and follow-up check actions; the compact action layout wraps cleanly in the inspector.
   - Task Center shows the latest `tasks.md` writeback result with affected-workspace focus and source-document actions after task status changes.
   - Task Center and workspace task rows show task source lines and can locate the owning `tasks.md` row before status changes or Codex handoff.

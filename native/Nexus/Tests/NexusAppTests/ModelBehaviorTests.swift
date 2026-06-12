@@ -1053,6 +1053,9 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(evidence.status, .next)
         XCTAssertEqual(evidence.nextTask?.id, "first-high")
         XCTAssertEqual(evidence.taskValue, "开 3")
+        XCTAssertEqual(evidence.taskPlan.map(\.action), [.continueTask, .queued, .queued])
+        XCTAssertEqual(evidence.taskPlan.first?.taskID, "first-high")
+        XCTAssertTrue(evidence.taskPlan.first?.writebackHint.contains("已完成") ?? false)
         XCTAssertEqual(stage.id, .development)
         XCTAssertEqual(stage.primaryAction, .task("first-high"))
         XCTAssertTrue(stage.reason.contains("Implement first high priority task"))
@@ -1096,6 +1099,9 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertEqual(evidence.status, .blocked)
         XCTAssertEqual(evidence.blockedTasks.map(\.id), ["blocked-task"])
+        XCTAssertEqual(evidence.taskPlan.map(\.action), [.resolveBlocker, .queued])
+        XCTAssertEqual(evidence.taskPlan.first?.taskID, "blocked-task")
+        XCTAssertTrue(evidence.taskPlan.first?.reason.contains("阻塞") ?? false)
         XCTAssertEqual(stage.id, .development)
         XCTAssertEqual(stage.status, .blocked)
         XCTAssertEqual(stage.primaryAction, .task("blocked-task"))
@@ -1141,6 +1147,8 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertNil(evidence.nextTask)
         XCTAssertEqual(evidence.doneTaskCount, 1)
         XCTAssertEqual(evidence.deferredTaskCount, 1)
+        XCTAssertEqual(evidence.taskPlan.map(\.action), [.closed, .closed])
+        XCTAssertTrue(evidence.taskPlan.contains { $0.writebackHint.contains("无需写回") })
         XCTAssertEqual(stage.id, .deliveryCheck)
     }
 

@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Added
 
+- Native development-task evidence now includes a Swift-owned task plan that classifies each task as resolve blocker, continue, queued, or closed with writeback guidance.
 - Native worktree setup results now classify failed services into recovery actions such as source repo fixes, branch/fetch review, branch occupancy, or worktree command review, and include those actions in the Codex handoff.
 - Native worktree setup evidence now includes a Swift-owned service-level setup plan that marks each service as create, skip, or blocked with target path, branch, and reason before confirmation.
 - Native service/branch evidence now detects services that report the target branch or remote ref as unavailable, keeping that blocker in the service/branch gate before worktree setup.
