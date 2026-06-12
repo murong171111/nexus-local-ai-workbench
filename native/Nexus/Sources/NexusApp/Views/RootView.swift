@@ -9432,6 +9432,10 @@ private struct WorkflowStatusView: View {
         appState.archiveGateEvidence(for: workspace)
     }
 
+    private var validationPrEvidence: ValidationPrEvidence {
+        ValidationPrEvidence.resolve(workspace: workspace, deliveryGate: deliveryGate)
+    }
+
     private var blockedTasks: [WorkspaceTask] {
         openTasks.filter(\.isBlocked)
     }
@@ -9929,6 +9933,10 @@ private struct WorkflowStatusView: View {
                     runDeliveryGateAction(action)
                 }
 
+                ValidationPrEvidenceCardView(evidence: validationPrEvidence) { action in
+                    runDeliveryGateAction(action)
+                }
+
                 ArchiveGateEvidenceCardView(evidence: archiveGate) { action in
                     runDeliveryGateAction(action)
                 }
@@ -10017,13 +10025,6 @@ private struct WorkflowStatusView: View {
                     items: readinessItems,
                     actionLabel: readinessActionLabel(for:),
                     action: runReadinessAction(for:)
-                )
-
-                ValidationPrHandoffView(
-                    localCheckStatus: appState.lastAutomationCheck?.status,
-                    lifecycleStage: workspace.lifecycle.label,
-                    hasOpenTasks: !openTasks.isEmpty,
-                    hasRisks: !workspace.risks.isEmpty
                 )
 
                 if let lifecycleRecommendation {
@@ -10527,58 +10528,115 @@ private struct DeliveryReadinessGroupView: View {
     }
 }
 
-private struct ValidationPrHandoffView: View {
-    let localCheckStatus: String?
-    let lifecycleStage: String
-    let hasOpenTasks: Bool
-    let hasRisks: Bool
-
-    private var statusTone: Color {
-        guard let status = localCheckStatus?.lowercased() else {
-            return NexusPalette.warning
-        }
-        if status.contains("attention") || status.contains("fail") {
-            return NexusPalette.danger
-        }
-        if status.contains("review") || hasOpenTasks || hasRisks {
-            return NexusPalette.warning
-        }
-        return NexusPalette.success
-    }
-
-    private var checkValue: String {
-        guard let localCheckStatus, !localCheckStatus.isEmpty else {
-            return "none"
-        }
-        return localCheckStatus
-    }
+private struct ValidationPrEvidenceCardView: View {
+    let evidence: ValidationPrEvidence
+    let action: (WorkspaceMainStageAction) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 9) {
-                Image(systemName: "checkmark.seal")
-                    .foregroundStyle(statusTone)
-                    .frame(width: 15)
+                Image(systemName: evidence.primaryActionSystemImage)
+                    .foregroundStyle(evidence.status.color)
+                    .frame(width: 16)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("验证与 PR / Validation & PR")
-                        .font(.subheadline.weight(.medium))
-                    Text("交付记录整理后，把本地检查、任务、SQL、服务状态和 PR 待确认项作为一份上下文交给 Codex。")
+                    Text(evidence.title)
+                        .font(.subheadline.weight(.semibold))
+                    Text(evidence.reason)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+
+                Spacer(minLength: 8)
+
+                Button {
+                    action(evidence.primaryAction)
+                } label: {
+                    Label(evidence.primaryActionLabel, systemImage: evidence.primaryActionSystemImage)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
 
-            HStack(spacing: 8) {
-                WorkflowMetric(label: "Local check", value: checkValue, tone: statusTone)
-                WorkflowMetric(label: "Lifecycle", value: lifecycleStage, tone: NexusPalette.accent)
-                WorkflowMetric(label: "PR/CI", value: "handoff", tone: NexusPalette.warning)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], alignment: .leading, spacing: 8) {
+                WorkflowMetric(label: "Validation", value: evidence.value, tone: evidence.status.color)
+                WorkflowMetric(label: "Review", value: "\(evidence.reviewCount)", tone: evidence.reviewCount == 0 ? NexusPalette.success : NexusPalette.warning)
+                WorkflowMetric(label: "Checks", value: "\(evidence.checks.count)", tone: evidence.ready ? NexusPalette.success : NexusPalette.accent)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(evidence.checks) { check in
+                    ValidationPrCheckRow(check: check) {
+                        action(check.action)
+                    }
+                }
             }
         }
         .padding(10)
-        .background(NexusPalette.badge)
+        .background(evidence.status.color.opacity(0.06))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(evidence.status.color.opacity(0.14))
+        }
+    }
+}
+
+private struct ValidationPrCheckRow: View {
+    let check: ValidationPrCheck
+    let action: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: check.systemImage)
+                .foregroundStyle(check.status.color)
+                .frame(width: 14)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(check.label)
+                        .font(.caption2.weight(.semibold))
+                    Text(check.status.displayLabel)
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(check.status.color)
+                }
+                Text(check.detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 8)
+
+            Button(action: action) {
+                Image(systemName: rowActionImage)
+            }
+            .buttonStyle(.borderless)
+            .help("处理验证/PR 项 / Handle validation and PR item")
+        }
+        .padding(8)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+
+    private var rowActionImage: String {
+        switch check.action {
+        case .lifecycle(let transition):
+            return transition.systemImage
+        case .localCheck:
+            return "checklist"
+        case .riskPrompt, .deliveryHandoff, .validationHandoff, .codex:
+            return "point.3.connected.trianglepath.dotted"
+        case .worktree:
+            return "wrench.and.screwdriver"
+        case .task:
+            return "text.line.first.and.arrowtriangle.forward"
+        case .document(let key):
+            return key == "tasks" ? "checklist" : "doc.text"
+        case .path, .demandIntake, .transferDemandTasks:
+            return "doc.text"
+        }
     }
 }
 

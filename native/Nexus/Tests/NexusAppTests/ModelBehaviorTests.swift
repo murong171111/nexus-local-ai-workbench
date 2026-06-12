@@ -1405,6 +1405,82 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(stage.primaryAction, .document("handoff"))
     }
 
+    func testValidationPrEvidenceWaitsForDeliveryGate() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "validation-delivery-pending"
+        )
+        let delivery = DeliveryGateEvidence.resolve(workspace: workspace)
+        let validation = ValidationPrEvidence.resolve(workspace: workspace, deliveryGate: delivery)
+
+        XCTAssertEqual(delivery.status, .pending)
+        XCTAssertEqual(validation.status, .pending)
+        XCTAssertEqual(validation.primaryAction, .localCheck)
+        XCTAssertEqual(validation.checks.map(\.id), ["delivery-gate"])
+        XCTAssertTrue(validation.reason.contains("交付记录"))
+    }
+
+    func testValidationPrEvidencePromptsDoneWorkspaceWithoutPrCiEvidence() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "done",
+            id: "validation-pr-review",
+            healthChecks: [
+                WorkspaceHealthCheck(id: "delivery-record", label: "交付记录", detail: "交付记录可用", status: "pass", action: "delivery"),
+                WorkspaceHealthCheck(id: "sql-directory", label: "SQL", detail: "未声明 SQL 变更。", status: "pass", action: "sql")
+            ]
+        )
+        let delivery = DeliveryGateEvidence.resolve(workspace: workspace)
+        let validation = ValidationPrEvidence.resolve(workspace: workspace, deliveryGate: delivery)
+
+        XCTAssertEqual(delivery.status, .ready)
+        XCTAssertEqual(validation.status, .review)
+        XCTAssertEqual(validation.primaryAction, .validationHandoff)
+        XCTAssertEqual(validation.checks.first(where: { $0.id == "pr-ci" })?.status, .review)
+        XCTAssertTrue(validation.reason.contains("PR"))
+    }
+
+    func testValidationPrEvidenceReadyWhenDoneHasPrCiEvidence() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "done",
+            id: "validation-pr-ready",
+            healthChecks: [
+                WorkspaceHealthCheck(id: "delivery-record", label: "交付记录", detail: "交付记录可用", status: "pass", action: "delivery"),
+                WorkspaceHealthCheck(id: "sql-directory", label: "SQL", detail: "未声明 SQL 变更。", status: "pass", action: "sql")
+            ],
+            activities: [
+                ActivityEvent(time: "10:42", title: "PR #182 merged", detail: "CI passed and validation passed")
+            ]
+        )
+        let validation = ValidationPrEvidence.resolve(
+            workspace: workspace,
+            deliveryGate: DeliveryGateEvidence.resolve(workspace: workspace)
+        )
+
+        XCTAssertEqual(validation.status, .ready)
+        XCTAssertEqual(validation.primaryAction, .document("delivery"))
+        XCTAssertEqual(validation.checks.first(where: { $0.id == "pr-ci" })?.status, .ready)
+        XCTAssertEqual(validation.reviewCount, 0)
+    }
+
+    func testValidationPrEvidenceRoutesDeliveryWorkspaceToDoneWriteback() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "delivery",
+            id: "validation-mark-done",
+            healthChecks: [
+                WorkspaceHealthCheck(id: "delivery-record", label: "交付记录", detail: "交付记录可用", status: "pass", action: "delivery"),
+                WorkspaceHealthCheck(id: "sql-directory", label: "SQL", detail: "未声明 SQL 变更。", status: "pass", action: "sql")
+            ]
+        )
+        let validation = ValidationPrEvidence.resolve(
+            workspace: workspace,
+            deliveryGate: DeliveryGateEvidence.resolve(workspace: workspace)
+        )
+
+        XCTAssertEqual(validation.status, .next)
+        XCTAssertEqual(validation.primaryAction, .lifecycle(.done))
+        XCTAssertEqual(validation.checks.first(where: { $0.id == "lifecycle" })?.status, .next)
+    }
+
     func testDemandTaskTransferPlanFindsNewIntakeTasksAndUpdatesMainStage() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-demand-task-transfer-\(UUID().uuidString)")
@@ -2225,6 +2301,7 @@ final class ModelBehaviorTests: XCTestCase {
         branch: String = "feature/workflow-summary",
         riskLevel: RiskLevel? = nil,
         healthChecks: [WorkspaceHealthCheck] = [],
+        activities: [ActivityEvent] = [],
         risks: [RiskAlert] = [],
         sqlFiles: [WorkspaceSqlFile] = [],
         sessionActions: [WorkspaceSessionAction] = [],
@@ -2250,7 +2327,7 @@ final class ModelBehaviorTests: XCTestCase {
             services: services ?? [
                 ServiceStatus(name: "order", branch: "feature/workflow-summary", worktree: "ready", gitSummary: "clean", worktreeExists: true, sourceExists: true)
             ],
-            activities: [],
+            activities: activities,
             risks: risks,
             healthChecks: healthChecks,
             sessionActions: sessionActions,

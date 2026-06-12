@@ -1177,6 +1177,371 @@ struct ArchiveGateEvidence: Hashable {
     }
 }
 
+struct ValidationPrCheck: Hashable, Identifiable {
+    let id: String
+    let label: String
+    let detail: String
+    let status: WorkflowPathStatus
+    let systemImage: String
+    let path: String?
+    let action: WorkspaceMainStageAction
+}
+
+struct ValidationPrEvidence: Hashable {
+    let status: WorkflowPathStatus
+    let title: String
+    let reason: String
+    let value: String
+    let checks: [ValidationPrCheck]
+    let primaryActionLabel: String
+    let primaryActionSystemImage: String
+    let primaryAction: WorkspaceMainStageAction
+    let reviewCount: Int
+
+    var ready: Bool {
+        status == .ready || status == .archived
+    }
+
+    static func resolve(
+        workspace: WorkspaceSummary,
+        deliveryGate: DeliveryGateEvidence? = nil
+    ) -> ValidationPrEvidence {
+        if workspace.isArchived {
+            return ValidationPrEvidence(
+                status: .archived,
+                title: "已归档 / Archived",
+                reason: "这个工作区已退出活跃交付流。验证、PR 和归档上下文以交付记录与 handoff 为准。",
+                value: "已归档",
+                checks: [],
+                primaryActionLabel: "查看交接",
+                primaryActionSystemImage: "doc.text",
+                primaryAction: .document("handoff"),
+                reviewCount: 0
+            )
+        }
+
+        let delivery = deliveryGate ?? DeliveryGateEvidence.resolve(workspace: workspace)
+        if delivery.status != .ready {
+            return ValidationPrEvidence(
+                status: delivery.status,
+                title: "先完成交付检查 / Finish delivery first",
+                reason: delivery.reason,
+                value: delivery.value,
+                checks: [
+                    ValidationPrCheck(
+                        id: "delivery-gate",
+                        label: "交付门禁 / Delivery",
+                        detail: delivery.reason,
+                        status: delivery.status,
+                        systemImage: delivery.primaryActionSystemImage,
+                        path: workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md",
+                        action: delivery.primaryAction
+                    )
+                ],
+                primaryActionLabel: delivery.primaryActionLabel,
+                primaryActionSystemImage: delivery.primaryActionSystemImage,
+                primaryAction: delivery.primaryAction,
+                reviewCount: delivery.warningCount + delivery.blockerCount
+            )
+        }
+
+        let checks = validationChecks(workspace: workspace, deliveryGate: delivery)
+        let blockers = checks.filter { $0.status == .blocked }
+        let reviews = checks.filter { $0.status == .review || $0.status == .pending || $0.status == .next }
+        let lifecycleStage = workspace.lifecycle.stage.lowercased()
+        let hasPrEvidence = hasPrCiEvidence(workspace: workspace)
+
+        let status: WorkflowPathStatus
+        let title: String
+        let value: String
+        let primaryAction: WorkspaceMainStageAction
+        let reason: String
+
+        if !blockers.isEmpty {
+            status = .blocked
+            title = "验证前仍有阻塞 / Validation blocked"
+            value = "阻 \(blockers.count)"
+            primaryAction = blockers.first?.action ?? .validationHandoff
+            reason = blockers.first?.detail ?? "验证前仍有阻塞项。"
+        } else if lifecycleStage == "delivery" {
+            status = .next
+            title = "准备标记完成 / Mark done"
+            value = "待完成"
+            primaryAction = .lifecycle(.done)
+            reason = "交付检查已通过。先确认验证与 PR 交接上下文，再把生命周期标记为完成。"
+        } else if lifecycleStage == "done", hasPrEvidence, reviews.isEmpty {
+            status = .ready
+            title = "验证证据可用 / Validation ready"
+            value = "可归档"
+            primaryAction = .document("delivery")
+            reason = "生命周期已完成，且已发现 PR/CI、验证或发布相关证据。可以复查交付记录后归档。"
+        } else if lifecycleStage == "done" {
+            status = .review
+            title = "补充 PR/CI 结论 / PR and CI review"
+            value = "待复核"
+            primaryAction = .validationHandoff
+            reason = "生命周期已完成，但 PR、CI、发布或遗留风险结论仍建议补到交付记录或交接上下文中。"
+        } else {
+            status = .next
+            title = "准备交付完成 / Prepare completion"
+            value = "待完成"
+            primaryAction = .lifecycle(.delivery)
+            reason = "交付检查已通过，但生命周期尚未进入完成阶段。先进入交付整理，再准备验证与 PR 交接。"
+        }
+
+        return ValidationPrEvidence(
+            status: status,
+            title: title,
+            reason: reason,
+            value: value,
+            checks: checks,
+            primaryActionLabel: actionLabel(for: primaryAction, status: status),
+            primaryActionSystemImage: actionSystemImage(for: primaryAction, status: status),
+            primaryAction: primaryAction,
+            reviewCount: blockers.count + reviews.count
+        )
+    }
+
+    private static func validationChecks(
+        workspace: WorkspaceSummary,
+        deliveryGate: DeliveryGateEvidence
+    ) -> [ValidationPrCheck] {
+        [
+            localCheck(workspace: workspace),
+            deliveryCheck(workspace: workspace, deliveryGate: deliveryGate),
+            taskRiskCheck(workspace: workspace),
+            prCiCheck(workspace: workspace),
+            lifecycleCheck(workspace: workspace)
+        ]
+    }
+
+    private static func localCheck(workspace: WorkspaceSummary) -> ValidationPrCheck {
+        let hasChecks = !workspace.healthChecks.isEmpty
+        let hasBlocker = workspace.healthChecks.contains { check in
+            let normalized = check.status.lowercased()
+            return normalized.contains("fail") || normalized.contains("block")
+        }
+        let hasWarning = workspace.healthChecks.contains { check in
+            let normalized = check.status.lowercased()
+            return normalized.contains("warning") || normalized.contains("review")
+        }
+
+        let status: WorkflowPathStatus
+        let detail: String
+        if !hasChecks {
+            status = .pending
+            detail = "尚未看到本地检查结果。验证/PR 交接前建议运行一次 Nexus 本地检查。"
+        } else if hasBlocker {
+            status = .blocked
+            detail = "本地检查仍包含阻塞项，先处理失败检查再准备 PR。"
+        } else if hasWarning {
+            status = .review
+            detail = "本地检查包含复核项，PR 交接中需要说明处理结论。"
+        } else {
+            status = .ready
+            detail = "本地检查没有发现阻塞或复核项。"
+        }
+
+        return ValidationPrCheck(
+            id: "local-check",
+            label: "本地检查 / Local",
+            detail: detail,
+            status: status,
+            systemImage: "checklist",
+            path: nil,
+            action: .localCheck
+        )
+    }
+
+    private static func deliveryCheck(
+        workspace: WorkspaceSummary,
+        deliveryGate: DeliveryGateEvidence
+    ) -> ValidationPrCheck {
+        ValidationPrCheck(
+            id: "delivery-record",
+            label: "交付记录 / Delivery",
+            detail: deliveryGate.ready
+                ? "交付门禁已通过。PR 摘要应引用交付记录中的改动、SQL、配置、验证和风险说明。"
+                : deliveryGate.reason,
+            status: deliveryGate.ready ? .ready : deliveryGate.status,
+            systemImage: "doc.text",
+            path: workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md",
+            action: deliveryGate.ready ? .document("delivery") : deliveryGate.primaryAction
+        )
+    }
+
+    private static func taskRiskCheck(workspace: WorkspaceSummary) -> ValidationPrCheck {
+        let activeTasks = workspace.tasks.filter(\.isActive)
+        let blockedTasks = activeTasks.filter(\.isBlocked)
+        if !blockedTasks.isEmpty {
+            return ValidationPrCheck(
+                id: "task-risk",
+                label: "任务与风险 / Tasks",
+                detail: "\(blockedTasks.count) 个任务仍阻塞。验证/PR 交接前需要完成、延期或拆分。",
+                status: .blocked,
+                systemImage: "checklist",
+                path: workspace.documentLinks["tasks"] ?? "\(workspace.path)/tasks.md",
+                action: .document("tasks")
+            )
+        }
+        if !activeTasks.isEmpty || !workspace.risks.isEmpty {
+            return ValidationPrCheck(
+                id: "task-risk",
+                label: "任务与风险 / Tasks",
+                detail: "\(activeTasks.count) 个活跃任务，\(workspace.risks.count) 个风险信号。PR 交接中需要写明结论。",
+                status: .review,
+                systemImage: "exclamationmark.triangle",
+                path: workspace.documentLinks["tasks"] ?? "\(workspace.path)/tasks.md",
+                action: .validationHandoff
+            )
+        }
+        return ValidationPrCheck(
+            id: "task-risk",
+            label: "任务与风险 / Tasks",
+            detail: "任务已清理，暂无活动风险。",
+            status: .ready,
+            systemImage: "checkmark.shield",
+            path: workspace.documentLinks["tasks"] ?? "\(workspace.path)/tasks.md",
+            action: .document("tasks")
+        )
+    }
+
+    private static func prCiCheck(workspace: WorkspaceSummary) -> ValidationPrCheck {
+        let hasEvidence = hasPrCiEvidence(workspace: workspace)
+        return ValidationPrCheck(
+            id: "pr-ci",
+            label: "PR / CI / 发布",
+            detail: hasEvidence
+                ? "已在活动、交付记录检查或生命周期上下文中发现 PR、CI、验证或发布证据。"
+                : "尚未发现 PR、CI、发布或最终验证结论。没有 GitHub 集成前，把这些结论写入交付记录或 PR 交接。",
+            status: hasEvidence ? .ready : .review,
+            systemImage: hasEvidence ? "checkmark.seal" : "point.3.connected.trianglepath.dotted",
+            path: workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md",
+            action: hasEvidence ? .document("delivery") : .validationHandoff
+        )
+    }
+
+    private static func lifecycleCheck(workspace: WorkspaceSummary) -> ValidationPrCheck {
+        switch workspace.lifecycle.stage.lowercased() {
+        case "done":
+            return ValidationPrCheck(
+                id: "lifecycle",
+                label: "生命周期 / Lifecycle",
+                detail: "生命周期已标记完成，可以进入 PR/CI 复核或归档确认。",
+                status: .ready,
+                systemImage: "checkmark.seal",
+                path: workspace.documentLinks["status"] ?? "\(workspace.path)/STATUS.md",
+                action: .lifecycle(.archived)
+            )
+        case "delivery":
+            return ValidationPrCheck(
+                id: "lifecycle",
+                label: "生命周期 / Lifecycle",
+                detail: "当前仍处于交付整理阶段。验证结论确认后再标记完成。",
+                status: .next,
+                systemImage: "arrow.right.circle",
+                path: workspace.documentLinks["status"] ?? "\(workspace.path)/STATUS.md",
+                action: .lifecycle(.done)
+            )
+        default:
+            return ValidationPrCheck(
+                id: "lifecycle",
+                label: "生命周期 / Lifecycle",
+                detail: "生命周期尚未进入交付完成链路，先完成交付整理。",
+                status: .next,
+                systemImage: "shippingbox",
+                path: workspace.documentLinks["status"] ?? "\(workspace.path)/STATUS.md",
+                action: .lifecycle(.delivery)
+            )
+        }
+    }
+
+    private static func hasPrCiEvidence(workspace: WorkspaceSummary) -> Bool {
+        let activityText = workspace.activities
+            .map { "\($0.title) \($0.detail)" }
+            .joined(separator: "\n")
+        let checkText = workspace.healthChecks
+            .map { "\($0.label) \($0.detail)" }
+            .joined(separator: "\n")
+        let text = "\(activityText)\n\(checkText)\n\(workspace.lifecycle.detail)"
+        let lowercased = text.lowercased()
+        let caseSensitiveMarkers = ["PR", "CI", "GitHub"]
+        let lowerMarkers = ["pull request", "merged", "ci passed", "合并", "已合并", "构建通过", "验证通过", "发布", "上线"]
+        return caseSensitiveMarkers.contains { text.contains($0) }
+            || lowerMarkers.contains { lowercased.contains($0) }
+    }
+
+    private static func actionLabel(for action: WorkspaceMainStageAction, status: WorkflowPathStatus) -> String {
+        switch action {
+        case .lifecycle(let transition):
+            switch transition.state {
+            case "delivery":
+                return "进入交付"
+            case "done":
+                return "标记完成"
+            case "archived":
+                return "归档"
+            default:
+                return transition.label
+            }
+        case .localCheck:
+            return "运行检查"
+        case .deliveryHandoff:
+            return "交付交接"
+        case .validationHandoff:
+            return "PR 交接"
+        case .riskPrompt:
+            return "风险交接"
+        case .worktree:
+            return "创建 worktree"
+        case .document(let key):
+            if key == "delivery" {
+                return "打开交付"
+            }
+            if key == "tasks" {
+                return "打开任务"
+            }
+            return "打开文档"
+        case .task:
+            return "打开任务"
+        case .path:
+            return "打开文档"
+        case .codex:
+            return "交接 Codex"
+        case .demandIntake:
+            return "打开预检"
+        case .transferDemandTasks:
+            return "转入任务"
+        }
+    }
+
+    private static func actionSystemImage(for action: WorkspaceMainStageAction, status: WorkflowPathStatus) -> String {
+        switch action {
+        case .lifecycle(let transition):
+            return transition.systemImage
+        case .localCheck:
+            return "checklist"
+        case .deliveryHandoff, .validationHandoff, .riskPrompt, .codex:
+            return "point.3.connected.trianglepath.dotted"
+        case .worktree:
+            return "wrench.and.screwdriver"
+        case .document(let key):
+            if key == "tasks" {
+                return "checklist"
+            }
+            return status == .ready ? "doc.text.magnifyingglass" : "doc.text"
+        case .task:
+            return "text.line.first.and.arrowtriangle.forward"
+        case .path:
+            return "doc.text"
+        case .demandIntake:
+            return "text.badge.checkmark"
+        case .transferDemandTasks:
+            return "arrow.down.doc"
+        }
+    }
+}
+
 enum WorkspaceMainStageID: String, CaseIterable, Hashable {
     case created
     case demandIntake = "demand_intake"
