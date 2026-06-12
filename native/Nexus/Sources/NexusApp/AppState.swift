@@ -2547,6 +2547,10 @@ final class AppState: ObservableObject {
         ServiceBranchEvidence.resolve(workspace: workspace)
     }
 
+    func worktreeSetupEvidence(for workspace: WorkspaceSummary) -> WorktreeSetupEvidence {
+        WorktreeSetupEvidence.resolve(workspace: workspace)
+    }
+
     func demandTaskTransferPlan(for workspace: WorkspaceSummary) -> DemandTaskTransferPlan {
         DemandTaskTransferPlan.resolve(
             workspace: workspace,
@@ -3429,21 +3433,34 @@ final class AppState: ObservableObject {
     }
 
     func canSetupWorktrees(in workspace: WorkspaceSummary) -> Bool {
-        !missingWorktreeServices(in: workspace).isEmpty && Self.hasConfirmedTargetBranch(workspace.branch)
+        let evidence = worktreeSetupEvidence(for: workspace)
+        return evidence.hasMissingWorktrees
+            && evidence.branchConfirmed
+            && evidence.missingSourceServices.isEmpty
+            && evidence.branchMismatchServices.isEmpty
     }
 
     func setupMissingWorktrees(for workspace: WorkspaceSummary, confirmed: Bool) async {
         lastError = nil
         lastWorktreeSetupResponse = nil
 
-        let missingServices = missingWorktreeServices(in: workspace)
+        let evidence = worktreeSetupEvidence(for: workspace)
+        let missingServices = evidence.missingServices
         guard !missingServices.isEmpty else {
             lastError = "当前工作区没有缺失的 worktree。"
             return
         }
 
-        guard Self.hasConfirmedTargetBranch(workspace.branch) else {
+        guard evidence.branchConfirmed else {
             lastError = "目标分支仍未确认，不能创建 worktree。"
+            return
+        }
+        guard evidence.missingSourceServices.isEmpty else {
+            lastError = "存在源仓库不可用的服务：\(evidence.missingSourceServices.joined(separator: ", "))。"
+            return
+        }
+        guard evidence.branchMismatchServices.isEmpty else {
+            lastError = "存在分支不一致的 worktree：\(evidence.branchMismatchServices.joined(separator: ", "))。"
             return
         }
 

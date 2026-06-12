@@ -13,6 +13,7 @@ Nexus 是一个面向 macOS 的本地 AI 开发工作台，用来管理需求工
 - 支持在应用内创建符合 `ks-project-demand-workspace` 约定的需求工作区，包含源仓库扫描、服务勾选、手动补充、创建前预检、创建确认摘要和创建后的下一步引导。
 - 支持在工作区详情中执行 `需求预检`：检查或初始化固定 `需求/` 目录，生成 `requirement.md`、`questions.md`、`scope.md`、`tasks.md` 和 `delivery.md`，并复制 `$lanhu-demand-intake` Codex 预检提示词。原生壳会读取这些 Markdown，检查需求内容、未解决 P0、scope 状态和真实需求任务，并通过独立的范围冻结门禁检查本次实现、不实现、待确认 P0 和冻结标记，确认后可把真实需求行转入根 `tasks.md`；Nexus 仍不直接解析蓝湖或调用 AI。
 - 原生服务/分支确认门禁会检查 `services.md`、`branches.md`、工作区服务行、源仓库可用性和分支策略，确认后才进入 worktree 准备。
+- 原生 worktree 准备证据会检查缺失的 workspace-local worktree、分支不一致、源仓库可用性和创建命令可见性，确认这些证据后才继续进入开发。
 - 支持在应用内预览 Markdown 文档，包括状态、服务范围、分支说明、任务、决策和交付记录。
 - 支持配置本地工作区目录、源仓库目录和交付文档目录。
 - 支持导出和导入团队配置 Profile，便于分享路径约定、Codex URL 和 IDE URL 模板；首次启动向导和原生 Settings 都可以直接导入 Profile。
@@ -40,7 +41,7 @@ Nexus 是一个面向 macOS 的本地 AI 开发工作台，用来管理需求工
 - 支持环境健康检查，用于确认本地路径和 Git 是否可用。
 - 打包后的应用通过原生命令扫描配置路径，不依赖本地 Python 脚本。
 - 原生新建工作区流程支持扫描源仓库目录、筛选服务候选、勾选真实本地服务，并允许在需求早期把服务范围标记为待确认；当还没有任何工作区时会提供演示模板预填，创建前仍会预检工作区根目录、目录名、重复写入位置、环境健康和范围风险，创建后会聚焦新工作区、自动打开生成的 `handoff.md`，并给出初始化回执、handoff、worktree、Codex 和本地检查入口。
-- 原生 worktree 创建前会进行预检，确认目标分支、缺失 worktree、源仓库和 workspace-local 写入位置；执行后会刷新工作区状态，解释 created/skipped/failed 服务，并把下一步引导到 Finder、带结果的 Codex 交接或本地检查。
+- 原生 worktree 创建前会展示 Swift-owned 证据卡和确认预检，确认目标分支、缺失 worktree、分支一致性、源仓库、创建脚本和 workspace-local 写入位置；执行后会刷新工作区状态，解释 created/skipped/failed 服务，并把下一步引导到 Finder、带结果的 Codex 交接或本地检查。
 - 原生工作区详情顶部提供 Command Center，把生命周期进度、主路径推荐、任务状态、SQL 状态、交付状态、范围 -> worktree -> 风险 -> 任务 -> SQL -> 交付 -> Codex 会话 -> Codex 交接的工作流路径、Codex 继续、本地检查结果、Finder、IDE、Terminal 和工作区链接复制放到同一个固定入口；路径卡会显示紧凑动作标签，SQL 和交付卡会按状态路由到本地检查、SQL 产物复查、交付交接、验证/PR 交接或文档查看；状态标签采用中文优先，并把快捷动作收敛为交接、下一步和本地工具三组。
 - 原生工作区详情顶部提供紧凑的 `详情导航 / Detail map`，把概览、工作台、任务交付、服务、风险、文档和活动作为可跳转区块，并附带短状态提示。
 - 原生工作区详情会把 Rust Core 推荐动作收进 Command Center 下方的 `下一步队列 / Next-step queue`，作为主路径之外的文档、worktree 和交接候选入口，不再散落成独立的后置建议区块。
