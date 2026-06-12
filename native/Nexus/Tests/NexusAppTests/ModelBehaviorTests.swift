@@ -982,8 +982,147 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(delivery.status, .ready)
         XCTAssertEqual(delivery.primaryAction, .document("delivery"))
         XCTAssertEqual(delivery.blockerCount, 0)
+        XCTAssertEqual(stage.id, .archived)
+        XCTAssertEqual(stage.primaryAction, .lifecycle(.delivery))
+        XCTAssertFalse(stage.nextStageAllowed)
+    }
+
+    func testArchiveGateEvidenceReusesDeliveryBlockersBeforeArchive() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "archive-delivery-pending"
+        )
+        let delivery = DeliveryGateEvidence.resolve(workspace: workspace)
+        let archive = ArchiveGateEvidence.resolve(workspace: workspace, deliveryGate: delivery)
+        let stage = workspace.mainStage(
+            demandReadiness: readyDemandReadiness(),
+            scopeFreeze: readyScopeFreeze(),
+            serviceBranch: readyServiceBranch(for: workspace),
+            worktreeSetup: WorktreeSetupEvidence.resolve(workspace: workspace),
+            developmentTasks: DevelopmentTaskEvidence.resolve(workspace: workspace),
+            deliveryGate: delivery,
+            archiveGate: archive
+        )
+
+        XCTAssertEqual(archive.status, .pending)
+        XCTAssertEqual(archive.title, "归档前先完成交付 / Finish delivery first")
+        XCTAssertEqual(archive.primaryAction, .localCheck)
         XCTAssertEqual(stage.id, .deliveryCheck)
+        XCTAssertEqual(stage.primaryAction, .localCheck)
+    }
+
+    func testArchiveGateEvidenceRequiresDeliveryLifecycleBeforeDone() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "archive-enter-delivery",
+            healthChecks: [
+                WorkspaceHealthCheck(id: "delivery-record", label: "交付记录", detail: "交付记录可用", status: "pass", action: "delivery"),
+                WorkspaceHealthCheck(id: "sql-directory", label: "SQL", detail: "未声明 SQL 变更。", status: "pass", action: "sql")
+            ]
+        )
+        let delivery = DeliveryGateEvidence.resolve(workspace: workspace)
+        let archive = ArchiveGateEvidence.resolve(workspace: workspace, deliveryGate: delivery)
+        let stage = workspace.mainStage(
+            demandReadiness: readyDemandReadiness(),
+            scopeFreeze: readyScopeFreeze(),
+            serviceBranch: readyServiceBranch(for: workspace),
+            worktreeSetup: WorktreeSetupEvidence.resolve(workspace: workspace),
+            developmentTasks: DevelopmentTaskEvidence.resolve(workspace: workspace),
+            deliveryGate: delivery,
+            archiveGate: archive
+        )
+
+        XCTAssertEqual(delivery.status, .ready)
+        XCTAssertEqual(archive.status, .next)
+        XCTAssertEqual(archive.primaryAction, .lifecycle(.delivery))
+        XCTAssertEqual(stage.id, .archived)
+        XCTAssertEqual(stage.primaryAction, .lifecycle(.delivery))
+        XCTAssertFalse(stage.nextStageAllowed)
+    }
+
+    func testArchiveGateEvidenceRequiresDoneBeforeArchive() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "delivery",
+            id: "archive-mark-done",
+            healthChecks: [
+                WorkspaceHealthCheck(id: "delivery-record", label: "交付记录", detail: "交付记录可用", status: "pass", action: "delivery"),
+                WorkspaceHealthCheck(id: "sql-directory", label: "SQL", detail: "未声明 SQL 变更。", status: "pass", action: "sql")
+            ]
+        )
+        let delivery = DeliveryGateEvidence.resolve(workspace: workspace)
+        let archive = ArchiveGateEvidence.resolve(workspace: workspace, deliveryGate: delivery)
+        let stage = workspace.mainStage(
+            demandReadiness: readyDemandReadiness(),
+            scopeFreeze: readyScopeFreeze(),
+            serviceBranch: readyServiceBranch(for: workspace),
+            worktreeSetup: WorktreeSetupEvidence.resolve(workspace: workspace),
+            developmentTasks: DevelopmentTaskEvidence.resolve(workspace: workspace),
+            deliveryGate: delivery,
+            archiveGate: archive
+        )
+
+        XCTAssertEqual(archive.status, .next)
+        XCTAssertEqual(archive.primaryAction, .lifecycle(.done))
+        XCTAssertEqual(stage.id, .archived)
+        XCTAssertEqual(stage.primaryAction, .lifecycle(.done))
+        XCTAssertFalse(stage.nextStageAllowed)
+    }
+
+    func testArchiveGateEvidenceAllowsDoneWorkspaceToArchive() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "done",
+            id: "archive-ready",
+            healthChecks: [
+                WorkspaceHealthCheck(id: "delivery-record", label: "交付记录", detail: "交付记录可用", status: "pass", action: "delivery"),
+                WorkspaceHealthCheck(id: "sql-directory", label: "SQL", detail: "未声明 SQL 变更。", status: "pass", action: "sql")
+            ]
+        )
+        let delivery = DeliveryGateEvidence.resolve(workspace: workspace)
+        let archive = ArchiveGateEvidence.resolve(workspace: workspace, deliveryGate: delivery)
+        let stage = workspace.mainStage(
+            demandReadiness: readyDemandReadiness(),
+            scopeFreeze: readyScopeFreeze(),
+            serviceBranch: readyServiceBranch(for: workspace),
+            worktreeSetup: WorktreeSetupEvidence.resolve(workspace: workspace),
+            developmentTasks: DevelopmentTaskEvidence.resolve(workspace: workspace),
+            deliveryGate: delivery,
+            archiveGate: archive
+        )
+
+        XCTAssertEqual(archive.status, .ready)
+        XCTAssertEqual(archive.primaryAction, .lifecycle(.archived))
+        XCTAssertEqual(archive.blockerCount, 0)
+        XCTAssertEqual(stage.id, .archived)
+        XCTAssertEqual(stage.status, .ready)
+        XCTAssertEqual(stage.primaryAction, .lifecycle(.archived))
         XCTAssertTrue(stage.nextStageAllowed)
+    }
+
+    func testArchiveGateEvidenceKeepsArchivedWorkspaceReadOnly() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "archived",
+            id: "archive-already",
+            healthChecks: [
+                WorkspaceHealthCheck(id: "delivery-record", label: "交付记录", detail: "交付记录可用", status: "pass", action: "delivery"),
+                WorkspaceHealthCheck(id: "sql-directory", label: "SQL", detail: "未声明 SQL 变更。", status: "pass", action: "sql")
+            ]
+        )
+        let archive = ArchiveGateEvidence.resolve(workspace: workspace)
+        let stage = workspace.mainStage(
+            demandReadiness: readyDemandReadiness(),
+            scopeFreeze: readyScopeFreeze(),
+            serviceBranch: readyServiceBranch(for: workspace),
+            worktreeSetup: WorktreeSetupEvidence.resolve(workspace: workspace),
+            developmentTasks: DevelopmentTaskEvidence.resolve(workspace: workspace),
+            deliveryGate: DeliveryGateEvidence.resolve(workspace: workspace),
+            archiveGate: archive
+        )
+
+        XCTAssertEqual(archive.status, .archived)
+        XCTAssertEqual(archive.primaryAction, .document("handoff"))
+        XCTAssertEqual(stage.id, .archived)
+        XCTAssertEqual(stage.status, .archived)
+        XCTAssertEqual(stage.primaryAction, .document("handoff"))
     }
 
     func testDemandTaskTransferPlanFindsNewIntakeTasksAndUpdatesMainStage() throws {

@@ -716,6 +716,17 @@ struct DeliveryGateEvidence: Hashable {
 
     private static func actionLabel(for action: WorkspaceMainStageAction, status: WorkflowPathStatus) -> String {
         switch action {
+        case .lifecycle(let transition):
+            switch transition.state {
+            case "delivery":
+                return "进入交付"
+            case "done":
+                return "标记完成"
+            case "archived":
+                return "归档"
+            default:
+                return transition.label
+            }
         case .localCheck:
             return "运行检查"
         case .deliveryHandoff:
@@ -752,6 +763,8 @@ struct DeliveryGateEvidence: Hashable {
 
     private static func actionSystemImage(for action: WorkspaceMainStageAction, status: WorkflowPathStatus) -> String {
         switch action {
+        case .lifecycle(let transition):
+            return transition.systemImage
         case .localCheck:
             return "checklist"
         case .deliveryHandoff, .validationHandoff, .riskPrompt, .codex:
@@ -799,6 +812,193 @@ struct DeliveryGateEvidence: Hashable {
                 || normalized.contains("检查失败")
                 || normalized.contains("failed")
         }
+    }
+}
+
+struct ArchiveGateCheck: Hashable, Identifiable {
+    let id: String
+    let label: String
+    let detail: String
+    let status: WorkflowPathStatus
+    let systemImage: String
+    let path: String?
+    let action: WorkspaceMainStageAction
+}
+
+struct ArchiveGateEvidence: Hashable {
+    let status: WorkflowPathStatus
+    let title: String
+    let reason: String
+    let value: String
+    let evidence: [String]
+    let checks: [ArchiveGateCheck]
+    let primaryActionLabel: String
+    let primaryActionSystemImage: String
+    let primaryAction: WorkspaceMainStageAction
+    let blockerCount: Int
+    let warningCount: Int
+
+    var ready: Bool {
+        status == .ready
+    }
+
+    static func resolve(
+        workspace: WorkspaceSummary,
+        deliveryGate: DeliveryGateEvidence? = nil
+    ) -> ArchiveGateEvidence {
+        if workspace.isArchived {
+            return ArchiveGateEvidence(
+                status: .archived,
+                title: "已归档 / Archived",
+                reason: "这个工作区已退出活跃开发流。需要恢复时先查看交接、交付记录和审计上下文。",
+                value: "已归档",
+                evidence: archiveEvidence(workspace: workspace),
+                checks: [],
+                primaryActionLabel: "查看交接",
+                primaryActionSystemImage: "doc.text",
+                primaryAction: .document("handoff"),
+                blockerCount: 0,
+                warningCount: 0
+            )
+        }
+
+        let delivery = deliveryGate ?? DeliveryGateEvidence.resolve(workspace: workspace)
+        if delivery.status != .ready {
+            let checks = delivery.checks.map { check in
+                ArchiveGateCheck(
+                    id: "delivery-\(check.id)",
+                    label: check.label,
+                    detail: check.detail,
+                    status: check.status,
+                    systemImage: check.systemImage,
+                    path: check.path,
+                    action: check.action
+                )
+            }
+            return ArchiveGateEvidence(
+                status: delivery.status,
+                title: "归档前先完成交付 / Finish delivery first",
+                reason: delivery.reason,
+                value: delivery.value,
+                evidence: delivery.evidence + ["归档依赖交付门禁"],
+                checks: checks,
+                primaryActionLabel: delivery.primaryActionLabel,
+                primaryActionSystemImage: delivery.primaryActionSystemImage,
+                primaryAction: delivery.primaryAction,
+                blockerCount: delivery.blockerCount,
+                warningCount: delivery.warningCount
+            )
+        }
+
+        let lifecycleStage = workspace.lifecycle.stage.lowercased()
+        if lifecycleStage == "done" {
+            return ArchiveGateEvidence(
+                status: .ready,
+                title: "可以归档 / Ready to archive",
+                reason: "交付门禁已通过，生命周期已标记完成。归档会通过确认弹窗写回 workspace.md 和 STATUS.md。",
+                value: "可归档",
+                evidence: archiveEvidence(workspace: workspace),
+                checks: [
+                    deliveryPassedCheck(workspace: workspace),
+                    lifecycleCheck(
+                        workspace: workspace,
+                        detail: "生命周期已标记完成，可以进入归档确认。",
+                        status: .ready,
+                        action: .lifecycle(.archived)
+                    )
+                ],
+                primaryActionLabel: "归档",
+                primaryActionSystemImage: LifecycleTransition.archived.systemImage,
+                primaryAction: .lifecycle(.archived),
+                blockerCount: 0,
+                warningCount: 0
+            )
+        }
+
+        if lifecycleStage == "delivery" {
+            return ArchiveGateEvidence(
+                status: .next,
+                title: "先标记完成 / Mark done first",
+                reason: "交付门禁已通过，但归档前需要先把生命周期确认到完成状态，留出 PR、CI、发布和遗留风险复核窗口。",
+                value: "待完成",
+                evidence: archiveEvidence(workspace: workspace),
+                checks: [
+                    deliveryPassedCheck(workspace: workspace),
+                    lifecycleCheck(
+                        workspace: workspace,
+                        detail: "当前处于交付整理阶段。先标记完成，再进入归档确认。",
+                        status: .next,
+                        action: .lifecycle(.done)
+                    )
+                ],
+                primaryActionLabel: "标记完成",
+                primaryActionSystemImage: LifecycleTransition.done.systemImage,
+                primaryAction: .lifecycle(.done),
+                blockerCount: 0,
+                warningCount: 1
+            )
+        }
+
+        return ArchiveGateEvidence(
+            status: .next,
+            title: "先进入交付 / Enter delivery first",
+            reason: "交付门禁已通过，但生命周期仍是 \(workspace.lifecycle.label)。归档前先进入交付整理或完成确认，避免跳过最终复核。",
+            value: "待交付",
+            evidence: archiveEvidence(workspace: workspace),
+            checks: [
+                deliveryPassedCheck(workspace: workspace),
+                lifecycleCheck(
+                    workspace: workspace,
+                    detail: "当前生命周期不是交付或完成状态。先进入交付整理，再做完成和归档确认。",
+                    status: .next,
+                    action: .lifecycle(.delivery)
+                )
+            ],
+            primaryActionLabel: "进入交付",
+            primaryActionSystemImage: LifecycleTransition.delivery.systemImage,
+            primaryAction: .lifecycle(.delivery),
+            blockerCount: 0,
+            warningCount: 1
+        )
+    }
+
+    private static func archiveEvidence(workspace: WorkspaceSummary) -> [String] {
+        [
+            workspace.documentLinks["delivery"] ?? "交付记录.md",
+            workspace.documentLinks["handoff"] ?? "handoff.md",
+            workspace.documentLinks["status"] ?? "STATUS.md",
+            "workspace.md",
+            "sql/"
+        ]
+    }
+
+    private static func deliveryPassedCheck(workspace: WorkspaceSummary) -> ArchiveGateCheck {
+        ArchiveGateCheck(
+            id: "delivery-gate",
+            label: "交付门禁 / Delivery gate",
+            detail: "任务、风险、服务/worktree、交付记录、SQL 和未提交服务检查暂无硬阻塞。",
+            status: .ready,
+            systemImage: "checkmark.seal",
+            path: workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md",
+            action: .document("delivery")
+        )
+    }
+
+    private static func lifecycleCheck(
+        workspace: WorkspaceSummary,
+        detail: String,
+        status: WorkflowPathStatus,
+        action: WorkspaceMainStageAction
+    ) -> ArchiveGateCheck {
+        ArchiveGateCheck(
+            id: "lifecycle",
+            label: "生命周期 / Lifecycle",
+            detail: detail,
+            status: status,
+            systemImage: workspace.lifecycle.stage == "done" ? "checkmark.seal" : "arrow.right.circle",
+            path: workspace.documentLinks["status"] ?? "\(workspace.path)/STATUS.md",
+            action: action
+        )
     }
 }
 
@@ -877,6 +1077,7 @@ enum WorkspaceMainStageID: String, CaseIterable, Hashable {
 }
 
 enum WorkspaceMainStageAction: Hashable {
+    case lifecycle(LifecycleTransition)
     case demandIntake
     case document(String)
     case path(String)
@@ -3129,6 +3330,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
         worktreeSetup: WorktreeSetupEvidence? = nil,
         developmentTasks: DevelopmentTaskEvidence? = nil,
         deliveryGate: DeliveryGateEvidence? = nil,
+        archiveGate: ArchiveGateEvidence? = nil,
         demandTaskTransfer: DemandTaskTransferPlan? = nil
     ) -> WorkspaceMainStage {
         if isArchived {
@@ -3235,6 +3437,21 @@ struct WorkspaceSummary: Identifiable, Hashable {
         }
 
         let delivery = deliveryGate ?? DeliveryGateEvidence.resolve(workspace: self)
+        if delivery.status == .ready {
+            let archive = archiveGate ?? ArchiveGateEvidence.resolve(workspace: self, deliveryGate: delivery)
+            return WorkspaceMainStage(
+                id: .archived,
+                status: archive.status,
+                title: archive.title,
+                reason: archive.reason,
+                primaryActionLabel: archive.primaryActionLabel,
+                primaryActionSystemImage: archive.primaryActionSystemImage,
+                primaryAction: archive.primaryAction,
+                evidence: archive.evidence,
+                nextStageAllowed: archive.ready
+            )
+        }
+
         return WorkspaceMainStage(
             id: .deliveryCheck,
             status: delivery.status,

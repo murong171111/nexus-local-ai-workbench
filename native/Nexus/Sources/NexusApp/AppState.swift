@@ -2559,6 +2559,13 @@ final class AppState: ObservableObject {
         DeliveryGateEvidence.resolve(workspace: workspace)
     }
 
+    func archiveGateEvidence(for workspace: WorkspaceSummary) -> ArchiveGateEvidence {
+        ArchiveGateEvidence.resolve(
+            workspace: workspace,
+            deliveryGate: deliveryGateEvidence(for: workspace)
+        )
+    }
+
     func demandTaskTransferPlan(for workspace: WorkspaceSummary) -> DemandTaskTransferPlan {
         DemandTaskTransferPlan.resolve(
             workspace: workspace,
