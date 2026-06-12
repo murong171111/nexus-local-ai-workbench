@@ -212,6 +212,7 @@ Native M1 UI:
 - Command Center worktree step uses the same evidence instead of only counting missing worktrees
 - setup sheet lists service, source path, target path, target branch, and expected command
 - result distinguishes created, skipped, and failed
+- failed services are classified into recovery actions for source repo, branch, fetch, branch occupancy, or worktree command review
 - failed services can be retried individually in later slices
 
 ### 6. Development Tasks

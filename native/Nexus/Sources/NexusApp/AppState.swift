@@ -3074,6 +3074,9 @@ final class AppState: ObservableObject {
             "### Failed",
             worktreeSetupResultLines(response.failed),
             "",
+            "## Nexus 恢复建议",
+            worktreeSetupRecoveryLines(response),
+            "",
             "## 本地命令摘要",
             response.command.isEmpty ? "- Nexus 未返回命令摘要。" : response.command,
             "",
@@ -3084,6 +3087,21 @@ final class AppState: ObservableObject {
             "- 如果后续修改代码、SQL、配置或业务逻辑，同步更新 changes.md 和交付记录。",
             "- 处理完成后回到 Nexus 刷新，并运行本地检查。"
         ].joined(separator: "\n")
+    }
+
+    private func worktreeSetupRecoveryLines(_ response: SetupWorktreesResponse) -> String {
+        let actions = WorktreeSetupRecoveryAction.actions(for: response)
+        guard !actions.isEmpty else {
+            return "- none"
+        }
+        return actions.map { action in
+            ([
+                "- \(action.title)",
+                action.serviceName.map { "  - service: \($0)" },
+                "  - detail: \(action.detail)",
+                "  - status: \(action.status.rawValue)"
+            ].compactMap { $0 }).joined(separator: "\n")
+        }.joined(separator: "\n")
     }
 
     private func worktreeSetupResultLines(_ results: [WorktreeSetupResult]) -> String {

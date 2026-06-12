@@ -1936,6 +1936,14 @@ private struct WorktreeSetupResultView: View {
             WorktreeSetupResultGroup(title: "已跳过 / Skipped", results: response.skipped, color: .secondary)
             WorktreeSetupResultGroup(title: "失败 / Failed", results: response.failed, color: NexusPalette.danger)
 
+            WorktreeSetupRecoveryActionsView(actions: recoveryActions) { action in
+                if let path = recoveryDocumentPath(for: action) {
+                    Task {
+                        await appState.loadDocument(path: path)
+                    }
+                }
+            }
+
             HStack(spacing: 8) {
                 Button {
                     Task {
@@ -2018,6 +2026,78 @@ private struct WorktreeSetupResultView: View {
             return "没有新增 worktree。可以关闭弹窗，继续 Codex 交接或运行本地检查确认状态。"
         }
         return "worktree 已写入工作区。下一步建议运行本地检查，确认分支和未提交状态后再交接 Codex。"
+    }
+
+    private var recoveryActions: [WorktreeSetupRecoveryAction] {
+        WorktreeSetupRecoveryAction.actions(for: response)
+    }
+
+    private func recoveryDocumentPath(for action: WorktreeSetupRecoveryAction) -> String? {
+        guard let document = action.document else {
+            return nil
+        }
+        switch document {
+        case .services:
+            return workspace.documentLinks["services"] ?? "\(workspace.path)/services.md"
+        case .branches:
+            return workspace.documentLinks["branches"] ?? "\(workspace.path)/branches.md"
+        case .worktreeScript:
+            return workspace.documentLinks["worktreeScript"] ?? "\(workspace.path)/scripts/worktree-commands.sh"
+        }
+    }
+}
+
+private struct WorktreeSetupRecoveryActionsView: View {
+    let actions: [WorktreeSetupRecoveryAction]
+    let openActionDocument: (WorktreeSetupRecoveryAction) -> Void
+
+    var body: some View {
+        if !actions.isEmpty {
+            VStack(alignment: .leading, spacing: 7) {
+                Text("恢复建议 / Recovery")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                ForEach(actions) { action in
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: action.systemImage)
+                            .foregroundStyle(action.status.color)
+                            .frame(width: 14)
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 6) {
+                                Text(action.title)
+                                    .font(.caption.weight(.semibold))
+                                if let serviceName = action.serviceName {
+                                    Text(serviceName)
+                                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            Text(action.detail)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        Spacer(minLength: 8)
+
+                        if action.document != nil {
+                            Button {
+                                openActionDocument(action)
+                            } label: {
+                                Image(systemName: "doc.text")
+                            }
+                            .buttonStyle(.borderless)
+                            .help("打开相关证据文档 / Open related evidence document")
+                        }
+                    }
+                    .padding(8)
+                    .background(NexusPalette.panel)
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                }
+            }
+        }
     }
 }
 
