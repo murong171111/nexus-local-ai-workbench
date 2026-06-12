@@ -1939,6 +1939,121 @@ struct WorktreeSetupPlanItem: Hashable, Identifiable {
     let reason: String
 }
 
+enum WorktreeSetupRecoveryDocument: String, Hashable {
+    case services
+    case branches
+    case worktreeScript
+}
+
+struct WorktreeSetupRecoveryAction: Hashable, Identifiable {
+    let id: String
+    let serviceName: String?
+    let title: String
+    let detail: String
+    let status: WorkflowPathStatus
+    let systemImage: String
+    let document: WorktreeSetupRecoveryDocument?
+
+    static func actions(for response: SetupWorktreesResponse) -> [WorktreeSetupRecoveryAction] {
+        if response.failed.isEmpty {
+            return [
+                WorktreeSetupRecoveryAction(
+                    id: "run-local-check",
+                    serviceName: nil,
+                    title: "运行本地检查 / Run local check",
+                    detail: response.created.isEmpty
+                        ? "没有新增 worktree。运行检查确认分支、任务和风险状态后继续。"
+                        : "已创建 worktree。运行检查确认分支一致、缺失 worktree 和未提交服务状态。",
+                    status: .next,
+                    systemImage: "checklist",
+                    document: nil
+                )
+            ]
+        }
+
+        return response.failed.map { result in
+            let detail = result.detail.lowercased()
+            if detail.contains("service name") || detail.contains("path segment") {
+                return WorktreeSetupRecoveryAction(
+                    id: "\(result.service)-service-name",
+                    serviceName: result.service,
+                    title: "修正服务名 / Service name",
+                    detail: "服务名必须是安全的单级目录名。先修正 services.md 中的服务范围，再重新执行 worktree 创建。",
+                    status: .blocked,
+                    systemImage: "textformat.abc",
+                    document: .services
+                )
+            }
+            if detail.contains("source repository does not exist") {
+                return WorktreeSetupRecoveryAction(
+                    id: "\(result.service)-source-missing",
+                    serviceName: result.service,
+                    title: "补齐源仓库 / Source repo",
+                    detail: "Nexus 没找到 \(result.sourcePath)。请同步源仓库或在 Settings 调整 source repositories root 后刷新。",
+                    status: .blocked,
+                    systemImage: "externaldrive.badge.xmark",
+                    document: .services
+                )
+            }
+            if detail.contains("not a git worktree") {
+                return WorktreeSetupRecoveryAction(
+                    id: "\(result.service)-source-git",
+                    serviceName: result.service,
+                    title: "修正源仓库 Git 状态 / Source Git",
+                    detail: "\(result.sourcePath) 不是可用 Git worktree。请检查源仓库是否完整克隆，再重试。",
+                    status: .blocked,
+                    systemImage: "externaldrive.badge.xmark",
+                    document: .services
+                )
+            }
+            if detail.contains("git fetch failed") {
+                return WorktreeSetupRecoveryAction(
+                    id: "\(result.service)-fetch",
+                    serviceName: result.service,
+                    title: "检查远端访问 / Fetch",
+                    detail: "git fetch origin 失败。请检查网络、权限、remote 配置或目标分支是否存在，再重新执行。",
+                    status: .blocked,
+                    systemImage: "arrow.triangle.branch",
+                    document: .branches
+                )
+            }
+            if detail.contains("already used by worktree") {
+                return WorktreeSetupRecoveryAction(
+                    id: "\(result.service)-branch-used",
+                    serviceName: result.service,
+                    title: "处理分支占用 / Branch in use",
+                    detail: "目标分支已被其他 worktree 占用。先确认占用路径，决定复用、移除旧 worktree，或创建独立分支。",
+                    status: .blocked,
+                    systemImage: "arrow.triangle.branch",
+                    document: .branches
+                )
+            }
+            if detail.contains("git worktree add failed") {
+                return WorktreeSetupRecoveryAction(
+                    id: "\(result.service)-worktree-add",
+                    serviceName: result.service,
+                    title: "复核分支和路径 / Worktree add",
+                    detail: "git worktree add 失败。请检查目标分支、\(result.worktreePath) 写入路径和 Git 输出，再重试。",
+                    status: .blocked,
+                    systemImage: "wrench.and.screwdriver",
+                    document: .worktreeScript
+                )
+            }
+            return WorktreeSetupRecoveryAction(
+                id: "\(result.service)-review",
+                serviceName: result.service,
+                title: "复核失败明细 / Review failure",
+                detail: result.detail.isEmpty
+                    ? "Nexus 未返回详细失败原因。请查看 worktree 创建脚本和源仓库状态。"
+                    : result.detail,
+                status: .review,
+                systemImage: "exclamationmark.triangle",
+                document: .worktreeScript
+            )
+        }
+    }
+}
+
 struct WorktreeSetupEvidence: Hashable {
     let status: WorkflowPathStatus
     let reason: String

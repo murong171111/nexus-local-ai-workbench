@@ -942,6 +942,68 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertNotEqual(stage.id, .worktreeSetup)
     }
 
+    func testWorktreeSetupRecoveryActionsClassifyMissingSourceRepo() {
+        let response = setupWorktreeResponse(
+            failed: [
+                WorktreeSetupResult(
+                    service: "order",
+                    sourcePath: "/source/order",
+                    worktreePath: "/workspace/repos/order",
+                    status: "failed",
+                    detail: "source repository does not exist"
+                )
+            ]
+        )
+
+        let actions = WorktreeSetupRecoveryAction.actions(for: response)
+
+        XCTAssertEqual(actions.count, 1)
+        XCTAssertEqual(actions.first?.serviceName, "order")
+        XCTAssertEqual(actions.first?.document, .services)
+        XCTAssertEqual(actions.first?.status, .blocked)
+        XCTAssertTrue(actions.first?.detail.contains("/source/order") ?? false)
+    }
+
+    func testWorktreeSetupRecoveryActionsClassifyFetchFailure() {
+        let response = setupWorktreeResponse(
+            failed: [
+                WorktreeSetupResult(
+                    service: "store-cashier",
+                    sourcePath: "/source/store-cashier",
+                    worktreePath: "/workspace/repos/store-cashier",
+                    status: "failed",
+                    detail: "git fetch failed: remote rejected"
+                )
+            ]
+        )
+
+        let actions = WorktreeSetupRecoveryAction.actions(for: response)
+
+        XCTAssertEqual(actions.first?.document, .branches)
+        XCTAssertEqual(actions.first?.systemImage, "arrow.triangle.branch")
+        XCTAssertTrue(actions.first?.title.contains("Fetch") ?? false)
+    }
+
+    func testWorktreeSetupRecoveryActionsRouteCleanResultToLocalCheck() {
+        let response = setupWorktreeResponse(
+            created: [
+                WorktreeSetupResult(
+                    service: "order",
+                    sourcePath: "/source/order",
+                    worktreePath: "/workspace/repos/order",
+                    status: "created",
+                    detail: "worktree created"
+                )
+            ]
+        )
+
+        let actions = WorktreeSetupRecoveryAction.actions(for: response)
+
+        XCTAssertEqual(actions.map(\.id), ["run-local-check"])
+        XCTAssertNil(actions.first?.document)
+        XCTAssertEqual(actions.first?.status, .next)
+    }
+
     func testDevelopmentTaskEvidenceRoutesNextActiveTask() {
         let workspace = workspaceForWorkflowSummary(
             stage: "developing",
@@ -2221,6 +2283,21 @@ final class ModelBehaviorTests: XCTestCase {
             scopeChangeDeclared: false,
             scopeChangeAudited: true,
             unresolvedP0Count: 0
+        )
+    }
+
+    private func setupWorktreeResponse(
+        created: [WorktreeSetupResult] = [],
+        skipped: [WorktreeSetupResult] = [],
+        failed: [WorktreeSetupResult] = []
+    ) -> SetupWorktreesResponse {
+        SetupWorktreesResponse(
+            workspacePath: "/workspace",
+            targetBranch: "feature/worktree",
+            command: "git worktree add ...",
+            created: created,
+            skipped: skipped,
+            failed: failed
         )
     }
 
