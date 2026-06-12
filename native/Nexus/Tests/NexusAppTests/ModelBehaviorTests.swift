@@ -839,6 +839,9 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertEqual(worktree.status, .next)
         XCTAssertEqual(worktree.missingServices, ["order"])
+        XCTAssertEqual(worktree.setupPlan.map(\.action), [.create])
+        XCTAssertEqual(worktree.setupPlan.first?.targetPath, root.appendingPathComponent("repos/order").path)
+        XCTAssertEqual(worktree.setupPlan.first?.targetBranch, "feature/worktree")
         XCTAssertTrue(worktree.branchMismatchServices.isEmpty)
         XCTAssertEqual(stage.id, .worktreeSetup)
         XCTAssertEqual(stage.primaryAction, .worktree)
@@ -870,6 +873,8 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertEqual(worktree.status, .blocked)
         XCTAssertEqual(worktree.branchMismatchServices, ["order(dev)"])
+        XCTAssertEqual(worktree.setupPlan.map(\.action), [.blocked])
+        XCTAssertEqual(worktree.setupPlan.first?.currentBranch, "dev")
         XCTAssertEqual(stage.id, .worktreeSetup)
         XCTAssertEqual(stage.primaryAction, .document("branches"))
     }
@@ -900,6 +905,8 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertEqual(worktree.status, .blocked)
         XCTAssertEqual(worktree.missingSourceServices, ["order"])
+        XCTAssertEqual(worktree.setupPlan.map(\.action), [.blocked])
+        XCTAssertFalse(worktree.setupPlan.first?.sourceAvailable ?? true)
         XCTAssertEqual(stage.id, .worktreeSetup)
         XCTAssertEqual(stage.primaryAction, .document("services"))
     }
@@ -931,6 +938,7 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(worktree.status, .ready)
         XCTAssertTrue(worktree.missingServices.isEmpty)
         XCTAssertTrue(worktree.branchMismatchServices.isEmpty)
+        XCTAssertEqual(worktree.setupPlan.map(\.action), [.skip])
         XCTAssertNotEqual(stage.id, .worktreeSetup)
     }
 

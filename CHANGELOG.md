@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Added
 
+- Native worktree setup evidence now includes a Swift-owned service-level setup plan that marks each service as create, skip, or blocked with target path, branch, and reason before confirmation.
 - Native service/branch evidence now detects services that report the target branch or remote ref as unavailable, keeping that blocker in the service/branch gate before worktree setup.
 - Native delivery-gate evidence now owns the delivery-check stage after development tasks, combining task, risk, service/worktree, delivery-record, SQL, dirty-service, and local-check signals into one primary next action.
 - Native development-task evidence now owns the development gate after worktree setup, choosing the next active root `tasks.md` item, blocking on unresolved task blockers, and opening the task source locator from the main workflow and Command Center.
