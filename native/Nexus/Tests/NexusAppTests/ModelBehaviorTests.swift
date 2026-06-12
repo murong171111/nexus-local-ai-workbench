@@ -550,6 +550,106 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(stage.primaryAction, .path(demandDir.appendingPathComponent("scope.md").path))
     }
 
+    func testScopeFreezeEvidenceRequiresAuditWhenScopeChangeIsDeclared() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-scope-change-review-\(UUID().uuidString)")
+        let demandDir = root.appendingPathComponent("需求")
+        try FileManager.default.createDirectory(at: demandDir, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try writeDemandIntakeFixture(
+            demandDir: demandDir,
+            scope: """
+            # 本次开发范围
+
+            ## 已确认并实现
+
+            - 保存订单时记录交易快照。
+
+            ## 暂不实现
+
+            - 不补历史数据。
+
+            ## 仍待确认
+
+            - 无 P0 待确认项。
+
+            ## 范围变更
+
+            - 新增交易快照导出。
+
+            ## 进入开发条件
+
+            - [x] 本文件已冻结本次开发范围。
+            """
+        )
+
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "scope-change-review",
+            path: root.path
+        )
+        let status = demandIntakeStatus(at: demandDir)
+        let scope = ScopeFreezeEvidence.resolve(status: status, workspace: workspace)
+
+        XCTAssertEqual(scope.status, .review)
+        XCTAssertTrue(scope.scopeChangeDeclared)
+        XCTAssertFalse(scope.scopeChangeAudited)
+        XCTAssertEqual(scope.checks.first { $0.id == "scope-change-audit" }?.status, .review)
+    }
+
+    func testScopeFreezeEvidenceAllowsAuditedScopeChanges() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-scope-change-audited-\(UUID().uuidString)")
+        let demandDir = root.appendingPathComponent("需求")
+        try FileManager.default.createDirectory(at: demandDir, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try writeDemandIntakeFixture(
+            demandDir: demandDir,
+            scope: """
+            # 本次开发范围
+
+            ## 已确认并实现
+
+            - 保存订单时记录交易快照。
+
+            ## 暂不实现
+
+            - 不补历史数据。
+
+            ## 仍待确认
+
+            - 无 P0 待确认项。
+
+            ## 范围变更记录
+
+            - 变更原因：蓝湖补充要求导出交易快照。
+            - 影响服务：order。
+            - 影响任务：新增导出任务。
+
+            ## 进入开发条件
+
+            - [x] 本文件已冻结本次开发范围。
+            """
+        )
+
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "scope-change-audited",
+            path: root.path
+        )
+        let status = demandIntakeStatus(at: demandDir)
+        let scope = ScopeFreezeEvidence.resolve(status: status, workspace: workspace)
+
+        XCTAssertEqual(scope.status, .ready)
+        XCTAssertTrue(scope.scopeChangeDeclared)
+        XCTAssertTrue(scope.scopeChangeAudited)
+        XCTAssertEqual(scope.checks.first { $0.id == "scope-change-audit" }?.status, .ready)
+    }
+
     func testServiceBranchEvidenceBlocksMissingBranchAndServiceScope() {
         let workspace = workspaceForWorkflowSummary(
             stage: "developing",
@@ -2047,7 +2147,43 @@ final class ModelBehaviorTests: XCTestCase {
             hasInScope: true,
             hasOutOfScope: true,
             scopeFrozen: true,
+            scopeChangeDeclared: false,
+            scopeChangeAudited: true,
             unresolvedP0Count: 0
+        )
+    }
+
+    private func writeDemandIntakeFixture(demandDir: URL, scope: String) throws {
+        try "# 需求确认卡\n\n- 真实需求目标：补齐交易快照。\n- 用户流程：保存订单时写入快照。\n- 验收标准：可查询历史快照。\n".write(
+            to: demandDir.appendingPathComponent("requirement.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# 待确认问题\n\n## P0 阻塞开发\n\n- [x] 已确认无需新增字段。\n".write(
+            to: demandDir.appendingPathComponent("questions.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try scope.write(
+            to: demandDir.appendingPathComponent("scope.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try """
+        # 需求列表
+
+        | 需求点 | 状态 | 优先级 | 来源 | 说明 |
+        | --- | --- | --- | --- | --- |
+        | 新增交易快照写入 | 待办 | P0 | 蓝湖 | 保存订单时记录快照 |
+        """.write(
+            to: demandDir.appendingPathComponent("tasks.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# 需求交付\n\n- 预检完成。\n".write(
+            to: demandDir.appendingPathComponent("delivery.md"),
+            atomically: true,
+            encoding: .utf8
         )
     }
 
