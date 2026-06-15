@@ -73,6 +73,7 @@ src-tauri/target/release/bundle/dmg/Nexus_0.1.0_aarch64.dmg
   - Task-level Codex actions copy task context, open the configured Codex URL, and write task handoff audit events.
   - Workflow delivery readiness can route into the confirmed lifecycle writeback sheet for entering delivery or marking the workspace done.
   - Workflow and Command Center now include archive eligibility evidence that reuses the delivery hard gate, then routes entering delivery, marking done, or archiving through the confirmed lifecycle writeback sheet.
+  - Archive eligibility now shows a confirmation plan for delivery blockers, delivery-record review, validation/PR review, lifecycle writeback, and final archive confirmation before the archive action.
   - Workflow action labels are Chinese-first, grouped by document/check/Agent intent, and include hover help for documents, checks, and Codex handoff.
   - Workspace detail shows the Risk Review summary with risk/blocker/warning counts, status document access, local check receipt, worktree follow-up, and Codex risk prompt copy.
   - Workspace detail shows the Documents Hub, highlights the active document, explains each document's responsibility, update timing, gate participation, and create policy, shows loading/error recovery close to the document entry, can create missing standard documents after confirmation, and clears stale previews after switching workspaces.

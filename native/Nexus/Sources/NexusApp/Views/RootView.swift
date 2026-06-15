@@ -9429,7 +9429,7 @@ private struct WorkflowStatusView: View {
     }
 
     private var archiveGate: ArchiveGateEvidence {
-        appState.archiveGateEvidence(for: workspace)
+        appState.archiveGateEvidence(for: workspace, validationPr: validationPrEvidence)
     }
 
     private var validationPrEvidence: ValidationPrEvidence {
@@ -11789,6 +11789,25 @@ private struct ArchiveGateEvidenceCardView: View {
                 WorkflowMetric(label: "Archive", value: evidence.value, tone: evidence.status.color)
                 WorkflowMetric(label: "Blockers", value: "\(evidence.blockerCount)", tone: evidence.blockerCount == 0 ? NexusPalette.success : NexusPalette.danger)
                 WorkflowMetric(label: "Review", value: "\(evidence.warningCount)", tone: evidence.warningCount == 0 ? NexusPalette.success : NexusPalette.warning)
+                WorkflowMetric(label: "Plan", value: "\(evidence.confirmationPlan.count)", tone: confirmationPlanTone)
+            }
+
+            if !evidence.confirmationPlan.isEmpty {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("归档确认计划 / Confirmation plan")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    ForEach(evidence.confirmationPlan.prefix(5)) { item in
+                        ArchiveConfirmationPlanRow(item: item) {
+                            action(item.gateAction)
+                        }
+                    }
+                    if evidence.confirmationPlan.count > 5 {
+                        Text("+ \(evidence.confirmationPlan.count - 5) 个确认项")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -11805,6 +11824,78 @@ private struct ArchiveGateEvidenceCardView: View {
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(evidence.status.color.opacity(0.14))
+        }
+    }
+
+    private var confirmationPlanTone: Color {
+        if evidence.confirmationPlan.contains(where: { $0.status == .blocked }) {
+            return NexusPalette.danger
+        }
+        if evidence.confirmationPlan.contains(where: { $0.status == .pending || $0.status == .review || $0.status == .next }) {
+            return NexusPalette.warning
+        }
+        return NexusPalette.success
+    }
+}
+
+private struct ArchiveConfirmationPlanRow: View {
+    let item: ArchiveConfirmationPlanItem
+    let action: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: item.action.systemImage)
+                .foregroundStyle(item.status.color)
+                .frame(width: 14)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(item.title)
+                        .font(.caption2.weight(.semibold))
+                        .lineLimit(1)
+                    Text(item.action.displayLabel)
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(item.status.color)
+                }
+                Text(item.detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(item.confirmationHint)
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 8)
+
+            Button(action: action) {
+                Image(systemName: rowActionImage)
+            }
+            .buttonStyle(.borderless)
+            .help("处理归档确认项 / Handle archive confirmation item")
+        }
+        .padding(8)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+
+    private var rowActionImage: String {
+        switch item.gateAction {
+        case .lifecycle(let transition):
+            return transition.systemImage
+        case .localCheck:
+            return "checklist"
+        case .riskPrompt, .deliveryHandoff, .validationHandoff, .codex:
+            return "point.3.connected.trianglepath.dotted"
+        case .worktree:
+            return "wrench.and.screwdriver"
+        case .task:
+            return "text.line.first.and.arrowtriangle.forward"
+        case .document(let key):
+            return key == "sql" ? "cylinder.split.1x2" : "doc.text"
+        case .path, .demandIntake, .transferDemandTasks:
+            return "doc.text"
         }
     }
 }

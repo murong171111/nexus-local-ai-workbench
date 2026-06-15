@@ -284,6 +284,7 @@ Native M1 UI:
 
 - a delivery-gate evidence card summarizes task, risk, service/worktree, delivery-record, SQL, dirty-service, and local-check status before the detailed checklist, then renders an ordered resolution plan for blockers, pending checks, review items, and passed evidence
 - a validation/PR evidence card sits between delivery and archive, summarizing local-check, delivery-record, task/risk, PR/CI, and lifecycle readiness without requiring direct GitHub integration
+- archive eligibility renders a confirmation plan that reuses delivery blockers while delivery is incomplete, then orders delivery-record review, validation/PR review, lifecycle writeback, and final archive confirmation once delivery passes
 - checklist groups blockers before passed evidence
 - each row opens the nearest document or local check
 - validation/PR handoff is separate from general workspace handoff
@@ -314,6 +315,7 @@ Native M1 UI:
 
 - archived workspace remains visible under Archive
 - archived workspace does not count toward active risk/task/worktree totals
+- archive confirmation plan makes the final checklist explicit before lifecycle writeback to `archived`
 - restore requires confirmation
 
 ## Main Path UI Contract

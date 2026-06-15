@@ -2559,10 +2559,15 @@ final class AppState: ObservableObject {
         DeliveryGateEvidence.resolve(workspace: workspace)
     }
 
-    func archiveGateEvidence(for workspace: WorkspaceSummary) -> ArchiveGateEvidence {
-        ArchiveGateEvidence.resolve(
+    func archiveGateEvidence(
+        for workspace: WorkspaceSummary,
+        validationPr: ValidationPrEvidence? = nil
+    ) -> ArchiveGateEvidence {
+        let delivery = deliveryGateEvidence(for: workspace)
+        return ArchiveGateEvidence.resolve(
             workspace: workspace,
-            deliveryGate: deliveryGateEvidence(for: workspace)
+            deliveryGate: delivery,
+            validationPr: validationPr ?? ValidationPrEvidence.resolve(workspace: workspace, deliveryGate: delivery)
         )
     }
 
