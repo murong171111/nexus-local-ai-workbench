@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Added
 
+- Native archive eligibility now includes an explicit confirmation plan that orders delivery blockers, delivery-record review, validation/PR review, lifecycle writeback, and final archive actions before the user confirms archive.
 - Native validation/PR evidence now summarizes local-check, delivery-record, task/risk, PR/CI, and lifecycle signals before archive decisions, keeping PR/CI as visible review evidence until direct GitHub integration exists.
 - Native delivery-gate evidence now includes a Swift-owned resolution plan that orders delivery blockers, pending checks, review items, and passed evidence with handoff/writeback guidance.
 - Native development-task evidence now includes a Swift-owned task plan that classifies each task as resolve blocker, continue, queued, or closed with writeback guidance.

@@ -1000,6 +1000,63 @@ struct ArchiveGateCheck: Hashable, Identifiable {
     let action: WorkspaceMainStageAction
 }
 
+enum ArchiveConfirmationPlanAction: Hashable {
+    case finishDelivery
+    case reviewDelivery
+    case reviewValidation
+    case enterDelivery
+    case markDone
+    case archive
+    case archived
+
+    var displayLabel: String {
+        switch self {
+        case .finishDelivery:
+            "finish"
+        case .reviewDelivery:
+            "delivery"
+        case .reviewValidation:
+            "review"
+        case .enterDelivery:
+            "delivery"
+        case .markDone:
+            "done"
+        case .archive:
+            "archive"
+        case .archived:
+            "archived"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .finishDelivery:
+            "shippingbox"
+        case .reviewDelivery:
+            "doc.text.magnifyingglass"
+        case .reviewValidation:
+            "point.3.connected.trianglepath.dotted"
+        case .enterDelivery:
+            LifecycleTransition.delivery.systemImage
+        case .markDone:
+            LifecycleTransition.done.systemImage
+        case .archive, .archived:
+            LifecycleTransition.archived.systemImage
+        }
+    }
+}
+
+struct ArchiveConfirmationPlanItem: Hashable, Identifiable {
+    let id: String
+    let title: String
+    let action: ArchiveConfirmationPlanAction
+    let status: WorkflowPathStatus
+    let detail: String
+    let evidencePath: String?
+    let gateAction: WorkspaceMainStageAction
+    let confirmationHint: String
+}
+
 struct ArchiveGateEvidence: Hashable {
     let status: WorkflowPathStatus
     let title: String
@@ -1007,6 +1064,7 @@ struct ArchiveGateEvidence: Hashable {
     let value: String
     let evidence: [String]
     let checks: [ArchiveGateCheck]
+    let confirmationPlan: [ArchiveConfirmationPlanItem]
     let primaryActionLabel: String
     let primaryActionSystemImage: String
     let primaryAction: WorkspaceMainStageAction
@@ -1019,7 +1077,8 @@ struct ArchiveGateEvidence: Hashable {
 
     static func resolve(
         workspace: WorkspaceSummary,
-        deliveryGate: DeliveryGateEvidence? = nil
+        deliveryGate: DeliveryGateEvidence? = nil,
+        validationPr: ValidationPrEvidence? = nil
     ) -> ArchiveGateEvidence {
         if workspace.isArchived {
             return ArchiveGateEvidence(
@@ -1029,6 +1088,7 @@ struct ArchiveGateEvidence: Hashable {
                 value: "已归档",
                 evidence: archiveEvidence(workspace: workspace),
                 checks: [],
+                confirmationPlan: archivedConfirmationPlan(workspace: workspace),
                 primaryActionLabel: "查看交接",
                 primaryActionSystemImage: "doc.text",
                 primaryAction: .document("handoff"),
@@ -1057,6 +1117,7 @@ struct ArchiveGateEvidence: Hashable {
                 value: delivery.value,
                 evidence: delivery.evidence + ["归档依赖交付门禁"],
                 checks: checks,
+                confirmationPlan: deliveryIssueConfirmationPlan(checks: checks),
                 primaryActionLabel: delivery.primaryActionLabel,
                 primaryActionSystemImage: delivery.primaryActionSystemImage,
                 primaryAction: delivery.primaryAction,
@@ -1082,6 +1143,11 @@ struct ArchiveGateEvidence: Hashable {
                         action: .lifecycle(.archived)
                     )
                 ],
+                confirmationPlan: buildConfirmationPlan(
+                    workspace: workspace,
+                    delivery: delivery,
+                    validationPr: validationPr
+                ),
                 primaryActionLabel: "归档",
                 primaryActionSystemImage: LifecycleTransition.archived.systemImage,
                 primaryAction: .lifecycle(.archived),
@@ -1106,6 +1172,11 @@ struct ArchiveGateEvidence: Hashable {
                         action: .lifecycle(.done)
                     )
                 ],
+                confirmationPlan: buildConfirmationPlan(
+                    workspace: workspace,
+                    delivery: delivery,
+                    validationPr: validationPr
+                ),
                 primaryActionLabel: "标记完成",
                 primaryActionSystemImage: LifecycleTransition.done.systemImage,
                 primaryAction: .lifecycle(.done),
@@ -1129,6 +1200,11 @@ struct ArchiveGateEvidence: Hashable {
                     action: .lifecycle(.delivery)
                 )
             ],
+            confirmationPlan: buildConfirmationPlan(
+                workspace: workspace,
+                delivery: delivery,
+                validationPr: validationPr
+            ),
             primaryActionLabel: "进入交付",
             primaryActionSystemImage: LifecycleTransition.delivery.systemImage,
             primaryAction: .lifecycle(.delivery),
@@ -1174,6 +1250,154 @@ struct ArchiveGateEvidence: Hashable {
             path: workspace.documentLinks["status"] ?? "\(workspace.path)/STATUS.md",
             action: action
         )
+    }
+
+    private static func archivedConfirmationPlan(workspace: WorkspaceSummary) -> [ArchiveConfirmationPlanItem] {
+        [
+            ArchiveConfirmationPlanItem(
+                id: "archived-handoff",
+                title: "查看归档交接 / Archived handoff",
+                action: .archived,
+                status: .archived,
+                detail: "工作区已归档，默认作为只读历史查看。需要继续开发时先从 handoff 恢复上下文。",
+                evidencePath: workspace.documentLinks["handoff"] ?? "\(workspace.path)/handoff.md",
+                gateAction: .document("handoff"),
+                confirmationHint: "归档工作区不再计入活跃统计；恢复开发前先确认分支和 worktree。"
+            )
+        ]
+    }
+
+    private static func deliveryIssueConfirmationPlan(checks: [ArchiveGateCheck]) -> [ArchiveConfirmationPlanItem] {
+        checks
+            .filter { $0.status != .ready && $0.status != .archived }
+            .map { check in
+                ArchiveConfirmationPlanItem(
+                    id: "finish-delivery-\(check.id)",
+                    title: check.label,
+                    action: .finishDelivery,
+                    status: check.status,
+                    detail: check.detail,
+                    evidencePath: check.path,
+                    gateAction: check.action,
+                    confirmationHint: deliveryIssueConfirmationHint(for: check)
+                )
+            }
+            .sorted { left, right in
+                if archivePlanStatusRank(left.status) != archivePlanStatusRank(right.status) {
+                    return archivePlanStatusRank(left.status) < archivePlanStatusRank(right.status)
+                }
+                return left.id < right.id
+            }
+    }
+
+    private static func buildConfirmationPlan(
+        workspace: WorkspaceSummary,
+        delivery: DeliveryGateEvidence,
+        validationPr: ValidationPrEvidence?
+    ) -> [ArchiveConfirmationPlanItem] {
+        var plan = [
+            ArchiveConfirmationPlanItem(
+                id: "review-delivery-record",
+                title: "复核交付记录 / Review delivery",
+                action: .reviewDelivery,
+                status: .ready,
+                detail: "交付门禁已通过。归档前最后确认代码、逻辑、配置、SQL、验证和风险结论都已写入交付记录。",
+                evidencePath: workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md",
+                gateAction: .document("delivery"),
+                confirmationHint: "交付记录是归档后恢复上下文的第一入口。"
+            )
+        ]
+
+        let lifecycleStage = workspace.lifecycle.stage.lowercased()
+        if lifecycleStage == "done" {
+            let validation = validationPr ?? ValidationPrEvidence.resolve(workspace: workspace, deliveryGate: delivery)
+            plan.append(
+                ArchiveConfirmationPlanItem(
+                    id: "review-validation-pr",
+                    title: "复核验证与 PR / Validation and PR",
+                    action: .reviewValidation,
+                    status: validation.status == .archived ? .ready : validation.status,
+                    detail: validation.reason,
+                    evidencePath: workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md",
+                    gateAction: validation.primaryAction,
+                    confirmationHint: validation.status == .ready
+                        ? "已发现 PR、CI、验证或发布证据；归档前确认结论可追溯。"
+                        : "PR/CI 尚未直接集成时，把验证、发布和遗留风险结论补到交付记录或交接。"
+                )
+            )
+            plan.append(
+                ArchiveConfirmationPlanItem(
+                    id: "archive-workspace",
+                    title: "最终归档 / Final archive",
+                    action: .archive,
+                    status: .ready,
+                    detail: "生命周期已完成，可以通过确认弹窗写回 archived 状态。",
+                    evidencePath: workspace.documentLinks["status"] ?? "\(workspace.path)/STATUS.md",
+                    gateAction: .lifecycle(.archived),
+                    confirmationHint: "归档只更新 workspace.md、STATUS.md 和审计事件，不移动目录或删除 worktree。"
+                )
+            )
+        } else if lifecycleStage == "delivery" {
+            plan.append(
+                ArchiveConfirmationPlanItem(
+                    id: "mark-workspace-done",
+                    title: "标记完成 / Mark done",
+                    action: .markDone,
+                    status: .next,
+                    detail: "当前处于交付整理阶段。先确认交付材料，再通过确认弹窗标记完成。",
+                    evidencePath: workspace.documentLinks["status"] ?? "\(workspace.path)/STATUS.md",
+                    gateAction: .lifecycle(.done),
+                    confirmationHint: "完成状态用于留出 PR、CI、发布和遗留风险复核窗口。"
+                )
+            )
+        } else {
+            plan.append(
+                ArchiveConfirmationPlanItem(
+                    id: "enter-delivery",
+                    title: "进入交付整理 / Enter delivery",
+                    action: .enterDelivery,
+                    status: .next,
+                    detail: "交付门禁已通过，但生命周期尚未进入交付整理。先写回 delivery，再继续完成和归档确认。",
+                    evidencePath: workspace.documentLinks["status"] ?? "\(workspace.path)/STATUS.md",
+                    gateAction: .lifecycle(.delivery),
+                    confirmationHint: "这一步防止从开发阶段直接跳到归档。"
+                )
+            )
+        }
+
+        return plan
+    }
+
+    private static func archivePlanStatusRank(_ status: WorkflowPathStatus) -> Int {
+        switch status {
+        case .blocked:
+            0
+        case .pending:
+            1
+        case .review:
+            2
+        case .next:
+            3
+        case .ready:
+            4
+        case .archived:
+            5
+        }
+    }
+
+    private static func deliveryIssueConfirmationHint(for check: ArchiveGateCheck) -> String {
+        switch check.status {
+        case .blocked:
+            "该项会阻止归档；处理后重新运行本地检查。"
+        case .pending:
+            "先运行本地检查生成证据，再继续交付和归档确认。"
+        case .review, .next:
+            "归档前需要明确处理结论，必要时交给 Codex 补齐文档。"
+        case .ready:
+            "该项已通过。"
+        case .archived:
+            "该项已归档。"
+        }
     }
 }
 
