@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Added
 
+- Native SwiftPM app now has a local `.app` bundle path through `script/build_and_run.sh` and `script/install_native_app.sh`, including a bundled Rust bridge fallback so locally installed Native builds can load real workspace data without relying on `NEXUS_CORE_LIBRARY`.
 - Native Board now has its own scope switch for All, Attention, Delivery, and Archive views, plus clearer card-level worktree summaries for quick triage without changing global sidebar filters.
 - Native SwiftUI now includes a Board surface beside Console, grouping workspaces by main workflow stage with active, blocked, delivery, and archive metrics; selecting a board card returns to Console with that workspace focused.
 - Archived native workspaces now keep the Archive card read-only by default while exposing an explicit restore-to-development action through the existing lifecycle confirmation and audit flow.

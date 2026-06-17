@@ -28,8 +28,31 @@ public protocol NexusBridge {
 }
 
 public enum NexusBridgeFactory {
+    public static let environmentLibraryKey = "NEXUS_CORE_LIBRARY"
+    public static let bundledLibraryName = "libnexus_ffi.dylib"
+
+    public static func resolvedLibraryPath(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        resourceURL: URL? = Bundle.main.resourceURL,
+        fileManager: FileManager = .default
+    ) -> String? {
+        if let libraryPath = environment[environmentLibraryKey], !libraryPath.isEmpty {
+            return libraryPath
+        }
+
+        guard let resourceURL else {
+            return nil
+        }
+
+        let bundledLibraryPath = resourceURL
+            .appendingPathComponent(bundledLibraryName)
+            .path
+
+        return fileManager.fileExists(atPath: bundledLibraryPath) ? bundledLibraryPath : nil
+    }
+
     public static func makeDefault(environment: [String: String] = ProcessInfo.processInfo.environment) -> NexusBridge {
-        guard let libraryPath = environment["NEXUS_CORE_LIBRARY"], !libraryPath.isEmpty else {
+        guard let libraryPath = resolvedLibraryPath(environment: environment) else {
             return PreviewNexusBridge()
         }
 
@@ -44,7 +67,7 @@ public enum NexusBridgeFactory {
 public final class PreviewNexusBridge: NexusBridge {
     public let modeDescription: String
 
-    public init(modeDetail: String = "Preview bridge: set NEXUS_CORE_LIBRARY to load Rust Core") {
+    public init(modeDetail: String = "Preview bridge: set NEXUS_CORE_LIBRARY or bundle libnexus_ffi.dylib to load Rust Core") {
         self.modeDescription = modeDetail
     }
 

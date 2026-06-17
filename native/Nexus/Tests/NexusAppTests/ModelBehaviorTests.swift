@@ -4,6 +4,44 @@ import XCTest
 @testable import NexusApp
 
 final class ModelBehaviorTests: XCTestCase {
+    func testNexusBridgeFactoryPrefersEnvironmentVariableOverBundledLibrary() throws {
+        let fileManager = FileManager.default
+        let rootURL = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let resourcesURL = rootURL.appendingPathComponent("Resources", isDirectory: true)
+        let bundledLibraryURL = resourcesURL.appendingPathComponent(NexusBridgeFactory.bundledLibraryName)
+        defer { try? fileManager.removeItem(at: rootURL) }
+
+        try fileManager.createDirectory(at: resourcesURL, withIntermediateDirectories: true)
+        XCTAssertTrue(fileManager.createFile(atPath: bundledLibraryURL.path, contents: Data()))
+
+        let resolved = NexusBridgeFactory.resolvedLibraryPath(
+            environment: [NexusBridgeFactory.environmentLibraryKey: "/tmp/custom-libnexus_ffi.dylib"],
+            resourceURL: resourcesURL,
+            fileManager: fileManager
+        )
+
+        XCTAssertEqual(resolved, "/tmp/custom-libnexus_ffi.dylib")
+    }
+
+    func testNexusBridgeFactoryFallsBackToBundledLibrary() throws {
+        let fileManager = FileManager.default
+        let rootURL = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let resourcesURL = rootURL.appendingPathComponent("Resources", isDirectory: true)
+        let bundledLibraryURL = resourcesURL.appendingPathComponent(NexusBridgeFactory.bundledLibraryName)
+        defer { try? fileManager.removeItem(at: rootURL) }
+
+        try fileManager.createDirectory(at: resourcesURL, withIntermediateDirectories: true)
+        XCTAssertTrue(fileManager.createFile(atPath: bundledLibraryURL.path, contents: Data()))
+
+        let resolved = NexusBridgeFactory.resolvedLibraryPath(
+            environment: [:],
+            resourceURL: resourcesURL,
+            fileManager: fileManager
+        )
+
+        XCTAssertEqual(resolved, bundledLibraryURL.path)
+    }
+
     func testNativeSetupReadinessSkipsInitializationWhenEnvironmentIsReady() {
         let readiness = NativeSetupReadiness(
             health: environmentHealth(ready: true, workspaceCount: 2, sourceRepoCount: 5),

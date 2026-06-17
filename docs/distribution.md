@@ -27,6 +27,24 @@ src-tauri/target/release/bundle/macos/Nexus.app
 src-tauri/target/release/bundle/dmg/Nexus_0.1.0_aarch64.dmg
 ```
 
+## Native Local Install
+
+The Swift-native line can now be staged and locally installed without relying on the Tauri bundle:
+
+```bash
+./script/build_and_run.sh
+./script/install_native_app.sh
+```
+
+Outputs:
+
+```text
+dist/Nexus.app
+/Applications/Nexus.app
+```
+
+This path is for local development and iteration. It is not a signed public-distribution bundle yet.
+
 ## Release Checklist
 
 - Ensure `src/data/workspaces.json` contains only sample data and passes `npm run sample:check`.

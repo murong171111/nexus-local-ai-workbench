@@ -73,7 +73,18 @@ swift build --package-path native/Nexus
 swift test --package-path native/Nexus
 ```
 
-This does not produce a signed `.app` bundle yet. Packaging, signing, notarization, Widget Extension targets, and updater integration are intentionally separate later steps. The SwiftPM test target covers native model behavior such as menu-bar status priority, lifecycle fallback stages, and Task Center filters.
+For local development, the repository now includes a project-local Native app bundle and install path:
+
+```bash
+./script/build_and_run.sh
+./script/install_native_app.sh
+```
+
+`build_and_run.sh` stages `dist/Nexus.app` from the SwiftPM executable plus the Rust bridge, then launches it as a real foreground app bundle. `install_native_app.sh` stages a release bundle and installs it into `/Applications/Nexus.app`.
+
+The Native bundle loads Rust Core from `Contents/Resources/libnexus_ffi.dylib` by default, so local installs do not need `NEXUS_CORE_LIBRARY` set manually.
+
+This still does not produce a signed distribution-ready `.app` bundle. Signing, notarization, Widget Extension targets, and updater integration remain later steps. The SwiftPM test target covers native model behavior such as menu-bar status priority, lifecycle fallback stages, and Task Center filters.
 
 ## Rust Core Bridge
 
@@ -85,4 +96,4 @@ For local development, build the bridge library from the repository root:
 npm run ffi:build
 ```
 
-Then launch the native shell with `NEXUS_CORE_LIBRARY` pointing to the generated `libnexus_ffi.dylib`. If the variable is missing or the library cannot be loaded, the shell falls back to preview data and metadata search results.
+`NEXUS_CORE_LIBRARY` still works for development overrides. If the variable is missing, the app now also looks for a bundled `Contents/Resources/libnexus_ffi.dylib` before falling back to preview data and metadata search results.

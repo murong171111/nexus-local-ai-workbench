@@ -221,6 +221,18 @@ npm run dev
 npm run tauri:dev
 ```
 
+以本地前台应用 bundle 方式运行 Native SwiftUI 版本：
+
+```bash
+npm run native:run
+```
+
+把最新 Native 本地构建安装到 `/Applications/Nexus.app`：
+
+```bash
+npm run native:install
+```
+
 构建 macOS 应用：
 
 ```bash
@@ -251,7 +263,7 @@ npm run native:build
 npm run ffi:build
 ```
 
-原生壳开发时，可以把 `NEXUS_CORE_LIBRARY` 指向构建出的 `libnexus_ffi.dylib`，用于通过 Rust Core 读取真实工作区数据。未设置时，Swift 壳会使用预览兜底数据。
+原生壳开发时，仍然可以把 `NEXUS_CORE_LIBRARY` 指向自定义构建出的 `libnexus_ffi.dylib`。现在本地 Native bundle 也会把这份动态库打进 `Contents/Resources`，所以安装后的 Native 应用不依赖这个环境变量也能读取真实工作区数据；只有找不到动态库时才会退回预览兜底数据。
 
 运行本地标准验证：
 

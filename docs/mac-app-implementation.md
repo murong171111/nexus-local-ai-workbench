@@ -126,6 +126,13 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added Tauri npm scripts:
   - `npm run tauri:dev`
   - `npm run tauri:build`
+- Added Native local app bundle scripts:
+  - `npm run native:run`
+  - `npm run native:install`
+  - `script/stage_native_app.sh`
+  - `script/build_and_run.sh`
+  - `script/install_native_app.sh`
+- Added bundled Rust bridge fallback for the Native app, so a locally installed `/Applications/Nexus.app` can load real workspace data from `Contents/Resources/libnexus_ffi.dylib` without relying on `NEXUS_CORE_LIBRARY`.
 - Added temporary app icon at `src-tauri/icons/icon.png`.
 - Added repeatable icon generation script at `scripts/generate-icon.mjs`; `npm run icon` also runs `tauri icon` to generate `icon.icns`.
 - Built the macOS `.app` and `.dmg` successfully.
@@ -137,6 +144,8 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 ```text
 src-tauri/target/release/bundle/macos/Nexus.app
 src-tauri/target/release/bundle/dmg/Nexus_0.1.0_aarch64.dmg
+dist/Nexus.app
+/Applications/Nexus.app
 ```
 
 ## Runtime Boundaries
@@ -178,6 +187,8 @@ npm run build
 npm run test
 npm run widget:typecheck
 npm run tauri:build
+npm run native:run
+npm run native:install
 ```
 
 The native workspace flow treats archived workspaces as retained history. They remain available through the Archive filter and deep links, but menu-bar summaries, Task Center totals, and local automation checks exclude them from active attention signals.

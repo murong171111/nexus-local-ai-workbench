@@ -219,6 +219,18 @@ Run the Tauri app in development:
 npm run tauri:dev
 ```
 
+Run the Native SwiftUI app as a local foreground bundle:
+
+```bash
+npm run native:run
+```
+
+Install the latest local Native build into `/Applications/Nexus.app`:
+
+```bash
+npm run native:install
+```
+
 Build the app:
 
 ```bash
@@ -249,7 +261,7 @@ Build the Rust Core bridge dynamic library:
 npm run ffi:build
 ```
 
-During native shell development, set `NEXUS_CORE_LIBRARY` to the built `libnexus_ffi.dylib` path to load real workspace data through Rust Core. Without that variable, the Swift shell uses preview fallback data.
+During native shell development, `NEXUS_CORE_LIBRARY` can still point at a custom `libnexus_ffi.dylib`. The local Native bundle now also stages that library into `Contents/Resources`, so installed Native builds can load real workspace data without relying on the environment variable.
 
 Run the standard local verification set:
 
