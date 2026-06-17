@@ -30,6 +30,7 @@ The first native shell scaffold is available at `native/Nexus`. It is a Swift Pa
 ### Native Mac App
 
 - SwiftUI app shell, navigation, document views, settings, command surfaces, and workspace cards.
+- Primary Native surfaces are `Console` for selected-workspace execution and `Board` for stage-based workspace overview. Board is presentation-only: it groups workspaces from shared workflow evidence and routes selected cards back to Console for mutation or handoff actions.
 - AppKit adapters for menu bar, file panels, keyboard shortcuts, Finder/Terminal/IDE launch, and any behavior where AppKit is more reliable than SwiftUI alone.
 - Explicit confirmation flows for operations that create files, create worktrees, or change local state.
 - Create-workspace UX for scanning source repositories, filtering service candidates, accepting manual fallback services, showing pending scope, preflighting workspaces root readiness, folder validity, destination collisions, environment health, and scope warnings before confirmation, verifying generated files and initial status through an initialization receipt, and guiding the user to the next safe step after creation.

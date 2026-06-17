@@ -330,6 +330,34 @@ final class ModelBehaviorTests: XCTestCase {
         )
     }
 
+    func testWorkspaceBoardColumnsFollowMainWorkflowOrder() {
+        let demandWorkspace = workspaceForWorkflowSummary(
+            stage: "scoping",
+            id: "board-demand",
+            name: "需求预检"
+        )
+        let deliveryWorkspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "board-delivery",
+            name: "交付检查",
+            healthChecks: [
+                WorkspaceHealthCheck(id: "demand-intake", label: "需求预检", detail: "需求预检已就绪", status: "pass", action: "demandIntake")
+            ]
+        )
+        let archivedWorkspace = workspaceForWorkflowSummary(
+            stage: "archived",
+            id: "board-archive",
+            name: "已归档"
+        )
+
+        let columns = WorkspaceBoardColumn.columns(for: [archivedWorkspace, deliveryWorkspace, demandWorkspace])
+
+        XCTAssertEqual(columns.map(\.id), WorkspaceBoardColumn.visibleStageOrder)
+        XCTAssertEqual(columns.first(where: { $0.id == .demandIntake })?.workspaces.map(\.id), ["board-demand"])
+        XCTAssertEqual(columns.first(where: { $0.id == .deliveryCheck })?.workspaces.map(\.id), ["board-delivery"])
+        XCTAssertEqual(columns.first(where: { $0.id == .archived })?.workspaces.map(\.id), ["board-archive"])
+    }
+
     func testWorkspaceSummaryMapsSqlFilesFromBridgeSnapshot() {
         let snapshot = WorkspaceSnapshot(
             name: "SQL Workspace",
