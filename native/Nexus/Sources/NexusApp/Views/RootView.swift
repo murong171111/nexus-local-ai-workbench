@@ -1832,6 +1832,19 @@ private struct LifecycleStatusUpdateSheet: View {
                 }
             }
 
+            if isRestoringArchived {
+                Label(
+                    "恢复后这个工作区会重新进入活跃开发流，并重新参与任务、风险、worktree 和交付检查。",
+                    systemImage: "arrow.uturn.backward.circle"
+                )
+                .font(.caption)
+                .foregroundStyle(NexusPalette.accent)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(10)
+                .background(NexusPalette.accent.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+
             Toggle("确认写入 workspace.md 和 STATUS.md / Confirm local write", isOn: $confirmed)
 
             HStack {
@@ -1864,6 +1877,10 @@ private struct LifecycleStatusUpdateSheet: View {
         }
         .padding(22)
         .frame(width: 600)
+    }
+
+    private var isRestoringArchived: Bool {
+        update.currentStage.lowercased() == "archived" && update.nextState.lowercased() != "archived"
     }
 }
 
@@ -11828,6 +11845,9 @@ private struct ArchiveGateEvidenceCardView: View {
     }
 
     private var confirmationPlanTone: Color {
+        if evidence.status == .archived {
+            return NexusPalette.accent.opacity(0.65)
+        }
         if evidence.confirmationPlan.contains(where: { $0.status == .blocked }) {
             return NexusPalette.danger
         }

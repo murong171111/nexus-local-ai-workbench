@@ -1410,11 +1410,14 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertEqual(archive.status, .archived)
         XCTAssertEqual(archive.primaryAction, .document("handoff"))
-        XCTAssertEqual(archive.confirmationPlan.map(\.action), [.archived])
+        XCTAssertEqual(archive.confirmationPlan.map(\.action), [.archived, .restore])
         XCTAssertEqual(archive.confirmationPlan.first?.gateAction, .document("handoff"))
+        XCTAssertEqual(archive.confirmationPlan.last?.gateAction, .lifecycle(.restoreDevelopment))
+        XCTAssertEqual(workspace.lifecycleTransitions, [.restoreDevelopment])
         XCTAssertEqual(stage.id, .archived)
         XCTAssertEqual(stage.status, .archived)
         XCTAssertEqual(stage.primaryAction, .document("handoff"))
+        XCTAssertTrue(stage.reason.contains("默认只读"))
     }
 
     func testValidationPrEvidenceWaitsForDeliveryGate() {
