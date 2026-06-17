@@ -1008,6 +1008,7 @@ enum ArchiveConfirmationPlanAction: Hashable {
     case markDone
     case archive
     case archived
+    case restore
 
     var displayLabel: String {
         switch self {
@@ -1025,6 +1026,8 @@ enum ArchiveConfirmationPlanAction: Hashable {
             "archive"
         case .archived:
             "archived"
+        case .restore:
+            "restore"
         }
     }
 
@@ -1042,6 +1045,8 @@ enum ArchiveConfirmationPlanAction: Hashable {
             LifecycleTransition.done.systemImage
         case .archive, .archived:
             LifecycleTransition.archived.systemImage
+        case .restore:
+            LifecycleTransition.restoreDevelopment.systemImage
         }
     }
 }
@@ -1084,7 +1089,7 @@ struct ArchiveGateEvidence: Hashable {
             return ArchiveGateEvidence(
                 status: .archived,
                 title: "已归档 / Archived",
-                reason: "这个工作区已退出活跃开发流。需要恢复时先查看交接、交付记录和审计上下文。",
+                reason: "这个工作区已退出活跃开发流，默认作为只读历史查看。恢复开发必须显式确认并写回生命周期。",
                 value: "已归档",
                 evidence: archiveEvidence(workspace: workspace),
                 checks: [],
@@ -1263,6 +1268,16 @@ struct ArchiveGateEvidence: Hashable {
                 evidencePath: workspace.documentLinks["handoff"] ?? "\(workspace.path)/handoff.md",
                 gateAction: .document("handoff"),
                 confirmationHint: "归档工作区不再计入活跃统计；恢复开发前先确认分支和 worktree。"
+            ),
+            ArchiveConfirmationPlanItem(
+                id: "restore-development",
+                title: "恢复开发 / Restore development",
+                action: .restore,
+                status: .next,
+                detail: "需要继续处理这个需求时，通过确认弹窗把生命周期写回 developing，然后重新运行本地检查。",
+                evidencePath: workspace.documentLinks["status"] ?? "\(workspace.path)/STATUS.md",
+                gateAction: .lifecycle(.restoreDevelopment),
+                confirmationHint: "恢复只更新 workspace.md、STATUS.md 和审计事件，不会自动切分支、移动目录或修改任务。"
             )
         ]
     }
@@ -4588,6 +4603,14 @@ struct LifecycleTransition: Identifiable, Hashable {
         systemImage: "hammer"
     )
 
+    static let restoreDevelopment = LifecycleTransition(
+        state: "developing",
+        label: "恢复开发 / Restore",
+        focus: "从归档历史恢复为活跃开发",
+        nextAction: "重新运行本地检查，确认分支、worktree、任务和交付记录仍可继续",
+        systemImage: "arrow.uturn.backward.circle"
+    )
+
     static let delivery = LifecycleTransition(
         state: "delivery",
         label: "进入交付 / Delivery",
@@ -4762,7 +4785,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
         case "blocked":
             return [.developing, .delivery]
         case "archived":
-            return [.developing]
+            return [.restoreDevelopment]
         default:
             return [.developing, .delivery, .blocked]
         }
@@ -4784,11 +4807,11 @@ struct WorkspaceSummary: Identifiable, Hashable {
                 id: .archived,
                 status: .archived,
                 title: "已归档 / Archived",
-                reason: "这个工作区已退出活跃开发流。需要恢复时先查看交接和交付证据。",
+                reason: "这个工作区已退出活跃开发流，默认只读查看。需要继续处理时，从归档确认计划中显式恢复开发。",
                 primaryActionLabel: "查看交接",
                 primaryActionSystemImage: "doc.text",
                 primaryAction: .document("handoff"),
-                evidence: compactEvidence("handoff.md", documentLinks["delivery"] ?? "交付记录.md"),
+                evidence: compactEvidence("handoff.md", documentLinks["delivery"] ?? "交付记录.md", "恢复开发需要确认写回"),
                 nextStageAllowed: false
             )
         }

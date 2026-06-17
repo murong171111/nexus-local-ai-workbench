@@ -83,6 +83,7 @@ src-tauri/target/release/bundle/dmg/Nexus_0.1.0_aarch64.dmg
   - `~/Library/Application Support/com.ks.nexus/widget-snapshot.json` is generated.
   - `nexus://workspace/<folder>` opens Nexus and focuses the target workspace when it exists, and the Command Center can copy the same link for the selected workspace.
   - Widget and menu-bar attention summaries exclude archived workspaces from active risk, dirty-service, and missing-worktree totals while deep links can still focus archived history.
+  - Archived workspace detail stays read-only by default, with restore-to-development exposed as an explicit confirmed lifecycle writeback that returns the workspace to active checks.
 
 ## Signing And Notarization
 
