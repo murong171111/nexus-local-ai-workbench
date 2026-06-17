@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Added
 
+- Native Board now has its own scope switch for All, Attention, Delivery, and Archive views, plus clearer card-level worktree summaries for quick triage without changing global sidebar filters.
 - Native SwiftUI now includes a Board surface beside Console, grouping workspaces by main workflow stage with active, blocked, delivery, and archive metrics; selecting a board card returns to Console with that workspace focused.
 - Archived native workspaces now keep the Archive card read-only by default while exposing an explicit restore-to-development action through the existing lifecycle confirmation and audit flow.
 - Native archive eligibility now includes an explicit confirmation plan that orders delivery blockers, delivery-record review, validation/PR review, lifecycle writeback, and final archive actions before the user confirms archive.

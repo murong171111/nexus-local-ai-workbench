@@ -358,6 +358,37 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(columns.first(where: { $0.id == .archived })?.workspaces.map(\.id), ["board-archive"])
     }
 
+    func testWorkspaceBoardScopeFiltersWithoutChangingColumnOrder() {
+        let demandWorkspace = workspaceForWorkflowSummary(
+            stage: "scoping",
+            id: "board-demand",
+            name: "需求预检"
+        )
+        let deliveryWorkspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "board-delivery",
+            name: "交付检查",
+            healthChecks: [
+                WorkspaceHealthCheck(id: "demand-intake", label: "需求预检", detail: "需求预检已就绪", status: "pass", action: "demandIntake")
+            ]
+        )
+        let archivedWorkspace = workspaceForWorkflowSummary(
+            stage: "archived",
+            id: "board-archive",
+            name: "已归档"
+        )
+        let workspaces = [archivedWorkspace, deliveryWorkspace, demandWorkspace]
+
+        let attentionColumns = WorkspaceBoardColumn.columns(for: workspaces, scope: .attention)
+        let deliveryColumns = WorkspaceBoardColumn.columns(for: workspaces, scope: .delivery)
+        let archivedColumns = WorkspaceBoardColumn.columns(for: workspaces, scope: .archived)
+
+        XCTAssertEqual(attentionColumns.map(\.id), WorkspaceBoardColumn.visibleStageOrder)
+        XCTAssertEqual(attentionColumns.flatMap { $0.workspaces.map(\.id) }, ["board-demand", "board-delivery"])
+        XCTAssertEqual(deliveryColumns.flatMap { $0.workspaces.map(\.id) }, ["board-delivery"])
+        XCTAssertEqual(archivedColumns.flatMap { $0.workspaces.map(\.id) }, ["board-archive"])
+    }
+
     func testWorkspaceSummaryMapsSqlFilesFromBridgeSnapshot() {
         let snapshot = WorkspaceSnapshot(
             name: "SQL Workspace",

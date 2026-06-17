@@ -1906,8 +1906,12 @@ struct WorkspaceBoardColumn: Hashable, Identifiable {
         .archived
     ]
 
-    static func columns(for workspaces: [WorkspaceSummary]) -> [WorkspaceBoardColumn] {
-        let grouped = Dictionary(grouping: workspaces) { workspace in
+    static func columns(
+        for workspaces: [WorkspaceSummary],
+        scope: WorkspaceBoardScope = .all
+    ) -> [WorkspaceBoardColumn] {
+        let visibleWorkspaces = scope.filter(workspaces)
+        let grouped = Dictionary(grouping: visibleWorkspaces) { workspace in
             workspace.mainStage().id
         }
 
@@ -1932,6 +1936,81 @@ struct WorkspaceBoardColumn: Hashable, Identifiable {
             return lhs.folder > rhs.folder
         }
         return lhs.name < rhs.name
+    }
+}
+
+enum WorkspaceBoardScope: String, CaseIterable, Hashable, Identifiable {
+    case all
+    case attention
+    case delivery
+    case archived
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .all:
+            "全部"
+        case .attention:
+            "需处理"
+        case .delivery:
+            "交付"
+        case .archived:
+            "归档"
+        }
+    }
+
+    var englishLabel: String {
+        switch self {
+        case .all:
+            "All"
+        case .attention:
+            "Attention"
+        case .delivery:
+            "Delivery"
+        case .archived:
+            "Archive"
+        }
+    }
+
+    func filter(_ workspaces: [WorkspaceSummary]) -> [WorkspaceSummary] {
+        workspaces.filter(matches)
+    }
+
+    func matches(_ workspace: WorkspaceSummary) -> Bool {
+        switch self {
+        case .all:
+            true
+        case .attention:
+            workspace.needsBoardAttention
+        case .delivery:
+            workspace.mainStage().id == .deliveryCheck
+        case .archived:
+            workspace.isArchived
+        }
+    }
+}
+
+extension WorkspaceSummary {
+    var needsBoardAttention: Bool {
+        if isArchived {
+            return false
+        }
+
+        let stage = mainStage()
+        if stage.status == .blocked || stage.status == .pending || stage.status == .review {
+            return true
+        }
+
+        if state == .blocked || riskLevel != .low {
+            return true
+        }
+
+        return services.contains { service in
+            service.worktreeExists == false
+                || service.sourceExists == false
+                || !service.gitSummary.localizedCaseInsensitiveContains("clean")
+        }
     }
 }
 

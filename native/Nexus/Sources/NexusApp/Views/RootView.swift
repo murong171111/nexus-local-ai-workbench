@@ -2361,13 +2361,18 @@ private struct WorkspaceListView: View {
 private struct WorkspaceBoardView: View {
     @EnvironmentObject private var appState: AppState
     let openConsole: () -> Void
+    @State private var boardScope: WorkspaceBoardScope = .all
 
     private var workspaces: [WorkspaceSummary] {
         appState.filteredWorkspaces
     }
 
+    private var visibleWorkspaces: [WorkspaceSummary] {
+        boardScope.filter(workspaces)
+    }
+
     private var columns: [WorkspaceBoardColumn] {
-        WorkspaceBoardColumn.columns(for: workspaces)
+        WorkspaceBoardColumn.columns(for: workspaces, scope: boardScope)
     }
 
     private var activeCount: Int {
@@ -2396,12 +2401,15 @@ private struct WorkspaceBoardView: View {
                 activeCount: activeCount,
                 blockedCount: blockedCount,
                 deliveryCount: deliveryCount,
-                archivedCount: archivedCount
+                archivedCount: archivedCount,
+                visibleCount: visibleWorkspaces.count,
+                totalCount: workspaces.count,
+                scope: $boardScope
             )
             Divider()
 
-            if workspaces.isEmpty {
-                WorkspaceBoardEmptyState()
+            if visibleWorkspaces.isEmpty {
+                WorkspaceBoardEmptyState(scope: boardScope, hasGlobalWorkspaces: !workspaces.isEmpty)
                     .padding(18)
             } else {
                 ScrollView([.horizontal, .vertical]) {
@@ -2426,6 +2434,9 @@ private struct WorkspaceBoardHeader: View {
     let blockedCount: Int
     let deliveryCount: Int
     let archivedCount: Int
+    let visibleCount: Int
+    let totalCount: Int
+    @Binding var scope: WorkspaceBoardScope
 
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
@@ -2435,17 +2446,33 @@ private struct WorkspaceBoardHeader: View {
                 Text("按主流程阶段查看所有工作区；点击卡片回到控制台处理。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Text("当前显示 \(visibleCount) / \(totalCount)")
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.secondary)
             }
 
             Spacer()
 
-            BoardMetric(label: "活跃", english: "Active", value: activeCount, tone: NexusPalette.accent)
-            BoardMetric(label: "阻塞", english: "Blocked", value: blockedCount, tone: blockedCount > 0 ? NexusPalette.danger : NexusPalette.success)
-            BoardMetric(label: "待交付", english: "Delivery", value: deliveryCount, tone: deliveryCount > 0 ? NexusPalette.warning : NexusPalette.success)
-            BoardMetric(label: "已归档", english: "Archive", value: archivedCount, tone: NexusPalette.accent.opacity(0.55))
+            VStack(alignment: .trailing, spacing: 8) {
+                HStack(spacing: 14) {
+                    BoardMetric(label: "活跃", english: "Active", value: activeCount, tone: NexusPalette.accent)
+                    BoardMetric(label: "阻塞", english: "Blocked", value: blockedCount, tone: blockedCount > 0 ? NexusPalette.danger : NexusPalette.success)
+                    BoardMetric(label: "待交付", english: "Delivery", value: deliveryCount, tone: deliveryCount > 0 ? NexusPalette.warning : NexusPalette.success)
+                    BoardMetric(label: "已归档", english: "Archive", value: archivedCount, tone: NexusPalette.accent.opacity(0.55))
+                }
+
+                Picker("面板范围 / Board scope", selection: $scope) {
+                    ForEach(WorkspaceBoardScope.allCases) { scope in
+                        Text("\(scope.label) / \(scope.englishLabel)")
+                            .tag(scope)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 340)
+            }
         }
         .padding(.horizontal, 18)
-        .frame(height: 72)
+        .frame(height: 92)
     }
 }
 
@@ -2533,6 +2560,21 @@ private struct WorkspaceBoardCard: View {
         workspace.tasks.filter(\.isActive).count
     }
 
+    private var worktreeSummary: String {
+        let missingCount = workspace.services.filter { !$0.worktreeExists }.count
+        let dirtyCount = workspace.services.filter { service in
+            !service.gitSummary.localizedCaseInsensitiveContains("clean")
+        }.count
+
+        if missingCount > 0 {
+            return "\(missingCount) missing"
+        }
+        if dirtyCount > 0 {
+            return "\(dirtyCount) dirty"
+        }
+        return "\(workspace.services.count) ready"
+    }
+
     private var serviceChips: [String] {
         Array(workspace.services.map(\.name).prefix(3))
     }
@@ -2580,6 +2622,7 @@ private struct WorkspaceBoardCard: View {
                     BoardInfoRow(label: "分支", value: workspace.branch, systemImage: "arrow.triangle.branch")
                     BoardInfoRow(label: "下一步", value: stage.primaryActionLabel, systemImage: stage.primaryActionSystemImage)
                     BoardInfoRow(label: "任务", value: "\(activeTaskCount) active", systemImage: "checklist")
+                    BoardInfoRow(label: "Worktree", value: worktreeSummary, systemImage: "externaldrive")
                 }
 
                 if !serviceChips.isEmpty {
@@ -2646,11 +2689,14 @@ private struct BoardInfoRow: View {
 }
 
 private struct WorkspaceBoardEmptyState: View {
+    let scope: WorkspaceBoardScope
+    let hasGlobalWorkspaces: Bool
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label("当前筛选下没有工作区 / No board items", systemImage: "rectangle.grid.2x2")
                 .font(.headline)
-            Text("清空搜索或左侧筛选后，Board 会按主流程阶段展示工作区。")
+            Text(emptyMessage)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -2658,6 +2704,13 @@ private struct WorkspaceBoardEmptyState: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(NexusPalette.panel)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var emptyMessage: String {
+        if !hasGlobalWorkspaces {
+            return "清空搜索或左侧筛选后，Board 会按主流程阶段展示工作区。"
+        }
+        return "当前 Board 范围是 \(scope.label) / \(scope.englishLabel)，可以切回全部或调整左侧筛选。"
     }
 }
 
