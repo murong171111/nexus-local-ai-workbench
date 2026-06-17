@@ -322,6 +322,13 @@ Native M1 UI:
 
 ## Main Path UI Contract
 
+The Native shell has two primary surfaces:
+
+- `Console`: focused execution for the selected workspace. This remains the place for document preview, confirmed writes, handoffs, and local actions.
+- `Board`: stage overview for the currently filtered workspace set. Board columns are derived from the same `WorkspaceMainStage` evidence as Console, and clicking a card returns to Console with that workspace focused.
+
+Board must not become a second workflow source. It should show stage, risk, branch, service/task hints, and the recommended next action, then route users back to Console for the actual operation.
+
 Workspace detail should use this order:
 
 1. Stage summary

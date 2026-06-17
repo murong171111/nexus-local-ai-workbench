@@ -40,6 +40,7 @@ struct RootView: View {
     @EnvironmentObject private var appState: AppState
     @State private var isCreateWorkspacePresented = false
     @State private var isSettingsPresented = false
+    @State private var primarySurface: NexusPrimarySurface = .console
 
     var body: some View {
         HStack(spacing: 0) {
@@ -52,13 +53,19 @@ struct RootView: View {
             Divider()
 
             VStack(spacing: 0) {
-                TopCommandBar()
+                TopCommandBar(primarySurface: $primarySurface)
                 Divider()
 
-                WorkspaceListView(
-                    isCreateWorkspacePresented: $isCreateWorkspacePresented,
-                    isSettingsPresented: $isSettingsPresented
-                )
+                if primarySurface == .console {
+                    WorkspaceListView(
+                        isCreateWorkspacePresented: $isCreateWorkspacePresented,
+                        isSettingsPresented: $isSettingsPresented
+                    )
+                } else {
+                    WorkspaceBoardView {
+                        primarySurface = .console
+                    }
+                }
             }
 
             Divider()
@@ -110,12 +117,38 @@ struct RootView: View {
     }
 }
 
+private enum NexusPrimarySurface: String, CaseIterable, Identifiable {
+    case console = "Console"
+    case board = "Board"
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .console:
+            "控制台"
+        case .board:
+            "面板"
+        }
+    }
+}
+
 private struct TopCommandBar: View {
     @EnvironmentObject private var appState: AppState
+    @Binding var primarySurface: NexusPrimarySurface
     @FocusState private var searchFocused: Bool
 
     var body: some View {
         HStack(spacing: 12) {
+            Picker("视图 / View", selection: $primarySurface) {
+                ForEach(NexusPrimarySurface.allCases) { surface in
+                    Text("\(surface.label) / \(surface.rawValue)")
+                        .tag(surface)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 184)
+
             ZStack(alignment: .topLeading) {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
@@ -2322,6 +2355,309 @@ private struct WorkspaceListView: View {
                 .padding(18)
             }
         }
+    }
+}
+
+private struct WorkspaceBoardView: View {
+    @EnvironmentObject private var appState: AppState
+    let openConsole: () -> Void
+
+    private var workspaces: [WorkspaceSummary] {
+        appState.filteredWorkspaces
+    }
+
+    private var columns: [WorkspaceBoardColumn] {
+        WorkspaceBoardColumn.columns(for: workspaces)
+    }
+
+    private var activeCount: Int {
+        workspaces.filter { !$0.isArchived }.count
+    }
+
+    private var blockedCount: Int {
+        workspaces.filter { workspace in
+            workspace.mainStage().status == .blocked || workspace.state == .blocked
+        }.count
+    }
+
+    private var deliveryCount: Int {
+        workspaces.filter { workspace in
+            workspace.mainStage().id == .deliveryCheck
+        }.count
+    }
+
+    private var archivedCount: Int {
+        workspaces.filter(\.isArchived).count
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            WorkspaceBoardHeader(
+                activeCount: activeCount,
+                blockedCount: blockedCount,
+                deliveryCount: deliveryCount,
+                archivedCount: archivedCount
+            )
+            Divider()
+
+            if workspaces.isEmpty {
+                WorkspaceBoardEmptyState()
+                    .padding(18)
+            } else {
+                ScrollView([.horizontal, .vertical]) {
+                    HStack(alignment: .top, spacing: 12) {
+                        ForEach(columns) { column in
+                            WorkspaceBoardColumnView(column: column) { workspace in
+                                appState.select(workspace)
+                                openConsole()
+                            }
+                        }
+                    }
+                    .padding(18)
+                }
+            }
+        }
+        .background(NexusPalette.background)
+    }
+}
+
+private struct WorkspaceBoardHeader: View {
+    let activeCount: Int
+    let blockedCount: Int
+    let deliveryCount: Int
+    let archivedCount: Int
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 14) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("面板 / Board")
+                    .font(.title3.weight(.semibold))
+                Text("按主流程阶段查看所有工作区；点击卡片回到控制台处理。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            BoardMetric(label: "活跃", english: "Active", value: activeCount, tone: NexusPalette.accent)
+            BoardMetric(label: "阻塞", english: "Blocked", value: blockedCount, tone: blockedCount > 0 ? NexusPalette.danger : NexusPalette.success)
+            BoardMetric(label: "待交付", english: "Delivery", value: deliveryCount, tone: deliveryCount > 0 ? NexusPalette.warning : NexusPalette.success)
+            BoardMetric(label: "已归档", english: "Archive", value: archivedCount, tone: NexusPalette.accent.opacity(0.55))
+        }
+        .padding(.horizontal, 18)
+        .frame(height: 72)
+    }
+}
+
+private struct BoardMetric: View {
+    let label: String
+    let english: String
+    let value: Int
+    let tone: Color
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 2) {
+            Text("\(value)")
+                .font(.system(size: 18, weight: .semibold, design: .monospaced))
+                .foregroundStyle(tone)
+            Text("\(label) / \(english)")
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(.secondary)
+        }
+        .frame(minWidth: 72, alignment: .trailing)
+    }
+}
+
+private struct WorkspaceBoardColumnView: View {
+    let column: WorkspaceBoardColumn
+    let openWorkspace: (WorkspaceSummary) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 7) {
+                Image(systemName: column.systemImage)
+                    .foregroundStyle(NexusPalette.accent)
+                    .frame(width: 15)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(column.title)
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
+                    Text("\(column.count) workspaces")
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+
+            if column.workspaces.isEmpty {
+                WorkspaceBoardColumnEmptyView()
+            } else {
+                ForEach(column.workspaces) { workspace in
+                    WorkspaceBoardCard(workspace: workspace) {
+                        openWorkspace(workspace)
+                    }
+                }
+            }
+        }
+        .padding(10)
+        .frame(width: 278, alignment: .topLeading)
+        .background(NexusPalette.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(NexusPalette.border, lineWidth: 1)
+        }
+    }
+}
+
+private struct WorkspaceBoardColumnEmptyView: View {
+    var body: some View {
+        Text("当前阶段暂无工作区")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, minHeight: 88, alignment: .center)
+            .background(NexusPalette.badge)
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+}
+
+private struct WorkspaceBoardCard: View {
+    let workspace: WorkspaceSummary
+    let openConsole: () -> Void
+
+    private var stage: WorkspaceMainStage {
+        workspace.mainStage()
+    }
+
+    private var activeTaskCount: Int {
+        workspace.tasks.filter(\.isActive).count
+    }
+
+    private var serviceChips: [String] {
+        Array(workspace.services.map(\.name).prefix(3))
+    }
+
+    private var extraServiceCount: Int {
+        max(0, workspace.services.count - serviceChips.count)
+    }
+
+    var body: some View {
+        Button(action: openConsole) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(workspace.name)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Text(workspace.folder)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 8)
+                    RiskBadge(level: workspace.riskLevel)
+                }
+
+                HStack(spacing: 6) {
+                    Label(stage.status.displayLabel, systemImage: stage.id.systemImage)
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(stage.status.color)
+                        .lineLimit(1)
+                    Spacer()
+                    Text(stage.id.shortLabel)
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+
+                Text(stage.reason)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    BoardInfoRow(label: "分支", value: workspace.branch, systemImage: "arrow.triangle.branch")
+                    BoardInfoRow(label: "下一步", value: stage.primaryActionLabel, systemImage: stage.primaryActionSystemImage)
+                    BoardInfoRow(label: "任务", value: "\(activeTaskCount) active", systemImage: "checklist")
+                }
+
+                if !serviceChips.isEmpty {
+                    HStack(spacing: 6) {
+                        ForEach(serviceChips, id: \.self) { service in
+                            Text(service)
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(NexusPalette.badge)
+                                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        }
+                        if extraServiceCount > 0 {
+                            Text("+\(extraServiceCount)")
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(NexusPalette.badge)
+                                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        }
+                    }
+                }
+
+                Label("打开控制台 / Open Console", systemImage: "rectangle.and.text.magnifyingglass")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(NexusPalette.accent)
+            }
+            .padding(11)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(workspace.isArchived ? NexusPalette.preview : NexusPalette.badge)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(stage.status.color.opacity(workspace.isArchived ? 0.16 : 0.22), lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct BoardInfoRow: View {
+    let label: String
+    let value: String
+    let systemImage: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: systemImage)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .frame(width: 12)
+            Text(label)
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+    }
+}
+
+private struct WorkspaceBoardEmptyState: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("当前筛选下没有工作区 / No board items", systemImage: "rectangle.grid.2x2")
+                .font(.headline)
+            Text("清空搜索或左侧筛选后，Board 会按主流程阶段展示工作区。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(NexusPalette.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 

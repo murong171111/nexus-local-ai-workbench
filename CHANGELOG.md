@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Added
 
+- Native SwiftUI now includes a Board surface beside Console, grouping workspaces by main workflow stage with active, blocked, delivery, and archive metrics; selecting a board card returns to Console with that workspace focused.
 - Archived native workspaces now keep the Archive card read-only by default while exposing an explicit restore-to-development action through the existing lifecycle confirmation and audit flow.
 - Native archive eligibility now includes an explicit confirmation plan that orders delivery blockers, delivery-record review, validation/PR review, lifecycle writeback, and final archive actions before the user confirms archive.
 - Native validation/PR evidence now summarizes local-check, delivery-record, task/risk, PR/CI, and lifecycle signals before archive decisions, keeping PR/CI as visible review evidence until direct GitHub integration exists.

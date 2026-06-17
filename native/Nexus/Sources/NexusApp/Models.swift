@@ -1886,6 +1886,74 @@ struct WorkspaceMainStage: Hashable {
     }
 }
 
+struct WorkspaceBoardColumn: Hashable, Identifiable {
+    let id: WorkspaceMainStageID
+    let workspaces: [WorkspaceSummary]
+
+    var title: String { id.label }
+    var shortTitle: String { id.shortLabel }
+    var systemImage: String { id.systemImage }
+    var count: Int { workspaces.count }
+
+    static let visibleStageOrder: [WorkspaceMainStageID] = [
+        .created,
+        .demandIntake,
+        .scopeFreeze,
+        .serviceBranchConfirm,
+        .worktreeSetup,
+        .development,
+        .deliveryCheck,
+        .archived
+    ]
+
+    static func columns(for workspaces: [WorkspaceSummary]) -> [WorkspaceBoardColumn] {
+        let grouped = Dictionary(grouping: workspaces) { workspace in
+            workspace.mainStage().id
+        }
+
+        return visibleStageOrder.map { stageID in
+            WorkspaceBoardColumn(
+                id: stageID,
+                workspaces: (grouped[stageID] ?? []).sorted(by: boardSort)
+            )
+        }
+    }
+
+    private static func boardSort(_ lhs: WorkspaceSummary, _ rhs: WorkspaceSummary) -> Bool {
+        let lhsStage = lhs.mainStage()
+        let rhsStage = rhs.mainStage()
+        if lhsStage.status.boardPriority != rhsStage.status.boardPriority {
+            return lhsStage.status.boardPriority < rhsStage.status.boardPriority
+        }
+        if lhs.riskLevel.rank != rhs.riskLevel.rank {
+            return lhs.riskLevel.rank < rhs.riskLevel.rank
+        }
+        if lhs.folder != rhs.folder {
+            return lhs.folder > rhs.folder
+        }
+        return lhs.name < rhs.name
+    }
+}
+
+extension WorkflowPathStatus {
+    var boardPriority: Int {
+        switch self {
+        case .blocked:
+            0
+        case .pending:
+            1
+        case .review:
+            2
+        case .next:
+            3
+        case .ready:
+            4
+        case .archived:
+            5
+        }
+    }
+}
+
 struct DemandIntakeReadinessCheck: Hashable, Identifiable {
     let id: String
     let label: String
@@ -4099,6 +4167,17 @@ enum RiskLevel: String, Hashable {
             "exclamationmark.circle"
         case .high:
             "exclamationmark.triangle"
+        }
+    }
+
+    var rank: Int {
+        switch self {
+        case .high:
+            0
+        case .medium:
+            1
+        case .low:
+            2
         }
     }
 }

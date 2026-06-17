@@ -10,6 +10,7 @@ Nexus 是一个面向 macOS 的本地 AI 开发工作台，用来管理需求工
 
 - 基于 Tauri、React、TailwindCSS 构建的原生 macOS 应用，并包含 Swift WidgetKit 小组件源码。
 - 以工作区卡片展示需求目录、分支、服务范围、风险等级、最近活动和 worktree 状态。
+- 原生 SwiftUI 壳现在提供两个主入口：`Console / 控制台` 用于聚焦处理当前工作区，`Board / 面板` 用于按主流程阶段总览当前筛选下的所有工作区；点击面板卡片会回到控制台并聚焦该工作区。
 - 支持在应用内创建符合 `ks-project-demand-workspace` 约定的需求工作区，包含源仓库扫描、服务勾选、手动补充、创建前预检、创建确认摘要和创建后的下一步引导。
 - 支持在工作区详情中执行 `需求预检`：检查或初始化固定 `需求/` 目录，生成 `requirement.md`、`questions.md`、`scope.md`、`tasks.md` 和 `delivery.md`，并复制 `$lanhu-demand-intake` Codex 预检提示词。原生壳会读取这些 Markdown，检查需求内容、未解决 P0、scope 状态和真实需求任务，并通过独立的范围冻结门禁检查本次实现、不实现、待确认 P0、冻结标记，以及范围变更是否记录原因和影响，确认后可把真实需求行转入根 `tasks.md`；Nexus 仍不直接解析蓝湖或调用 AI。
 - 原生服务/分支确认门禁会检查 `services.md`、`branches.md`、工作区服务行、源仓库可用性、目标分支可用性和分支策略，确认后才进入 worktree 准备。
