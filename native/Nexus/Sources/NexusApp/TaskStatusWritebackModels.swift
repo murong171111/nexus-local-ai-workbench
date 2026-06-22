@@ -9,6 +9,40 @@ struct TaskStatusPostWriteCheck: Identifiable, Hashable {
     let evidencePath: String?
 }
 
+enum TaskStatusMutationKind: String, Hashable {
+    case progress
+    case close
+}
+
+struct TaskStatusMutationPolicy: Hashable {
+    let kind: TaskStatusMutationKind
+    let requiresConfirmationSheet: Bool
+    let targetDocumentName: String
+    let reason: String
+
+    static func resolve(nextStatus: String) -> TaskStatusMutationPolicy {
+        if closesActiveTaskStatus(nextStatus) {
+            return TaskStatusMutationPolicy(
+                kind: .close,
+                requiresConfirmationSheet: true,
+                targetDocumentName: "root tasks.md",
+                reason: "完成、延期或关闭任务会改变开发主路径和交付门禁，必须先经过确认 sheet。"
+            )
+        }
+
+        return TaskStatusMutationPolicy(
+            kind: .progress,
+            requiresConfirmationSheet: true,
+            targetDocumentName: "root tasks.md",
+            reason: "任务状态写回只能更新执行队列 root tasks.md，并且需要确认 sheet 记录写入意图。"
+        )
+    }
+
+    private static func closesActiveTaskStatus(_ status: String) -> Bool {
+        TaskStatusUpdate.closesActiveTaskStatus(status)
+    }
+}
+
 struct TaskStatusUpdate: Identifiable, Hashable {
     let workspaceID: WorkspaceSummary.ID
     let workspaceName: String
@@ -34,6 +68,14 @@ struct TaskStatusUpdate: Identifiable, Hashable {
 
     var requiresLocalCheckAfterWrite: Bool {
         postWriteChecks.contains { $0.id == "local-check" }
+    }
+
+    var mutationPolicy: TaskStatusMutationPolicy {
+        TaskStatusMutationPolicy.resolve(nextStatus: nextStatus)
+    }
+
+    var requiresConfirmationSheet: Bool {
+        mutationPolicy.requiresConfirmationSheet
     }
 
     static func postWriteChecks(
@@ -78,7 +120,7 @@ struct TaskStatusUpdate: Identifiable, Hashable {
         return checks
     }
 
-    private static func closesActiveTaskStatus(_ status: String) -> Bool {
+    static func closesActiveTaskStatus(_ status: String) -> Bool {
         let normalized = status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return [
             "done",

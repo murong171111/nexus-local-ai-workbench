@@ -28,6 +28,7 @@ final class ModelBehaviorTests: XCTestCase {
             "struct DemandIntakeReadinessEvidence",
             "struct DemandIntakeM1ActionPolicy",
             "struct TaskStatusUpdate",
+            "struct TaskStatusMutationPolicy",
             "struct ServiceWorktreeRowState",
             "struct WorkspaceMainStageEvidenceLink",
             "struct WorkspaceListStageBadge",
@@ -341,6 +342,9 @@ final class ModelBehaviorTests: XCTestCase {
         )
 
         XCTAssertTrue(update.requiresLocalCheckAfterWrite)
+        XCTAssertTrue(update.requiresConfirmationSheet)
+        XCTAssertEqual(update.mutationPolicy.kind, .close)
+        XCTAssertEqual(update.mutationPolicy.targetDocumentName, "root tasks.md")
         XCTAssertEqual(checks.map(\.id), ["task-row", "next-task", "local-check"])
         XCTAssertEqual(update.tasksPath, "/tmp/task-writeback/tasks.md")
         XCTAssertTrue(update.evidencePaths.contains("/tmp/task-writeback/STATUS.md"))
@@ -372,6 +376,11 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertFalse(checks.contains { $0.id == "local-check" })
         XCTAssertEqual(checks.map(\.id), ["task-row", "next-task"])
         XCTAssertTrue(checks.first?.detail.contains("root tasks.md") == true)
+
+        let policy = TaskStatusMutationPolicy.resolve(nextStatus: "doing")
+        XCTAssertEqual(policy.kind, .progress)
+        XCTAssertTrue(policy.requiresConfirmationSheet)
+        XCTAssertEqual(policy.targetDocumentName, "root tasks.md")
     }
 
     func testTaskCenterFiltersMatchHighPriorityAgentAndDeferredTasks() {
