@@ -53,6 +53,7 @@ struct MainWorkflowAcceptanceEvidence: Hashable {
     let checks: [MainWorkflowAcceptanceCheck]
     let observedStages: [WorkspaceMainStageID]
     let missingStages: [WorkspaceMainStageID]
+    let stagesMissingCurrentStateAnswer: [WorkspaceMainStageID]
     let stagesMissingPrimaryAction: [WorkspaceMainStageID]
     let stagesMissingEvidence: [WorkspaceMainStageID]
     let coveredWorktreeStates: [ServiceWorktreeRowStateKind]
@@ -83,6 +84,9 @@ struct MainWorkflowAcceptanceEvidence: Hashable {
         let stagesMissingEvidence = orderedObservedStages(
             stages.filter { $0.answer.routedEvidenceLinks.isEmpty }
         )
+        let stagesMissingCurrentStateAnswer = orderedObservedStages(
+            stages.filter { !$0.answer.canAnswerCurrentState }
+        )
         let coveredWorktreeStates = orderedWorktreeStates(worktreeRows ?? [])
         let coveredWorktreeSet = Set(coveredWorktreeStates)
         let missingWorktreeStates = ServiceWorktreeRowStateKind.allCases.filter { !coveredWorktreeSet.contains($0) }
@@ -100,12 +104,15 @@ struct MainWorkflowAcceptanceEvidence: Hashable {
         let actionEvidenceCheck = MainWorkflowAcceptanceCheck(
             id: .stageActionEvidence,
             label: MainWorkflowAcceptanceRequirement.stageActionEvidence.label,
-            status: stagesMissingPrimaryAction.isEmpty && stagesMissingEvidence.isEmpty ? .ready : .blocked,
+            status: stagesMissingPrimaryAction.isEmpty
+                && stagesMissingEvidence.isEmpty
+                && stagesMissingCurrentStateAnswer.isEmpty ? .ready : .blocked,
             detail: actionEvidenceDetail(
                 missingAction: stagesMissingPrimaryAction,
-                missingEvidence: stagesMissingEvidence
+                missingEvidence: stagesMissingEvidence,
+                missingCurrentStateAnswer: stagesMissingCurrentStateAnswer
             ),
-            evidence: stages.flatMap(\.evidence)
+            evidence: stages.compactMap { $0.answer.primaryEvidenceLink?.label }
         )
 
         let demandCheck = demandGateCheck(demandReadiness)
@@ -137,6 +144,7 @@ struct MainWorkflowAcceptanceEvidence: Hashable {
             checks: checks,
             observedStages: observedStages,
             missingStages: missingStages,
+            stagesMissingCurrentStateAnswer: stagesMissingCurrentStateAnswer,
             stagesMissingPrimaryAction: stagesMissingPrimaryAction,
             stagesMissingEvidence: stagesMissingEvidence,
             coveredWorktreeStates: coveredWorktreeStates,
@@ -287,13 +295,17 @@ struct MainWorkflowAcceptanceEvidence: Hashable {
 
     private static func actionEvidenceDetail(
         missingAction: [WorkspaceMainStageID],
-        missingEvidence: [WorkspaceMainStageID]
+        missingEvidence: [WorkspaceMainStageID],
+        missingCurrentStateAnswer: [WorkspaceMainStageID]
     ) -> String {
-        if missingAction.isEmpty && missingEvidence.isEmpty {
-            return "每个阶段快照都有主动作、图标和至少一个可路由证据来源。"
+        if missingAction.isEmpty && missingEvidence.isEmpty && missingCurrentStateAnswer.isEmpty {
+            return "每个阶段快照都能回答当前阶段、原因、下一步和主证据文件。"
         }
 
         var parts: [String] = []
+        if !missingCurrentStateAnswer.isEmpty {
+            parts.append("缺完整阶段回答：\(stageLabels(missingCurrentStateAnswer))")
+        }
         if !missingAction.isEmpty {
             parts.append("缺主动作：\(stageLabels(missingAction))")
         }
