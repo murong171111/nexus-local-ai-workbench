@@ -916,12 +916,16 @@ final class AppState: ObservableObject {
         }
 
         do {
-            sourceRepositories = try await bridge.scanSourceRepos(
-                request: ScanSourceReposRequest(sourceReposRoot: sourceReposRoot)
-            )
+            sourceRepositories = try NativeSourceRepositoryStore.scan(sourceReposRoot: sourceReposRoot)
         } catch {
-            sourceRepositories = []
-            sourceRepositoryScanError = error.localizedDescription
+            do {
+                sourceRepositories = try await bridge.scanSourceRepos(
+                    request: ScanSourceReposRequest(sourceReposRoot: sourceReposRoot)
+                )
+            } catch {
+                sourceRepositories = []
+                sourceRepositoryScanError = error.localizedDescription
+            }
         }
     }
 

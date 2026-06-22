@@ -1037,6 +1037,7 @@ final class ModelBehaviorTests: XCTestCase {
             partiallyNative.domains.first { $0.domain == .gitWorktreeStatus }?.evidence,
             [
                 "native/Nexus/Sources/NexusApp/ServiceWorktreeEvidence.swift",
+                "native/Nexus/Sources/NexusApp/NativeSourceRepositoryStore.swift",
                 "NexusBridge.scanWorkspaces / setupWorktrees"
             ]
         )
@@ -1248,6 +1249,48 @@ final class ModelBehaviorTests: XCTestCase {
         ) { error in
             XCTAssertTrue(error.localizedDescription.contains("file path exists but is not a file"))
         }
+    }
+
+    func testNativeSourceRepositoryStoreSortsAndFiltersDirectories() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-source-repos-\(UUID().uuidString)")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("order"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("commodity"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".hidden"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("dist"), withIntermediateDirectories: true)
+        try "not a repo".write(to: root.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+
+        let repos = try NativeSourceRepositoryStore.scan(sourceReposRoot: root.path)
+
+        XCTAssertEqual(repos.map(\.name), ["commodity", "order"])
+        XCTAssertEqual(repos.map(\.isGit), [false, false])
+        XCTAssertEqual(repos.map(\.branch), ["非 git worktree", "非 git worktree"])
+        XCTAssertEqual(repos.map(\.summary), ["目录存在但不是 git worktree", "目录存在但不是 git worktree"])
+        XCTAssertTrue(try NativeSourceRepositoryStore.scan(sourceReposRoot: root.appendingPathComponent("missing").path).isEmpty)
+    }
+
+    func testNativeSourceRepositoryStoreReadsGitStatus() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-source-git-\(UUID().uuidString)")
+        let repo = root.appendingPathComponent("order")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        try runGit(["init", "-b", "main"], in: repo)
+        try "dirty\n".write(to: repo.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+
+        let repos = try NativeSourceRepositoryStore.scan(sourceReposRoot: root.path)
+
+        XCTAssertEqual(repos.count, 1)
+        XCTAssertEqual(repos.first?.name, "order")
+        XCTAssertEqual(repos.first?.isGit, true)
+        XCTAssertEqual(repos.first?.branch, "main")
+        XCTAssertEqual(repos.first?.dirty, true)
+        XCTAssertEqual(repos.first?.summary, "有未提交改动")
     }
 
     func testNativeSearchModelsGroupAndScopeResultsWithoutBridge() {
@@ -4586,5 +4629,22 @@ final class ModelBehaviorTests: XCTestCase {
             count: 1,
             action: "review-risk"
         )
+    }
+
+    private func runGit(_ arguments: [String], in directory: URL) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = arguments
+        process.currentDirectoryURL = directory
+        let stdout = Pipe()
+        let stderr = Pipe()
+        process.standardOutput = stdout
+        process.standardError = stderr
+        try process.run()
+        process.waitUntilExit()
+        if process.terminationStatus != 0 {
+            let error = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            XCTFail("git \(arguments.joined(separator: " ")) failed: \(error)")
+        }
     }
 }
