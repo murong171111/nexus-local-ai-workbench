@@ -2621,6 +2621,7 @@ final class AppState: ObservableObject {
 
     func nativeLocalCoreDomains() -> Set<NativeLocalCoreDomain> {
         [
+            .audit,
             .codexSessions,
             .documentInventory,
             .demandIntake,
@@ -2633,7 +2634,6 @@ final class AppState: ObservableObject {
 
     func nativeLocalCorePartialDomains() -> Set<NativeLocalCoreDomain> {
         [
-            .audit,
             .gitWorktreeStatus
         ]
     }
@@ -4243,13 +4243,6 @@ final class AppState: ObservableObject {
         } catch {
             lastError = "Native audit failed: \(error.localizedDescription)"
         }
-
-        _ = try? await bridge.appendAuditEvent(
-            request: AppendAuditEventRequest(
-                auditRoot: auditRootPath,
-                event: event
-            )
-        )
     }
 
     private static func auditActivityTitle(_ action: String) -> String {
