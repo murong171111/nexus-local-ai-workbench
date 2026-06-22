@@ -148,6 +148,7 @@ final class ModelBehaviorTests: XCTestCase {
             missingWorktreeCount: 1,
             dirtyServiceCount: 1,
             activeWorkspaceName: "Pay Log",
+            activeStageLine: "交付检查 · 阻塞：SQL rollback evidence is missing. · 下一步: 查看 SQL · 证据: sql/release.sql",
             bridgeMode: "preview"
         )
 
@@ -155,6 +156,8 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(summary.systemImage, "pause.circle.fill")
         XCTAssertEqual(summary.statusLine, "1 blocked workspaces need attention")
         XCTAssertTrue(summary.clipboardText.contains("Active workspace: Pay Log"))
+        XCTAssertTrue(summary.clipboardText.contains("Active stage: 交付检查"))
+        XCTAssertTrue(summary.clipboardText.contains("证据: sql/release.sql"))
         XCTAssertTrue(summary.clipboardText.contains("Archived workspaces: 1"))
     }
 
@@ -171,6 +174,7 @@ final class ModelBehaviorTests: XCTestCase {
             missingWorktreeCount: 2,
             dirtyServiceCount: 0,
             activeWorkspaceName: "Checkout",
+            activeStageLine: "Worktree · 阻塞：Missing worktree. · 下一步: 创建 worktree · 证据: scripts/worktree-commands.sh",
             bridgeMode: "ffi"
         )
 
@@ -191,6 +195,7 @@ final class ModelBehaviorTests: XCTestCase {
             missingWorktreeCount: 0,
             dirtyServiceCount: 4,
             activeWorkspaceName: nil,
+            activeStageLine: nil,
             bridgeMode: "ffi"
         )
 

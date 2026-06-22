@@ -12,6 +12,9 @@ struct MenuBarStatusView: View {
         Text("Nexus")
             .font(.headline)
         Text(summary.statusLine)
+        if let activeStageLine = summary.activeStageLine {
+            Text(activeStageLine)
+        }
         Text(summary.bridgeMode)
 
         Divider()

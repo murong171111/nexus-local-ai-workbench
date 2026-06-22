@@ -182,7 +182,7 @@ Current Swift-owned workflow files are the boundary reference:
 | `WorkspaceEvidenceDocuments.swift` | Owns SQL summary and standard document responsibility mapping: what each evidence file proves and when it participates in a gate. |
 | `WorkspaceWorkflowSummary.swift` | Owns compact workspace-level task and delivery summaries used by detail surfaces. |
 | `WorkspaceBoardModels.swift` | Owns stage-board columns, board scopes, attention filtering, and board sorting priority. |
-| `MenuBarStatusModels.swift` | Owns menu bar and global attention summary text. |
+| `MenuBarStatusModels.swift` | Owns menu bar and global attention summary text, including the selected workspace main-path answer. |
 | `AgentWorkflowModels.swift` | Owns Agent Inbox action surfaces, response templates, and Agent workflow summaries. |
 | `WorkspaceLifecycleModels.swift` | Owns lifecycle state, lifecycle transitions, lifecycle writeback requests, and fallback lifecycle inference. |
 
@@ -280,7 +280,7 @@ Until then, legacy code is frozen reference, not the product direction.
 - Workspace list and detail use Swift-native domain state.
 - Demand intake and document preview are Native-first.
 - Git/worktree and delivery readiness use Native-owned rules.
-- Main path shows one current stage, one blocker summary, one recommended next step, and the primary evidence file. `[started with WorkspaceStageAnswer blockerSummary and primaryEvidenceLink surfaced in Command Center]`
+- Main path shows one current stage, one blocker summary, one recommended next step, and the primary evidence file. `[started with WorkspaceStageAnswer blockerSummary and primaryEvidenceLink surfaced in Command Center, workspace list, handoff prompts, and menu bar status]`
 
 ### M2: Native Local Core
 

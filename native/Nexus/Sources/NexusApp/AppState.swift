@@ -441,8 +441,14 @@ final class AppState: ObservableObject {
             missingWorktreeCount: summary.missingWorktreeCount,
             dirtyServiceCount: summary.dirtyServiceCount,
             activeWorkspaceName: selectedWorkspace?.name,
+            activeStageLine: selectedWorkspace.map(Self.menuBarStageLine),
             bridgeMode: bridgeMode
         )
+    }
+
+    private static func menuBarStageLine(for workspace: WorkspaceSummary) -> String {
+        let answer = workspace.mainStage().answer
+        return "\(answer.stageLabel) · \(answer.blockerSummary) · 下一步: \(answer.nextActionLabel) · 证据: \(answer.primaryEvidenceLink?.label ?? "未路由")"
     }
 
     func taskCenterCount(for filter: TaskCenterFilter) -> Int {

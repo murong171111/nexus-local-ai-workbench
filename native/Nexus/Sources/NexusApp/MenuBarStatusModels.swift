@@ -18,6 +18,7 @@ struct MenuBarStatusSummary: Hashable {
     let missingWorktreeCount: Int
     let dirtyServiceCount: Int
     let activeWorkspaceName: String?
+    let activeStageLine: String?
     let bridgeMode: String
 
     var menuTitle: String {
@@ -79,6 +80,7 @@ struct MenuBarStatusSummary: Hashable {
             "Nexus status",
             "Bridge: \(bridgeMode)",
             "Active workspace: \(activeWorkspaceName ?? "None")",
+            "Active stage: \(activeStageLine ?? "None")",
             "Workspaces: \(workspaceCount)",
             "Active workspaces: \(activeWorkspaceCount)",
             "Archived workspaces: \(archivedWorkspaceCount)",
