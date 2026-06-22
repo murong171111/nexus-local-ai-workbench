@@ -719,8 +719,14 @@ final class AppState: ObservableObject {
             workspacePath: workspace.path,
             taskID: task.id,
             taskTitle: task.title,
+            taskSourceLine: task.sourceLine,
             currentStatus: task.status,
-            nextStatus: status
+            nextStatus: status,
+            postWriteChecks: TaskStatusUpdate.postWriteChecks(
+                for: task,
+                workspace: workspace,
+                nextStatus: status
+            )
         )
     }
 

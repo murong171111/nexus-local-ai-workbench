@@ -247,6 +247,7 @@ Native M1 UI:
 - Task Center never treats two files as equal execution sources
 - transfer action requires confirmation and appends audit
 - task row can open `tasks.md` at the source line
+- task status writeback confirmation shows post-write checks for the edited row, next active task focus, and local-check refresh when a task is closed
 - a development-task evidence card summarizes active, blocked, completed, and deferred root `tasks.md` rows
 - Command Center task step opens the next active task source locator instead of only opening the document
 

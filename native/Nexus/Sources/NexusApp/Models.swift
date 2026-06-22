@@ -658,20 +658,6 @@ struct TaskCenterItem: Identifiable, Hashable {
     }
 }
 
-struct TaskStatusUpdate: Identifiable, Hashable {
-    let workspaceID: WorkspaceSummary.ID
-    let workspaceName: String
-    let workspacePath: String
-    let taskID: String
-    let taskTitle: String
-    let currentStatus: String
-    let nextStatus: String
-
-    var id: String {
-        "\(workspaceID):\(taskID):\(nextStatus)"
-    }
-}
-
 struct SearchResultGroup: Identifiable {
     let id: String
     let label: String

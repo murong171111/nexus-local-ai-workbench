@@ -26,6 +26,7 @@ final class ModelBehaviorTests: XCTestCase {
             "struct DevelopmentTaskEvidence",
             "struct WorktreeSetupEvidence",
             "struct DemandIntakeReadinessEvidence",
+            "struct TaskStatusUpdate",
             "func mainStage("
         ]
 
@@ -48,7 +49,8 @@ final class ModelBehaviorTests: XCTestCase {
             "WorkspaceBoardModels.swift",
             "MenuBarStatusModels.swift",
             "AgentWorkflowModels.swift",
-            "WorkspaceLifecycleModels.swift"
+            "WorkspaceLifecycleModels.swift",
+            "TaskStatusWritebackModels.swift"
         ]
 
         for fileName in ownedWorkflowFiles {
@@ -292,6 +294,73 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(update.evidencePaths.contains("/tmp/archive-post-write/交付记录.md"))
         XCTAssertTrue(update.evidencePaths.contains("/tmp/archive-post-write/handoff.md"))
         XCTAssertTrue(checks.first?.detail.contains("退出活跃风险") == true)
+    }
+
+    func testTaskStatusWritebackChecksRequireLocalCheckWhenClosingActiveTask() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "task-writeback",
+            path: "/tmp/task-writeback"
+        )
+        let task = WorkspaceTask(
+            id: "task-1",
+            title: "Finish Native task",
+            status: "todo",
+            detail: "ready",
+            priority: "high",
+            source: "workspace",
+            sourceEventID: nil,
+            sourceLine: 12
+        )
+        let checks = TaskStatusUpdate.postWriteChecks(
+            for: task,
+            workspace: workspace,
+            nextStatus: "已完成"
+        )
+        let update = TaskStatusUpdate(
+            workspaceID: workspace.id,
+            workspaceName: workspace.name,
+            workspacePath: workspace.path,
+            taskID: task.id,
+            taskTitle: task.title,
+            taskSourceLine: task.sourceLine,
+            currentStatus: task.status,
+            nextStatus: "已完成",
+            postWriteChecks: checks
+        )
+
+        XCTAssertTrue(update.requiresLocalCheckAfterWrite)
+        XCTAssertEqual(checks.map(\.id), ["task-row", "next-task", "local-check"])
+        XCTAssertEqual(update.tasksPath, "/tmp/task-writeback/tasks.md")
+        XCTAssertTrue(update.evidencePaths.contains("/tmp/task-writeback/STATUS.md"))
+        XCTAssertTrue(checks.first?.detail.contains("第 12 行") == true)
+    }
+
+    func testTaskStatusWritebackChecksKeepProgressUpdatesLightweight() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "task-progress-writeback",
+            path: "/tmp/task-progress-writeback"
+        )
+        let task = WorkspaceTask(
+            id: "task-1",
+            title: "Continue Native task",
+            status: "todo",
+            detail: "ready",
+            priority: "medium",
+            source: "workspace",
+            sourceEventID: nil,
+            sourceLine: nil
+        )
+        let checks = TaskStatusUpdate.postWriteChecks(
+            for: task,
+            workspace: workspace,
+            nextStatus: "doing"
+        )
+
+        XCTAssertFalse(checks.contains { $0.id == "local-check" })
+        XCTAssertEqual(checks.map(\.id), ["task-row", "next-task"])
+        XCTAssertTrue(checks.first?.detail.contains("root tasks.md") == true)
     }
 
     func testTaskCenterFiltersMatchHighPriorityAgentAndDeferredTasks() {
