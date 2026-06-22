@@ -28,6 +28,7 @@ final class ModelBehaviorTests: XCTestCase {
             "struct WorktreeSetupEvidence",
             "struct WorktreeSetupMutationPolicy",
             "struct MainWorkflowAcceptanceEvidence",
+            "struct MainWorkflowLegacyBoundary",
             "struct DemandIntakeReadinessEvidence",
             "struct DemandIntakeM1ActionPolicy",
             "struct TaskStatusUpdate",
@@ -922,6 +923,67 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(acceptance.coveredWorktreeStates, ServiceWorktreeRowStateKind.allCases)
         XCTAssertEqual(acceptance.checks.map(\.id), MainWorkflowAcceptanceRequirement.allCases)
         XCTAssertTrue(acceptance.reason.contains("M1 主链路验收证据"))
+    }
+
+    @MainActor
+    func testAppStateBuildsMainWorkflowAcceptanceEvidenceFromCurrentWorkspace() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "appstate-main-acceptance",
+            branch: "feature/native-main",
+            services: [
+                ServiceStatus(
+                    name: "missing-source",
+                    branch: "feature/native-main",
+                    worktree: "missing",
+                    gitSummary: "source missing",
+                    worktreeExists: false,
+                    sourceExists: false
+                ),
+                ServiceStatus(
+                    name: "missing-worktree",
+                    branch: "feature/native-main",
+                    worktree: "missing",
+                    gitSummary: "source clean",
+                    worktreeExists: false,
+                    sourceExists: true
+                ),
+                ServiceStatus(
+                    name: "branch-mismatch",
+                    branch: "develop",
+                    worktree: "ready",
+                    gitSummary: "clean",
+                    worktreeExists: true,
+                    sourceExists: true
+                ),
+                ServiceStatus(
+                    name: "dirty",
+                    branch: "feature/native-main",
+                    worktree: "dirty",
+                    gitSummary: "dirty",
+                    worktreeExists: true,
+                    sourceExists: true
+                ),
+                ServiceStatus(
+                    name: "clean",
+                    branch: "origin/feature/native-main",
+                    worktree: "ready",
+                    gitSummary: "clean",
+                    worktreeExists: true,
+                    sourceExists: true
+                )
+            ]
+        )
+        let appState = appStateForAutomationTests(workspaces: [workspace])
+
+        let acceptance = appState.mainWorkflowAcceptanceEvidence(for: workspace)
+
+        XCTAssertEqual(acceptance.checks.map(\.id), MainWorkflowAcceptanceRequirement.allCases)
+        XCTAssertEqual(acceptance.coveredWorktreeStates, ServiceWorktreeRowStateKind.allCases)
+        XCTAssertTrue(acceptance.missingWorktreeStates.isEmpty)
+        XCTAssertEqual(acceptance.checks.first { $0.id == .legacyBoundary }?.status, .ready)
+        XCTAssertEqual(acceptance.checks.first { $0.id == .worktreeStateCoverage }?.status, .ready)
+        XCTAssertEqual(acceptance.checks.first { $0.id == .stageCoverage }?.status, .blocked)
     }
 
     func testMainWorkflowAcceptanceEvidenceBlocksMissingStagesAndEvidence() {

@@ -2571,6 +2571,37 @@ final class AppState: ObservableObject {
         DeliveryGateEvidence.resolve(workspace: workspace)
     }
 
+    func mainWorkflowStage(for workspace: WorkspaceSummary) -> WorkspaceMainStage {
+        workspace.mainStage(
+            demandIntakeStatus: demandIntakeDisplayStatus(for: workspace),
+            demandReadiness: demandIntakeReadiness(for: workspace),
+            scopeFreeze: scopeFreezeEvidence(for: workspace),
+            serviceBranch: serviceBranchEvidence(for: workspace),
+            worktreeSetup: worktreeSetupEvidence(for: workspace),
+            developmentTasks: developmentTaskEvidence(for: workspace),
+            deliveryGate: deliveryGateEvidence(for: workspace),
+            archiveGate: archiveGateEvidence(for: workspace),
+            demandTaskTransfer: demandTaskTransferPlan(for: workspace)
+        )
+    }
+
+    func mainWorkflowAcceptanceEvidence(for workspace: WorkspaceSummary) -> MainWorkflowAcceptanceEvidence {
+        let worktreeRows = workspaces.flatMap { workspace in
+            workspace.services.map { service in
+                ServiceWorktreeRowState.resolve(service: service, targetBranch: workspace.branch)
+            }
+        }
+        return MainWorkflowAcceptanceEvidence.resolve(
+            stages: workspaces.map { mainWorkflowStage(for: $0) },
+            demandReadiness: demandIntakeReadiness(for: workspace),
+            developmentTasks: developmentTaskEvidence(for: workspace),
+            worktreeRows: worktreeRows,
+            deliveryGate: deliveryGateEvidence(for: workspace),
+            archiveGate: archiveGateEvidence(for: workspace),
+            legacyBoundary: .nativeOnly
+        )
+    }
+
     func deliveryRecordWritePlan(for workspace: WorkspaceSummary) -> DeliveryRecordWritePlan {
         DeliveryRecordWritePlan.resolve(
             workspace: workspace,

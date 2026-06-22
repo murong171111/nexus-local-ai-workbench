@@ -4102,17 +4102,11 @@ private struct WorkspaceDetailView: View {
     let scrollToSection: (WorkspaceDetailSection) -> Void
 
     private var mainStage: WorkspaceMainStage {
-        workspace.mainStage(
-            demandIntakeStatus: appState.demandIntakeDisplayStatus(for: workspace),
-            demandReadiness: appState.demandIntakeReadiness(for: workspace),
-            scopeFreeze: appState.scopeFreezeEvidence(for: workspace),
-            serviceBranch: appState.serviceBranchEvidence(for: workspace),
-            worktreeSetup: appState.worktreeSetupEvidence(for: workspace),
-            developmentTasks: appState.developmentTaskEvidence(for: workspace),
-            deliveryGate: appState.deliveryGateEvidence(for: workspace),
-            archiveGate: appState.archiveGateEvidence(for: workspace),
-            demandTaskTransfer: appState.demandTaskTransferPlan(for: workspace)
-        )
+        appState.mainWorkflowStage(for: workspace)
+    }
+
+    private var acceptanceEvidence: MainWorkflowAcceptanceEvidence {
+        appState.mainWorkflowAcceptanceEvidence(for: workspace)
     }
 
     var body: some View {
@@ -4131,6 +4125,7 @@ private struct WorkspaceDetailView: View {
 
             WorkspaceMainStageSummaryView(
                 stage: mainStage,
+                acceptance: acceptanceEvidence,
                 action: {
                     run(mainStage.primaryAction)
                 },
@@ -4387,6 +4382,7 @@ private struct WorkspaceDetailView: View {
 
 private struct WorkspaceMainStageSummaryView: View {
     let stage: WorkspaceMainStage
+    let acceptance: MainWorkflowAcceptanceEvidence
     let action: () -> Void
     let evidenceAction: (WorkspaceMainStageEvidenceLink) -> Void
 
@@ -4430,7 +4426,10 @@ private struct WorkspaceMainStageSummaryView: View {
                 HStack(spacing: 8) {
                     WorkflowMetric(label: "Stage", value: stage.id.shortLabel, tone: stage.status.color)
                     WorkflowMetric(label: "Next", value: stage.nextStageAllowed ? "allowed" : "blocked", tone: stage.nextStageAllowed ? NexusPalette.success : stage.status.color)
+                    WorkflowMetric(label: "M1", value: acceptance.status.displayLabel, tone: acceptance.status.color)
                 }
+
+                WorkspaceMainWorkflowAcceptanceStrip(acceptance: acceptance)
 
                 if !stage.evidence.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
@@ -4459,6 +4458,54 @@ private struct WorkspaceMainStageSummaryView: View {
                     }
                 }
             }
+        }
+    }
+}
+
+private struct WorkspaceMainWorkflowAcceptanceStrip: View {
+    let acceptance: MainWorkflowAcceptanceEvidence
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("M1 验收门禁 / Acceptance gates")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 148), spacing: 8)],
+                alignment: .leading,
+                spacing: 8
+            ) {
+                ForEach(acceptance.checks) { check in
+                    Label(check.id.label, systemImage: systemImage(for: check.status))
+                        .font(.caption)
+                        .foregroundStyle(check.status.color)
+                        .lineLimit(1)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(check.status.color.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        .help(check.detail)
+                }
+            }
+        }
+    }
+
+    private func systemImage(for status: WorkflowPathStatus) -> String {
+        switch status {
+        case .ready:
+            return "checkmark.circle"
+        case .review:
+            return "exclamationmark.triangle"
+        case .blocked:
+            return "xmark.octagon"
+        case .pending:
+            return "clock"
+        case .next:
+            return "arrow.forward.circle"
+        case .archived:
+            return "archivebox"
         }
     }
 }
