@@ -165,6 +165,29 @@ After this documentation round, Nexus should move in this order. The route is in
 - Use Foundation, FileManager, Process, Codable, OSLog, UserDefaults, SQLite-capable storage, and AppKit integration before introducing non-Apple runtime dependencies.
 - Treat Rust/TypeScript behavior as migration fixtures, not new implementation targets.
 
+#### Native Model Layering Guardrail
+
+The Native app should keep basic data shapes separate from workflow interpretation. `native/Nexus/Sources/NexusApp/Models.swift` is the home for stable value types such as filters, status enums, workspace/task/service records, feedback records, session links, and scan-result mapping helpers. It should not regain stage-gate logic, handoff planning, or UI summary rules.
+
+Current Swift-owned workflow files are the boundary reference:
+
+| File | Responsibility |
+| --- | --- |
+| `PrimaryWorkflowStageResolver.swift` | Computes the single main-path stage, status, reason, primary action, and evidence list for a workspace. |
+| `DemandScopeEvidence.swift` | Owns demand-intake readiness and scope-freeze evidence before development starts. |
+| `ServiceWorktreeEvidence.swift` | Owns service/branch confirmation, worktree setup plans, setup recovery actions, and worktree gate evidence. |
+| `DevelopmentTaskEvidence.swift` | Owns root `tasks.md` execution evidence, blocker routing, current-task selection, and task-plan explanation. |
+| `DeliveryLifecycleEvidence.swift` | Owns delivery readiness, validation/PR review, archive eligibility, and restore/confirmation plans. |
+| `DemandTaskTransfer.swift` | Owns confirmed transfer from `需求/tasks.md` demand points into root `tasks.md` execution tasks. |
+| `WorkspaceEvidenceDocuments.swift` | Owns SQL summary and standard document responsibility mapping: what each evidence file proves and when it participates in a gate. |
+| `WorkspaceWorkflowSummary.swift` | Owns compact workspace-level task and delivery summaries used by detail surfaces. |
+| `WorkspaceBoardModels.swift` | Owns stage-board columns, board scopes, attention filtering, and board sorting priority. |
+| `MenuBarStatusModels.swift` | Owns menu bar and global attention summary text. |
+| `AgentWorkflowModels.swift` | Owns Agent Inbox action surfaces, response templates, and Agent workflow summaries. |
+| `WorkspaceLifecycleModels.swift` | Owns lifecycle state, lifecycle transitions, lifecycle writeback requests, and fallback lifecycle inference. |
+
+When adding a new workflow rule, first choose the nearest owner above. Add a new file only when the rule introduces a new product boundary that can be named in the main path. Keep SwiftUI views as renderers and command routers; they should consume these models instead of re-deriving stage, blocker, evidence, or next-action decisions.
+
 ### 5. Native Confirmed Writes
 
 - Add write capabilities only after the corresponding read/status model is stable.
