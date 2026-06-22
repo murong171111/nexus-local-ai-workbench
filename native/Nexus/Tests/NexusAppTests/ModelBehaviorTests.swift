@@ -1014,6 +1014,7 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(partiallyNative.status, .blocked)
         XCTAssertEqual(partiallyNative.migrationSummary, "2/7 Native domains")
         XCTAssertEqual(partiallyNative.domains.filter { $0.status == .ready }.map(\.domain), [.workspaceScanning, .documentInventory])
+        XCTAssertEqual(partiallyNative.domains.first { $0.domain == .documentInventory }?.evidence, ["native/Nexus/Sources/NexusApp/WorkspaceEvidenceDocuments.swift"])
         XCTAssertEqual(fullyNative.status, .ready)
         XCTAssertEqual(fullyNative.migrationSummary, "7/7 Native domains")
         XCTAssertFalse(fullyNative.bridgeIsLegacyDependency)
@@ -1093,6 +1094,11 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertEqual(evidence.status, .blocked)
         XCTAssertEqual(evidence.domains.map(\.domain), NativeLocalCoreDomain.allCases)
+        XCTAssertEqual(evidence.migrationSummary, "4/7 Native domains")
+        XCTAssertEqual(
+            evidence.domains.filter { $0.status == .ready }.map(\.domain),
+            [.documentInventory, .demandIntake, .readiness, .settings]
+        )
         XCTAssertTrue(evidence.reason.contains("legacy bridge"))
     }
 

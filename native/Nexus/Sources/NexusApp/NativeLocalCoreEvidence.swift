@@ -111,7 +111,7 @@ struct NativeLocalCoreEvidence: Hashable {
                 domain: domain,
                 status: .ready,
                 detail: "\(domain.label) 已由 Swift Native 本地核心接管。",
-                evidence: ["native/Nexus/Sources/NexusApp"]
+                evidence: domain.nativeEvidence
             )
         }
 
@@ -121,5 +121,29 @@ struct NativeLocalCoreEvidence: Hashable {
             detail: "\(domain.label) 仍通过 \(domain.bridgeContract) 运行；当前 bridge mode：\(bridgeMode)。",
             evidence: [domain.bridgeContract]
         )
+    }
+}
+
+private extension NativeLocalCoreDomain {
+    var nativeEvidence: [String] {
+        switch self {
+        case .workspaceScanning:
+            ["native/Nexus/Sources/NexusApp/AppState.swift"]
+        case .documentInventory:
+            ["native/Nexus/Sources/NexusApp/WorkspaceEvidenceDocuments.swift"]
+        case .demandIntake:
+            ["native/Nexus/Sources/NexusApp/DemandScopeEvidence.swift"]
+        case .readiness:
+            [
+                "native/Nexus/Sources/NexusApp/MainWorkflowAcceptanceEvidence.swift",
+                "native/Nexus/Sources/NexusApp/NativeDistributionReadinessEvidence.swift"
+            ]
+        case .gitWorktreeStatus:
+            ["native/Nexus/Sources/NexusApp/ServiceWorktreeEvidence.swift"]
+        case .audit:
+            ["native/Nexus/Sources/NexusApp/AppState.swift"]
+        case .settings:
+            ["native/Nexus/Sources/NexusApp/AppState.swift"]
+        }
     }
 }

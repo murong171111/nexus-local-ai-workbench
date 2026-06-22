@@ -2654,7 +2654,19 @@ final class AppState: ObservableObject {
     }
 
     func nativeLocalCoreEvidence() -> NativeLocalCoreEvidence {
-        NativeLocalCoreEvidence.resolve(bridgeMode: bridgeMode)
+        NativeLocalCoreEvidence.resolve(
+            bridgeMode: bridgeMode,
+            nativeDomains: nativeLocalCoreDomains()
+        )
+    }
+
+    func nativeLocalCoreDomains() -> Set<NativeLocalCoreDomain> {
+        [
+            .documentInventory,
+            .demandIntake,
+            .readiness,
+            .settings
+        ]
     }
 
     func nativeDistributionReadinessEvidence(
