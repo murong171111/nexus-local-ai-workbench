@@ -2656,7 +2656,8 @@ final class AppState: ObservableObject {
     func nativeLocalCoreEvidence() -> NativeLocalCoreEvidence {
         NativeLocalCoreEvidence.resolve(
             bridgeMode: bridgeMode,
-            nativeDomains: nativeLocalCoreDomains()
+            nativeDomains: nativeLocalCoreDomains(),
+            partialNativeDomains: nativeLocalCorePartialDomains()
         )
     }
 
@@ -2666,6 +2667,12 @@ final class AppState: ObservableObject {
             .demandIntake,
             .readiness,
             .settings
+        ]
+    }
+
+    func nativeLocalCorePartialDomains() -> Set<NativeLocalCoreDomain> {
+        [
+            .gitWorktreeStatus
         ]
     }
 

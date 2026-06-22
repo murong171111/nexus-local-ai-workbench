@@ -78,21 +78,32 @@ struct NativeLocalCoreEvidence: Hashable {
 
     var migrationSummary: String {
         let readyCount = domains.filter { $0.status == .ready }.count
+        let partialCount = domains.filter { $0.status == .review }.count
+        if partialCount > 0 {
+            return "\(readyCount)/\(domains.count) Native domains · \(partialCount) partial"
+        }
         return "\(readyCount)/\(domains.count) Native domains"
     }
 
     static func resolve(
         bridgeMode: String,
-        nativeDomains: Set<NativeLocalCoreDomain> = []
+        nativeDomains: Set<NativeLocalCoreDomain> = [],
+        partialNativeDomains: Set<NativeLocalCoreDomain> = []
     ) -> NativeLocalCoreEvidence {
         let domains = NativeLocalCoreDomain.allCases.map { domain in
-            domainEvidence(domain: domain, bridgeMode: bridgeMode, nativeDomains: nativeDomains)
+            domainEvidence(
+                domain: domain,
+                bridgeMode: bridgeMode,
+                nativeDomains: nativeDomains,
+                partialNativeDomains: partialNativeDomains
+            )
         }
         let blockers = domains.filter { $0.status == .blocked }
+        let partials = domains.filter { $0.status == .review }
         let status: WorkflowPathStatus = blockers.isEmpty ? .ready : .blocked
         let reason = blockers.isEmpty
             ? "M2 Native Local Core 已覆盖工作区扫描、文档、需求、就绪、git/worktree、审计和设置。"
-            : "M2 仍有 \(blockers.count) 个本地核心域依赖 legacy bridge：\(blockers.map { $0.domain.label }.joined(separator: ", "))。"
+            : "M2 仍有 \(blockers.count) 个本地核心域依赖 legacy bridge：\(blockers.map { $0.domain.label }.joined(separator: ", "))。\(partialDetail(partials))"
         return NativeLocalCoreEvidence(
             status: status,
             bridgeMode: bridgeMode,
@@ -104,7 +115,8 @@ struct NativeLocalCoreEvidence: Hashable {
     private static func domainEvidence(
         domain: NativeLocalCoreDomain,
         bridgeMode: String,
-        nativeDomains: Set<NativeLocalCoreDomain>
+        nativeDomains: Set<NativeLocalCoreDomain>,
+        partialNativeDomains: Set<NativeLocalCoreDomain>
     ) -> NativeLocalCoreDomainEvidence {
         if nativeDomains.contains(domain) {
             return NativeLocalCoreDomainEvidence(
@@ -114,6 +126,14 @@ struct NativeLocalCoreEvidence: Hashable {
                 evidence: domain.nativeEvidence
             )
         }
+        if partialNativeDomains.contains(domain) {
+            return NativeLocalCoreDomainEvidence(
+                domain: domain,
+                status: .review,
+                detail: "\(domain.label) 的 Swift Native 规则已接管一部分；剩余读写仍通过 \(domain.bridgeContract) 运行。",
+                evidence: domain.nativeEvidence + [domain.bridgeContract]
+            )
+        }
 
         return NativeLocalCoreDomainEvidence(
             domain: domain,
@@ -121,6 +141,11 @@ struct NativeLocalCoreEvidence: Hashable {
             detail: "\(domain.label) 仍通过 \(domain.bridgeContract) 运行；当前 bridge mode：\(bridgeMode)。",
             evidence: [domain.bridgeContract]
         )
+    }
+
+    private static func partialDetail(_ partials: [NativeLocalCoreDomainEvidence]) -> String {
+        guard !partials.isEmpty else { return "" }
+        return " 另有 \(partials.count) 个域已部分 Swift 化：\(partials.map { $0.domain.label }.joined(separator: ", "))。"
     }
 }
 
