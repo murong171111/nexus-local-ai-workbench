@@ -1010,10 +1010,10 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertEqual(preview.status, .blocked)
         XCTAssertTrue(preview.bridgeIsLegacyDependency)
-        XCTAssertEqual(preview.migrationSummary, "0/8 Native domains")
+        XCTAssertEqual(preview.migrationSummary, "0/9 Native domains")
         XCTAssertEqual(preview.domains.map(\.status), Array(repeating: .blocked, count: NativeLocalCoreDomain.allCases.count))
         XCTAssertEqual(partiallyNative.status, .blocked)
-        XCTAssertEqual(partiallyNative.migrationSummary, "2/8 Native domains · 3 partial")
+        XCTAssertEqual(partiallyNative.migrationSummary, "2/9 Native domains · 3 partial")
         XCTAssertEqual(partiallyNative.domains.filter { $0.status == .ready }.map(\.domain), [.workspaceScanning, .documentInventory])
         XCTAssertEqual(partiallyNative.domains.first { $0.domain == .documentInventory }?.evidence, ["native/Nexus/Sources/NexusApp/WorkspaceEvidenceDocuments.swift"])
         XCTAssertEqual(
@@ -1044,9 +1044,47 @@ final class ModelBehaviorTests: XCTestCase {
             ]
         )
         XCTAssertEqual(fullyNative.status, .ready)
-        XCTAssertEqual(fullyNative.migrationSummary, "8/8 Native domains")
+        XCTAssertEqual(fullyNative.migrationSummary, "9/9 Native domains")
         XCTAssertFalse(fullyNative.bridgeIsLegacyDependency)
         XCTAssertTrue(fullyNative.reason.contains("M2 Native Local Core"))
+    }
+
+    func testNativeCodexSessionStoreWritesCurrentShapeAndReadsLegacyShape() throws {
+        let workspaceURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-codex-sessions-\(UUID().uuidString)")
+        defer {
+            try? FileManager.default.removeItem(at: workspaceURL)
+        }
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        let link = CodexSessionLink(
+            id: "session-1",
+            title: "Implementation thread",
+            url: "codex://thread/session-1",
+            notes: "Native continuation",
+            createdAt: "2026-06-23T05:50:00Z",
+            lastOpenedAt: nil
+        )
+
+        let writtenURL = try NativeCodexSessionStore.write([link], workspacePath: workspaceURL.path)
+        let storedPayload = try Data(contentsOf: writtenURL)
+        let stored = try JSONDecoder().decode(CodexSessionLinkStore.self, from: storedPayload)
+
+        XCTAssertEqual(writtenURL.lastPathComponent, NativeCodexSessionStore.fileName)
+        XCTAssertEqual(stored.schemaVersion, CodexSessionLinkStore.currentSchemaVersion)
+        XCTAssertEqual(NativeCodexSessionStore.load(workspacePath: workspaceURL.path), [link])
+
+        let legacyLink = CodexSessionLink(
+            id: "legacy-session",
+            title: "Legacy array",
+            url: "codex://thread/legacy",
+            notes: "Imported from older shape",
+            createdAt: "2026-06-22T00:00:00Z",
+            lastOpenedAt: "2026-06-23T00:00:00Z"
+        )
+        let legacyPayload = try JSONEncoder().encode([legacyLink])
+        try legacyPayload.write(to: writtenURL, options: .atomic)
+
+        XCTAssertEqual(NativeCodexSessionStore.load(workspacePath: workspaceURL.path), [legacyLink])
     }
 
     func testNativeAuditEventStoreAppendsJsonlEvents() throws {
@@ -1262,10 +1300,10 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertEqual(evidence.status, .blocked)
         XCTAssertEqual(evidence.domains.map(\.domain), NativeLocalCoreDomain.allCases)
-        XCTAssertEqual(evidence.migrationSummary, "4/8 Native domains · 3 partial")
+        XCTAssertEqual(evidence.migrationSummary, "5/9 Native domains · 3 partial")
         XCTAssertEqual(
             evidence.domains.filter { $0.status == .ready }.map(\.domain),
-            [.documentInventory, .demandIntake, .readiness, .settings]
+            [.documentInventory, .demandIntake, .readiness, .settings, .codexSessions]
         )
         XCTAssertEqual(
             evidence.domains.filter { $0.status == .review }.map(\.domain),

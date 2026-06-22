@@ -257,7 +257,6 @@ final class AppState: ObservableObject {
     static let defaultRefreshIntervalSeconds = 10
     static let widgetAppGroupIdentifier = "group.com.ks.nexus"
     static let widgetSnapshotFileName = "widget-snapshot.json"
-    static let codexSessionLinksFileName = "codex-sessions.json"
     static let supportedAutomationIntervals = [5, 15, 30, 60]
     static let defaultAutomationIntervalMinutes = 30
     static let supportedNotificationCooldownMinutes = [15, 30, 60, 180]
@@ -2643,6 +2642,7 @@ final class AppState: ObservableObject {
 
     func nativeLocalCoreDomains() -> Set<NativeLocalCoreDomain> {
         [
+            .codexSessions,
             .documentInventory,
             .demandIntake,
             .readiness,
@@ -4604,50 +4604,18 @@ final class AppState: ObservableObject {
     }
 
     private static func readCodexSessionLinks(for workspace: WorkspaceSummary) -> [CodexSessionLink] {
-        let url = codexSessionLinksURL(for: workspace)
-        guard let data = try? Data(contentsOf: url) else {
-            return []
-        }
-
-        let decoder = JSONDecoder()
-        if let store = try? decoder.decode(CodexSessionLinkStore.self, from: data) {
-            return store.sessions
-        }
-
-        if let legacySessions = try? decoder.decode([CodexSessionLink].self, from: data) {
-            return legacySessions
-        }
-
-        return []
+        NativeCodexSessionStore.load(workspacePath: workspace.path)
     }
 
     private static func writeCodexSessionLinks(
         _ links: [CodexSessionLink],
         for workspace: WorkspaceSummary
     ) throws {
-        let workspaceURL = localFileURL(for: workspace.path)
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: workspaceURL.path, isDirectory: &isDirectory), isDirectory.boolValue else {
-            throw NSError(
-                domain: "NexusCodexSessionLinks",
-                code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "Workspace folder does not exist: \(workspaceURL.path)"]
-            )
-        }
-
-        let store = CodexSessionLinkStore(
-            schemaVersion: CodexSessionLinkStore.currentSchemaVersion,
-            sessions: links
-        )
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        let data = try encoder.encode(store)
-        try data.write(to: codexSessionLinksURL(for: workspace), options: .atomic)
+        _ = try NativeCodexSessionStore.write(links, workspacePath: workspace.path)
     }
 
     private static func codexSessionLinksURL(for workspace: WorkspaceSummary) -> URL {
-        localFileURL(for: workspace.path)
-            .appendingPathComponent(codexSessionLinksFileName)
+        NativeCodexSessionStore.storeURL(workspacePath: workspace.path)
     }
 
     private static func normalizedCodexSessionURL(_ rawURL: String) -> String? {
