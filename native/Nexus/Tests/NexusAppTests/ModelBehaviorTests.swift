@@ -1130,6 +1130,7 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertTrue(encodedText.contains("mainStage"))
         XCTAssertTrue(encodedText.contains("mainStageEvidence"))
+        XCTAssertEqual(snapshot.mainStageLine, "交付检查 / Delivery · 查看 SQL · sql/release.sql")
 
         let legacyJSON = """
         {
@@ -1149,6 +1150,7 @@ final class ModelBehaviorTests: XCTestCase {
         let decodedLegacy = try JSONDecoder().decode(WidgetSnapshot.self, from: Data(legacyJSON.utf8))
         XCTAssertNil(decodedLegacy.mainStage)
         XCTAssertNil(decodedLegacy.mainStageEvidence)
+        XCTAssertNil(decodedLegacy.mainStageLine)
     }
 
     func testMainWorkflowAcceptanceEvidenceBlocksMissingStagesAndEvidence() {

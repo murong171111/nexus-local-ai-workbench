@@ -38,6 +38,11 @@ struct NexusSnapshot: Decodable {
         mainStageEvidence: nil,
         deepLink: "nexus://"
     )
+
+    var mainStageLine: String? {
+        guard let mainStage else { return nil }
+        return [mainStage, mainStageNextAction, mainStageEvidence].compactMap(\.self).joined(separator: " · ")
+    }
 }
 
 struct NexusEntry: TimelineEntry {
@@ -123,8 +128,8 @@ struct NexusWidgetView: View {
                     .lineLimit(2)
             }
 
-            if let mainStage = snapshot.mainStage {
-                Text([mainStage, snapshot.mainStageNextAction, snapshot.mainStageEvidence].compactMap(\.self).joined(separator: " · "))
+            if let mainStageLine = snapshot.mainStageLine {
+                Text(mainStageLine)
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
                     .lineLimit(2)

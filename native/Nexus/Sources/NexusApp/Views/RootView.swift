@@ -767,6 +767,12 @@ private struct SidebarView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
+                    if let mainStageLine = snapshot.mainStageLine {
+                        Text(mainStageLine)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
                     Text(appState.widgetSnapshotStorageStatus)
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(.secondary)

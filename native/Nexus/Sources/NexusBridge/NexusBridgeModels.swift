@@ -1602,6 +1602,11 @@ public extension DashboardSnapshot {
 }
 
 public extension WidgetSnapshot {
+    var mainStageLine: String? {
+        guard let mainStage else { return nil }
+        return [mainStage, mainStageNextAction, mainStageEvidence].compactMap(\.self).joined(separator: " · ")
+    }
+
     static func preview(
         dashboard: DashboardSnapshot,
         activeFolder: String,
