@@ -27,6 +27,7 @@ final class ModelBehaviorTests: XCTestCase {
             "struct WorktreeSetupEvidence",
             "struct DemandIntakeReadinessEvidence",
             "struct TaskStatusUpdate",
+            "struct WorkspaceMainStageEvidenceLink",
             "func mainStage("
         ]
 
@@ -50,7 +51,8 @@ final class ModelBehaviorTests: XCTestCase {
             "MenuBarStatusModels.swift",
             "AgentWorkflowModels.swift",
             "WorkspaceLifecycleModels.swift",
-            "TaskStatusWritebackModels.swift"
+            "TaskStatusWritebackModels.swift",
+            "WorkspaceMainStageEvidence.swift"
         ]
 
         for fileName in ownedWorkflowFiles {
@@ -599,6 +601,36 @@ final class ModelBehaviorTests: XCTestCase {
             XCTAssertFalse(stage.evidence.isEmpty, workspace.id)
             XCTAssertFalse(stage.evidenceSummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, workspace.id)
         }
+    }
+
+    func testMainStageEvidenceLinksOpenKnownEvidenceSources() {
+        let stage = WorkspaceMainStage(
+            id: .development,
+            status: .next,
+            title: "Continue task",
+            reason: "Evidence links should route back to their files.",
+            primaryActionLabel: "Continue",
+            primaryActionSystemImage: "play.circle",
+            primaryAction: .task("task-1"),
+            evidence: [
+                "需求/scope.md",
+                "tasks.md:L12",
+                "交付记录.md",
+                "/tmp/workspace/STATUS.md",
+                "恢复开发需要确认写回",
+                "归档依赖交付门禁"
+            ],
+            nextStageAllowed: false
+        )
+        let links = stage.evidenceLinks
+
+        XCTAssertEqual(links.map(\.label), stage.evidence)
+        XCTAssertEqual(links[0].action, .document("scope"))
+        XCTAssertEqual(links[1].action, .document("tasks"))
+        XCTAssertEqual(links[2].action, .document("delivery"))
+        XCTAssertEqual(links[3].action, .path("/tmp/workspace/STATUS.md"))
+        XCTAssertEqual(links[4].action, .lifecycle(.restoreDevelopment))
+        XCTAssertNil(links[5].action)
     }
 
     func testWorkspaceBoardColumnsFollowMainWorkflowOrder() {

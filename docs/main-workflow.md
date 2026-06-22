@@ -369,7 +369,7 @@ The current Native shell already has enough structure to receive the M1 workflow
 - Main state: `AppState` owns workspace selection, document preview, demand intake state, worktree setup state, search, automation, agent events, settings, and feedback surfaces.
 - Main window: `RootView` is already organized around sidebar, workspace list, and inspector/detail surfaces.
 - Workspace list: `WorkspaceListView` and `WorkspaceCard` show workspace identity, branch, lifecycle, service/task/worktree signals, and risk.
-- Workspace detail: `WorkspaceDetailView` already composes Detail Map, Command Center, Codex Sessions, Demand Intake, Lifecycle, Workflow, Services, Risk Review, Documents, and Activity.
+- Workspace detail: `WorkspaceDetailView` already composes a Main Workflow summary, Detail Map, Command Center, Codex Sessions, Demand Intake, Lifecycle, Workflow, Services, Risk Review, Documents, and Activity.
 - Documents: `WorkspaceDocumentsHubView` already opens standard workspace documents and scanned SQL artifacts with preview/source behavior.
 - Demand intake: `WorkspaceDemandIntakeView` already initializes and opens the fixed `需求/` archive files, and the Native shell now reads `需求/*.md` for requirement content, unresolved P0 questions, visible scope status, and requirement-task readiness.
 - Service/branch: `ServiceBranchEvidence` now reads the Swift workspace summary and Markdown paths to gate target branch, service scope, source repo availability, target branch availability, and branch policy before worktree setup.
@@ -404,8 +404,9 @@ Target files:
 
 Plan:
 
-- Add a stage summary above Command Center.
-- Make primary action come from the stage model.
+- Add a stage summary above Command Center. `[started with WorkspaceMainStageSummaryView]`
+- Make primary action come from the stage model. `[started]`
+- Make stage evidence route back to the matching document or confirmed lifecycle action. `[started with WorkspaceMainStageEvidenceLink]`
 - Move secondary handoff/local tools below the stage evidence.
 - Keep detail map, but make it navigation only.
 

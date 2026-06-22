@@ -4126,9 +4126,17 @@ private struct WorkspaceDetailView: View {
                     .lineLimit(2)
             }
 
-            WorkspaceMainStageSummaryView(stage: mainStage) {
-                run(mainStage.primaryAction)
-            }
+            WorkspaceMainStageSummaryView(
+                stage: mainStage,
+                action: {
+                    run(mainStage.primaryAction)
+                },
+                evidenceAction: { link in
+                    if let action = link.action {
+                        run(action)
+                    }
+                }
+            )
 
             WorkspaceDetailMapView(workspace: workspace) { section in
                 scrollToSection(section)
@@ -4342,6 +4350,14 @@ private struct WorkspaceDetailView: View {
             return "\(workspace.path)/branches.md"
         case "tasks":
             return "\(workspace.path)/tasks.md"
+        case "requirement":
+            return "\(workspace.path)/需求/requirement.md"
+        case "questions":
+            return "\(workspace.path)/需求/questions.md"
+        case "scope":
+            return "\(workspace.path)/需求/scope.md"
+        case "demandTasks":
+            return "\(workspace.path)/需求/tasks.md"
         case "delivery":
             return "\(workspace.path)/交付记录.md"
         case "handoff":
@@ -4369,6 +4385,7 @@ private struct WorkspaceDetailView: View {
 private struct WorkspaceMainStageSummaryView: View {
     let stage: WorkspaceMainStage
     let action: () -> Void
+    let evidenceAction: (WorkspaceMainStageEvidenceLink) -> Void
 
     var body: some View {
         SectionBlock(title: "主流程状态 / Main workflow") {
@@ -4417,11 +4434,24 @@ private struct WorkspaceMainStageSummaryView: View {
                         Text("证据 / Evidence")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
-                        ForEach(stage.evidence.prefix(4), id: \.self) { evidence in
-                            Label(evidence, systemImage: "doc.text")
-                                .font(.system(.caption, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
+                        ForEach(stage.evidenceLinks.prefix(4)) { link in
+                            if link.action != nil {
+                                Button {
+                                    evidenceAction(link)
+                                } label: {
+                                    Label(link.label, systemImage: link.systemImage)
+                                        .font(.system(.caption, design: .monospaced))
+                                        .lineLimit(1)
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(stage.status.color)
+                                .help("打开证据 / Open evidence")
+                            } else {
+                                Label(link.label, systemImage: link.systemImage)
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
                         }
                     }
                 }
