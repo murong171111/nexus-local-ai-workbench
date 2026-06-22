@@ -1001,7 +1001,7 @@ final class ModelBehaviorTests: XCTestCase {
         let partiallyNative = NativeLocalCoreEvidence.resolve(
             bridgeMode: "Rust Core bridge: /tmp/libnexus_ffi.dylib",
             nativeDomains: [.workspaceScanning, .documentInventory],
-            partialNativeDomains: [.audit, .gitWorktreeStatus, .widgetSnapshot]
+            partialNativeDomains: [.audit, .gitWorktreeStatus, .searchIndex, .widgetSnapshot]
         )
         let fullyNative = NativeLocalCoreEvidence.resolve(
             bridgeMode: "Swift Native local core",
@@ -1010,15 +1010,15 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertEqual(preview.status, .blocked)
         XCTAssertTrue(preview.bridgeIsLegacyDependency)
-        XCTAssertEqual(preview.migrationSummary, "0/9 Native domains")
+        XCTAssertEqual(preview.migrationSummary, "0/10 Native domains")
         XCTAssertEqual(preview.domains.map(\.status), Array(repeating: .blocked, count: NativeLocalCoreDomain.allCases.count))
         XCTAssertEqual(partiallyNative.status, .blocked)
-        XCTAssertEqual(partiallyNative.migrationSummary, "2/9 Native domains · 3 partial")
+        XCTAssertEqual(partiallyNative.migrationSummary, "2/10 Native domains · 4 partial")
         XCTAssertEqual(partiallyNative.domains.filter { $0.status == .ready }.map(\.domain), [.workspaceScanning, .documentInventory])
         XCTAssertEqual(partiallyNative.domains.first { $0.domain == .documentInventory }?.evidence, ["native/Nexus/Sources/NexusApp/WorkspaceEvidenceDocuments.swift"])
         XCTAssertEqual(
             partiallyNative.domains.filter { $0.status == .review }.map(\.domain),
-            [.gitWorktreeStatus, .audit, .widgetSnapshot]
+            [.gitWorktreeStatus, .audit, .widgetSnapshot, .searchIndex]
         )
         XCTAssertEqual(
             partiallyNative.domains.first { $0.domain == .gitWorktreeStatus }?.evidence,
@@ -1043,10 +1043,57 @@ final class ModelBehaviorTests: XCTestCase {
                 "NexusBridge.widgetSnapshot"
             ]
         )
+        XCTAssertEqual(
+            partiallyNative.domains.first { $0.domain == .searchIndex }?.evidence,
+            [
+                "native/Nexus/Sources/NexusApp/AppState.swift",
+                "native/Nexus/Sources/NexusApp/Models.swift",
+                "NexusBridge.rebuildSearchIndex / searchIndex"
+            ]
+        )
         XCTAssertEqual(fullyNative.status, .ready)
-        XCTAssertEqual(fullyNative.migrationSummary, "9/9 Native domains")
+        XCTAssertEqual(fullyNative.migrationSummary, "10/10 Native domains")
         XCTAssertFalse(fullyNative.bridgeIsLegacyDependency)
         XCTAssertTrue(fullyNative.reason.contains("M2 Native Local Core"))
+    }
+
+    func testNativeSearchModelsGroupAndScopeResultsWithoutBridge() {
+        let results = [
+            SearchResult(
+                workspaceFolder: "demo",
+                workspaceName: "Demo",
+                documentKey: "workspace",
+                documentName: "Workspace",
+                documentPath: "/tmp/demo/workspace.md",
+                kind: "workspace",
+                snippet: "Main workspace record"
+            ),
+            SearchResult(
+                workspaceFolder: "demo",
+                workspaceName: "Demo",
+                documentKey: "tasks",
+                documentName: "Tasks",
+                documentPath: "/tmp/demo/tasks.md",
+                kind: "tasks",
+                snippet: "Implement native search fallback"
+            ),
+            SearchResult(
+                workspaceFolder: "demo",
+                workspaceName: "Demo",
+                documentKey: "sql",
+                documentName: "SQL",
+                documentPath: "/tmp/demo/sql/change.sql",
+                kind: "sql",
+                snippet: "alter table"
+            )
+        ]
+
+        let groups = groupSearchResults(results)
+
+        XCTAssertEqual(groups.map(\.id), ["workspace", "workflow", "sql"])
+        XCTAssertEqual(SearchScope.workflow.matches(results[1]), true)
+        XCTAssertEqual(SearchScope.workflow.matches(results[2]), false)
+        XCTAssertEqual(results[1].stableID, "demo-tasks-/tmp/demo/tasks.md")
     }
 
     func testNativeCodexSessionStoreWritesCurrentShapeAndReadsLegacyShape() throws {
@@ -1300,14 +1347,14 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertEqual(evidence.status, .blocked)
         XCTAssertEqual(evidence.domains.map(\.domain), NativeLocalCoreDomain.allCases)
-        XCTAssertEqual(evidence.migrationSummary, "5/9 Native domains · 3 partial")
+        XCTAssertEqual(evidence.migrationSummary, "5/10 Native domains · 4 partial")
         XCTAssertEqual(
             evidence.domains.filter { $0.status == .ready }.map(\.domain),
             [.documentInventory, .demandIntake, .readiness, .settings, .codexSessions]
         )
         XCTAssertEqual(
             evidence.domains.filter { $0.status == .review }.map(\.domain),
-            [.gitWorktreeStatus, .audit, .widgetSnapshot]
+            [.gitWorktreeStatus, .audit, .widgetSnapshot, .searchIndex]
         )
         XCTAssertTrue(evidence.reason.contains("legacy bridge"))
         XCTAssertTrue(evidence.reason.contains("部分 Swift 化"))

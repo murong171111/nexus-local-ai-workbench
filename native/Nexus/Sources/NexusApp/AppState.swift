@@ -2654,6 +2654,7 @@ final class AppState: ObservableObject {
         [
             .audit,
             .gitWorktreeStatus,
+            .searchIndex,
             .widgetSnapshot
         ]
     }
