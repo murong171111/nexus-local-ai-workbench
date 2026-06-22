@@ -468,7 +468,7 @@ Target files:
 
 Plan:
 
-- Replace generic service rows with five explicit states:
+- Replace generic service rows with five explicit states. `[started with ServiceWorktreeRowState]`
   - missing source repo
   - missing worktree
   - branch mismatch

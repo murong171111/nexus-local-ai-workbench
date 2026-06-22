@@ -27,6 +27,7 @@ final class ModelBehaviorTests: XCTestCase {
             "struct WorktreeSetupEvidence",
             "struct DemandIntakeReadinessEvidence",
             "struct TaskStatusUpdate",
+            "struct ServiceWorktreeRowState",
             "struct WorkspaceMainStageEvidenceLink",
             "struct WorkspaceListStageBadge",
             "struct WorkspaceListSummary",
@@ -1472,6 +1473,105 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertFalse(missing.canReveal)
         XCTAssertTrue(missing.reviewOnly)
         XCTAssertTrue(missing.nextStepHint.contains("services.md"))
+    }
+
+    func testServiceWorktreeRowStateDistinguishesFiveExplicitStates() {
+        let targetBranch = "feature/worktree"
+        let services = [
+            ServiceStatus(
+                name: "missing-source",
+                branch: targetBranch,
+                worktree: "missing",
+                gitSummary: "source missing",
+                worktreeExists: false,
+                sourceExists: false
+            ),
+            ServiceStatus(
+                name: "missing-worktree",
+                branch: targetBranch,
+                worktree: "missing",
+                gitSummary: "source clean",
+                worktreeExists: false,
+                sourceExists: true
+            ),
+            ServiceStatus(
+                name: "branch-mismatch",
+                branch: "dev",
+                worktree: "ready",
+                gitSummary: "clean",
+                worktreeExists: true,
+                sourceExists: true
+            ),
+            ServiceStatus(
+                name: "dirty",
+                branch: targetBranch,
+                worktree: "ready",
+                gitSummary: "dirty",
+                worktreeExists: true,
+                sourceExists: true
+            ),
+            ServiceStatus(
+                name: "clean",
+                branch: "origin/feature/worktree",
+                worktree: "ready",
+                gitSummary: "clean",
+                worktreeExists: true,
+                sourceExists: true
+            )
+        ]
+
+        let states = services.map { service in
+            ServiceWorktreeRowState.resolve(service: service, targetBranch: targetBranch)
+        }
+
+        XCTAssertEqual(states.map(\.kind), ServiceWorktreeRowStateKind.allCases)
+        XCTAssertEqual(states.map(\.label), ["source 缺失", "缺 worktree", "分支不一致", "未提交", "clean"])
+        XCTAssertEqual(states.map(\.status), [.blocked, .next, .blocked, .review, .ready])
+        XCTAssertTrue(states.first { $0.kind == .branchMismatch }?.detail.contains("dev") ?? false)
+    }
+
+    func testServiceWorktreeRowStatePrioritizesRepositoryAndBranchBlockersBeforeDirty() {
+        let missingSourceAndDirty = ServiceWorktreeRowState.resolve(
+            service: ServiceStatus(
+                name: "orders",
+                branch: "dev",
+                worktree: "ready dirty",
+                gitSummary: "dirty",
+                worktreeExists: true,
+                sourceExists: false
+            ),
+            targetBranch: "feature/worktree"
+        )
+        let branchMismatchAndDirty = ServiceWorktreeRowState.resolve(
+            service: ServiceStatus(
+                name: "payments",
+                branch: "dev",
+                worktree: "ready",
+                gitSummary: "dirty",
+                worktreeExists: true,
+                sourceExists: true
+            ),
+            targetBranch: "feature/worktree"
+        )
+
+        XCTAssertEqual(missingSourceAndDirty.kind, .missingSourceRepo)
+        XCTAssertEqual(branchMismatchAndDirty.kind, .branchMismatch)
+    }
+
+    func testServiceWorktreeRowStateWaitsForConfirmedTargetBeforeBranchMismatch() {
+        let pendingTarget = ServiceWorktreeRowState.resolve(
+            service: ServiceStatus(
+                name: "orders",
+                branch: "dev",
+                worktree: "ready",
+                gitSummary: "clean",
+                worktreeExists: true,
+                sourceExists: true
+            ),
+            targetBranch: "待确认"
+        )
+
+        XCTAssertEqual(pendingTarget.kind, .clean)
     }
 
     func testWorktreeSetupEvidenceRoutesMissingWorktreesToSetup() throws {

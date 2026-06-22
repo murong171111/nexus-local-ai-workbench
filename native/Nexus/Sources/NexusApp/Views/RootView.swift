@@ -4949,40 +4949,8 @@ private struct ServiceGitStatusRow: View {
     let workspace: WorkspaceSummary
     let servicesDocumentPath: String
 
-    private var isDirty: Bool {
-        let normalized = "\(service.gitSummary) \(service.worktree)".lowercased()
-        return normalized.contains("dirty")
-            || normalized.contains("modified")
-            || normalized.contains("uncommitted")
-            || normalized.contains("未提交")
-            || normalized.contains("有改动")
-            || normalized.contains("不是 git")
-            || normalized.contains("not git")
-            || normalized.contains("检查失败")
-            || normalized.contains("failed")
-    }
-
-    private var statusTone: Color {
-        if !service.sourceExists {
-            return NexusPalette.danger
-        }
-        if !service.worktreeExists || isDirty {
-            return NexusPalette.warning
-        }
-        return NexusPalette.success
-    }
-
-    private var statusLabel: String {
-        if !service.sourceExists {
-            return "source 缺失"
-        }
-        if !service.worktreeExists {
-            return "缺 worktree"
-        }
-        if isDirty {
-            return "需复核"
-        }
-        return "就绪"
+    private var rowState: ServiceWorktreeRowState {
+        ServiceWorktreeRowState.resolve(service: service, targetBranch: workspace.branch)
     }
 
     private var sourceAccess: SourceRepositoryAccess {
@@ -4992,8 +4960,8 @@ private struct ServiceGitStatusRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(alignment: .top, spacing: 9) {
-                Image(systemName: service.worktreeExists ? "checkmark.circle" : "arrow.triangle.branch")
-                    .foregroundStyle(statusTone)
+                Image(systemName: rowState.systemImage)
+                    .foregroundStyle(rowState.status.color)
                     .frame(width: 15)
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -5002,12 +4970,12 @@ private struct ServiceGitStatusRow: View {
                             .font(.subheadline.weight(.semibold))
                             .lineLimit(1)
 
-                        Text(statusLabel)
+                        Text(rowState.label)
                             .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(statusTone)
+                            .foregroundStyle(rowState.status.color)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 2)
-                            .background(statusTone.opacity(0.1))
+                            .background(rowState.status.color.opacity(0.1))
                             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     }
 
@@ -5020,6 +4988,11 @@ private struct ServiceGitStatusRow: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+
+                    Text(rowState.detail)
+                        .font(.caption2)
+                        .foregroundStyle(rowState.status.color)
+                        .lineLimit(2)
 
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: sourceAccess.systemImage)
@@ -5116,7 +5089,7 @@ private struct ServiceGitStatusRow: View {
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(statusTone.opacity(0.16))
+                .stroke(rowState.status.color.opacity(0.16))
         }
     }
 

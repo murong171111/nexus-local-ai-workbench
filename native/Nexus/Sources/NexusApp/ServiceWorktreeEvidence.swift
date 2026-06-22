@@ -50,6 +50,124 @@ struct SourceRepositoryAccess: Hashable {
     }
 }
 
+enum ServiceWorktreeRowStateKind: String, CaseIterable, Hashable {
+    case missingSourceRepo
+    case missingWorktree
+    case branchMismatch
+    case dirty
+    case clean
+}
+
+struct ServiceWorktreeRowState: Hashable {
+    let serviceName: String
+    let kind: ServiceWorktreeRowStateKind
+    let label: String
+    let detail: String
+    let status: WorkflowPathStatus
+    let systemImage: String
+
+    static func resolve(service: ServiceStatus, targetBranch: String) -> ServiceWorktreeRowState {
+        if !service.sourceExists {
+            return ServiceWorktreeRowState(
+                serviceName: service.name,
+                kind: .missingSourceRepo,
+                label: "source 缺失",
+                detail: "source repo 不可用，不能创建或修复 workspace-local worktree。",
+                status: .blocked,
+                systemImage: "externaldrive.badge.xmark"
+            )
+        }
+
+        if !service.worktreeExists {
+            return ServiceWorktreeRowState(
+                serviceName: service.name,
+                kind: .missingWorktree,
+                label: "缺 worktree",
+                detail: "尚未创建 workspace-local worktree，需要走确认后的创建流程。",
+                status: .next,
+                systemImage: "wrench.and.screwdriver"
+            )
+        }
+
+        if !ServiceBranchMatcher.matches(service.branch, target: targetBranch) {
+            return ServiceWorktreeRowState(
+                serviceName: service.name,
+                kind: .branchMismatch,
+                label: "分支不一致",
+                detail: "当前分支 \(service.branch) 与目标分支 \(targetBranch) 不一致，需先修正分支证据。",
+                status: .blocked,
+                systemImage: "arrow.triangle.branch"
+            )
+        }
+
+        if serviceHasDirtyGit(service) {
+            return ServiceWorktreeRowState(
+                serviceName: service.name,
+                kind: .dirty,
+                label: "未提交",
+                detail: "worktree 存在未提交或检查失败状态，需要先交接或复核。",
+                status: .review,
+                systemImage: "exclamationmark.triangle"
+            )
+        }
+
+        return ServiceWorktreeRowState(
+            serviceName: service.name,
+            kind: .clean,
+            label: "clean",
+            detail: "source repo 可用、worktree 存在、分支一致且 git 状态干净。",
+            status: .ready,
+            systemImage: "checkmark.circle"
+        )
+    }
+
+    private static func serviceHasDirtyGit(_ service: ServiceStatus) -> Bool {
+        let normalized = "\(service.gitSummary) \(service.worktree)".lowercased()
+        return normalized.contains("dirty")
+            || normalized.contains("modified")
+            || normalized.contains("uncommitted")
+            || normalized.contains("未提交")
+            || normalized.contains("有改动")
+            || normalized.contains("不是 git")
+            || normalized.contains("not git")
+            || normalized.contains("检查失败")
+            || normalized.contains("failed")
+    }
+}
+
+enum ServiceBranchMatcher {
+    static func matches(_ branch: String, target: String) -> Bool {
+        let normalizedBranch = normalize(branch)
+        let normalizedTarget = normalize(target)
+        guard !normalizedBranch.isEmpty, !normalizedTarget.isEmpty else {
+            return true
+        }
+        guard !normalizedTarget.contains("missing"),
+              !normalizedTarget.contains("待确认"),
+              !normalizedTarget.contains("未确认"),
+              !normalizedTarget.contains("pending"),
+              !normalizedTarget.contains("tbd"),
+              !normalizedTarget.contains("todo") else {
+            return true
+        }
+        guard !normalizedBranch.contains("missing"),
+              !normalizedBranch.contains("待确认"),
+              !normalizedBranch.contains("未确认"),
+              !normalizedBranch.contains("pending") else {
+            return true
+        }
+        return normalizedBranch == normalizedTarget
+            || normalizedBranch.hasSuffix("/\(normalizedTarget)")
+    }
+
+    private static func normalize(_ branch: String) -> String {
+        branch
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "origin/", with: "")
+    }
+}
+
 struct ServiceBranchEvidence: Hashable {
     let status: WorkflowPathStatus
     let reason: String
@@ -579,7 +697,7 @@ struct WorktreeSetupEvidence: Hashable {
             .map(\.name)
         let branchMismatchServices: [String] = branchConfirmed
             ? workspace.services.compactMap { service in
-                guard service.worktreeExists, !branchMatches(service.branch, target: workspace.branch) else {
+                guard service.worktreeExists, !ServiceBranchMatcher.matches(service.branch, target: workspace.branch) else {
                     return nil
                 }
                 return "\(service.name)(\(service.branch))"
@@ -688,21 +806,6 @@ struct WorktreeSetupEvidence: Hashable {
             && !normalized.contains("todo")
     }
 
-    private static func branchMatches(_ branch: String, target: String) -> Bool {
-        let normalizedBranch = normalizeBranch(branch)
-        let normalizedTarget = normalizeBranch(target)
-        guard !normalizedBranch.isEmpty, !normalizedTarget.isEmpty else {
-            return true
-        }
-        guard !normalizedBranch.contains("missing"),
-              !normalizedBranch.contains("待确认"),
-              !normalizedBranch.contains("pending") else {
-            return true
-        }
-        return normalizedBranch == normalizedTarget
-            || normalizedBranch.hasSuffix("/\(normalizedTarget)")
-    }
-
     private static func buildSetupPlan(
         workspace: WorkspaceSummary,
         branchConfirmed: Bool
@@ -737,7 +840,7 @@ struct WorktreeSetupEvidence: Hashable {
                 )
             }
 
-            if service.worktreeExists && !branchMatches(service.branch, target: workspace.branch) {
+            if service.worktreeExists && !ServiceBranchMatcher.matches(service.branch, target: workspace.branch) {
                 return WorktreeSetupPlanItem(
                     id: service.name,
                     serviceName: service.name,
@@ -832,13 +935,6 @@ struct WorktreeSetupEvidence: Hashable {
             .appendingPathComponent("repos", isDirectory: true)
             .appendingPathComponent(service.name, isDirectory: true)
             .path
-    }
-
-    private static func normalizeBranch(_ branch: String) -> String {
-        branch
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-            .replacingOccurrences(of: "origin/", with: "")
     }
 
     private static func worktreeReadyDetail(workspace: WorkspaceSummary) -> String {
