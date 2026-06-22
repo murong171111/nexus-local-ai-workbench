@@ -38,6 +38,10 @@ struct NativeDistributionReadinessEvidence: Hashable {
         status == .ready
     }
 
+    var readinessSummary: String {
+        "\(checks.filter { $0.status == .ready }.count)/\(checks.count) Ready checks"
+    }
+
     static func resolve(
         repositoryRoot: String,
         m1Ready: Bool,

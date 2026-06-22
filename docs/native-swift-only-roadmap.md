@@ -290,10 +290,10 @@ Until then, legacy code is frozen reference, not the product direction.
 
 ### M3: Native Distribution Readiness
 
-- Native app becomes the install target. `[started with NativeDistributionReadinessEvidence install target check]`
-- WidgetKit is attached to the native app target. `[started with NativeDistributionReadinessEvidence widget target check]`
-- Tauri is removed after deletion conditions are met. `[started with NativeDistributionReadinessEvidence legacy deletion check]`
-- Signing, notarization, updater, and release notes can be addressed after M1/M2 are stable. `[started with NativeDistributionReadinessEvidence release readiness check]`
+- Native app becomes the install target. `[started with NativeDistributionReadinessEvidence install target check surfaced in Settings]`
+- WidgetKit is attached to the native app target. `[started with NativeDistributionReadinessEvidence widget target check surfaced in Settings]`
+- Tauri is removed after deletion conditions are met. `[started with NativeDistributionReadinessEvidence legacy deletion check surfaced in Settings]`
+- Signing, notarization, updater, and release notes can be addressed after M1/M2 are stable. `[started with NativeDistributionReadinessEvidence release readiness check surfaced in Settings]`
 
 ## Verification Policy
 

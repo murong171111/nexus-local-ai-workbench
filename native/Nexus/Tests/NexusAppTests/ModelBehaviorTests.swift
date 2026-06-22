@@ -1045,6 +1045,7 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(evidence.checks.first { $0.requirement == .widgetExtension }?.status, .blocked)
         XCTAssertEqual(evidence.checks.first { $0.requirement == .legacyDeletion }?.status, .blocked)
         XCTAssertEqual(evidence.checks.first { $0.requirement == .releaseReadiness }?.status, .blocked)
+        XCTAssertEqual(evidence.readinessSummary, "0/4 Ready checks")
         XCTAssertTrue(evidence.reason.contains("M3"))
     }
 
@@ -1074,6 +1075,7 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertTrue(evidence.ready)
         XCTAssertEqual(evidence.status, .ready)
+        XCTAssertEqual(evidence.readinessSummary, "4/4 Ready checks")
         XCTAssertTrue(evidence.checks.allSatisfy { $0.status == .ready })
     }
 

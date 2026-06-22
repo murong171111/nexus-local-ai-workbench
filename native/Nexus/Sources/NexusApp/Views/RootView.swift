@@ -12923,6 +12923,10 @@ struct SettingsView: View {
         appState.nativeLocalCoreEvidence()
     }
 
+    private var nativeDistributionEvidence: NativeDistributionReadinessEvidence {
+        appState.nativeDistributionReadinessEvidence()
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 4) {
@@ -13049,6 +13053,7 @@ struct SettingsView: View {
                 Section("Native Shell") {
                     Text("Bridge mode: \(appState.bridgeMode)")
                     NativeLocalCoreEvidenceView(evidence: nativeCoreEvidence)
+                    NativeDistributionReadinessEvidenceView(evidence: nativeDistributionEvidence)
                     Text("Search scope: \(appState.selectedSearchScope.label) / \(appState.selectedSearchScope.subtitle)")
                     Text("Pinned workspaces: \(appState.pinnedWorkspaceIDs.count)")
                     Text("Set NEXUS_CORE_LIBRARY to a local libnexus_ffi.dylib to load real workspace data through Rust Core during development.")
@@ -13254,6 +13259,70 @@ struct SettingsView: View {
         let url = URL(fileURLWithPath: expandedPath)
         if FileManager.default.fileExists(atPath: url.path) {
             NSWorkspace.shared.activateFileViewerSelecting([url])
+        }
+    }
+}
+
+private struct NativeDistributionReadinessEvidenceView: View {
+    let evidence: NativeDistributionReadinessEvidence
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                EnvironmentStatusPill(status: evidence.ready ? "pass" : "blocker")
+                Text("M3 Distribution: \(evidence.readinessSummary)")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+            }
+
+            Text(evidence.reason)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 190), spacing: 8)],
+                alignment: .leading,
+                spacing: 8
+            ) {
+                ForEach(evidence.checks) { check in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 6) {
+                            Image(systemName: systemImage(for: check.status))
+                                .foregroundStyle(check.status.color)
+                            Text(check.requirement.label)
+                                .font(.caption.weight(.semibold))
+                                .lineLimit(1)
+                        }
+                        Text(check.evidence.joined(separator: " · "))
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(check.status.color.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .help(check.detail)
+                }
+            }
+        }
+    }
+
+    private func systemImage(for status: WorkflowPathStatus) -> String {
+        switch status {
+        case .ready:
+            return "checkmark.circle"
+        case .review:
+            return "exclamationmark.triangle"
+        case .blocked:
+            return "xmark.octagon"
+        case .pending:
+            return "clock"
+        case .next:
+            return "arrow.forward.circle"
+        case .archived:
+            return "archivebox"
         }
     }
 }
