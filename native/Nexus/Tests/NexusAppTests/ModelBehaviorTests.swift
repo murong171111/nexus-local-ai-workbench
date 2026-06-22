@@ -1803,6 +1803,7 @@ final class ModelBehaviorTests: XCTestCase {
         let files: Set<String> = [
             "\(root)/native/Nexus/Package.swift",
             "\(root)/widget/NexusWidget/NexusWidget.swift",
+            "\(root)/docs/legacy-retirement-audit.md",
             "\(root)/docs/distribution.md",
             "\(root)/docs/release-process.md",
             "\(root)/.github/workflows/ci.yml",
@@ -1820,6 +1821,8 @@ final class ModelBehaviorTests: XCTestCase {
                 path.hasSuffix("ci.yml") && needle == "swift test"
                     || path.hasSuffix("release.yml") && needle == "tauri"
                     || path.hasSuffix("release-process.md") && needle == "Tauri"
+                    || path.hasSuffix("legacy-retirement-audit.md") && needle == "Native Deletion Order"
+                    || path.hasSuffix("legacy-retirement-audit.md") && needle == "Current Legacy Surfaces"
             }
         )
 
@@ -1832,6 +1835,7 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(evidence.readinessSummary, "0/4 Ready checks")
         XCTAssertTrue(evidence.checks.first { $0.requirement == .legacyDeletion }?.detail.contains("M2 Native Local Core is not ready") == true)
         XCTAssertTrue(evidence.checks.first { $0.requirement == .legacyDeletion }?.detail.contains("No real archived workspace lifecycle proof") == true)
+        XCTAssertTrue(evidence.checks.first { $0.requirement == .legacyDeletion }?.detail.contains("Next step: follow the Native deletion order") == true)
         XCTAssertTrue(evidence.checks.first { $0.requirement == .legacyDeletion }?.evidence.contains("\(root)/src-tauri") == true)
         XCTAssertTrue(evidence.checks.first { $0.requirement == .releaseReadiness }?.detail.contains("Release workflow does not build a Native app artifact") == true)
         XCTAssertTrue(evidence.checks.first { $0.requirement == .releaseReadiness }?.detail.contains("Release docs or workflows still point to Tauri artifacts") == true)
@@ -1843,6 +1847,7 @@ final class ModelBehaviorTests: XCTestCase {
         let files: Set<String> = [
             "\(root)/native/Nexus/Package.swift",
             "\(root)/widget/NexusWidget/NexusWidget.swift",
+            "\(root)/docs/legacy-retirement-audit.md",
             "\(root)/docs/distribution.md",
             "\(root)/docs/release-process.md",
             "\(root)/.github/workflows/ci.yml",
@@ -1864,6 +1869,8 @@ final class ModelBehaviorTests: XCTestCase {
                     return path.hasSuffix("release.yml")
                         || path.hasSuffix("distribution.md")
                         || path.hasSuffix("release-process.md")
+                case "Native Deletion Order", "Current Legacy Surfaces":
+                    return path.hasSuffix("legacy-retirement-audit.md")
                 default:
                     return false
                 }
@@ -1886,6 +1893,7 @@ final class ModelBehaviorTests: XCTestCase {
             "\(root)/native/Nexus/Scripts/build-app-bundle.sh",
             "\(root)/native/Nexus/Packaging/Info.plist",
             "\(root)/widget/NexusWidget/NexusWidget.swift",
+            "\(root)/docs/legacy-retirement-audit.md",
             "\(root)/docs/distribution.md",
             "\(root)/docs/release-process.md",
             "\(root)/.github/workflows/ci.yml",
@@ -1906,6 +1914,8 @@ final class ModelBehaviorTests: XCTestCase {
                     return path.hasSuffix("release.yml")
                         || path.hasSuffix("distribution.md")
                         || path.hasSuffix("release-process.md")
+                case "Native Deletion Order", "Current Legacy Surfaces":
+                    return path.hasSuffix("legacy-retirement-audit.md")
                 default:
                     return false
                 }
@@ -1927,6 +1937,7 @@ final class ModelBehaviorTests: XCTestCase {
             "\(root)/native/NexusWidget/Sources/NexusWidget/NexusWidget.swift",
             "\(root)/native/NexusWidget/Info.plist",
             "\(root)/native/NexusWidget/NexusWidget.entitlements",
+            "\(root)/docs/legacy-retirement-audit.md",
             "\(root)/docs/distribution.md",
             "\(root)/docs/release-process.md",
             "\(root)/.github/workflows/ci.yml",
@@ -1947,6 +1958,8 @@ final class ModelBehaviorTests: XCTestCase {
                         return path.hasSuffix("Info.plist")
                     case "group.com.ks.nexus":
                         return path.hasSuffix("NexusWidget.entitlements")
+                    case "Native Deletion Order", "Current Legacy Surfaces":
+                        return path.hasSuffix("legacy-retirement-audit.md")
                     case "swift test":
                         return path.hasSuffix("ci.yml")
                     case "native/Nexus", "NexusNative", "Swift":
@@ -1975,6 +1988,7 @@ final class ModelBehaviorTests: XCTestCase {
             "\(root)/native/NexusWidget/Sources/NexusWidget/NexusWidget.swift",
             "\(root)/native/NexusWidget/Info.plist",
             "\(root)/native/NexusWidget/NexusWidget.entitlements",
+            "\(root)/docs/legacy-retirement-audit.md",
             "\(root)/docs/distribution.md",
             "\(root)/docs/release-process.md",
             "\(root)/.github/workflows/ci.yml",
@@ -2002,6 +2016,8 @@ final class ModelBehaviorTests: XCTestCase {
                     return path.hasSuffix("Info.plist")
                 case "group.com.ks.nexus":
                     return path.hasSuffix("NexusWidget.entitlements")
+                case "Native Deletion Order", "Current Legacy Surfaces":
+                    return path.hasSuffix("legacy-retirement-audit.md")
                 default:
                     return false
                 }

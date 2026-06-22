@@ -71,7 +71,9 @@ struct NativeDistributionReadinessEvidence: Hashable {
                 m1Ready: m1Ready,
                 m2Ready: m2Ready,
                 realLifecycleProven: realLifecycleProven,
-                directoryExists: directoryExists
+                directoryExists: directoryExists,
+                fileExists: fileExists,
+                fileContains: fileContains
             ),
             releaseReadinessCheck(
                 repositoryRoot: repositoryRoot,
@@ -144,15 +146,23 @@ struct NativeDistributionReadinessEvidence: Hashable {
         m1Ready: Bool,
         m2Ready: Bool,
         realLifecycleProven: Bool,
-        directoryExists: (String) -> Bool
+        directoryExists: (String) -> Bool,
+        fileExists: (String) -> Bool,
+        fileContains: (String, String) -> Bool
     ) -> NativeDistributionCheck {
         let legacyDirectories = ["src", "src-tauri", "crates"].map { "\(repositoryRoot)/\($0)" }
+        let retirementAuditPath = "\(repositoryRoot)/docs/legacy-retirement-audit.md"
         let legacyStillPresent = legacyDirectories.filter(directoryExists)
+        let hasRetirementAudit = fileExists(retirementAuditPath)
+            && fileContains(retirementAuditPath, "Native Deletion Order")
+            && fileContains(retirementAuditPath, "Current Legacy Surfaces")
         let blockers = legacyDeletionBlockers(
             m1Ready: m1Ready,
             m2Ready: m2Ready,
             realLifecycleProven: realLifecycleProven,
-            legacyStillPresent: legacyStillPresent
+            legacyStillPresent: legacyStillPresent,
+            hasRetirementAudit: hasRetirementAudit,
+            retirementAuditPath: retirementAuditPath
         )
         let ready = m1Ready && m2Ready && realLifecycleProven && legacyStillPresent.isEmpty
         return NativeDistributionCheck(
@@ -161,7 +171,7 @@ struct NativeDistributionReadinessEvidence: Hashable {
             detail: ready
                 ? "Legacy Web/Tauri/Rust/TypeScript paths have been removed after Native proof."
                 : "Legacy deletion blockers: \(blockers.joined(separator: " "))",
-            evidence: legacyStillPresent.isEmpty ? legacyDirectories : legacyStillPresent + blockers
+            evidence: legacyStillPresent.isEmpty ? legacyDirectories + [retirementAuditPath] : legacyStillPresent + [retirementAuditPath] + blockers
         )
     }
 
@@ -169,7 +179,9 @@ struct NativeDistributionReadinessEvidence: Hashable {
         m1Ready: Bool,
         m2Ready: Bool,
         realLifecycleProven: Bool,
-        legacyStillPresent: [String]
+        legacyStillPresent: [String],
+        hasRetirementAudit: Bool,
+        retirementAuditPath: String
     ) -> [String] {
         var blockers: [String] = []
         if !m1Ready {
@@ -183,6 +195,12 @@ struct NativeDistributionReadinessEvidence: Hashable {
         }
         if !legacyStillPresent.isEmpty {
             blockers.append("Legacy directories still exist: \(legacyStillPresent.joined(separator: ", ")).")
+            if hasRetirementAudit {
+                blockers.append("Next step: follow the Native deletion order in \(retirementAuditPath).")
+            }
+        }
+        if !hasRetirementAudit {
+            blockers.append("Legacy retirement audit is missing or incomplete: \(retirementAuditPath).")
         }
         return blockers
     }
