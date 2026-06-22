@@ -1869,19 +1869,26 @@ final class ModelBehaviorTests: XCTestCase {
 
         let evidence = appState.nativeLocalCoreEvidence()
 
-        XCTAssertEqual(evidence.status, .review)
+        XCTAssertEqual(evidence.status, .ready)
         XCTAssertEqual(evidence.domains.map(\.domain), NativeLocalCoreDomain.allCases)
-        XCTAssertEqual(evidence.migrationSummary, "8/10 Native domains · 2 partial")
+        XCTAssertEqual(evidence.migrationSummary, "10/10 Native domains")
         XCTAssertEqual(
             evidence.domains.filter { $0.status == .ready }.map(\.domain),
-            [.documentInventory, .demandIntake, .readiness, .audit, .settings, .widgetSnapshot, .codexSessions, .searchIndex]
+            [
+                .workspaceScanning,
+                .documentInventory,
+                .demandIntake,
+                .readiness,
+                .gitWorktreeStatus,
+                .audit,
+                .settings,
+                .widgetSnapshot,
+                .codexSessions,
+                .searchIndex
+            ]
         )
-        XCTAssertEqual(
-            evidence.domains.filter { $0.status == .review }.map(\.domain),
-            [.workspaceScanning, .gitWorktreeStatus]
-        )
-        XCTAssertTrue(evidence.reason.contains("已无 blocked 域"))
-        XCTAssertTrue(evidence.reason.contains("Git / Worktree"))
+        XCTAssertTrue(evidence.domains.filter { $0.status == .review }.isEmpty)
+        XCTAssertTrue(evidence.reason.contains("已覆盖工作区扫描"))
     }
 
     @MainActor

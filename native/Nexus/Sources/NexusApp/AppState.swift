@@ -2637,18 +2637,17 @@ final class AppState: ObservableObject {
             .codexSessions,
             .documentInventory,
             .demandIntake,
+            .gitWorktreeStatus,
             .readiness,
             .searchIndex,
             .settings,
+            .workspaceScanning,
             .widgetSnapshot
         ]
     }
 
     func nativeLocalCorePartialDomains() -> Set<NativeLocalCoreDomain> {
-        [
-            .workspaceScanning,
-            .gitWorktreeStatus
-        ]
+        []
     }
 
     func nativeDistributionReadinessEvidence(
