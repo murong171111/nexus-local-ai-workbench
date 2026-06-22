@@ -1069,6 +1069,73 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(payload.contains("\"workspaceFolder\":\"demo\""))
     }
 
+    func testNativeAuditEventStoreLoadsRecentEventsNewestFirst() throws {
+        let auditRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-audit-load-\(UUID().uuidString)")
+        defer {
+            try? FileManager.default.removeItem(at: auditRoot)
+        }
+
+        _ = try NativeAuditEventStore.append(
+            auditRoot: auditRoot.path,
+            event: AuditEventInput(actor: "Nexus Native", action: "old.event", target: "/tmp/old", summary: "Old"),
+            now: Date(timeIntervalSince1970: 1),
+            id: "old"
+        )
+        _ = try NativeAuditEventStore.append(
+            auditRoot: auditRoot.path,
+            event: AuditEventInput(actor: "Nexus Native", action: "new.event", target: "/tmp/new", summary: "New"),
+            now: Date(timeIntervalSince1970: 2),
+            id: "new"
+        )
+
+        let events = try NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 1)
+
+        XCTAssertEqual(events.map(\.id), ["new"])
+        XCTAssertEqual(try NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 0), [])
+    }
+
+    @MainActor
+    func testAppStateMergesNativeAuditEventsIntoWorkspaceActivities() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "development",
+            id: "demo-id",
+            name: "Demo",
+            folder: "demo-workspace",
+            activities: [
+                ActivityEvent(time: "08:00", title: "Bridge activity", detail: "From scan")
+            ]
+        )
+        let events = [
+            AuditEvent(
+                id: "matched-new",
+                timestamp: "2026-06-23T05:40:00Z",
+                actor: "Nexus Native",
+                action: "workspace.deeplink.copied",
+                target: "nexus://workspace/demo-workspace",
+                summary: "Copied workspace Nexus deep link",
+                metadata: ["workspaceFolder": "demo-workspace"]
+            ),
+            AuditEvent(
+                id: "unmatched",
+                timestamp: "2026-06-23T05:41:00Z",
+                actor: "Nexus Native",
+                action: "workspace.unmatched",
+                target: "/tmp/other",
+                summary: "Other workspace",
+                metadata: ["workspaceFolder": "other"]
+            )
+        ]
+
+        let enriched = AppState.workspaces([workspace], applyingNativeAuditEvents: events)
+
+        XCTAssertEqual(enriched.first?.activities.first?.title, "工作区链接已复制 / Deep link copied")
+        XCTAssertEqual(enriched.first?.activities.first?.detail, "Nexus Native · Copied workspace Nexus deep link")
+        let activityTitles = enriched.first?.activities.map { $0.title } ?? []
+        XCTAssertFalse(activityTitles.contains("workspace unmatched"))
+        XCTAssertEqual(enriched.first?.activities.count, 2)
+    }
+
     func testNativeDistributionReadinessBlocksUntilInstallWidgetLegacyAndReleaseAreNative() {
         let root = "/repo"
         let files: Set<String> = [

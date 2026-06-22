@@ -1043,10 +1043,12 @@ final class AppState: ObservableObject {
                 )
             )
             let mappedWorkspaces = dashboard.workspaces.map(WorkspaceSummary.init(snapshot:))
-            workspaces = mappedWorkspaces
-            codexSessionLinksByWorkspace = Self.loadCodexSessionLinks(for: mappedWorkspaces)
-            if selectedWorkspaceID == nil || !mappedWorkspaces.contains(where: { $0.id == selectedWorkspaceID }) {
-                selectedWorkspaceID = mappedWorkspaces.first?.id
+            let nativeAuditEvents = (try? NativeAuditEventStore.loadRecent(auditRoot: auditRootPath, limit: 40)) ?? []
+            let enrichedWorkspaces = Self.workspaces(mappedWorkspaces, applyingNativeAuditEvents: nativeAuditEvents)
+            workspaces = enrichedWorkspaces
+            codexSessionLinksByWorkspace = Self.loadCodexSessionLinks(for: enrichedWorkspaces)
+            if selectedWorkspaceID == nil || !enrichedWorkspaces.contains(where: { $0.id == selectedWorkspaceID }) {
+                selectedWorkspaceID = enrichedWorkspaces.first?.id
             }
             await refreshWidgetSnapshot()
             agentEvents = (try? await bridge.readAgentEvents(
@@ -1056,7 +1058,7 @@ final class AppState: ObservableObject {
             bridgeMode = bridge.modeDescription
             agentStatus = AgentStatus(
                 title: "Ready",
-                detail: "\(bridgeMode) · \(mappedWorkspaces.count) workspaces loaded",
+                detail: "\(bridgeMode) · \(enrichedWorkspaces.count) workspaces loaded",
                 connectedTools: ["Codex", "Git", "Nexus Core"]
             )
         } catch {
@@ -4254,6 +4256,28 @@ final class AppState: ObservableObject {
                 metadata: eventMetadata
             )
         )
+    }
+
+    static func workspaces(
+        _ workspaces: [WorkspaceSummary],
+        applyingNativeAuditEvents events: [AuditEvent]
+    ) -> [WorkspaceSummary] {
+        guard !events.isEmpty else { return workspaces }
+        return workspaces.map { workspace in
+            let workspaceEvents = events.filter { event in
+                let folder = event.metadata["workspaceFolder"] ?? event.metadata["folder"]
+                return folder == workspace.folder || folder == workspace.id
+            }
+            return workspaceEvents.reversed().reduce(workspace) { currentWorkspace, event in
+                currentWorkspace.prepending(
+                    activity: ActivityEvent(
+                        time: event.timestamp,
+                        title: auditActivityTitle(event.action),
+                        detail: "Nexus Native · \(event.summary)"
+                    )
+                )
+            }
+        }
     }
 
     private func recordNativeAuditEvent(_ event: AuditEventInput) async {

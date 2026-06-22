@@ -35,9 +35,33 @@ enum NativeAuditEventStore {
         return AppendAuditEventResponse(path: fileURL.path, event: event)
     }
 
+    static func loadRecent(
+        auditRoot: String,
+        limit: Int,
+        fileManager: FileManager = .default
+    ) throws -> [AuditEvent] {
+        guard limit > 0 else { return [] }
+        let fileURL = URL(fileURLWithPath: auditRoot).appendingPathComponent(fileName)
+        guard fileManager.fileExists(atPath: fileURL.path) else {
+            return []
+        }
+
+        let payload = try String(contentsOf: fileURL, encoding: .utf8)
+        let events = payload
+            .split(separator: "\n")
+            .compactMap { line in
+                try? decoder.decode(AuditEvent.self, from: Data(line.utf8))
+            }
+        return Array(events.suffix(limit).reversed())
+    }
+
     private static var encoder: JSONEncoder {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         return encoder
+    }
+
+    private static var decoder: JSONDecoder {
+        JSONDecoder()
     }
 }
