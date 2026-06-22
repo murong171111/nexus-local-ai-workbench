@@ -8812,6 +8812,7 @@ private struct CommandCenterSessionPathView: View {
 }
 
 private struct CommandCenterQuickActionsView: View {
+    private let layout = CommandCenterSecondaryActionLayout()
     let sessionLabel: String
     let sessionSystemImage: String
     let nextActionLabel: String
@@ -8828,11 +8829,11 @@ private struct CommandCenterQuickActionsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("快捷动作 / Quick actions")
+            Text(layout.title)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
 
-            CommandCenterActionGroup(title: "交接 / Handoff") {
+            CommandCenterActionGroup(title: CommandCenterSecondaryActionGroupKind.handoff.title) {
                 Button {
                     codexAction()
                 } label: {
@@ -8850,7 +8851,7 @@ private struct CommandCenterQuickActionsView: View {
                 .controlSize(.small)
             }
 
-            CommandCenterActionGroup(title: "下一步 / Next") {
+            CommandCenterActionGroup(title: CommandCenterSecondaryActionGroupKind.next.title) {
                 Button {
                     lifecycleAction()
                 } label: {
@@ -8869,7 +8870,7 @@ private struct CommandCenterQuickActionsView: View {
                 .disabled(isChecking)
             }
 
-            CommandCenterActionGroup(title: "本地打开 / Local") {
+            CommandCenterActionGroup(title: CommandCenterSecondaryActionGroupKind.local.title) {
                 Button {
                     finderAction()
                 } label: {

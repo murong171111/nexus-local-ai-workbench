@@ -30,6 +30,7 @@ final class ModelBehaviorTests: XCTestCase {
             "struct DemandIntakeM1ActionPolicy",
             "struct TaskStatusUpdate",
             "struct TaskStatusMutationPolicy",
+            "struct CommandCenterLayoutPolicy",
             "struct ServiceWorktreeRowState",
             "struct WorkspaceMainStageEvidenceLink",
             "struct WorkspaceListStageBadge",
@@ -63,7 +64,8 @@ final class ModelBehaviorTests: XCTestCase {
             "WorkspaceListStageBadges.swift",
             "WorkspaceListSummary.swift",
             "WorkspaceDetailNavigation.swift",
-            "DemandIntakeActions.swift"
+            "DemandIntakeActions.swift",
+            "CommandCenterLayout.swift"
         ]
 
         for fileName in ownedWorkflowFiles {
@@ -805,6 +807,26 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(links[3].action, .path("/tmp/workspace/STATUS.md"))
         XCTAssertEqual(links[4].action, .lifecycle(.restoreDevelopment))
         XCTAssertNil(links[5].action)
+    }
+
+    func testCommandCenterLayoutKeepsSecondaryActionsBelowEvidence() {
+        let layout = CommandCenterLayoutPolicy()
+
+        XCTAssertEqual(layout.sections, [
+            .primaryStageAction,
+            .workflowPathEvidence,
+            .statusMetrics,
+            .secondaryActions,
+            .localCheckReceipt
+        ])
+        XCTAssertTrue(layout.keepsSecondaryActionsAfterEvidence)
+        XCTAssertTrue(layout.secondaryActions.isSecondarySurface)
+        XCTAssertEqual(layout.secondaryActions.groups, [.handoff, .next, .local])
+        XCTAssertEqual(layout.secondaryActions.groups.map(\.title), [
+            "交接 / Handoff",
+            "下一步 / Next",
+            "本地打开 / Local"
+        ])
     }
 
     func testWorkspaceListStageBadgesComeFromMainStage() {
