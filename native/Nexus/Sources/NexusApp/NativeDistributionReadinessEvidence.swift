@@ -117,19 +117,25 @@ struct NativeDistributionReadinessEvidence: Hashable {
         directoryExists: (String) -> Bool,
         fileContains: (String, String) -> Bool
     ) -> NativeDistributionCheck {
-        let widgetSource = "\(repositoryRoot)/widget/NexusWidget/NexusWidget.swift"
-        let packagePath = "\(repositoryRoot)/native/Nexus/Package.swift"
-        let hasWidgetSource = fileExists(widgetSource)
+        let legacyWidgetSource = "\(repositoryRoot)/widget/NexusWidget/NexusWidget.swift"
+        let nativeWidgetSource = "\(repositoryRoot)/native/NexusWidget/Sources/NexusWidget/NexusWidget.swift"
+        let nativeWidgetInfo = "\(repositoryRoot)/native/NexusWidget/Info.plist"
+        let nativeWidgetEntitlements = "\(repositoryRoot)/native/NexusWidget/NexusWidget.entitlements"
+        let hasWidgetSource = fileExists(legacyWidgetSource) || fileExists(nativeWidgetSource)
         let hasNativeWidgetTarget = directoryExists("\(repositoryRoot)/native/NexusWidget")
-            || fileContains(packagePath, "NexusWidget")
+            && fileExists(nativeWidgetSource)
+            && fileExists(nativeWidgetInfo)
+            && fileExists(nativeWidgetEntitlements)
+            && fileContains(nativeWidgetInfo, "com.apple.widgetkit-extension")
+            && fileContains(nativeWidgetEntitlements, "group.com.ks.nexus")
         let ready = hasWidgetSource && hasNativeWidgetTarget
         return NativeDistributionCheck(
             requirement: .widgetExtension,
             status: ready ? .ready : .blocked,
             detail: ready
-                ? "WidgetKit source is attached to the Native target path."
+                ? "WidgetKit source, extension plist, and App Group entitlements are attached to the Native target path."
                 : "WidgetKit Swift source exists only as a standalone source file; add a native Widget Extension target before M3 can pass.",
-            evidence: [widgetSource, packagePath]
+            evidence: [legacyWidgetSource, nativeWidgetSource, nativeWidgetInfo, nativeWidgetEntitlements]
         )
     }
 

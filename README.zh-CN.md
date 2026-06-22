@@ -273,7 +273,7 @@ npm run privacy:check
 主应用已经实现小组件快照写入，并注册了 `nexus://` URL Scheme。原生壳会写入 Application Support，处理 `nexus://workspace/<folder>` 聚焦跳转，并在应用配置了 App Group entitlement 后同步写入 `group.com.ks.nexus`。WidgetKit 源码位于：
 
 ```text
-widget/NexusWidget/NexusWidget.swift
+native/NexusWidget/
 ```
 
 如果要真正打包和分发 `.appex` 小组件，还需要完整的 Xcode 工程、Widget Extension Target、App Group 配置、签名和 notarization。更多说明见 [widget/README.md](widget/README.md)。

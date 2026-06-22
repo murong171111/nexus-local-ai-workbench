@@ -1919,12 +1919,62 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(evidence.checks.first { $0.requirement == .widgetExtension }?.status, .blocked)
     }
 
+    func testNativeDistributionReadinessRequiresWidgetTargetMetadata() {
+        let root = "/repo"
+        let readyFiles: Set<String> = [
+            "\(root)/native/Nexus/Package.swift",
+            "\(root)/widget/NexusWidget/NexusWidget.swift",
+            "\(root)/native/NexusWidget/Sources/NexusWidget/NexusWidget.swift",
+            "\(root)/native/NexusWidget/Info.plist",
+            "\(root)/native/NexusWidget/NexusWidget.entitlements",
+            "\(root)/docs/distribution.md",
+            "\(root)/docs/release-process.md",
+            "\(root)/.github/workflows/ci.yml",
+            "\(root)/.github/workflows/release.yml"
+        ]
+        let missingEntitlements = readyFiles.subtracting(["\(root)/native/NexusWidget/NexusWidget.entitlements"])
+        func evidence(files: Set<String>) -> NativeDistributionReadinessEvidence {
+            NativeDistributionReadinessEvidence.resolve(
+                repositoryRoot: root,
+                m1Ready: true,
+                m2Ready: true,
+                realLifecycleProven: true,
+                fileExists: { files.contains($0) },
+                directoryExists: { $0 == "\(root)/native/NexusWidget" },
+                fileContains: { path, needle in
+                    switch needle {
+                    case "com.apple.widgetkit-extension":
+                        return path.hasSuffix("Info.plist")
+                    case "group.com.ks.nexus":
+                        return path.hasSuffix("NexusWidget.entitlements")
+                    case "swift test":
+                        return path.hasSuffix("ci.yml")
+                    case "native/Nexus", "NexusNative", "Swift":
+                        return path.hasSuffix("release.yml")
+                            || path.hasSuffix("distribution.md")
+                            || path.hasSuffix("release-process.md")
+                    default:
+                        return false
+                    }
+                }
+            )
+        }
+
+        XCTAssertEqual(evidence(files: missingEntitlements).checks.first { $0.requirement == .widgetExtension }?.status, .blocked)
+        let widgetTarget = evidence(files: readyFiles).checks.first { $0.requirement == .widgetExtension }
+        XCTAssertEqual(widgetTarget?.status, .ready)
+        XCTAssertTrue(widgetTarget?.detail.contains("App Group entitlements") == true)
+    }
+
     func testNativeDistributionReadinessCanPassAfterNativeInstallAndDeletionProof() {
         let root = "/repo"
         let files: Set<String> = [
             "\(root)/native/Nexus/Package.swift",
             "\(root)/native/Nexus/Nexus.xcodeproj/project.pbxproj",
             "\(root)/widget/NexusWidget/NexusWidget.swift",
+            "\(root)/native/NexusWidget/Sources/NexusWidget/NexusWidget.swift",
+            "\(root)/native/NexusWidget/Info.plist",
+            "\(root)/native/NexusWidget/NexusWidget.entitlements",
             "\(root)/docs/distribution.md",
             "\(root)/docs/release-process.md",
             "\(root)/.github/workflows/ci.yml",
@@ -1948,6 +1998,10 @@ final class ModelBehaviorTests: XCTestCase {
                         || path.hasSuffix("release-process.md")
                 case "native:build":
                     return path.hasSuffix("release.yml")
+                case "com.apple.widgetkit-extension":
+                    return path.hasSuffix("Info.plist")
+                case "group.com.ks.nexus":
+                    return path.hasSuffix("NexusWidget.entitlements")
                 default:
                     return false
                 }

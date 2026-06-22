@@ -1,10 +1,13 @@
-# Nexus WidgetKit Extension
+# Nexus WidgetKit Legacy Mirror
 
-This directory contains the production WidgetKit source for the Nexus macOS widget.
+The canonical Native WidgetKit target now lives in `native/NexusWidget`.
+
+This directory remains as a legacy mirror for the early preview app and historical packaging notes.
 
 ## What Is Implemented
 
-- `NexusWidget/NexusWidget.swift` defines a native SwiftUI WidgetKit widget.
+- `../native/NexusWidget/Sources/NexusWidget/NexusWidget.swift` defines the canonical native SwiftUI WidgetKit widget.
+- `NexusWidget/NexusWidget.swift` mirrors the same source for compatibility with earlier docs and preview tooling.
 - The widget reads `widget-snapshot.json`.
 - The main Tauri app writes the snapshot through the native `write_widget_snapshot` command.
 - The native SwiftUI shell writes the snapshot to Application Support and mirrors it to the `group.com.ks.nexus` App Group container when the signed app has that entitlement.
@@ -40,7 +43,7 @@ WidgetKit extensions require a real Xcode app target and signing setup. For a di
 
 1. Install full Xcode, not only Command Line Tools.
 2. Create a macOS Widget Extension target named `NexusWidget`.
-3. Use `NexusWidget/NexusWidget.swift` as the extension source.
+3. Use `native/NexusWidget/Sources/NexusWidget/NexusWidget.swift` as the extension source.
 4. Configure App Group `group.com.ks.nexus` for both the app and widget target.
 5. Package the `.appex` into `Nexus.app/Contents/PlugIns`.
 6. Sign and notarize the final app bundle.

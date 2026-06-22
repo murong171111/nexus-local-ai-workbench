@@ -268,13 +268,13 @@ npm run privacy:check
 
 ## Widget Status
 
-The main app already writes the widget snapshot and registers the `nexus://` URL scheme. The native shell writes the same snapshot to Application Support, handles `nexus://workspace/<folder>` focus links, and mirrors the snapshot into `group.com.ks.nexus` once the app is packaged with App Group entitlements. The WidgetKit source lives in:
+The main app already writes the widget snapshot and registers the `nexus://` URL scheme. The native shell writes the same snapshot to Application Support, handles `nexus://workspace/<folder>` focus links, and mirrors the snapshot into `group.com.ks.nexus` once the app is packaged with App Group entitlements. The canonical WidgetKit target lives in:
 
 ```text
-widget/NexusWidget/NexusWidget.swift
+native/NexusWidget/
 ```
 
-Building and shipping the actual `.appex` requires a full Xcode project with a Widget Extension target, App Group configuration, signing, and notarization. See [widget/README.md](widget/README.md).
+Building and shipping the actual `.appex` requires a full Xcode project with a Widget Extension target, App Group configuration, signing, and notarization. See [native/NexusWidget/README.md](native/NexusWidget/README.md).
 
 ## Documentation
 

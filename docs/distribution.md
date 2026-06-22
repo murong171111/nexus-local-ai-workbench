@@ -82,7 +82,7 @@ Do not enable automatic updates until signing, notarization, updater signing key
 
 ## WidgetKit Packaging
 
-WidgetKit requires an Xcode Widget Extension target. The Swift source is provided in `widget/NexusWidget/NexusWidget.swift`, but a distributable widget bundle requires:
+WidgetKit requires an Xcode Widget Extension target. The canonical Native source and metadata now live under `native/NexusWidget`, but a distributable widget bundle still requires:
 
 - Full Xcode
 - App Group, recommended: `group.com.ks.nexus`
