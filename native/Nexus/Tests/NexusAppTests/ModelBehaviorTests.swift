@@ -29,6 +29,7 @@ final class ModelBehaviorTests: XCTestCase {
             "struct TaskStatusUpdate",
             "struct WorkspaceMainStageEvidenceLink",
             "struct WorkspaceListStageBadge",
+            "struct WorkspaceListSummary",
             "func mainStage("
         ]
 
@@ -54,7 +55,8 @@ final class ModelBehaviorTests: XCTestCase {
             "WorkspaceLifecycleModels.swift",
             "TaskStatusWritebackModels.swift",
             "WorkspaceMainStageEvidence.swift",
-            "WorkspaceListStageBadges.swift"
+            "WorkspaceListStageBadges.swift",
+            "WorkspaceListSummary.swift"
         ]
 
         for fileName in ownedWorkflowFiles {
@@ -515,6 +517,75 @@ final class ModelBehaviorTests: XCTestCase {
             workspaces.filter { WorkspaceFilter.all.matches($0, query: "backfill_rollback") }.map(\.id),
             ["2026-05-25-yibao-pay-log"]
         )
+    }
+
+    func testWorkspaceListSummaryExcludesArchivedWorkspacesFromActiveSignals() {
+        let active = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "summary-active",
+            riskLevel: .high,
+            services: [
+                ServiceStatus(
+                    name: "orders",
+                    branch: "feature/orders",
+                    worktree: "missing",
+                    gitSummary: "dirty",
+                    worktreeExists: false,
+                    sourceExists: true
+                )
+            ],
+            tasks: [
+                WorkspaceTask(
+                    id: "active-high",
+                    title: "Active high",
+                    status: "todo",
+                    detail: "Open",
+                    priority: "high",
+                    source: "workspace",
+                    sourceEventID: nil,
+                    sourceLine: 1
+                )
+            ]
+        )
+        let archived = workspaceForWorkflowSummary(
+            stage: "archived",
+            id: "summary-archived",
+            riskLevel: .high,
+            services: [
+                ServiceStatus(
+                    name: "payments",
+                    branch: "feature/payments",
+                    worktree: "missing",
+                    gitSummary: "dirty",
+                    worktreeExists: false,
+                    sourceExists: true
+                )
+            ],
+            tasks: [
+                WorkspaceTask(
+                    id: "archived-high",
+                    title: "Archived high",
+                    status: "todo",
+                    detail: "Archived work should not count active signals.",
+                    priority: "high",
+                    source: "workspace",
+                    sourceEventID: nil,
+                    sourceLine: 2
+                )
+            ]
+        )
+
+        let summary = WorkspaceListSummary(workspaces: [active, archived])
+
+        XCTAssertEqual(summary.totalWorkspaceCount, 2)
+        XCTAssertEqual(summary.activeWorkspaceCount, 1)
+        XCTAssertEqual(summary.archivedWorkspaceCount, 1)
+        XCTAssertEqual(summary.riskyWorkspaceCount, 1)
+        XCTAssertEqual(summary.openTaskCount, 1)
+        XCTAssertEqual(summary.highPriorityTaskCount, 1)
+        XCTAssertEqual(summary.missingWorktreeCount, 1)
+        XCTAssertEqual(summary.dirtyServiceCount, 1)
+        XCTAssertTrue(summary.archivedExclusionLabel.contains("活跃统计已排除"))
     }
 
     func testMainStageKeepsFreshScopingWorkspaceAtCreatedBeforeDemandEvidence() {

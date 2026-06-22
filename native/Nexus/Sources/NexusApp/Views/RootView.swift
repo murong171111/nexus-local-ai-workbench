@@ -2484,33 +2484,17 @@ private struct WorkspaceBoardView: View {
         WorkspaceBoardColumn.columns(for: workspaces, scope: boardScope)
     }
 
-    private var activeCount: Int {
-        workspaces.filter { !$0.isArchived }.count
-    }
-
-    private var blockedCount: Int {
-        workspaces.filter { workspace in
-            workspace.mainStage().status == .blocked || workspace.state == .blocked
-        }.count
-    }
-
-    private var deliveryCount: Int {
-        workspaces.filter { workspace in
-            workspace.mainStage().id == .deliveryCheck
-        }.count
-    }
-
-    private var archivedCount: Int {
-        workspaces.filter(\.isArchived).count
+    private var summary: WorkspaceListSummary {
+        WorkspaceListSummary(workspaces: workspaces)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             WorkspaceBoardHeader(
-                activeCount: activeCount,
-                blockedCount: blockedCount,
-                deliveryCount: deliveryCount,
-                archivedCount: archivedCount,
+                activeCount: summary.activeWorkspaceCount,
+                blockedCount: summary.blockedWorkspaceCount,
+                deliveryCount: summary.deliveryWorkspaceCount,
+                archivedCount: summary.archivedWorkspaceCount,
                 visibleCount: visibleWorkspaces.count,
                 totalCount: workspaces.count,
                 scope: $boardScope

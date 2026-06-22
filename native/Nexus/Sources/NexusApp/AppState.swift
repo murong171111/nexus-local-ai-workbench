@@ -427,30 +427,19 @@ final class AppState: ObservableObject {
     }
 
     var menuBarSummary: MenuBarStatusSummary {
-        let signalWorkspaces = activeSignalWorkspaces
-        let riskyWorkspaceCount = signalWorkspaces.filter { workspace in
-            workspace.riskLevel == .high || workspace.riskLevel == .medium
-        }.count
-        let blockedWorkspaceCount = signalWorkspaces.filter { $0.state == .blocked }.count
-        let activeWorkspaceCount = signalWorkspaces.filter { workspace in
-            workspace.state == .developing || workspace.state == .analyzing
-        }.count
-        let archivedWorkspaceCount = workspaces.filter(\.isArchived).count
-        let services = signalWorkspaces.flatMap(\.services)
-        let dirtyServiceCount = services.filter(Self.serviceHasDirtyGit).count
-        let missingWorktreeCount = services.filter { !$0.worktreeExists }.count
+        let summary = WorkspaceListSummary(workspaces: workspaces)
 
         return MenuBarStatusSummary(
-            workspaceCount: workspaces.count,
-            activeWorkspaceCount: activeWorkspaceCount,
-            archivedWorkspaceCount: archivedWorkspaceCount,
-            riskyWorkspaceCount: riskyWorkspaceCount,
-            blockedWorkspaceCount: blockedWorkspaceCount,
-            openTaskCount: activeTaskCenterCount,
-            highPriorityTaskCount: taskCenterCount(for: .high),
+            workspaceCount: summary.totalWorkspaceCount,
+            activeWorkspaceCount: summary.activeWorkspaceCount,
+            archivedWorkspaceCount: summary.archivedWorkspaceCount,
+            riskyWorkspaceCount: summary.riskyWorkspaceCount,
+            blockedWorkspaceCount: summary.blockedWorkspaceCount,
+            openTaskCount: summary.openTaskCount,
+            highPriorityTaskCount: summary.highPriorityTaskCount,
             agentTaskCount: activeAgentTaskCenterCount,
-            missingWorktreeCount: missingWorktreeCount,
-            dirtyServiceCount: dirtyServiceCount,
+            missingWorktreeCount: summary.missingWorktreeCount,
+            dirtyServiceCount: summary.dirtyServiceCount,
             activeWorkspaceName: selectedWorkspace?.name,
             bridgeMode: bridgeMode
         )
