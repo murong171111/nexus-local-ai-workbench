@@ -5001,6 +5001,10 @@ private struct ServiceGitStatusRow: View {
         return "就绪"
     }
 
+    private var sourceAccess: SourceRepositoryAccess {
+        SourceRepositoryAccess.resolve(service: service)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(alignment: .top, spacing: 9) {
@@ -5032,6 +5036,21 @@ private struct ServiceGitStatusRow: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: sourceAccess.systemImage)
+                            .foregroundStyle(sourceAccess.status.color)
+                            .frame(width: 13)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(sourceAccess.modeLabel)
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(sourceAccess.status.color)
+                            Text(sourceAccess.detail)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
+                    }
                 }
 
                 Spacer()
@@ -5078,22 +5097,22 @@ private struct ServiceGitStatusRow: View {
                             await appState.openServiceSourceInFinder(service, in: workspace)
                         }
                     } label: {
-                        Label("源仓库", systemImage: "externaldrive")
+                        Label(sourceAccess.actionLabel, systemImage: sourceAccess.systemImage)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-                    .help("在 Finder 中打开 source repo，只用于查看或确认状态")
+                    .help(sourceAccess.nextStepHint)
                 } else {
                     Button {
                         Task {
                             await appState.loadDocument(path: servicesDocumentPath)
                         }
                     } label: {
-                        Label("服务文档", systemImage: "doc.text")
+                        Label(sourceAccess.actionLabel, systemImage: "doc.text")
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-                    .help("打开 services.md 复核服务范围")
+                    .help(sourceAccess.nextStepHint)
                 }
 
                 Button {

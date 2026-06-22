@@ -1314,6 +1314,43 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(stage.id, .worktreeSetup)
     }
 
+    func testSourceRepositoryAccessKeepsSourceReposReadOnly() {
+        let available = SourceRepositoryAccess.resolve(
+            service: ServiceStatus(
+                name: "orders",
+                branch: "feature/orders",
+                worktree: "missing",
+                gitSummary: "source repo clean",
+                worktreeExists: false,
+                sourceExists: true
+            )
+        )
+
+        XCTAssertEqual(available.status, .review)
+        XCTAssertEqual(available.actionLabel, "源仓库复查")
+        XCTAssertTrue(available.canReveal)
+        XCTAssertTrue(available.reviewOnly)
+        XCTAssertTrue(available.detail.contains("不会在这里切分支"))
+        XCTAssertTrue(available.nextStepHint.contains("确认流程"))
+
+        let missing = SourceRepositoryAccess.resolve(
+            service: ServiceStatus(
+                name: "payments",
+                branch: "feature/payments",
+                worktree: "missing",
+                gitSummary: "missing source",
+                worktreeExists: false,
+                sourceExists: false
+            )
+        )
+
+        XCTAssertEqual(missing.status, .blocked)
+        XCTAssertEqual(missing.actionLabel, "服务文档")
+        XCTAssertFalse(missing.canReveal)
+        XCTAssertTrue(missing.reviewOnly)
+        XCTAssertTrue(missing.nextStepHint.contains("services.md"))
+    }
+
     func testWorktreeSetupEvidenceRoutesMissingWorktreesToSetup() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-worktree-missing-\(UUID().uuidString)")

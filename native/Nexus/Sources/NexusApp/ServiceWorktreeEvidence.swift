@@ -10,6 +10,46 @@ struct ServiceBranchCheck: Hashable, Identifiable {
     let path: String?
 }
 
+struct SourceRepositoryAccess: Hashable {
+    let serviceName: String
+    let status: WorkflowPathStatus
+    let modeLabel: String
+    let actionLabel: String
+    let detail: String
+    let nextStepHint: String
+    let systemImage: String
+    let canReveal: Bool
+    let reviewOnly: Bool
+
+    static func resolve(service: ServiceStatus) -> SourceRepositoryAccess {
+        if service.sourceExists {
+            return SourceRepositoryAccess(
+                serviceName: service.name,
+                status: .review,
+                modeLabel: "只读复查 / Read-only",
+                actionLabel: "源仓库复查",
+                detail: "source repo 只用于查看分支、远端和历史状态；Nexus 不会在这里切分支、创建 worktree 或写入文件。",
+                nextStepHint: "需要创建或修复 workspace-local worktree 时，回到 Nexus 的确认流程处理。",
+                systemImage: "externaldrive",
+                canReveal: true,
+                reviewOnly: true
+            )
+        }
+
+        return SourceRepositoryAccess(
+            serviceName: service.name,
+            status: .blocked,
+            modeLabel: "源仓库缺失 / Missing",
+            actionLabel: "服务文档",
+            detail: "未找到该服务的 source repo，不能从源仓库创建 workspace-local worktree。",
+            nextStepHint: "先同步 source repositories root，或在 services.md / Settings 中修正服务来源后刷新。",
+            systemImage: "externaldrive.badge.xmark",
+            canReveal: false,
+            reviewOnly: true
+        )
+    }
+}
+
 struct ServiceBranchEvidence: Hashable {
     let status: WorkflowPathStatus
     let reason: String

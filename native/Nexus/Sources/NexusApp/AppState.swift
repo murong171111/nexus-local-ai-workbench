@@ -1830,7 +1830,8 @@ final class AppState: ObservableObject {
             workspace: workspace,
             action: "service.worktree.finder.opened",
             summary: "Opened service worktree in Finder",
-            tool: "Finder"
+            tool: "Finder",
+            readOnly: false
         )
     }
 
@@ -1841,7 +1842,8 @@ final class AppState: ObservableObject {
             workspace: workspace,
             action: "service.source.finder.opened",
             summary: "Opened service source repository in Finder",
-            tool: "Finder"
+            tool: "Finder",
+            readOnly: true
         )
     }
 
@@ -1945,7 +1947,8 @@ final class AppState: ObservableObject {
         workspace: WorkspaceSummary,
         action: String,
         summary: String,
-        tool: String
+        tool: String,
+        readOnly: Bool
     ) async {
         lastError = nil
         let url = Self.localFileURL(for: path)
@@ -1962,7 +1965,9 @@ final class AppState: ObservableObject {
             metadata: [
                 "tool": tool,
                 "service": service.name,
-                "serviceBranch": service.branch
+                "serviceBranch": service.branch,
+                "accessMode": readOnly ? "read-only" : "workspace-local",
+                "reviewOnly": readOnly ? "true" : "false"
             ],
             workspaceOverride: workspace
         )
