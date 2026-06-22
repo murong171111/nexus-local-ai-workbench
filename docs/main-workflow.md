@@ -441,7 +441,7 @@ Plan:
 - Add readiness fields for P0 questions, scope status, and task transfer. `[started with Swift-owned Markdown evidence for requirement content, P0, visible scope status, and intake task rows]`
 - Add Swift-owned Scope Freeze evidence for `需求/scope.md` in-scope, out-of-scope, pending P0, freeze marker, and audited scope-change checks. `[started with confirmed freeze write plan that appends only a freeze confirmation block after prerequisites pass]`
 - Add "transfer requirement tasks" as a confirmed write action. `[started with Swift-owned transfer from 需求/tasks.md to root tasks.md, skipping existing, template, completed, and deferred rows]`
-- Keep AI invocation out of Nexus M1.
+- Keep AI invocation out of Nexus M1. `[started with DemandIntakeM1ActionPolicy]`
 
 ### Development Tasks
 

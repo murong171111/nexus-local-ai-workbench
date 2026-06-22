@@ -26,6 +26,7 @@ final class ModelBehaviorTests: XCTestCase {
             "struct DevelopmentTaskEvidence",
             "struct WorktreeSetupEvidence",
             "struct DemandIntakeReadinessEvidence",
+            "struct DemandIntakeM1ActionPolicy",
             "struct TaskStatusUpdate",
             "struct ServiceWorktreeRowState",
             "struct WorkspaceMainStageEvidenceLink",
@@ -59,7 +60,8 @@ final class ModelBehaviorTests: XCTestCase {
             "WorkspaceMainStageEvidence.swift",
             "WorkspaceListStageBadges.swift",
             "WorkspaceListSummary.swift",
-            "WorkspaceDetailNavigation.swift"
+            "WorkspaceDetailNavigation.swift",
+            "DemandIntakeActions.swift"
         ]
 
         for fileName in ownedWorkflowFiles {
@@ -680,6 +682,42 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(stage.id, .created)
         XCTAssertEqual(stage.primaryAction, .demandIntake)
         XCTAssertTrue(stage.evidenceSummary.contains("需求/"))
+    }
+
+    func testDemandIntakeM1ActionPolicyKeepsAIInvocationOutOfPrimaryFlow() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "scoping",
+            id: "demand-action-policy",
+            name: "Demand Action Policy"
+        )
+        let status = DemandIntakeStatus(
+            directoryPath: "\(workspace.path)/需求",
+            exists: true,
+            ready: false,
+            missingCount: 1,
+            files: []
+        )
+
+        let unconfirmedPolicy = DemandIntakeM1ActionPolicy(
+            status: status,
+            confirmed: false,
+            isInitializing: false,
+            requirementFileExists: false
+        )
+        let confirmedPolicy = DemandIntakeM1ActionPolicy(
+            status: status,
+            confirmed: true,
+            isInitializing: false,
+            requirementFileExists: true
+        )
+
+        XCTAssertEqual(unconfirmedPolicy.actions.map(\.kind), [.initializeOrRepair, .openRequirement, .copyHandoffPrompt])
+        XCTAssertTrue(unconfirmedPolicy.keepsAIInvocationOutOfM1)
+        XCTAssertFalse(unconfirmedPolicy.actions.first { $0.kind == .initializeOrRepair }?.isEnabled ?? true)
+        XCTAssertFalse(unconfirmedPolicy.actions.first { $0.kind == .openRequirement }?.isEnabled ?? true)
+        XCTAssertTrue(confirmedPolicy.actions.first { $0.kind == .initializeOrRepair }?.isEnabled ?? false)
+        XCTAssertTrue(confirmedPolicy.actions.first { $0.kind == .openRequirement }?.isEnabled ?? false)
+        XCTAssertTrue(confirmedPolicy.actions.first { $0.kind == .copyHandoffPrompt }?.label.contains("交接") ?? false)
     }
 
     func testMainStageAlwaysExplainsStageActionAndEvidence() {

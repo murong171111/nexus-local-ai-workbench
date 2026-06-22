@@ -6648,8 +6648,13 @@ private struct WorkspaceDemandIntakeView: View {
         appState.demandIntakeLoadingWorkspaceID == workspace.id
     }
 
-    private var actionDisabled: Bool {
-        !confirmed || appState.isInitializingDemandIntake
+    private var actionPolicy: DemandIntakeM1ActionPolicy {
+        DemandIntakeM1ActionPolicy(
+            status: status,
+            confirmed: confirmed,
+            isInitializing: appState.isInitializingDemandIntake,
+            requirementFileExists: requirementFile?.exists ?? false
+        )
     }
 
     var body: some View {
@@ -6752,73 +6757,9 @@ private struct WorkspaceDemandIntakeView: View {
                     .toggleStyle(.checkbox)
 
                 LazyVGrid(columns: actionColumns, alignment: .leading, spacing: 8) {
-                    Button {
-                        Task {
-                            let response = await appState.initializeDemandIntake(
-                                in: workspace,
-                                demandName: demandName,
-                                lanhuLink: lanhuLink,
-                                notes: notes,
-                                confirmed: confirmed
-                            )
-                            if response != nil {
-                                confirmed = false
-                            }
-                        }
-                    } label: {
-                        Label(
-                            appState.isInitializingDemandIntake
-                                ? "处理中"
-                                : (status.exists ? "补齐文件" : "初始化预检"),
-                            systemImage: "doc.badge.plus"
-                        )
+                    ForEach(actionPolicy.actions) { action in
+                        demandIntakeButton(for: action)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .disabled(actionDisabled)
-
-                    Button {
-                        Task {
-                            await appState.loadDocument(path: requirementFile?.path ?? "\(status.directoryPath)/requirement.md")
-                        }
-                    } label: {
-                        Label("打开确认卡", systemImage: "doc.text")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(!(requirementFile?.exists ?? false))
-
-                    Button {
-                        Task {
-                            await appState.copyDemandIntakePrompt(
-                                for: workspace,
-                                demandName: demandName,
-                                lanhuLink: lanhuLink,
-                                notes: notes,
-                                openCodex: false
-                            )
-                        }
-                    } label: {
-                        Label("复制预检", systemImage: "doc.on.clipboard")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-
-                    Button {
-                        Task {
-                            await appState.copyDemandIntakePrompt(
-                                for: workspace,
-                                demandName: demandName,
-                                lanhuLink: lanhuLink,
-                                notes: notes,
-                                openCodex: true
-                            )
-                        }
-                    } label: {
-                        Label("打开 Codex", systemImage: "point.3.connected.trianglepath.dotted")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
                 }
             }
         }
@@ -6864,6 +6805,61 @@ private struct WorkspaceDemandIntakeView: View {
 
     private var actionColumns: [GridItem] {
         [GridItem(.adaptive(minimum: 112), spacing: 8, alignment: .leading)]
+    }
+
+    @ViewBuilder
+    private func demandIntakeButton(for action: DemandIntakeM1Action) -> some View {
+        if action.isPrimary {
+            Button {
+                runDemandIntakeAction(action.kind)
+            } label: {
+                Label(action.label, systemImage: action.systemImage)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .disabled(!action.isEnabled)
+        } else {
+            Button {
+                runDemandIntakeAction(action.kind)
+            } label: {
+                Label(action.label, systemImage: action.systemImage)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(!action.isEnabled)
+        }
+    }
+
+    private func runDemandIntakeAction(_ kind: DemandIntakeM1ActionKind) {
+        switch kind {
+        case .initializeOrRepair:
+            Task {
+                let response = await appState.initializeDemandIntake(
+                    in: workspace,
+                    demandName: demandName,
+                    lanhuLink: lanhuLink,
+                    notes: notes,
+                    confirmed: confirmed
+                )
+                if response != nil {
+                    confirmed = false
+                }
+            }
+        case .openRequirement:
+            Task {
+                await appState.loadDocument(path: requirementFile?.path ?? "\(status.directoryPath)/requirement.md")
+            }
+        case .copyHandoffPrompt:
+            Task {
+                await appState.copyDemandIntakePrompt(
+                    for: workspace,
+                    demandName: demandName,
+                    lanhuLink: lanhuLink,
+                    notes: notes,
+                    openCodex: false
+                )
+            }
+        }
     }
 }
 
