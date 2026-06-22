@@ -1894,6 +1894,16 @@ private struct LifecycleStatusUpdateSheet: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
 
+            if !update.postWriteChecks.isEmpty {
+                SectionBlock(title: "写回后复查 / After write") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(update.postWriteChecks) { check in
+                            LifecyclePostWriteCheckRow(check: check)
+                        }
+                    }
+                }
+            }
+
             Toggle("确认写入 workspace.md 和 STATUS.md / Confirm local write", isOn: $confirmed)
 
             HStack {
@@ -1930,6 +1940,42 @@ private struct LifecycleStatusUpdateSheet: View {
 
     private var isRestoringArchived: Bool {
         update.currentStage.lowercased() == "archived" && update.nextState.lowercased() != "archived"
+    }
+}
+
+private struct LifecyclePostWriteCheckRow: View {
+    let check: LifecyclePostWriteCheck
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: check.systemImage)
+                .foregroundStyle(check.status.color)
+                .frame(width: 14)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(check.label)
+                        .font(.caption.weight(.semibold))
+                    Text(check.status.displayLabel)
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(check.status.color)
+                }
+                Text(check.detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let evidencePath = check.evidencePath {
+                    Text(evidencePath)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 }
 

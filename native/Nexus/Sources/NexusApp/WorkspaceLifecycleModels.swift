@@ -157,6 +157,15 @@ struct LifecycleTransition: Identifiable, Hashable {
     )
 }
 
+struct LifecyclePostWriteCheck: Identifiable, Hashable {
+    let id: String
+    let label: String
+    let detail: String
+    let status: WorkflowPathStatus
+    let systemImage: String
+    let evidencePath: String?
+}
+
 struct LifecycleStatusUpdate: Identifiable, Hashable {
     let workspaceID: WorkspaceSummary.ID
     let workspaceName: String
@@ -167,8 +176,70 @@ struct LifecycleStatusUpdate: Identifiable, Hashable {
     let nextLabel: String
     let focus: String
     let nextAction: String
+    let postWriteChecks: [LifecyclePostWriteCheck]
 
     var id: String {
         "\(workspaceID):\(nextState)"
+    }
+
+    var requiresLocalCheckAfterWrite: Bool {
+        postWriteChecks.contains { $0.id == "local-check" }
+    }
+
+    var evidencePaths: [String] {
+        postWriteChecks.compactMap(\.evidencePath)
+    }
+
+    static func postWriteChecks(
+        for transition: LifecycleTransition,
+        workspace: WorkspaceSummary
+    ) -> [LifecyclePostWriteCheck] {
+        if workspace.isArchived && transition == .restoreDevelopment {
+            return [
+                LifecyclePostWriteCheck(
+                    id: "local-check",
+                    label: "本地检查 / Local check",
+                    detail: "恢复后立即运行本地检查，重新计算阶段、风险、任务、worktree、SQL 和交付门禁。",
+                    status: .next,
+                    systemImage: "checklist",
+                    evidencePath: workspace.documentLinks["status"] ?? "\(workspace.path)/STATUS.md"
+                ),
+                LifecyclePostWriteCheck(
+                    id: "branch-worktree",
+                    label: "分支与 worktree / Branch",
+                    detail: "确认 services.md、branches.md 和 repos/<service> 仍指向可继续开发的分支与 worktree。",
+                    status: .review,
+                    systemImage: "arrow.triangle.branch",
+                    evidencePath: workspace.documentLinks["branches"] ?? "\(workspace.path)/branches.md"
+                ),
+                LifecyclePostWriteCheck(
+                    id: "tasks-risks",
+                    label: "任务与风险 / Tasks",
+                    detail: "复查 root tasks.md 和 STATUS.md，确认归档期间是否有需要恢复的任务或风险。",
+                    status: .review,
+                    systemImage: "exclamationmark.triangle",
+                    evidencePath: workspace.documentLinks["tasks"] ?? "\(workspace.path)/tasks.md"
+                ),
+                LifecyclePostWriteCheck(
+                    id: "delivery-record",
+                    label: "交付记录 / Delivery",
+                    detail: "从交付记录和 handoff 恢复上下文，必要时追加恢复原因、影响和下一步。",
+                    status: .review,
+                    systemImage: "doc.text.magnifyingglass",
+                    evidencePath: workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md"
+                )
+            ]
+        }
+
+        return [
+            LifecyclePostWriteCheck(
+                id: "status-refresh",
+                label: "刷新状态 / Refresh",
+                detail: "写回后刷新 Native 状态，确认主阶段、下一步和证据文件已经更新。",
+                status: .next,
+                systemImage: "arrow.clockwise",
+                evidencePath: workspace.documentLinks["status"] ?? "\(workspace.path)/STATUS.md"
+            )
+        ]
     }
 }

@@ -734,7 +734,11 @@ final class AppState: ObservableObject {
             nextState: transition.state,
             nextLabel: transition.label,
             focus: transition.focus,
-            nextAction: transition.nextAction
+            nextAction: transition.nextAction,
+            postWriteChecks: LifecycleStatusUpdate.postWriteChecks(
+                for: transition,
+                workspace: workspace
+            )
         )
     }
 
@@ -3682,7 +3686,9 @@ final class AppState: ObservableObject {
                 if lastError == nil {
                     markLocalWriteFeedback(
                         title: "生命周期已写回 / Lifecycle updated",
-                        detail: "\(update.currentLabel) -> \(update.nextLabel)。workspace.md 和 STATUS.md 已更新，Workflow 焦点已重新计算。",
+                        detail: update.requiresLocalCheckAfterWrite
+                            ? "\(update.currentLabel) -> \(update.nextLabel)。恢复后请立即运行本地检查，并复查分支、worktree、任务、风险和交付记录。"
+                            : "\(update.currentLabel) -> \(update.nextLabel)。workspace.md 和 STATUS.md 已更新，Workflow 焦点已重新计算。",
                         workspaceID: update.workspaceID,
                         workspaceName: update.workspaceName,
                         documentPath: response.statusDocumentPath,

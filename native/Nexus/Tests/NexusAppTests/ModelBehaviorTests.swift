@@ -235,6 +235,35 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(lifecycle.normalizedProgress, 0.95)
     }
 
+    func testLifecycleRestorePostWriteChecksRequireLocalRecheck() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "archived",
+            id: "restore-post-write",
+            path: "/tmp/restore-post-write"
+        )
+        let checks = LifecycleStatusUpdate.postWriteChecks(
+            for: .restoreDevelopment,
+            workspace: workspace
+        )
+        let update = LifecycleStatusUpdate(
+            workspaceID: workspace.id,
+            workspaceName: workspace.name,
+            workspacePath: workspace.path,
+            currentStage: workspace.lifecycle.stage,
+            currentLabel: workspace.lifecycle.label,
+            nextState: LifecycleTransition.restoreDevelopment.state,
+            nextLabel: LifecycleTransition.restoreDevelopment.label,
+            focus: LifecycleTransition.restoreDevelopment.focus,
+            nextAction: LifecycleTransition.restoreDevelopment.nextAction,
+            postWriteChecks: checks
+        )
+
+        XCTAssertTrue(update.requiresLocalCheckAfterWrite)
+        XCTAssertEqual(checks.map(\.id), ["local-check", "branch-worktree", "tasks-risks", "delivery-record"])
+        XCTAssertTrue(update.evidencePaths.contains("/tmp/restore-post-write/交付记录.md"))
+        XCTAssertTrue(checks.first?.detail.contains("重新计算阶段") == true)
+    }
+
     func testTaskCenterFiltersMatchHighPriorityAgentAndDeferredTasks() {
         let blocked = TaskCenterItem(
             workspaceID: "workspace-a",
