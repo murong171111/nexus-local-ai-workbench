@@ -1,14 +1,13 @@
 # Release Process
 
-This document describes the intended release process for Nexus.
+This document describes the intended Native Mac release process for Nexus.
 
 ## Versioning
 
 Before a release, update the version in:
 
-- `package.json`
-- `src-tauri/tauri.conf.json`
-- `src-tauri/Cargo.toml`
+- `native/Nexus/Package.swift` when package metadata is introduced
+- the future Native app target settings
 - `CHANGELOG.md`
 
 Use semantic versioning after stable release. Alpha builds can use tags like `v0.1.1-alpha`.
@@ -18,24 +17,28 @@ Use semantic versioning after stable release. Alpha builds can use tags like `v0
 Run:
 
 ```bash
-npm ci
-npm run test
-npm run build
-npm run widget:typecheck
-npm run tauri:build
+swift test --package-path native/Nexus
+swift build --package-path native/Nexus
 ```
+
+Before publishing an installable artifact, also run the Native app target build once it exists.
 
 Open the built app and verify:
 
 - Settings can be saved.
-- First-run onboarding can import a shared Nexus settings profile and then save reviewed local paths.
-- First-run onboarding can create a demo workspace using the configured workspaces root.
-- Workspace scanning works with a custom workspaces root.
+- A shared Nexus settings profile can be imported and exported.
+- Environment checks report configured path status, Git availability, workspace counts, and source repository counts.
+- Workspace scanning uses the Native local core.
+- Source repository scanning uses the Native local core.
+- Worktree setup uses the Native local core and writes Native audit events.
 - Markdown preview opens expected workspace documents.
 - Documents Hub can recover a missing standard document only after confirmation.
 - Workspace creation writes the standard document set.
 - Widget snapshot is written to Application Support.
 - `nexus://workspace/<folder>` opens the app and focuses the target workspace when it exists.
+- M1 main workflow evidence is ready.
+- M2 Native Local Core evidence reports `10/10 Native domains`.
+- M3 distribution readiness lists only the remaining install target, WidgetKit target, signing, notarization, updater, or legacy deletion blockers.
 
 ## GitHub Release
 
@@ -46,7 +49,7 @@ git tag v0.1.1
 git push origin main --tags
 ```
 
-The release workflow builds Apple Silicon and Intel DMG artifacts, then publishes them to the GitHub Release.
+The release workflow should build the Native app target for Apple Silicon and Intel, package `Nexus.app` and `Nexus.dmg`, and publish those Native artifacts to the GitHub Release.
 
 You can also run the `Release` workflow manually with a tag input.
 
@@ -63,22 +66,20 @@ Recommended GitHub Secrets:
 - `APPLE_CERTIFICATE_PASSWORD`
 - `APPLE_SIGNING_IDENTITY`
 
-The current release workflow intentionally builds unsigned preview artifacts. Add signing only after the Apple Developer account and certificate handling policy are ready.
+The current release path is not ready for public distribution until the Native app target, WidgetKit extension target, signing, and notarization policy are implemented.
 
 ## Universal Build Options
 
-Nexus currently builds separate DMG files for:
+Nexus should publish Native artifacts for:
 
-- `aarch64-apple-darwin`: Apple Silicon
-- `x86_64-apple-darwin`: Intel
+- `arm64-apple-macos`: Apple Silicon
+- `x86_64-apple-macos`: Intel
 
 A later release can add a Universal Binary if the larger artifact size is acceptable.
 
 ## Auto Update Path
 
-The recommended update path is Tauri updater plus GitHub Releases.
-
-Before enabling it:
+Before enabling automatic updates:
 
 - Sign and notarize releases.
 - Generate updater signing keys.

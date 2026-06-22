@@ -1,93 +1,58 @@
 # Distribution
 
-This document describes how to prepare Nexus for public download.
+This document describes the Native Mac distribution path for Nexus.
 
 ## Build Requirements
 
-- macOS 12+
-- Node.js 22+
-- Rust toolchain
-- Xcode Command Line Tools
-- Full Xcode for WidgetKit extension packaging
+- macOS 14+
+- Xcode Command Line Tools for SwiftPM validation
+- Full Xcode for the installable app target, WidgetKit extension, signing, and notarization
+- Apple Developer account for broad external distribution
 
-## Build App
+## Native Build
+
+The current verified Native build is the Swift package in `native/Nexus`:
 
 ```bash
-npm install
-npm run test
-npm run build
-npm run widget:typecheck
-npm run tauri:build
+swift test --package-path native/Nexus
+swift build --package-path native/Nexus
 ```
 
-Outputs:
+The package produces the `NexusNative` executable and verifies the Swift local-core, workflow evidence, Widget snapshot, and distribution readiness models. It is not yet a distributable `.app` bundle; M3 remains blocked until `native/Nexus/Nexus.xcodeproj` or an equivalent app target builds an installable `Nexus.app`.
+
+## Installable App Target
+
+The M3 install target must produce:
 
 ```text
-src-tauri/target/release/bundle/macos/Nexus.app
-src-tauri/target/release/bundle/dmg/Nexus_0.1.0_aarch64.dmg
+native/Nexus/build/Release/Nexus.app
+native/Nexus/build/Release/Nexus.dmg
 ```
+
+The app bundle must include:
+
+- SwiftUI/AppKit Nexus app entry point from `native/Nexus/Sources/NexusApp`
+- Native local-core stores and workflow evidence modules
+- WidgetKit extension embedded under `Nexus.app/Contents/PlugIns`
+- App Group entitlement for `group.com.ks.nexus`
+- Signed deep-link handling for `nexus://workspace/<folder>`
 
 ## Release Checklist
 
-- Ensure `src/data/workspaces.json` contains only sample data and passes `npm run sample:check`.
-- Run `npm run test`.
-- Run `npm run build`.
-- Run `npm run widget:typecheck`.
-- Run `npm run tauri:build`.
-- Open the built app and confirm:
-  - First-run onboarding opens when no local settings exist.
-  - Settings opens.
-  - First-run onboarding can import a shared Nexus settings profile and lets the user review paths before saving.
-  - Native Settings can import and export `nexus-settings-profile-*.json` for small-team path, Codex URL, and IDE URL template sharing.
-  - Native Settings path rows show per-path status, directory picker/reveal actions, and environment checks for configured path status, Git availability, workspace counts, and source repository counts.
-  - Native path and task actions use concise Chinese-first labels with hover help for the underlying local effect.
-  - First-run onboarding can create an optional demo workspace without creating worktrees.
-  - Environment health check reports configured path status and Git availability.
-  - Workspace scanning works after setting local paths.
-  - Native workspace handoff buttons open Finder, the configured IDE URL template, Terminal, and the configured Codex URL after copying a rich workspace handoff pack for Codex.
-  - Workspace detail can bind multiple Codex session links, suggest bindings from matching Agent Event deep-link metadata, then open, copy, and delete the saved local bindings without deleting the Codex conversation.
-  - Branch alignment filters and warnings appear when a worktree branch differs from the workspace target branch.
-  - Service/branch confirmation distinguishes missing service scope, missing source repositories, unavailable target branches, and branch-policy review before worktree setup.
-  - Source repository scanning populates the create-workspace service picker.
-  - Native create-workspace can filter scanned services, accept manual services, leave service scope pending, show root/folder/destination/environment/scope preflight before writing files, block destination collisions or invalid folder names, and show an initialization receipt after creation.
-  - After native workspace creation, the app focuses the new workspace and shows the post-create next-step panel.
-  - Empty workspace and empty-filter states show configured paths, environment health, Settings, New Workspace, Refresh, Environment Check, and Show all actions as applicable.
-  - Native worktree setup shows target branch, missing worktree, source repository, workspace-local write-location, and service-level create/skip/blocked plan preflight rows before the confirmation toggle is enabled.
-  - Native worktree setup refreshes the active workspace state and shows Chinese-first created/skipped/failed results with service-level recovery actions, Finder, result-aware Codex, and local-check follow-ups, including an in-card local-check summary after checks run.
-  - Workspace detail starts with a compact Detail map and status overview, then the Command Center exposes lifecycle progress, primary-path guidance, branch/service/risk/task/session signals, a compact session path, Codex continuation, next-step routing, local check receipt, Finder, IDE, Terminal, and workspace-link copy, with compact path action labels, status-aware delivery routing, quick actions grouped by handoff, execution, and local tools, and a Command Center-adjacent next-step queue for Rust Core recommended actions.
-  - Workspace detail Services section summarizes service scope, missing worktrees, and dirty service signals, and each service row can open the service worktree, source repository, IDE target, confirmed worktree setup, or a service-scoped Codex handoff without moving those actions into a global button cluster.
-  - Risk Review readiness rows are actionable, so service, branch, worktree, status, task, and SQL findings route to the matching document, worktree setup, or delivery-record action.
-  - Workspace detail status overview tiles are actionable and route lifecycle, branch, service/worktree, risk, task, delivery, session, and check states to their matching document, setup, handoff, session, or local-check action; Command Center also includes Codex session-link count, a session path step, latest-session open action, and bind-session fallback when no link exists.
-  - Clipboard and Codex handoff actions show context-aware feedback after copying workspace, lifecycle, risk, task, automation, agent-event, session-link, or task-locator context; Agent Event detail can also copy context and open Codex in one action.
-  - Failed local operations show a unified Operation feedback card with copy-error, refresh, environment-check, Settings, and dismiss actions.
-  - Workspace detail shows the Workflow summary with task counts, delivery status, a delivery resolution plan, validation/PR evidence, grouped document/check/Agent action lanes, delivery-readiness checks, inline local-check receipts, workspace Codex handoff, delivery-update Codex handoff, and validation/PR handoff.
-  - Workflow delivery-readiness rows are grouped into Attention and Passed sections, and route branch, services/worktrees, tasks, risks, delivery records, SQL checks, and dirty services to the nearest document, setup flow, local check, or Codex handoff.
-  - SQL readiness blocks delivery when `交付记录.md` declares SQL changes anywhere in the document, including SQL-section change metadata such as `变更类型：DDL/DML` or affected tables, but `sql/` does not contain both formal SQL and rollback SQL files.
-  - Scope freeze readiness now treats declared scope changes as review items unless `需求/scope.md` records both the change reason and affected service/task/SQL/delivery impact.
-  - Workflow starts with a delivery focus card that routes the next action to branch/service documents, worktree setup, task review, risk handoff, delivery records, local checks, Codex, lifecycle confirmation, or post-done PR/CI review.
-  - Development task evidence shows a task plan that marks blockers, the current task, queued tasks, and closed/deferred tasks with writeback guidance.
-  - Task status and lifecycle writebacks show a dismissible local-write feedback card with affected-workspace focus, source-document review, and follow-up check actions; the compact action layout wraps cleanly in the inspector.
-  - Task Center shows the latest `tasks.md` writeback result with affected-workspace focus and source-document actions after task status changes.
-  - Task Center and workspace task rows show task source lines and can locate the owning `tasks.md` row before status changes or Codex handoff.
-  - Deferred tasks remain visible in the Task Center deferred filter but are excluded from active automation warnings, high-priority task routing, menu-bar task attention, and delivery workflow blockers.
-  - Task-level Codex actions copy task context, open the configured Codex URL, and write task handoff audit events.
-  - Workflow delivery readiness can route into the confirmed lifecycle writeback sheet for entering delivery or marking the workspace done.
-  - Workflow and Command Center now include archive eligibility evidence that reuses the delivery hard gate, then routes entering delivery, marking done, or archiving through the confirmed lifecycle writeback sheet.
-  - Archive eligibility now shows a confirmation plan for delivery blockers, delivery-record review, validation/PR review, lifecycle writeback, and final archive confirmation before the archive action.
-  - Workflow action labels are Chinese-first, grouped by document/check/Agent intent, and include hover help for documents, checks, and Codex handoff.
-  - Workspace detail shows the Risk Review summary with risk/blocker/warning counts, status document access, local check receipt, worktree follow-up, and Codex risk prompt copy.
-  - Workspace detail shows the Documents Hub, highlights the active document, explains each document's responsibility, update timing, gate participation, and create policy, shows loading/error recovery close to the document entry, can create missing standard documents after confirmation, and clears stale previews after switching workspaces.
-  - Settings export writes a Nexus team profile JSON, and importing that profile applies the same path conventions.
-  - Creating a workspace writes `bootstrap-report.md` and `scripts/worktree-commands.sh`.
-  - Markdown preview works.
-  - `~/Library/Application Support/com.ks.nexus/widget-snapshot.json` is generated.
-  - `nexus://workspace/<folder>` opens Nexus and focuses the target workspace when it exists, and the Command Center can copy the same link for the selected workspace.
-  - Widget and menu-bar attention summaries exclude archived workspaces from active risk, dirty-service, and missing-worktree totals while deep links can still focus archived history.
-  - Archived workspace detail stays read-only by default, with restore-to-development exposed as an explicit confirmed lifecycle writeback that returns the workspace to active checks.
+- Run `swift test --package-path native/Nexus`.
+- Build the Native app target once it exists.
+- Verify `NativeDistributionReadinessEvidence` reports the current M3 blockers clearly in Settings.
+- Confirm M1 main workflow evidence is ready.
+- Confirm M2 Native Local Core evidence reports `10/10 Native domains`.
+- Confirm at least one real archived workspace provides lifecycle proof: archived stage, delivery evidence, ready services, no active tasks, and no open risks.
+- Confirm Widget snapshot writing works in Application Support and, when signed, the App Group container.
+- Confirm `nexus://workspace/<folder>` opens Nexus and focuses the target workspace.
+- Confirm release docs and workflows point at the Native app artifact path.
+- Confirm legacy preview artifacts are not published as product release assets.
 
 ## Signing And Notarization
 
-For broad distribution outside a trusted team, sign and notarize the app with an Apple Developer account. Tauri supports macOS signing and notarization through its bundle configuration and environment variables.
+For broad distribution outside a trusted team, sign and notarize the Native app and WidgetKit extension with an Apple Developer account.
 
 Recommended GitHub Secrets:
 
@@ -98,20 +63,20 @@ Recommended GitHub Secrets:
 - `APPLE_CERTIFICATE_PASSWORD`
 - `APPLE_SIGNING_IDENTITY`
 
-The current workflow builds unsigned preview artifacts. Enable signing only after the Apple Developer certificate policy is ready.
+The current repository does not yet contain the final installable app target. Enable signing only after the Native app target, WidgetKit extension target, and certificate handling policy are ready.
 
 ## GitHub Actions
 
-Two workflows are provided:
+Two workflows are expected for M3:
 
-- `CI`: runs tests, frontend build, widget type-check, and Rust crate checks on pull requests and pushes to `main`.
-- `Release`: builds Apple Silicon and Intel DMG artifacts when a `v*` tag is pushed or the workflow is run manually.
+- `CI`: runs Swift tests for `native/Nexus` and any remaining compatibility checks required by touched legacy reference code.
+- `Release`: builds signed Native app artifacts from `native/Nexus`, packages `Nexus.app` and `Nexus.dmg`, uploads those artifacts to GitHub Releases, and does not publish legacy preview artifacts.
 
 Pushing workflow files requires a GitHub token with the `workflow` scope.
 
 ## Auto Updates
 
-The recommended future path is Tauri updater backed by GitHub Releases. Do not enable automatic updates until signing, notarization, updater signing keys, and update metadata policy are ready.
+Do not enable automatic updates until signing, notarization, updater signing keys, update metadata policy, and user-visible update settings are ready.
 
 ## WidgetKit Packaging
 
