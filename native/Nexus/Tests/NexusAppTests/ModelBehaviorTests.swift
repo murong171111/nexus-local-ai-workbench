@@ -1842,10 +1842,11 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(evidence.reason.contains("M3"))
     }
 
-    func testNativeDistributionReadinessAllowsNativeReleaseWorkflowBeforeInstallTargetExists() {
+    func testNativeDistributionReadinessTracksUnsignedNativeReleaseWorkflowBeforeInstallTargetExists() {
         let root = "/repo"
         let files: Set<String> = [
             "\(root)/native/Nexus/Package.swift",
+            "\(root)/native/Nexus/Scripts/package-dmg.sh",
             "\(root)/widget/NexusWidget/NexusWidget.swift",
             "\(root)/docs/legacy-retirement-audit.md",
             "\(root)/docs/distribution.md",
@@ -1869,6 +1870,8 @@ final class ModelBehaviorTests: XCTestCase {
                     return path.hasSuffix("release.yml")
                         || path.hasSuffix("distribution.md")
                         || path.hasSuffix("release-process.md")
+                case "package-dmg.sh", ".dmg":
+                    return path.hasSuffix("release.yml")
                 case "Native Deletion Order", "Current Legacy Surfaces":
                     return path.hasSuffix("legacy-retirement-audit.md")
                 default:
@@ -1878,12 +1881,14 @@ final class ModelBehaviorTests: XCTestCase {
         )
 
         let releaseReadiness = evidence.checks.first { $0.requirement == .releaseReadiness }
-        XCTAssertEqual(releaseReadiness?.status, .ready)
-        XCTAssertTrue(releaseReadiness?.detail.contains("Swift-native artifacts") == true)
+        XCTAssertEqual(releaseReadiness?.status, .blocked)
+        XCTAssertFalse(releaseReadiness?.detail.contains("Release workflow does not build a Native app artifact.") == true)
+        XCTAssertFalse(releaseReadiness?.detail.contains("Release workflow does not package Native DMG artifacts.") == true)
+        XCTAssertTrue(releaseReadiness?.detail.contains("Release workflow does not sign and notarize Native artifacts.") == true)
         XCTAssertEqual(evidence.checks.first { $0.requirement == .installTarget }?.status, .blocked)
         XCTAssertEqual(evidence.checks.first { $0.requirement == .widgetExtension }?.status, .blocked)
         XCTAssertEqual(evidence.checks.first { $0.requirement == .legacyDeletion }?.status, .blocked)
-        XCTAssertEqual(evidence.readinessSummary, "1/4 Ready checks")
+        XCTAssertEqual(evidence.readinessSummary, "0/4 Ready checks")
     }
 
     func testNativeDistributionReadinessAcceptsSwiftPMAppBundleEvidence() {
@@ -1914,6 +1919,8 @@ final class ModelBehaviorTests: XCTestCase {
                     return path.hasSuffix("release.yml")
                         || path.hasSuffix("distribution.md")
                         || path.hasSuffix("release-process.md")
+                case "package-dmg.sh", ".dmg":
+                    return path.hasSuffix("release.yml")
                 case "Native Deletion Order", "Current Legacy Surfaces":
                     return path.hasSuffix("legacy-retirement-audit.md")
                 default:
@@ -1984,6 +1991,7 @@ final class ModelBehaviorTests: XCTestCase {
         let files: Set<String> = [
             "\(root)/native/Nexus/Package.swift",
             "\(root)/native/Nexus/Nexus.xcodeproj/project.pbxproj",
+            "\(root)/native/Nexus/Scripts/package-dmg.sh",
             "\(root)/widget/NexusWidget/NexusWidget.swift",
             "\(root)/native/NexusWidget/Sources/NexusWidget/NexusWidget.swift",
             "\(root)/native/NexusWidget/Info.plist",
@@ -2011,6 +2019,8 @@ final class ModelBehaviorTests: XCTestCase {
                         || path.hasSuffix("distribution.md")
                         || path.hasSuffix("release-process.md")
                 case "native:build":
+                    return path.hasSuffix("release.yml")
+                case "package-dmg.sh", ".dmg", "codesign", "notarytool":
                     return path.hasSuffix("release.yml")
                 case "com.apple.widgetkit-extension":
                     return path.hasSuffix("Info.plist")
