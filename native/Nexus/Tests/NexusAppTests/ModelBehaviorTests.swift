@@ -1038,6 +1038,7 @@ final class ModelBehaviorTests: XCTestCase {
             [
                 "native/Nexus/Sources/NexusApp/ServiceWorktreeEvidence.swift",
                 "native/Nexus/Sources/NexusApp/NativeSourceRepositoryStore.swift",
+                "native/Nexus/Sources/NexusApp/NativeWorkspaceScanner.swift",
                 "NexusBridge.scanWorkspaces / setupWorktrees"
             ]
         )
@@ -1358,11 +1359,81 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(snapshot.candidateServices, ["nexus-cli"])
         XCTAssertEqual(snapshot.taskCounts.doing, 1)
         XCTAssertEqual(snapshot.taskCounts.todo, 1)
-        XCTAssertEqual(snapshot.riskCount, 1)
+        XCTAssertEqual(snapshot.riskCount, 3)
+        XCTAssertEqual(snapshot.gitRows.map(\.service), ["nexus-app"])
+        XCTAssertEqual(snapshot.gitRows.first?.worktree.exists, false)
+        XCTAssertEqual(snapshot.gitRows.first?.source.exists, false)
         XCTAssertEqual(snapshot.links["workspace"]?.hasSuffix("/2026-06-23-native-dashboard/workspace.md"), true)
         XCTAssertEqual(snapshot.sqlFiles?.map(\.relativePath), ["sql/change.sql"])
         XCTAssertEqual(snapshot.sqlDocuments?.map(\.relativePath), ["sql/README.md"])
         XCTAssertEqual(snapshot.tasks?.map(\.source), ["workspace", "workspace"])
+    }
+
+    func testNativeWorkspaceScannerBuildsGitRowsForWorkspaceWorktrees() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-workspace-git-\(UUID().uuidString)")
+        let sourceRoot = root.appendingPathComponent("source-repos")
+        let workspace = root.appendingPathComponent("workspaces/2026-06-23-native-git")
+        let sourceOrder = sourceRoot.appendingPathComponent("order")
+        let worktreeOrder = workspace.appendingPathComponent("repos/order")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try FileManager.default.createDirectory(at: sourceOrder, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: worktreeOrder, withIntermediateDirectories: true)
+        try runGit(["init", "-b", "feature/native-git"], in: sourceOrder)
+        try runGit(["init", "-b", "feature/native-git"], in: worktreeOrder)
+        try """
+        # Native Git
+
+        - 需求名称: Native Git
+        - 当前状态: developing
+        """.write(to: workspace.appendingPathComponent("workspace.md"), atomically: true, encoding: .utf8)
+        try "- 目标分支: feature/native-git\n".write(
+            to: workspace.appendingPathComponent("branches.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try """
+        # Services
+
+        ## 已确认相关
+
+        | 服务 | 源仓库 | 说明 |
+        | --- | --- | --- |
+        | order | `~/source-repos/order` | core |
+        | cashier | `~/source-repos/cashier` | missing |
+
+        ## 待验证范围
+
+        | 服务 | 线索 | 说明 |
+        | --- | --- | --- |
+        | coupon | maybe | 待确认 |
+        """.write(to: workspace.appendingPathComponent("services.md"), atomically: true, encoding: .utf8)
+
+        let dashboard = try NativeWorkspaceScanner.scan(
+            workspacesRoot: workspace.deletingLastPathComponent().path,
+            sourceReposRoot: sourceRoot.path,
+            docsRoot: "/tmp/docs"
+        )
+
+        let snapshot = try XCTUnwrap(dashboard.workspaces.first)
+        XCTAssertEqual(snapshot.targetBranch, "feature/native-git")
+        XCTAssertEqual(snapshot.confirmedServices, ["cashier", "order"])
+        XCTAssertEqual(snapshot.candidateServices, ["coupon"])
+        XCTAssertEqual(snapshot.gitRows.map(\.service), ["cashier", "order"])
+        XCTAssertEqual(snapshot.gitRows.first { $0.service == "order" }?.worktree.exists, true)
+        XCTAssertEqual(snapshot.gitRows.first { $0.service == "order" }?.worktree.branch, "feature/native-git")
+        XCTAssertEqual(snapshot.gitRows.first { $0.service == "order" }?.source.exists, true)
+        XCTAssertEqual(snapshot.gitRows.first { $0.service == "cashier" }?.worktree.exists, false)
+        XCTAssertEqual(snapshot.gitRows.first { $0.service == "cashier" }?.source.exists, false)
+
+        let summary = WorkspaceSummary(snapshot: snapshot)
+        XCTAssertEqual(summary.services.map(\.name), ["cashier", "order"])
+        XCTAssertEqual(summary.services.first { $0.name == "order" }?.worktreeExists, true)
+        XCTAssertEqual(summary.services.first { $0.name == "cashier" }?.sourceExists, false)
+        XCTAssertTrue(summary.risks.contains { $0.detail.contains("worktree 未创建: cashier") })
+        XCTAssertTrue(summary.risks.contains { $0.detail.contains("源仓库缺失: cashier") })
     }
 
     func testNativeWorkspaceScannerReturnsEmptyDashboardForMissingRoot() throws {
