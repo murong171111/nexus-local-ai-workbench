@@ -489,6 +489,60 @@ struct WorktreeSetupPlanItem: Hashable, Identifiable {
     let reason: String
 }
 
+enum WorktreeSetupMutationKind: String, Hashable {
+    case createMissingWorktrees
+}
+
+struct WorktreeSetupMutationPolicy: Hashable {
+    let kind: WorktreeSetupMutationKind
+    let requiresConfirmationSheet: Bool
+    let targetRoot: String
+    let allowedServices: [String]
+    let blockedServices: [String]
+    let skippedServices: [String]
+    let blockerReasons: [String]
+
+    var canRequestConfirmation: Bool {
+        requiresConfirmationSheet && !allowedServices.isEmpty && blockedServices.isEmpty
+    }
+
+    var status: WorkflowPathStatus {
+        if !blockedServices.isEmpty {
+            return .blocked
+        }
+        return canRequestConfirmation ? .next : .ready
+    }
+
+    var summary: String {
+        if !blockedServices.isEmpty {
+            return "不能执行 worktree 写入：\(blockerReasons.joined(separator: " "))"
+        }
+        if allowedServices.isEmpty {
+            return "当前没有需要创建的 workspace-local worktree。"
+        }
+        return "确认后只会在 \(targetRoot) 为 \(allowedServices.joined(separator: ", ")) 创建缺失 worktree。"
+    }
+
+    func canRun(afterConfirmation confirmed: Bool) -> Bool {
+        confirmed && canRequestConfirmation
+    }
+
+    static func resolve(setupPlan: [WorktreeSetupPlanItem]) -> WorktreeSetupMutationPolicy {
+        let creates = setupPlan.filter { $0.action == .create }
+        let blocked = setupPlan.filter { $0.action == .blocked }
+        let skipped = setupPlan.filter { $0.action == .skip }
+        return WorktreeSetupMutationPolicy(
+            kind: .createMissingWorktrees,
+            requiresConfirmationSheet: true,
+            targetRoot: "repos/",
+            allowedServices: creates.map(\.serviceName),
+            blockedServices: blocked.map(\.serviceName),
+            skippedServices: skipped.map(\.serviceName),
+            blockerReasons: blocked.map(\.reason)
+        )
+    }
+}
+
 enum WorktreeSetupRecoveryDocument: String, Hashable {
     case services
     case branches
@@ -623,6 +677,10 @@ struct WorktreeSetupEvidence: Hashable {
 
     var hasMissingWorktrees: Bool {
         !missingServices.isEmpty
+    }
+
+    var mutationPolicy: WorktreeSetupMutationPolicy {
+        WorktreeSetupMutationPolicy.resolve(setupPlan: setupPlan)
     }
 
     var title: String {

@@ -26,6 +26,7 @@ final class ModelBehaviorTests: XCTestCase {
             "struct DevelopmentTaskEvidence",
             "struct DevelopmentTaskSource",
             "struct WorktreeSetupEvidence",
+            "struct WorktreeSetupMutationPolicy",
             "struct DemandIntakeReadinessEvidence",
             "struct DemandIntakeM1ActionPolicy",
             "struct TaskStatusUpdate",
@@ -1690,6 +1691,13 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(worktree.setupPlan.first?.targetPath, root.appendingPathComponent("repos/order").path)
         XCTAssertEqual(worktree.setupPlan.first?.targetBranch, "feature/worktree")
         XCTAssertTrue(worktree.branchMismatchServices.isEmpty)
+        XCTAssertTrue(worktree.mutationPolicy.requiresConfirmationSheet)
+        XCTAssertEqual(worktree.mutationPolicy.targetRoot, "repos/")
+        XCTAssertEqual(worktree.mutationPolicy.allowedServices, ["order"])
+        XCTAssertTrue(worktree.mutationPolicy.blockedServices.isEmpty)
+        XCTAssertTrue(worktree.mutationPolicy.canRequestConfirmation)
+        XCTAssertFalse(worktree.mutationPolicy.canRun(afterConfirmation: false))
+        XCTAssertTrue(worktree.mutationPolicy.canRun(afterConfirmation: true))
         XCTAssertEqual(stage.id, .worktreeSetup)
         XCTAssertEqual(stage.primaryAction, .worktree)
     }
@@ -1722,6 +1730,9 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(worktree.branchMismatchServices, ["order(dev)"])
         XCTAssertEqual(worktree.setupPlan.map(\.action), [.blocked])
         XCTAssertEqual(worktree.setupPlan.first?.currentBranch, "dev")
+        XCTAssertEqual(worktree.mutationPolicy.blockedServices, ["order"])
+        XCTAssertFalse(worktree.mutationPolicy.canRequestConfirmation)
+        XCTAssertFalse(worktree.mutationPolicy.canRun(afterConfirmation: true))
         XCTAssertEqual(stage.id, .worktreeSetup)
         XCTAssertEqual(stage.primaryAction, .document("branches"))
     }
@@ -1754,6 +1765,9 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(worktree.missingSourceServices, ["order"])
         XCTAssertEqual(worktree.setupPlan.map(\.action), [.blocked])
         XCTAssertFalse(worktree.setupPlan.first?.sourceAvailable ?? true)
+        XCTAssertEqual(worktree.mutationPolicy.blockedServices, ["order"])
+        XCTAssertTrue(worktree.mutationPolicy.blockerReasons.contains { $0.contains("source repo") })
+        XCTAssertFalse(worktree.mutationPolicy.canRequestConfirmation)
         XCTAssertEqual(stage.id, .worktreeSetup)
         XCTAssertEqual(stage.primaryAction, .document("services"))
     }
@@ -1786,6 +1800,8 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(worktree.missingServices.isEmpty)
         XCTAssertTrue(worktree.branchMismatchServices.isEmpty)
         XCTAssertEqual(worktree.setupPlan.map(\.action), [.skip])
+        XCTAssertEqual(worktree.mutationPolicy.skippedServices, ["order"])
+        XCTAssertFalse(worktree.mutationPolicy.canRequestConfirmation)
         XCTAssertNotEqual(stage.id, .worktreeSetup)
     }
 

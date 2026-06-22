@@ -1521,33 +1521,32 @@ private struct WorktreeSetupSheet: View {
         appState.workspaces.first { $0.id == workspace.id } ?? workspace
     }
 
+    private var worktreeSetupEvidence: WorktreeSetupEvidence {
+        appState.worktreeSetupEvidence(for: currentWorkspace)
+    }
+
+    private var mutationPolicy: WorktreeSetupMutationPolicy {
+        worktreeSetupEvidence.mutationPolicy
+    }
+
     private var missingServices: [String] {
-        appState.missingWorktreeServices(in: currentWorkspace)
+        worktreeSetupEvidence.missingServices
     }
 
     private var missingSourceServices: [String] {
-        currentWorkspace.services
-            .filter { service in
-                !service.worktreeExists && !service.sourceExists
-            }
-            .map(\.name)
+        worktreeSetupEvidence.missingSourceServices
     }
 
     private var preflightIsReady: Bool {
-        branchIsReady && !missingServices.isEmpty && missingSourceServices.isEmpty
+        mutationPolicy.canRequestConfirmation
     }
 
     private var canRun: Bool {
-        confirmed && preflightIsReady && !appState.isSettingUpWorktrees
+        mutationPolicy.canRun(afterConfirmation: confirmed) && !appState.isSettingUpWorktrees
     }
 
     private var branchIsReady: Bool {
-        let normalized = currentWorkspace.branch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return !normalized.isEmpty
-            && normalized != "-"
-            && !["待确认", "未确认", "pending", "tbd", "todo"].contains { marker in
-                normalized.contains(marker)
-            }
+        worktreeSetupEvidence.branchConfirmed
     }
 
     var body: some View {
@@ -1579,13 +1578,17 @@ private struct WorktreeSetupSheet: View {
                 if preflightIsReady {
                     SectionBlock(title: "将要执行 / Local git operations") {
                         VStack(alignment: .leading, spacing: 8) {
-                            Label("Nexus 会为 \(missingServices.count) 个服务执行 git fetch origin 和 git worktree add。", systemImage: "terminal")
+                            Label("Nexus 会为 \(mutationPolicy.allowedServices.count) 个服务执行 git fetch origin 和 git worktree add。", systemImage: "terminal")
                                 .font(.caption)
                             Text("\(currentWorkspace.path)/repos/<service>")
                                 .font(.system(.caption, design: .monospaced))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(2)
-                            FlowTags(values: missingServices)
+                            FlowTags(values: mutationPolicy.allowedServices)
+                            Text(mutationPolicy.summary)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }

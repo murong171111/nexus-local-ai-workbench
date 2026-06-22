@@ -3746,10 +3746,7 @@ final class AppState: ObservableObject {
 
     func canSetupWorktrees(in workspace: WorkspaceSummary) -> Bool {
         let evidence = worktreeSetupEvidence(for: workspace)
-        return evidence.hasMissingWorktrees
-            && evidence.branchConfirmed
-            && evidence.missingSourceServices.isEmpty
-            && evidence.branchMismatchServices.isEmpty
+        return evidence.mutationPolicy.canRequestConfirmation
     }
 
     func setupMissingWorktrees(for workspace: WorkspaceSummary, confirmed: Bool) async {
@@ -3757,6 +3754,7 @@ final class AppState: ObservableObject {
         lastWorktreeSetupResponse = nil
 
         let evidence = worktreeSetupEvidence(for: workspace)
+        let mutationPolicy = evidence.mutationPolicy
         let missingServices = evidence.missingServices
         guard !missingServices.isEmpty else {
             lastError = "当前工作区没有缺失的 worktree。"
@@ -3775,6 +3773,14 @@ final class AppState: ObservableObject {
             lastError = "存在分支不一致的 worktree：\(evidence.branchMismatchServices.joined(separator: ", "))。"
             return
         }
+        guard mutationPolicy.canRequestConfirmation else {
+            lastError = mutationPolicy.summary
+            return
+        }
+        guard mutationPolicy.canRun(afterConfirmation: confirmed) else {
+            lastError = "需要在确认 sheet 勾选本地 git 写入确认后，才会执行 worktree 创建。"
+            return
+        }
 
         isSettingUpWorktrees = true
         defer {
@@ -3786,7 +3792,7 @@ final class AppState: ObservableObject {
                 request: SetupWorktreesRequest(
                     workspacePath: workspace.path,
                     sourceReposRoot: sourceReposRoot,
-                    services: missingServices,
+                    services: mutationPolicy.allowedServices,
                     targetBranch: workspace.branch,
                     confirmed: confirmed,
                     auditRoot: auditRootPath,

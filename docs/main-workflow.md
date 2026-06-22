@@ -474,7 +474,7 @@ Plan:
   - branch mismatch
   - dirty
   - clean
-- Keep all mutation behind confirmation.
+- Keep all mutation behind confirmation. `[started with WorktreeSetupMutationPolicy]`
 - Keep source repositories read-only unless the user explicitly opens them outside Nexus. `[started with SourceRepositoryAccess]`
 
 ### Audit / Delivery
