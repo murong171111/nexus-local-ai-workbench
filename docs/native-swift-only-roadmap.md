@@ -280,7 +280,7 @@ Until then, legacy code is frozen reference, not the product direction.
 - Workspace list and detail use Swift-native domain state.
 - Demand intake and document preview are Native-first.
 - Git/worktree and delivery readiness use Native-owned rules.
-- Main path shows one current stage, one blocker summary, and one recommended next step.
+- Main path shows one current stage, one blocker summary, and one recommended next step. `[started with WorkspaceStageAnswer blockerSummary surfaced in Command Center]`
 
 ### M2: Native Local Core
 

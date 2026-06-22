@@ -12,6 +12,7 @@ struct WorkspaceStageAnswer: Hashable {
     let stageLabel: String
     let status: WorkflowPathStatus
     let reason: String
+    let blockerSummary: String
     let nextActionLabel: String
     let nextAction: WorkspaceMainStageAction
     let evidenceLinks: [WorkspaceMainStageEvidenceLink]
@@ -41,10 +42,28 @@ extension WorkspaceMainStage {
             stageLabel: title,
             status: status,
             reason: reason,
+            blockerSummary: blockerSummary,
             nextActionLabel: primaryActionLabel,
             nextAction: primaryAction,
             evidenceLinks: evidenceLinks
         )
+    }
+
+    var blockerSummary: String {
+        switch status {
+        case .blocked:
+            return "阻塞：\(reason)"
+        case .review:
+            return "需复核：\(reason)"
+        case .pending:
+            return "待确认：\(reason)"
+        case .next:
+            return "下一步：\(primaryActionLabel)"
+        case .ready:
+            return "无阻塞：可以进入下一阶段。"
+        case .archived:
+            return "已归档：证据只读。"
+        }
     }
 }
 

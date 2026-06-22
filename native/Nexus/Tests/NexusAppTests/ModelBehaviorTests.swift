@@ -1166,6 +1166,7 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(answer.stageID, .deliveryCheck)
         XCTAssertEqual(answer.status, .blocked)
         XCTAssertEqual(answer.reason, "SQL rollback evidence is missing.")
+        XCTAssertEqual(answer.blockerSummary, "阻塞：SQL rollback evidence is missing.")
         XCTAssertEqual(answer.nextActionLabel, "查看 SQL")
         XCTAssertEqual(answer.nextAction, .document("sql"))
         XCTAssertEqual(answer.evidenceLinks.map(\.label), stage.evidence)
@@ -1188,6 +1189,23 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertTrue(stage.answer.routedEvidenceLinks.isEmpty)
         XCTAssertFalse(stage.answer.canAnswerCurrentState)
+    }
+
+    func testWorkspaceStageAnswerSummarizesReadyStateWithoutBlockers() {
+        let stage = WorkspaceMainStage(
+            id: .archived,
+            status: .ready,
+            title: "归档完成 / Archived",
+            reason: "All archive evidence is present.",
+            primaryActionLabel: "查看交付",
+            primaryActionSystemImage: "doc.text",
+            primaryAction: .document("delivery"),
+            evidence: ["交付记录.md"],
+            nextStageAllowed: true
+        )
+
+        XCTAssertEqual(stage.answer.blockerSummary, "无阻塞：可以进入下一阶段。")
+        XCTAssertTrue(stage.answer.canAnswerCurrentState)
     }
 
     func testMainStageEvidenceLinksOpenKnownEvidenceSources() {

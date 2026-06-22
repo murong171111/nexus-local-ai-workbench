@@ -8650,6 +8650,7 @@ private enum CommandCenterPrimaryAction {
 private struct CommandCenterPrimaryStep {
     let title: String
     let detail: String
+    let blockerSummary: String
     let status: WorkflowPathStatus
     let systemImage: String
     let actionLabel: String
@@ -8660,6 +8661,7 @@ private struct CommandCenterPrimaryStep {
     init(
         title: String,
         detail: String,
+        blockerSummary: String,
         status: WorkflowPathStatus,
         systemImage: String,
         actionLabel: String,
@@ -8669,6 +8671,7 @@ private struct CommandCenterPrimaryStep {
     ) {
         self.title = title
         self.detail = detail
+        self.blockerSummary = blockerSummary
         self.status = status
         self.systemImage = systemImage
         self.actionLabel = actionLabel
@@ -8681,6 +8684,7 @@ private struct CommandCenterPrimaryStep {
         self.init(
             title: stage.title,
             detail: stage.reason,
+            blockerSummary: stage.blockerSummary,
             status: stage.status,
             systemImage: stage.id.systemImage,
             actionLabel: stage.primaryActionLabel,
@@ -8721,6 +8725,12 @@ private struct CommandCenterPrimaryStepView: View {
                 Text(step.detail)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Label(step.blockerSummary, systemImage: step.status == .blocked ? "xmark.octagon" : "info.circle")
+                    .font(.caption)
+                    .foregroundStyle(step.status.color)
+                    .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
