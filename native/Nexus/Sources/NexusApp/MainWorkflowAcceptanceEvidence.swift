@@ -41,12 +41,12 @@ struct MainWorkflowAcceptanceEvidence: Hashable {
         let missingStages = WorkspaceMainStageID.allCases.filter { !observedSet.contains($0) }
         let stagesMissingPrimaryAction = orderedObservedStages(
             stages.filter { stage in
-                stage.primaryActionLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                stage.answer.nextActionLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     || stage.primaryActionSystemImage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             }
         )
         let stagesMissingEvidence = orderedObservedStages(
-            stages.filter { $0.evidence.isEmpty || $0.evidenceSummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            stages.filter { $0.answer.routedEvidenceLinks.isEmpty }
         )
 
         let coverageCheck = MainWorkflowAcceptanceCheck(
@@ -106,7 +106,7 @@ struct MainWorkflowAcceptanceEvidence: Hashable {
         missingEvidence: [WorkspaceMainStageID]
     ) -> String {
         if missingAction.isEmpty && missingEvidence.isEmpty {
-            return "每个阶段快照都有主动作、图标和至少一个证据来源。"
+            return "每个阶段快照都有主动作、图标和至少一个可路由证据来源。"
         }
 
         var parts: [String] = []
@@ -114,7 +114,7 @@ struct MainWorkflowAcceptanceEvidence: Hashable {
             parts.append("缺主动作：\(stageLabels(missingAction))")
         }
         if !missingEvidence.isEmpty {
-            parts.append("缺证据：\(stageLabels(missingEvidence))")
+            parts.append("缺可路由证据：\(stageLabels(missingEvidence))")
         }
         return parts.joined(separator: "；") + "。"
     }

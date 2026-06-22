@@ -7,11 +7,44 @@ struct WorkspaceMainStageEvidenceLink: Identifiable, Hashable {
     let action: WorkspaceMainStageAction?
 }
 
+struct WorkspaceStageAnswer: Hashable {
+    let stageID: WorkspaceMainStageID
+    let stageLabel: String
+    let status: WorkflowPathStatus
+    let reason: String
+    let nextActionLabel: String
+    let nextAction: WorkspaceMainStageAction
+    let evidenceLinks: [WorkspaceMainStageEvidenceLink]
+
+    var routedEvidenceLinks: [WorkspaceMainStageEvidenceLink] {
+        evidenceLinks.filter { $0.action != nil }
+    }
+
+    var canAnswerCurrentState: Bool {
+        !stageLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !nextActionLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !routedEvidenceLinks.isEmpty
+    }
+}
+
 extension WorkspaceMainStage {
     var evidenceLinks: [WorkspaceMainStageEvidenceLink] {
         evidence.enumerated().map { index, evidence in
             WorkspaceMainStageEvidenceLink.resolve(evidence, index: index)
         }
+    }
+
+    var answer: WorkspaceStageAnswer {
+        WorkspaceStageAnswer(
+            stageID: id,
+            stageLabel: title,
+            status: status,
+            reason: reason,
+            nextActionLabel: primaryActionLabel,
+            nextAction: primaryAction,
+            evidenceLinks: evidenceLinks
+        )
     }
 }
 

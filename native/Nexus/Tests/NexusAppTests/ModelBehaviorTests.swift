@@ -35,6 +35,7 @@ final class ModelBehaviorTests: XCTestCase {
             "struct CommandCenterLayoutPolicy",
             "struct ServiceWorktreeRowState",
             "struct WorkspaceMainStageEvidenceLink",
+            "struct WorkspaceStageAnswer",
             "struct WorkspaceListStageBadge",
             "struct WorkspaceListSummary",
             "struct WorkspaceDetailNavigationItem",
@@ -791,7 +792,7 @@ final class ModelBehaviorTests: XCTestCase {
                 primaryActionLabel: "继续",
                 primaryActionSystemImage: stageID.systemImage,
                 primaryAction: .document("status"),
-                evidence: ["\(stageID.rawValue).md"],
+                evidence: ["STATUS.md"],
                 nextStageAllowed: stageID == .archived
             )
         }
@@ -847,7 +848,49 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(acceptance.stagesMissingEvidence, [.demandIntake])
         XCTAssertTrue(acceptance.reason.contains("还缺阶段"))
         XCTAssertTrue(acceptance.reason.contains("缺主动作"))
-        XCTAssertTrue(acceptance.reason.contains("缺证据"))
+        XCTAssertTrue(acceptance.reason.contains("缺可路由证据"))
+    }
+
+    func testWorkspaceStageAnswerKeepsCurrentStateReasonActionAndEvidenceTogether() {
+        let stage = WorkspaceMainStage(
+            id: .deliveryCheck,
+            status: .blocked,
+            title: "交付检查 / Delivery",
+            reason: "SQL rollback evidence is missing.",
+            primaryActionLabel: "查看 SQL",
+            primaryActionSystemImage: "cylinder.split.1x2",
+            primaryAction: .document("sql"),
+            evidence: ["sql/release.sql", "交付记录.md", "manual note"],
+            nextStageAllowed: false
+        )
+
+        let answer = stage.answer
+
+        XCTAssertEqual(answer.stageID, .deliveryCheck)
+        XCTAssertEqual(answer.status, .blocked)
+        XCTAssertEqual(answer.reason, "SQL rollback evidence is missing.")
+        XCTAssertEqual(answer.nextActionLabel, "查看 SQL")
+        XCTAssertEqual(answer.nextAction, .document("sql"))
+        XCTAssertEqual(answer.evidenceLinks.map(\.label), stage.evidence)
+        XCTAssertEqual(answer.routedEvidenceLinks.map(\.label), ["sql/release.sql", "交付记录.md"])
+        XCTAssertTrue(answer.canAnswerCurrentState)
+    }
+
+    func testWorkspaceStageAnswerRequiresRoutedEvidenceFile() {
+        let stage = WorkspaceMainStage(
+            id: .development,
+            status: .next,
+            title: "开发任务 / Development",
+            reason: "Task evidence exists only as plain text.",
+            primaryActionLabel: "继续任务",
+            primaryActionSystemImage: "checklist",
+            primaryAction: .task("task-1"),
+            evidence: ["task needs follow-up"],
+            nextStageAllowed: false
+        )
+
+        XCTAssertTrue(stage.answer.routedEvidenceLinks.isEmpty)
+        XCTAssertFalse(stage.answer.canAnswerCurrentState)
     }
 
     func testMainStageEvidenceLinksOpenKnownEvidenceSources() {
