@@ -1015,7 +1015,13 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(partiallyNative.status, .blocked)
         XCTAssertEqual(partiallyNative.migrationSummary, "2/10 Native domains · 4 partial")
         XCTAssertEqual(partiallyNative.domains.filter { $0.status == .ready }.map(\.domain), [.workspaceScanning, .documentInventory])
-        XCTAssertEqual(partiallyNative.domains.first { $0.domain == .documentInventory }?.evidence, ["native/Nexus/Sources/NexusApp/WorkspaceEvidenceDocuments.swift"])
+        XCTAssertEqual(
+            partiallyNative.domains.first { $0.domain == .documentInventory }?.evidence,
+            [
+                "native/Nexus/Sources/NexusApp/WorkspaceEvidenceDocuments.swift",
+                "native/Nexus/Sources/NexusApp/NativeDocumentStore.swift"
+            ]
+        )
         XCTAssertEqual(
             partiallyNative.domains.filter { $0.status == .review }.map(\.domain),
             [.gitWorktreeStatus, .audit, .widgetSnapshot, .searchIndex]
@@ -1056,6 +1062,32 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(fullyNative.migrationSummary, "10/10 Native domains")
         XCTAssertFalse(fullyNative.bridgeIsLegacyDependency)
         XCTAssertTrue(fullyNative.reason.contains("M2 Native Local Core"))
+    }
+
+    func testNativeDocumentStoreReadsLocalSnapshots() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-document-\(UUID().uuidString)")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let markdownURL = root.appendingPathComponent("STATUS.md")
+        let sourceURL = root.appendingPathComponent("change.sql")
+        try "# Status\n\nReady for native preview.\n".write(to: markdownURL, atomically: true, encoding: .utf8)
+        try "select 1;\n".write(to: sourceURL, atomically: true, encoding: .utf8)
+
+        let markdown = try NativeDocumentStore.read(path: markdownURL.path)
+        let source = try NativeDocumentStore.read(path: sourceURL.path)
+
+        XCTAssertEqual(markdown.path, markdownURL.path)
+        XCTAssertEqual(markdown.name, "STATUS.md")
+        XCTAssertEqual(markdown.extension, "md")
+        XCTAssertEqual(markdown.isMarkdown, true)
+        XCTAssertTrue(markdown.content.contains("Ready for native preview"))
+        XCTAssertEqual(source.name, "change.sql")
+        XCTAssertEqual(source.extension, "sql")
+        XCTAssertEqual(source.isMarkdown, false)
+        XCTAssertEqual(source.content, "select 1;\n")
     }
 
     func testNativeSearchModelsGroupAndScopeResultsWithoutBridge() {

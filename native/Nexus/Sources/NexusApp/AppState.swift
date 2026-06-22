@@ -2492,7 +2492,12 @@ final class AppState: ObservableObject {
         }
 
         do {
-            let document = try await bridge.readDocument(request: ReadDocumentRequest(path: path))
+            let document: DocumentSnapshot
+            do {
+                document = try NativeDocumentStore.read(path: path)
+            } catch {
+                document = try await bridge.readDocument(request: ReadDocumentRequest(path: path))
+            }
             documentPreview = document
             await recordWorkspaceAction(
                 action: "document.opened",
