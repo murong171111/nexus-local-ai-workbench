@@ -782,7 +782,7 @@ final class ModelBehaviorTests: XCTestCase {
         }
     }
 
-    func testMainWorkflowAcceptanceEvidenceRequiresEveryStageActionAndEvidence() {
+    func testMainWorkflowAcceptanceEvidenceRequiresEveryM1Gate() {
         let stages = WorkspaceMainStageID.allCases.map { stageID in
             WorkspaceMainStage(
                 id: stageID,
@@ -796,8 +796,122 @@ final class ModelBehaviorTests: XCTestCase {
                 nextStageAllowed: stageID == .archived
             )
         }
+        let demand = DemandIntakeReadinessEvidence(
+            status: .ready,
+            reason: "Demand intake complete.",
+            evidence: ["需求/requirement.md", "需求/questions.md", "需求/scope.md", "需求/tasks.md"],
+            checks: [],
+            unresolvedP0Count: 0,
+            requirementHasContent: true,
+            scopeFrozen: true,
+            requirementTasksReady: true
+        )
+        let development = DevelopmentTaskEvidence(
+            status: .ready,
+            reason: "Tasks clear.",
+            evidence: ["tasks.md", "需求/tasks.md"],
+            sources: [
+                DevelopmentTaskSource(
+                    role: .executionQueue,
+                    path: "/tmp/main-acceptance/tasks.md",
+                    detail: "Root execution queue.",
+                    participatesInExecutionQueue: true
+                ),
+                DevelopmentTaskSource(
+                    role: .intakeEvidence,
+                    path: "/tmp/main-acceptance/需求/tasks.md",
+                    detail: "Demand intake evidence only.",
+                    participatesInExecutionQueue: false
+                )
+            ],
+            checks: [],
+            tasksPath: "/tmp/main-acceptance/tasks.md",
+            taskPlan: [],
+            activeTasks: [],
+            blockedTasks: [],
+            deferredTaskCount: 0,
+            doneTaskCount: 1,
+            nextTask: nil
+        )
+        let worktreeRows = ServiceWorktreeRowStateKind.allCases.map { kind in
+            ServiceWorktreeRowState(
+                serviceName: kind.rawValue,
+                kind: kind,
+                label: kind.rawValue,
+                detail: "Covered by acceptance fixture.",
+                status: kind == .clean ? .ready : .review,
+                systemImage: "checkmark.circle"
+            )
+        }
+        let delivery = DeliveryGateEvidence(
+            status: .ready,
+            title: "Delivery ready",
+            reason: "All delivery checks pass.",
+            value: "ready",
+            evidence: ["tasks.md", "交付记录.md", "sql/"],
+            checks: ["tasks", "risks", "sql", "dirty-services"].map { id in
+                DeliveryGateCheck(
+                    id: id,
+                    label: id,
+                    detail: "Covered by acceptance fixture.",
+                    status: .ready,
+                    systemImage: "checkmark.circle",
+                    path: "/tmp/main-acceptance/\(id).md",
+                    action: .document("delivery")
+                )
+            },
+            resolutionPlan: [],
+            primaryActionLabel: "打开交付",
+            primaryActionSystemImage: "doc.text",
+            primaryAction: .document("delivery"),
+            blockerCount: 0,
+            warningCount: 0
+        )
+        let archive = ArchiveGateEvidence(
+            status: .ready,
+            title: "Ready to archive",
+            reason: "Delivery gate reused.",
+            value: "ready",
+            evidence: ["交付记录.md", "handoff.md", "STATUS.md"],
+            checks: [
+                ArchiveGateCheck(
+                    id: "delivery-tasks",
+                    label: "Tasks",
+                    detail: "Archive reuses delivery task gate.",
+                    status: .ready,
+                    systemImage: "checkmark.circle",
+                    path: "/tmp/main-acceptance/tasks.md",
+                    action: .document("tasks")
+                )
+            ],
+            confirmationPlan: [
+                ArchiveConfirmationPlanItem(
+                    id: "delivery-reuse",
+                    title: "Reuse delivery gate",
+                    action: .archive,
+                    status: .ready,
+                    detail: "Archive confirmation depends on delivery evidence.",
+                    evidencePath: "/tmp/main-acceptance/交付记录.md",
+                    gateAction: .lifecycle(.archived),
+                    confirmationHint: "Confirmed archive writeback."
+                )
+            ],
+            primaryActionLabel: "归档",
+            primaryActionSystemImage: "archivebox",
+            primaryAction: .lifecycle(.archived),
+            blockerCount: 0,
+            warningCount: 0
+        )
 
-        let acceptance = MainWorkflowAcceptanceEvidence.resolve(stages: stages)
+        let acceptance = MainWorkflowAcceptanceEvidence.resolve(
+            stages: stages,
+            demandReadiness: demand,
+            developmentTasks: development,
+            worktreeRows: worktreeRows,
+            deliveryGate: delivery,
+            archiveGate: archive,
+            legacyBoundary: .nativeOnly
+        )
 
         XCTAssertTrue(acceptance.ready)
         XCTAssertEqual(acceptance.status, .ready)
@@ -805,8 +919,9 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(acceptance.missingStages.isEmpty)
         XCTAssertTrue(acceptance.stagesMissingPrimaryAction.isEmpty)
         XCTAssertTrue(acceptance.stagesMissingEvidence.isEmpty)
-        XCTAssertEqual(acceptance.checks.map(\.id), [.stageCoverage, .stageActionEvidence])
-        XCTAssertTrue(acceptance.reason.contains("全部阶段"))
+        XCTAssertEqual(acceptance.coveredWorktreeStates, ServiceWorktreeRowStateKind.allCases)
+        XCTAssertEqual(acceptance.checks.map(\.id), MainWorkflowAcceptanceRequirement.allCases)
+        XCTAssertTrue(acceptance.reason.contains("M1 主链路验收证据"))
     }
 
     func testMainWorkflowAcceptanceEvidenceBlocksMissingStagesAndEvidence() {
@@ -849,6 +964,12 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(acceptance.reason.contains("还缺阶段"))
         XCTAssertTrue(acceptance.reason.contains("缺主动作"))
         XCTAssertTrue(acceptance.reason.contains("缺可路由证据"))
+        XCTAssertTrue(acceptance.reason.contains("缺少需求预检 evidence"))
+        XCTAssertTrue(acceptance.reason.contains("缺少开发任务 evidence"))
+        XCTAssertTrue(acceptance.reason.contains("Worktree 行状态仍缺"))
+        XCTAssertTrue(acceptance.reason.contains("缺少交付或归档 evidence"))
+        XCTAssertTrue(acceptance.reason.contains("缺少 legacy 边界 evidence"))
+        XCTAssertEqual(acceptance.missingWorktreeStates, ServiceWorktreeRowStateKind.allCases)
     }
 
     func testWorkspaceStageAnswerKeepsCurrentStateReasonActionAndEvidenceTogether() {

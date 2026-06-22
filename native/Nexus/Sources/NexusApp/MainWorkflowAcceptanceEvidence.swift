@@ -3,6 +3,11 @@ import Foundation
 enum MainWorkflowAcceptanceRequirement: String, CaseIterable, Hashable {
     case stageCoverage
     case stageActionEvidence
+    case demandBlocksDevelopment
+    case executionTaskSource
+    case worktreeStateCoverage
+    case deliveryArchiveGate
+    case legacyBoundary
 
     var label: String {
         switch self {
@@ -10,8 +15,28 @@ enum MainWorkflowAcceptanceRequirement: String, CaseIterable, Hashable {
             return "阶段覆盖 / Stage coverage"
         case .stageActionEvidence:
             return "动作与证据 / Action and evidence"
+        case .demandBlocksDevelopment:
+            return "需求阻塞开发 / Demand gate"
+        case .executionTaskSource:
+            return "执行任务源 / Task source"
+        case .worktreeStateCoverage:
+            return "Worktree 状态 / Worktree states"
+        case .deliveryArchiveGate:
+            return "交付归档门禁 / Delivery archive"
+        case .legacyBoundary:
+            return "Legacy 边界 / Legacy boundary"
         }
     }
+}
+
+struct MainWorkflowLegacyBoundary: Hashable {
+    let allowsLegacyProductWorkflow: Bool
+    let evidence: [String]
+
+    static let nativeOnly = MainWorkflowLegacyBoundary(
+        allowsLegacyProductWorkflow: false,
+        evidence: ["docs/main-workflow.md#legacy-interaction-rules"]
+    )
 }
 
 struct MainWorkflowAcceptanceCheck: Hashable, Identifiable {
@@ -30,12 +55,22 @@ struct MainWorkflowAcceptanceEvidence: Hashable {
     let missingStages: [WorkspaceMainStageID]
     let stagesMissingPrimaryAction: [WorkspaceMainStageID]
     let stagesMissingEvidence: [WorkspaceMainStageID]
+    let coveredWorktreeStates: [ServiceWorktreeRowStateKind]
+    let missingWorktreeStates: [ServiceWorktreeRowStateKind]
 
     var ready: Bool {
         status == .ready
     }
 
-    static func resolve(stages: [WorkspaceMainStage]) -> MainWorkflowAcceptanceEvidence {
+    static func resolve(
+        stages: [WorkspaceMainStage],
+        demandReadiness: DemandIntakeReadinessEvidence? = nil,
+        developmentTasks: DevelopmentTaskEvidence? = nil,
+        worktreeRows: [ServiceWorktreeRowState]? = nil,
+        deliveryGate: DeliveryGateEvidence? = nil,
+        archiveGate: ArchiveGateEvidence? = nil,
+        legacyBoundary: MainWorkflowLegacyBoundary? = nil
+    ) -> MainWorkflowAcceptanceEvidence {
         let observedStages = orderedObservedStages(stages)
         let observedSet = Set(observedStages)
         let missingStages = WorkspaceMainStageID.allCases.filter { !observedSet.contains($0) }
@@ -48,6 +83,9 @@ struct MainWorkflowAcceptanceEvidence: Hashable {
         let stagesMissingEvidence = orderedObservedStages(
             stages.filter { $0.answer.routedEvidenceLinks.isEmpty }
         )
+        let coveredWorktreeStates = orderedWorktreeStates(worktreeRows ?? [])
+        let coveredWorktreeSet = Set(coveredWorktreeStates)
+        let missingWorktreeStates = ServiceWorktreeRowStateKind.allCases.filter { !coveredWorktreeSet.contains($0) }
 
         let coverageCheck = MainWorkflowAcceptanceCheck(
             id: .stageCoverage,
@@ -70,11 +108,27 @@ struct MainWorkflowAcceptanceEvidence: Hashable {
             evidence: stages.flatMap(\.evidence)
         )
 
-        let checks = [coverageCheck, actionEvidenceCheck]
+        let demandCheck = demandGateCheck(demandReadiness)
+        let taskSourceCheck = taskSourceCheck(developmentTasks)
+        let worktreeCheck = worktreeStateCheck(
+            covered: coveredWorktreeStates,
+            missing: missingWorktreeStates
+        )
+        let deliveryArchiveCheck = deliveryArchiveCheck(deliveryGate: deliveryGate, archiveGate: archiveGate)
+        let legacyCheck = legacyBoundaryCheck(legacyBoundary)
+        let checks = [
+            coverageCheck,
+            actionEvidenceCheck,
+            demandCheck,
+            taskSourceCheck,
+            worktreeCheck,
+            deliveryArchiveCheck,
+            legacyCheck
+        ]
         let blockers = checks.filter { $0.status == .blocked }
         let status: WorkflowPathStatus = blockers.isEmpty ? .ready : .blocked
         let reason = blockers.isEmpty
-            ? "M1 主链路阶段快照已覆盖全部阶段，且每个阶段都有主动作和证据。"
+            ? "M1 主链路验收证据已覆盖阶段、动作、需求门禁、任务源、worktree 状态、交付归档门禁和 legacy 边界。"
             : blockers.map(\.detail).joined(separator: " ")
 
         return MainWorkflowAcceptanceEvidence(
@@ -84,7 +138,9 @@ struct MainWorkflowAcceptanceEvidence: Hashable {
             observedStages: observedStages,
             missingStages: missingStages,
             stagesMissingPrimaryAction: stagesMissingPrimaryAction,
-            stagesMissingEvidence: stagesMissingEvidence
+            stagesMissingEvidence: stagesMissingEvidence,
+            coveredWorktreeStates: coveredWorktreeStates,
+            missingWorktreeStates: missingWorktreeStates
         )
     }
 
@@ -99,6 +155,134 @@ struct MainWorkflowAcceptanceEvidence: Hashable {
 
     private static func stageLabels(_ stages: [WorkspaceMainStageID]) -> String {
         stages.map(\.shortLabel).joined(separator: ", ")
+    }
+
+    private static func orderedWorktreeStates(_ rows: [ServiceWorktreeRowState]) -> [ServiceWorktreeRowStateKind] {
+        let covered = Set(rows.map(\.kind))
+        return ServiceWorktreeRowStateKind.allCases.filter { covered.contains($0) }
+    }
+
+    private static func worktreeStateLabels(_ states: [ServiceWorktreeRowStateKind]) -> String {
+        states.map(\.rawValue).joined(separator: ", ")
+    }
+
+    private static func demandGateCheck(
+        _ readiness: DemandIntakeReadinessEvidence?
+    ) -> MainWorkflowAcceptanceCheck {
+        guard let readiness else {
+            return missingEvidenceCheck(.demandBlocksDevelopment, detail: "缺少需求预检 evidence，无法证明开发会被 P0 和范围冻结门禁阻塞。")
+        }
+
+        let ready = readiness.requirementHasContent
+            && readiness.unresolvedP0Count == 0
+            && readiness.scopeFrozen
+            && readiness.requirementTasksReady
+        return MainWorkflowAcceptanceCheck(
+            id: .demandBlocksDevelopment,
+            label: MainWorkflowAcceptanceRequirement.demandBlocksDevelopment.label,
+            status: ready ? .ready : .blocked,
+            detail: ready
+                ? "需求内容、P0、范围冻结和需求任务都已作为开发前置门禁。"
+                : "需求门禁未满足：requirement=\(readiness.requirementHasContent)，P0=\(readiness.unresolvedP0Count)，scopeFrozen=\(readiness.scopeFrozen)，tasks=\(readiness.requirementTasksReady)。",
+            evidence: readiness.evidence
+        )
+    }
+
+    private static func taskSourceCheck(
+        _ developmentTasks: DevelopmentTaskEvidence?
+    ) -> MainWorkflowAcceptanceCheck {
+        guard let developmentTasks else {
+            return missingEvidenceCheck(.executionTaskSource, detail: "缺少开发任务 evidence，无法证明 root tasks.md 是唯一执行队列。")
+        }
+
+        let executionSources = developmentTasks.sources.filter(\.participatesInExecutionQueue)
+        let intakeSources = developmentTasks.sources.filter { !$0.participatesInExecutionQueue }
+        let ready = executionSources.count == 1
+            && executionSources.first?.role == .executionQueue
+            && executionSources.first?.path.hasSuffix("/tasks.md") == true
+            && intakeSources.allSatisfy { $0.role == .intakeEvidence }
+
+        return MainWorkflowAcceptanceCheck(
+            id: .executionTaskSource,
+            label: MainWorkflowAcceptanceRequirement.executionTaskSource.label,
+            status: ready ? .ready : .blocked,
+            detail: ready
+                ? "root tasks.md 是唯一执行队列，需求任务只作为 intake evidence。"
+                : "执行任务源不清晰：execution=\(executionSources.map(\.path).joined(separator: ", "))，intake=\(intakeSources.map(\.path).joined(separator: ", "))。",
+            evidence: developmentTasks.sources.map(\.path)
+        )
+    }
+
+    private static func worktreeStateCheck(
+        covered: [ServiceWorktreeRowStateKind],
+        missing: [ServiceWorktreeRowStateKind]
+    ) -> MainWorkflowAcceptanceCheck {
+        MainWorkflowAcceptanceCheck(
+            id: .worktreeStateCoverage,
+            label: MainWorkflowAcceptanceRequirement.worktreeStateCoverage.label,
+            status: missing.isEmpty ? .ready : .blocked,
+            detail: missing.isEmpty
+                ? "Worktree 行状态已覆盖 source repo、worktree、branch、dirty 和 clean 五种状态。"
+                : "Worktree 行状态仍缺：\(worktreeStateLabels(missing))。",
+            evidence: covered.map(\.rawValue)
+        )
+    }
+
+    private static func deliveryArchiveCheck(
+        deliveryGate: DeliveryGateEvidence?,
+        archiveGate: ArchiveGateEvidence?
+    ) -> MainWorkflowAcceptanceCheck {
+        guard let deliveryGate, let archiveGate else {
+            return missingEvidenceCheck(.deliveryArchiveGate, detail: "缺少交付或归档 evidence，无法证明二者共用 SQL、任务、风险和 git 门禁。")
+        }
+
+        let deliveryCheckIDs = Set(deliveryGate.checks.map(\.id))
+        let requiredDeliveryChecks: Set<String> = ["tasks", "risks", "sql", "dirty-services"]
+        let hasRequiredDeliveryChecks = requiredDeliveryChecks.isSubset(of: deliveryCheckIDs)
+        let archiveReusesDelivery = archiveGate.checks.contains { $0.id.hasPrefix("delivery-") }
+            || archiveGate.confirmationPlan.contains { $0.id.contains("delivery") }
+        let ready = hasRequiredDeliveryChecks && archiveReusesDelivery
+
+        return MainWorkflowAcceptanceCheck(
+            id: .deliveryArchiveGate,
+            label: MainWorkflowAcceptanceRequirement.deliveryArchiveGate.label,
+            status: ready ? .ready : .blocked,
+            detail: ready
+                ? "交付门禁包含任务、风险、SQL 和 git 状态，归档门禁复用交付证据并走确认计划。"
+                : "交付/归档门禁未证明复用：deliveryChecks=\(deliveryCheckIDs.sorted().joined(separator: ", "))，archivePlan=\(archiveGate.confirmationPlan.map(\.id).joined(separator: ", "))。",
+            evidence: deliveryGate.evidence + archiveGate.evidence
+        )
+    }
+
+    private static func legacyBoundaryCheck(
+        _ boundary: MainWorkflowLegacyBoundary?
+    ) -> MainWorkflowAcceptanceCheck {
+        guard let boundary else {
+            return missingEvidenceCheck(.legacyBoundary, detail: "缺少 legacy 边界 evidence，无法证明新产品流只进入 Native。")
+        }
+
+        return MainWorkflowAcceptanceCheck(
+            id: .legacyBoundary,
+            label: MainWorkflowAcceptanceRequirement.legacyBoundary.label,
+            status: boundary.allowsLegacyProductWorkflow ? .blocked : .ready,
+            detail: boundary.allowsLegacyProductWorkflow
+                ? "Legacy Web/Tauri/Rust/TypeScript 仍允许新增产品工作流。"
+                : "Legacy 只能作为证据或迁移参考，新产品工作流进入 Swift Native。",
+            evidence: boundary.evidence
+        )
+    }
+
+    private static func missingEvidenceCheck(
+        _ requirement: MainWorkflowAcceptanceRequirement,
+        detail: String
+    ) -> MainWorkflowAcceptanceCheck {
+        MainWorkflowAcceptanceCheck(
+            id: requirement,
+            label: requirement.label,
+            status: .blocked,
+            detail: detail,
+            evidence: []
+        )
     }
 
     private static func actionEvidenceDetail(

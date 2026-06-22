@@ -525,8 +525,8 @@ M1 is complete when:
 
 - A real workspace can move through every stage in the Native Mac app. `[started with MainWorkflowAcceptanceEvidence stage coverage]`
 - Every stage has one primary action and one routed evidence source. `[started with WorkspaceStageAnswer and MainWorkflowAcceptanceEvidence action/evidence checks]`
-- Demand intake blocks development until scope and P0 questions are handled.
-- Root `tasks.md` is the only execution task source.
-- Worktree status distinguishes source repo, worktree, branch, dirty, and clean states.
-- Delivery and archive use the same hard SQL and task/risk/git gates, and archive actions are routed through confirmed lifecycle writeback.
-- Legacy React/Tauri/Rust/TypeScript code has no new product workflow features added after this roadmap.
+- Demand intake blocks development until scope and P0 questions are handled. `[started with MainWorkflowAcceptanceEvidence demand gate check]`
+- Root `tasks.md` is the only execution task source. `[started with MainWorkflowAcceptanceEvidence task source check]`
+- Worktree status distinguishes source repo, worktree, branch, dirty, and clean states. `[started with MainWorkflowAcceptanceEvidence worktree state coverage]`
+- Delivery and archive use the same hard SQL and task/risk/git gates, and archive actions are routed through confirmed lifecycle writeback. `[started with MainWorkflowAcceptanceEvidence delivery/archive gate check]`
+- Legacy React/Tauri/Rust/TypeScript code has no new product workflow features added after this roadmap. `[started with MainWorkflowAcceptanceEvidence legacy boundary check]`
