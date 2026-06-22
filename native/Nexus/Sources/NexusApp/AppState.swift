@@ -2603,15 +2603,7 @@ final class AppState: ObservableObject {
         }
 
         do {
-            var content = (try? String(contentsOfFile: plan.deliveryPath, encoding: .utf8)) ?? "# 交付记录\n"
-            if !content.hasSuffix("\n") {
-                content.append("\n")
-            }
-            content.append(plan.appendedMarkdown)
-            if !content.hasSuffix("\n") {
-                content.append("\n")
-            }
-            try content.write(toFile: plan.deliveryPath, atomically: true, encoding: .utf8)
+            try appendMarkdownBlock(plan.appendedMarkdown, toFile: plan.deliveryPath, fallbackHeader: "# 交付记录\n")
             pendingDeliveryRecordWrite = nil
             await recordWorkspaceAction(
                 action: "delivery_record.snapshot_appended",
@@ -2684,15 +2676,7 @@ final class AppState: ObservableObject {
         }
 
         do {
-            var content = (try? String(contentsOfFile: plan.deliveryPath, encoding: .utf8)) ?? "# 交付记录\n"
-            if !content.hasSuffix("\n") {
-                content.append("\n")
-            }
-            content.append(plan.appendedMarkdown)
-            if !content.hasSuffix("\n") {
-                content.append("\n")
-            }
-            try content.write(toFile: plan.deliveryPath, atomically: true, encoding: .utf8)
+            try appendMarkdownBlock(plan.appendedMarkdown, toFile: plan.deliveryPath, fallbackHeader: "# 交付记录\n")
             pendingArchiveChecklistWrite = nil
             await recordWorkspaceAction(
                 action: "archive_checklist.snapshot_appended",
@@ -2754,15 +2738,7 @@ final class AppState: ObservableObject {
         }
 
         do {
-            var content = (try? String(contentsOfFile: plan.deliveryPath, encoding: .utf8)) ?? "# 交付记录\n"
-            if !content.hasSuffix("\n") {
-                content.append("\n")
-            }
-            content.append(plan.appendedMarkdown)
-            if !content.hasSuffix("\n") {
-                content.append("\n")
-            }
-            try content.write(toFile: plan.deliveryPath, atomically: true, encoding: .utf8)
+            try appendMarkdownBlock(plan.appendedMarkdown, toFile: plan.deliveryPath, fallbackHeader: "# 交付记录\n")
             pendingValidationPrWrite = nil
             await recordWorkspaceAction(
                 action: "validation_pr.snapshot_appended",
@@ -2830,15 +2806,7 @@ final class AppState: ObservableObject {
         }
 
         do {
-            var content = (try? String(contentsOfFile: plan.scopePath, encoding: .utf8)) ?? ""
-            if !content.hasSuffix("\n") {
-                content.append("\n")
-            }
-            content.append(plan.appendedMarkdown)
-            if !content.hasSuffix("\n") {
-                content.append("\n")
-            }
-            try content.write(toFile: plan.scopePath, atomically: true, encoding: .utf8)
+            try appendMarkdownBlock(plan.appendedMarkdown, toFile: plan.scopePath, fallbackHeader: "")
             pendingScopeFreezeWrite = nil
             await recordWorkspaceAction(
                 action: "scope.freeze_confirmed",
@@ -3550,6 +3518,22 @@ final class AppState: ObservableObject {
             documentLabel: documentLabel,
             systemImage: systemImage
         )
+    }
+
+    private func appendMarkdownBlock(
+        _ block: String,
+        toFile path: String,
+        fallbackHeader: String
+    ) throws {
+        var content = (try? String(contentsOfFile: path, encoding: .utf8)) ?? fallbackHeader
+        if !content.isEmpty, !content.hasSuffix("\n") {
+            content.append("\n")
+        }
+        content.append(block)
+        if !content.hasSuffix("\n") {
+            content.append("\n")
+        }
+        try content.write(toFile: path, atomically: true, encoding: .utf8)
     }
 
     private func markWorkspaceLinkFeedback(
