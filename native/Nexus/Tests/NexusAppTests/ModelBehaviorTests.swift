@@ -1002,10 +1002,13 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertEqual(preview.status, .blocked)
         XCTAssertTrue(preview.bridgeIsLegacyDependency)
+        XCTAssertEqual(preview.migrationSummary, "0/7 Native domains")
         XCTAssertEqual(preview.domains.map(\.status), Array(repeating: .blocked, count: NativeLocalCoreDomain.allCases.count))
         XCTAssertEqual(partiallyNative.status, .blocked)
+        XCTAssertEqual(partiallyNative.migrationSummary, "2/7 Native domains")
         XCTAssertEqual(partiallyNative.domains.filter { $0.status == .ready }.map(\.domain), [.workspaceScanning, .documentInventory])
         XCTAssertEqual(fullyNative.status, .ready)
+        XCTAssertEqual(fullyNative.migrationSummary, "7/7 Native domains")
         XCTAssertFalse(fullyNative.bridgeIsLegacyDependency)
         XCTAssertTrue(fullyNative.reason.contains("M2 Native Local Core"))
     }

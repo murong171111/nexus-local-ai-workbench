@@ -76,6 +76,11 @@ struct NativeLocalCoreEvidence: Hashable {
             || normalized.contains("ffi")
     }
 
+    var migrationSummary: String {
+        let readyCount = domains.filter { $0.status == .ready }.count
+        return "\(readyCount)/\(domains.count) Native domains"
+    }
+
     static func resolve(
         bridgeMode: String,
         nativeDomains: Set<NativeLocalCoreDomain> = []
