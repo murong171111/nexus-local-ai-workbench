@@ -1833,6 +1833,8 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(evidence.checks.first { $0.requirement == .legacyDeletion }?.detail.contains("M2 Native Local Core is not ready") == true)
         XCTAssertTrue(evidence.checks.first { $0.requirement == .legacyDeletion }?.detail.contains("No real archived workspace lifecycle proof") == true)
         XCTAssertTrue(evidence.checks.first { $0.requirement == .legacyDeletion }?.evidence.contains("\(root)/src-tauri") == true)
+        XCTAssertTrue(evidence.checks.first { $0.requirement == .releaseReadiness }?.detail.contains("Release workflow does not build a Native app artifact") == true)
+        XCTAssertTrue(evidence.checks.first { $0.requirement == .releaseReadiness }?.detail.contains("Release docs or workflows still point to Tauri artifacts") == true)
         XCTAssertTrue(evidence.reason.contains("M3"))
     }
 
@@ -1856,7 +1858,18 @@ final class ModelBehaviorTests: XCTestCase {
             fileExists: { files.contains($0) },
             directoryExists: { directories.contains($0) },
             fileContains: { path, needle in
-                path.hasSuffix("ci.yml") && needle == "swift test"
+                switch needle {
+                case "swift test":
+                    return path.hasSuffix("ci.yml")
+                case "native/Nexus", "NexusNative", "Swift":
+                    return path.hasSuffix("release.yml")
+                        || path.hasSuffix("distribution.md")
+                        || path.hasSuffix("release-process.md")
+                case "native:build":
+                    return path.hasSuffix("release.yml")
+                default:
+                    return false
+                }
             }
         )
 

@@ -190,15 +190,77 @@ struct NativeDistributionReadinessEvidence: Hashable {
         let releaseWorkflow = "\(repositoryRoot)/.github/workflows/release.yml"
         let hasDocs = fileExists(distributionDoc) && fileExists(releaseDoc)
         let ciMentionsSwift = fileContains(ciWorkflow, "swift test")
-        let releaseStillTauri = fileContains(releaseWorkflow, "tauri") || fileContains(releaseDoc, "Tauri")
-        let ready = m1Ready && m2Ready && hasDocs && ciMentionsSwift && !releaseStillTauri
+        let releaseMentionsNative = fileContains(releaseWorkflow, "native/Nexus")
+            || fileContains(releaseWorkflow, "native:build")
+            || fileContains(releaseWorkflow, "NexusNative")
+        let distributionMentionsNative = fileContains(distributionDoc, "native/Nexus")
+            || fileContains(distributionDoc, "NexusNative")
+            || fileContains(distributionDoc, "Swift")
+        let releaseDocMentionsNative = fileContains(releaseDoc, "native/Nexus")
+            || fileContains(releaseDoc, "NexusNative")
+            || fileContains(releaseDoc, "Swift")
+        let releaseStillTauri = fileContains(releaseWorkflow, "tauri")
+            || fileContains(releaseWorkflow, "src-tauri")
+            || fileContains(releaseDoc, "Tauri")
+            || fileContains(releaseDoc, "src-tauri")
+            || fileContains(distributionDoc, "Tauri")
+            || fileContains(distributionDoc, "src-tauri")
+        let blockers = releaseReadinessBlockers(
+            m1Ready: m1Ready,
+            m2Ready: m2Ready,
+            hasDocs: hasDocs,
+            ciMentionsSwift: ciMentionsSwift,
+            releaseMentionsNative: releaseMentionsNative,
+            distributionMentionsNative: distributionMentionsNative,
+            releaseDocMentionsNative: releaseDocMentionsNative,
+            releaseStillTauri: releaseStillTauri
+        )
+        let ready = blockers.isEmpty
         return NativeDistributionCheck(
             requirement: .releaseReadiness,
             status: ready ? .ready : .blocked,
             detail: ready
                 ? "Release docs and CI point at the Swift-native app and WidgetKit path."
-                : "Release readiness is blocked until M1/M2 are stable and release docs/workflows stop pointing users to Tauri artifacts.",
-            evidence: [distributionDoc, releaseDoc, ciWorkflow, releaseWorkflow]
+                : "Release readiness blockers: \(blockers.joined(separator: " "))",
+            evidence: [distributionDoc, releaseDoc, ciWorkflow, releaseWorkflow] + blockers
         )
+    }
+
+    private static func releaseReadinessBlockers(
+        m1Ready: Bool,
+        m2Ready: Bool,
+        hasDocs: Bool,
+        ciMentionsSwift: Bool,
+        releaseMentionsNative: Bool,
+        distributionMentionsNative: Bool,
+        releaseDocMentionsNative: Bool,
+        releaseStillTauri: Bool
+    ) -> [String] {
+        var blockers: [String] = []
+        if !m1Ready {
+            blockers.append("M1 main workflow acceptance is not ready.")
+        }
+        if !m2Ready {
+            blockers.append("M2 Native Local Core is not ready.")
+        }
+        if !hasDocs {
+            blockers.append("Distribution and release docs are missing.")
+        }
+        if !ciMentionsSwift {
+            blockers.append("CI does not run Swift Native tests.")
+        }
+        if !releaseMentionsNative {
+            blockers.append("Release workflow does not build a Native app artifact.")
+        }
+        if !distributionMentionsNative {
+            blockers.append("Distribution docs do not describe the Native app path.")
+        }
+        if !releaseDocMentionsNative {
+            blockers.append("Release process docs do not describe the Native app path.")
+        }
+        if releaseStillTauri {
+            blockers.append("Release docs or workflows still point to Tauri artifacts.")
+        }
+        return blockers
     }
 }

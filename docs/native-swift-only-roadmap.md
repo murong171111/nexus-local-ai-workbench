@@ -293,7 +293,7 @@ Until then, legacy code is frozen reference, not the product direction.
 - Native app becomes the install target. `[started with NativeDistributionReadinessEvidence install target check surfaced in Settings]`
 - WidgetKit is attached to the native app target. `[started with NativeDistributionReadinessEvidence widget target check surfaced in Settings and main-stage snapshot fields]`
 - Tauri is removed after deletion conditions are met. `[started with NativeDistributionReadinessEvidence legacy deletion check surfaced in Settings; AppState now derives real lifecycle proof from an archived workspace with delivery evidence, ready services, no active tasks, and no open risks]`
-- Signing, notarization, updater, and release notes can be addressed after M1/M2 are stable. `[started with NativeDistributionReadinessEvidence release readiness check surfaced in Settings]`
+- Signing, notarization, updater, and release notes can be addressed after M1/M2 are stable. `[started with NativeDistributionReadinessEvidence release readiness check surfaced in Settings; release readiness now separates Swift CI, Native artifact workflow, Native docs, and remaining Tauri artifact blockers]`
 
 ## Verification Policy
 
