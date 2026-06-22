@@ -1046,6 +1046,7 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(
             partiallyNative.domains.first { $0.domain == .searchIndex }?.evidence,
             [
+                "native/Nexus/Sources/NexusApp/NativeSearchIndexStore.swift",
                 "native/Nexus/Sources/NexusApp/AppState.swift",
                 "native/Nexus/Sources/NexusApp/Models.swift",
                 "NexusBridge.rebuildSearchIndex / searchIndex"
@@ -1094,6 +1095,45 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(SearchScope.workflow.matches(results[1]), true)
         XCTAssertEqual(SearchScope.workflow.matches(results[2]), false)
         XCTAssertEqual(results[1].stableID, "demo-tasks-/tmp/demo/tasks.md")
+    }
+
+    func testNativeSearchIndexStoreBuildsWorkspaceFallbackResults() {
+        let workspaces = [
+            workspaceForWorkflowSummary(
+                stage: "development",
+                id: "native-search",
+                name: "Native Search Migration",
+                folder: "native-search",
+                branch: "feature/native-search",
+                activities: [],
+                risks: [
+                    RiskAlert(title: "Index bridge", detail: "search index rebuild still depends on bridge")
+                ],
+                tasks: [
+                    WorkspaceTask(
+                        id: "task-search",
+                        title: "Move search fallback to Swift",
+                        status: "doing",
+                        detail: "Native fallback should still find workspace metadata",
+                        priority: "high",
+                        source: "workspace",
+                        sourceEventID: nil,
+                        sourceLine: 8
+                    )
+                ]
+            ),
+            workspaceForWorkflowSummary(
+                stage: "development",
+                id: "other",
+                name: "Other Workspace"
+            )
+        ]
+
+        let results = NativeSearchIndexStore.fallbackResults(matching: "fallback", in: workspaces)
+
+        XCTAssertEqual(results.map(\.workspaceFolder), ["native-search"])
+        XCTAssertEqual(results.first?.documentKey, "workspace")
+        XCTAssertTrue(results.first?.snippet.contains("feature/native-search") == true)
     }
 
     func testNativeCodexSessionStoreWritesCurrentShapeAndReadsLegacyShape() throws {

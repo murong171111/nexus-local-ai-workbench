@@ -199,6 +199,7 @@ private extension NativeLocalCoreDomain {
             ]
         case .searchIndex:
             [
+                "native/Nexus/Sources/NexusApp/NativeSearchIndexStore.swift",
                 "native/Nexus/Sources/NexusApp/AppState.swift",
                 "native/Nexus/Sources/NexusApp/Models.swift"
             ]
