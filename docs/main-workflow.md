@@ -456,7 +456,7 @@ Plan:
 - Keep root `tasks.md` as the only execution task source. `[started with DevelopmentTaskEvidence]`
 - Route the main workflow and Command Center task step to the next active or blocked task locator. `[started]`
 - Keep complete/defer mutations behind the existing confirmation sheets. `[started with TaskStatusMutationPolicy]`
-- Keep `需求/tasks.md` visible as intake evidence, not as an execution queue.
+- Keep `需求/tasks.md` visible as intake evidence, not as an execution queue. `[started with DevelopmentTaskSource]`
 
 ### Git / Worktree Status
 

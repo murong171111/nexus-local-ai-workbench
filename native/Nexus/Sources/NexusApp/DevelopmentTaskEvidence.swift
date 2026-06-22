@@ -10,6 +10,29 @@ struct DevelopmentTaskCheck: Hashable, Identifiable {
     let taskID: String?
 }
 
+enum DevelopmentTaskSourceRole: String, Hashable {
+    case executionQueue
+    case intakeEvidence
+
+    var displayLabel: String {
+        switch self {
+        case .executionQueue:
+            "执行队列 / Execution"
+        case .intakeEvidence:
+            "预检证据 / Intake"
+        }
+    }
+}
+
+struct DevelopmentTaskSource: Hashable, Identifiable {
+    let role: DevelopmentTaskSourceRole
+    let path: String
+    let detail: String
+    let participatesInExecutionQueue: Bool
+
+    var id: DevelopmentTaskSourceRole { role }
+}
+
 enum DevelopmentTaskPlanAction: String, Hashable {
     case resolveBlocker
     case continueTask
@@ -85,6 +108,7 @@ struct DevelopmentTaskEvidence: Hashable {
     let status: WorkflowPathStatus
     let reason: String
     let evidence: [String]
+    let sources: [DevelopmentTaskSource]
     let checks: [DevelopmentTaskCheck]
     let tasksPath: String
     let taskPlan: [DevelopmentTaskPlanItem]
@@ -147,6 +171,7 @@ struct DevelopmentTaskEvidence: Hashable {
 
     static func resolve(workspace: WorkspaceSummary) -> DevelopmentTaskEvidence {
         let tasksPath = workspace.documentLinks["tasks"] ?? "\(workspace.path)/tasks.md"
+        let intakeTasksPath = workspace.documentLinks["demandTasks"] ?? "\(workspace.path)/需求/tasks.md"
         let activeTasks = workspace.tasks
             .filter(\.isActive)
             .sorted(by: taskSort)
@@ -157,6 +182,20 @@ struct DevelopmentTaskEvidence: Hashable {
         let doneCount = workspace.tasks.filter(\.isDone).count
         let nextTask = blockedTasks.first ?? activeTasks.first
         let taskPlan = buildTaskPlan(tasks: workspace.tasks, nextTask: nextTask)
+        let sources = [
+            DevelopmentTaskSource(
+                role: .executionQueue,
+                path: tasksPath,
+                detail: "开发执行任务只能来自 root tasks.md；完成、延期和进行中写回都指向这个文件。",
+                participatesInExecutionQueue: true
+            ),
+            DevelopmentTaskSource(
+                role: .intakeEvidence,
+                path: intakeTasksPath,
+                detail: "需求/tasks.md 保留需求预检拆解结果，只能经确认转入 root tasks.md 后参与开发执行。",
+                participatesInExecutionQueue: false
+            )
+        ]
 
         let checks = [
             DevelopmentTaskCheck(
@@ -217,7 +256,8 @@ struct DevelopmentTaskEvidence: Hashable {
         return DevelopmentTaskEvidence(
             status: status,
             reason: reason,
-            evidence: taskEvidence(nextTask: nextTask),
+            evidence: taskEvidence(sources: sources, nextTask: nextTask),
+            sources: sources,
             checks: checks,
             tasksPath: tasksPath,
             taskPlan: taskPlan,
@@ -227,6 +267,14 @@ struct DevelopmentTaskEvidence: Hashable {
             doneTaskCount: doneCount,
             nextTask: nextTask
         )
+    }
+
+    var executionSources: [DevelopmentTaskSource] {
+        sources.filter(\.participatesInExecutionQueue)
+    }
+
+    var intakeEvidenceSources: [DevelopmentTaskSource] {
+        sources.filter { !$0.participatesInExecutionQueue }
     }
 
     private static func buildTaskPlan(tasks: [WorkspaceTask], nextTask: WorkspaceTask?) -> [DevelopmentTaskPlanItem] {
@@ -287,8 +335,15 @@ struct DevelopmentTaskEvidence: Hashable {
         }
     }
 
-    private static func taskEvidence(nextTask: WorkspaceTask?) -> [String] {
-        var evidence = ["tasks.md", "需求/tasks.md"]
+    private static func taskEvidence(sources: [DevelopmentTaskSource], nextTask: WorkspaceTask?) -> [String] {
+        var evidence = sources.map { source in
+            switch source.role {
+            case .executionQueue:
+                return "tasks.md"
+            case .intakeEvidence:
+                return "需求/tasks.md"
+            }
+        }
         if let nextTask {
             evidence.append(nextTask.sourceLine.map { "tasks.md:L\($0)" } ?? nextTask.title)
         }

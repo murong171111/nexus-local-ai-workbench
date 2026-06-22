@@ -24,6 +24,7 @@ final class ModelBehaviorTests: XCTestCase {
             "struct AgentActionSurface",
             "struct DeliveryGateEvidence",
             "struct DevelopmentTaskEvidence",
+            "struct DevelopmentTaskSource",
             "struct WorktreeSetupEvidence",
             "struct DemandIntakeReadinessEvidence",
             "struct DemandIntakeM1ActionPolicy",
@@ -1883,6 +1884,36 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(stage.id, .development)
         XCTAssertEqual(stage.primaryAction, .task("first-high"))
         XCTAssertTrue(stage.reason.contains("Implement first high priority task"))
+    }
+
+    func testDevelopmentTaskEvidenceKeepsIntakeTasksOutOfExecutionQueue() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "development-source-roles",
+            path: "/tmp/development-source-roles",
+            tasks: [
+                WorkspaceTask(
+                    id: "root-task",
+                    title: "Implement root execution task",
+                    status: "todo",
+                    detail: "Only root tasks.md should execute.",
+                    priority: "high",
+                    source: "workspace",
+                    sourceEventID: nil,
+                    sourceLine: 7
+                )
+            ]
+        )
+
+        let evidence = DevelopmentTaskEvidence.resolve(workspace: workspace)
+
+        XCTAssertEqual(evidence.sources.map(\.role), [.executionQueue, .intakeEvidence])
+        XCTAssertEqual(evidence.executionSources.map(\.path), ["/tmp/development-source-roles/tasks.md"])
+        XCTAssertEqual(evidence.intakeEvidenceSources.map(\.path), ["/tmp/development-source-roles/需求/tasks.md"])
+        XCTAssertTrue(evidence.executionSources.allSatisfy(\.participatesInExecutionQueue))
+        XCTAssertTrue(evidence.intakeEvidenceSources.allSatisfy { !$0.participatesInExecutionQueue })
+        XCTAssertTrue(evidence.evidence.contains("需求/tasks.md"))
+        XCTAssertEqual(evidence.taskPlan.map(\.taskID), ["root-task"])
     }
 
     func testDevelopmentTaskEvidenceBlocksOnBlockedTasks() {
