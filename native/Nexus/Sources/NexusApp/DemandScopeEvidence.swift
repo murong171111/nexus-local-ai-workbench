@@ -502,3 +502,151 @@ struct ScopeFreezeEvidence: Hashable {
         return placeholders.contains { lowercased.contains($0) }
     }
 }
+
+struct ScopeFreezeWritePlanItem: Identifiable, Hashable {
+    let id: String
+    let label: String
+    let detail: String
+    let status: WorkflowPathStatus
+    let systemImage: String
+}
+
+struct ScopeFreezeWritePlan: Identifiable, Hashable {
+    let id: String
+    let workspaceID: WorkspaceSummary.ID
+    let workspaceName: String
+    let scopePath: String
+    let status: WorkflowPathStatus
+    let summary: String
+    let items: [ScopeFreezeWritePlanItem]
+    let appendedMarkdown: String
+
+    var canWrite: Bool {
+        status == .next && !appendedMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    static func resolve(workspace: WorkspaceSummary, evidence: ScopeFreezeEvidence) -> ScopeFreezeWritePlan {
+        let id = "\(workspace.id)-scope-freeze"
+
+        if evidence.scopeFrozen {
+            return ScopeFreezeWritePlan(
+                id: id,
+                workspaceID: workspace.id,
+                workspaceName: workspace.name,
+                scopePath: evidence.scopePath,
+                status: .ready,
+                summary: "scope.md 已包含冻结标记，无需重复写入。",
+                items: [
+                    ScopeFreezeWritePlanItem(
+                        id: "already-frozen",
+                        label: "冻结标记 / Freeze",
+                        detail: "已检测到范围已冻结，可以继续服务和分支确认。",
+                        status: .ready,
+                        systemImage: "checkmark.seal"
+                    )
+                ],
+                appendedMarkdown: ""
+            )
+        }
+
+        let blockers = buildBlockers(from: evidence)
+        if !blockers.isEmpty {
+            return ScopeFreezeWritePlan(
+                id: id,
+                workspaceID: workspace.id,
+                workspaceName: workspace.name,
+                scopePath: evidence.scopePath,
+                status: .blocked,
+                summary: "范围冻结前仍有 \(blockers.count) 个前置项需要处理，Nexus 不会替用户补造范围结论。",
+                items: blockers,
+                appendedMarkdown: ""
+            )
+        }
+
+        let markdown = freezeMarkdown(workspace: workspace)
+        return ScopeFreezeWritePlan(
+            id: id,
+            workspaceID: workspace.id,
+            workspaceName: workspace.name,
+            scopePath: evidence.scopePath,
+            status: .next,
+            summary: "范围内容、P0 和变更审计已满足冻结条件；确认后只会向 scope.md 追加冻结确认块。",
+            items: [
+                ScopeFreezeWritePlanItem(
+                    id: "append-freeze-marker",
+                    label: "追加冻结块 / Append",
+                    detail: "写入勾选的范围冻结标记、确认时间和后续变更规则，不改写已有范围内容。",
+                    status: .next,
+                    systemImage: "square.and.pencil"
+                )
+            ],
+            appendedMarkdown: markdown
+        )
+    }
+
+    private static func buildBlockers(from evidence: ScopeFreezeEvidence) -> [ScopeFreezeWritePlanItem] {
+        var blockers: [ScopeFreezeWritePlanItem] = []
+
+        if !evidence.hasInScope {
+            blockers.append(
+                ScopeFreezeWritePlanItem(
+                    id: "missing-in-scope",
+                    label: "本次实现 / In scope",
+                    detail: "先在 scope.md 写清本次确认实现的范围，再冻结。",
+                    status: .blocked,
+                    systemImage: "checklist"
+                )
+            )
+        }
+
+        if !evidence.hasOutOfScope {
+            blockers.append(
+                ScopeFreezeWritePlanItem(
+                    id: "missing-out-of-scope",
+                    label: "暂不实现 / Out",
+                    detail: "先在 scope.md 写清暂不实现或排除范围，避免开发时扩散。",
+                    status: .blocked,
+                    systemImage: "minus.circle"
+                )
+            )
+        }
+
+        if evidence.unresolvedP0Count > 0 {
+            blockers.append(
+                ScopeFreezeWritePlanItem(
+                    id: "pending-p0",
+                    label: "待确认 P0 / Pending P0",
+                    detail: "仍有 \(evidence.unresolvedP0Count) 个 P0 范围项未解决或未显式延期。",
+                    status: .blocked,
+                    systemImage: "exclamationmark.triangle"
+                )
+            )
+        }
+
+        if !evidence.scopeChangeAudited {
+            blockers.append(
+                ScopeFreezeWritePlanItem(
+                    id: "scope-change-audit",
+                    label: "变更记录 / Change",
+                    detail: "范围变更需要补齐原因和影响说明后才能冻结。",
+                    status: .review,
+                    systemImage: "clock.arrow.circlepath"
+                )
+            )
+        }
+
+        return blockers
+    }
+
+    private static func freezeMarkdown(workspace: WorkspaceSummary) -> String {
+        """
+
+        ## 范围冻结确认 / Scope Freeze Confirmation
+
+        - [x] 范围已冻结：本次开发只按上方 In scope / Out of scope 推进。
+        - 确认来源：Nexus Native confirmed write。
+        - 工作区：\(workspace.name)
+        - 后续范围变更：必须在本文件追加原因、影响服务/任务/SQL/交付说明后再继续开发。
+        """
+    }
+}

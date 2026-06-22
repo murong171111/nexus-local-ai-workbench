@@ -801,6 +801,85 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(scope.checks.first { $0.id == "scope-change-audit" }?.status, .review)
     }
 
+    func testScopeFreezeWritePlanBlocksBeforeScopeContentIsReady() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "scoping",
+            id: "scope-freeze-write-blocked",
+            path: "/tmp/scope-freeze-write-blocked"
+        )
+        let evidence = ScopeFreezeEvidence(
+            status: .blocked,
+            reason: "missing scope",
+            evidence: ["需求/scope.md"],
+            checks: [],
+            scopePath: "\(workspace.path)/需求/scope.md",
+            hasInScope: false,
+            hasOutOfScope: true,
+            scopeFrozen: false,
+            scopeChangeDeclared: false,
+            scopeChangeAudited: true,
+            unresolvedP0Count: 1
+        )
+        let plan = ScopeFreezeWritePlan.resolve(workspace: workspace, evidence: evidence)
+
+        XCTAssertEqual(plan.status, .blocked)
+        XCTAssertFalse(plan.canWrite)
+        XCTAssertEqual(plan.items.map(\.id), ["missing-in-scope", "pending-p0"])
+        XCTAssertTrue(plan.appendedMarkdown.isEmpty)
+        XCTAssertTrue(plan.summary.contains("不会替用户补造范围结论"))
+    }
+
+    func testScopeFreezeWritePlanAppendsOnlyFreezeConfirmationWhenReady() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-scope-freeze-write-ready-\(UUID().uuidString)")
+        let demandDir = root.appendingPathComponent("需求")
+        try FileManager.default.createDirectory(at: demandDir, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try writeDemandIntakeFixture(
+            demandDir: demandDir,
+            scope: """
+            # 本次开发范围
+
+            ## 已确认并实现
+
+            - 保存订单时记录交易快照。
+
+            ## 暂不实现
+
+            - 不补历史数据。
+
+            ## 仍待确认
+
+            - 无 P0 待确认项。
+
+            ## 进入开发条件
+
+            - [ ] 本文件已冻结本次开发范围。
+            """
+        )
+
+        let workspace = workspaceForWorkflowSummary(
+            stage: "scoping",
+            id: "scope-freeze-write-ready",
+            name: "Scope Freeze Ready",
+            path: root.path
+        )
+        let status = demandIntakeStatus(at: demandDir)
+        let evidence = ScopeFreezeEvidence.resolve(status: status, workspace: workspace)
+        let plan = ScopeFreezeWritePlan.resolve(workspace: workspace, evidence: evidence)
+
+        XCTAssertEqual(evidence.status, .blocked)
+        XCTAssertFalse(evidence.scopeFrozen)
+        XCTAssertEqual(plan.status, .next)
+        XCTAssertTrue(plan.canWrite)
+        XCTAssertEqual(plan.items.map(\.id), ["append-freeze-marker"])
+        XCTAssertTrue(plan.appendedMarkdown.contains("范围已冻结"))
+        XCTAssertTrue(plan.appendedMarkdown.contains("Nexus Native confirmed write"))
+        XCTAssertFalse(plan.appendedMarkdown.contains("保存订单时记录交易快照"))
+    }
+
     func testScopeFreezeEvidenceAllowsAuditedScopeChanges() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-scope-change-audited-\(UUID().uuidString)")

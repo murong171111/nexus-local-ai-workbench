@@ -186,6 +186,7 @@ final class AppState: ObservableObject {
     @Published var agentEvents: [AgentEvent] = []
     @Published var selectedAgentEvent: AgentEvent?
     @Published var pendingTaskStatusUpdate: TaskStatusUpdate?
+    @Published var pendingScopeFreezeWrite: ScopeFreezeWritePlan?
     @Published var pendingDemandTaskTransfer: DemandTaskTransferPlan?
     @Published var pendingLifecycleStatusUpdate: LifecycleStatusUpdate?
     @Published var lastCreatedWorkspace: CreateWorkspaceResponse?
@@ -2579,6 +2580,74 @@ final class AppState: ObservableObject {
             workspace: workspace,
             status: demandIntakeDisplayStatus(for: workspace)
         )
+    }
+
+    func scopeFreezeWritePlan(for workspace: WorkspaceSummary) -> ScopeFreezeWritePlan {
+        ScopeFreezeWritePlan.resolve(
+            workspace: workspace,
+            evidence: scopeFreezeEvidence(for: workspace)
+        )
+    }
+
+    func requestScopeFreezeWrite(in workspace: WorkspaceSummary) {
+        pendingScopeFreezeWrite = scopeFreezeWritePlan(for: workspace)
+        lastError = nil
+    }
+
+    func confirmPendingScopeFreezeWrite(confirmed: Bool) async {
+        guard let plan = pendingScopeFreezeWrite else {
+            return
+        }
+        guard confirmed else {
+            lastError = "需要确认后才会写入 scope.md。"
+            return
+        }
+        guard plan.canWrite else {
+            lastError = plan.summary
+            return
+        }
+
+        isInitializingDemandIntake = true
+        lastError = nil
+        defer {
+            isInitializingDemandIntake = false
+        }
+
+        do {
+            var content = (try? String(contentsOfFile: plan.scopePath, encoding: .utf8)) ?? ""
+            if !content.hasSuffix("\n") {
+                content.append("\n")
+            }
+            content.append(plan.appendedMarkdown)
+            if !content.hasSuffix("\n") {
+                content.append("\n")
+            }
+            try content.write(toFile: plan.scopePath, atomically: true, encoding: .utf8)
+            pendingScopeFreezeWrite = nil
+            await recordWorkspaceAction(
+                action: "scope.freeze_confirmed",
+                target: plan.scopePath,
+                summary: "Appended scope freeze confirmation to scope.md",
+                metadata: [
+                    "scopePath": plan.scopePath,
+                    "status": plan.status.rawValue
+                ],
+                workspaceOverride: workspaces.first { $0.id == plan.workspaceID }
+            )
+            await refreshFromBridge()
+            focusWorkspace(id: plan.workspaceID)
+            markLocalWriteFeedback(
+                title: "范围已冻结 / Scope frozen",
+                detail: "已向 需求/scope.md 追加冻结确认；后续范围变更需要记录原因和影响。",
+                workspaceID: plan.workspaceID,
+                workspaceName: plan.workspaceName,
+                documentPath: plan.scopePath,
+                documentLabel: "打开 scope.md",
+                systemImage: "scope"
+            )
+        } catch {
+            lastError = error.localizedDescription
+        }
     }
 
     func requestDemandTaskTransfer(in workspace: WorkspaceSummary) {

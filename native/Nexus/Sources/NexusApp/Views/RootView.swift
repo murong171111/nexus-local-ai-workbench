@@ -102,6 +102,10 @@ struct RootView: View {
             TaskStatusUpdateSheet(update: update)
                 .environmentObject(appState)
         }
+        .sheet(item: $appState.pendingScopeFreezeWrite) { plan in
+            ScopeFreezeWriteSheet(plan: plan)
+                .environmentObject(appState)
+        }
         .sheet(item: $appState.pendingDemandTaskTransfer) { plan in
             DemandTaskTransferSheet(plan: plan)
                 .environmentObject(appState)
@@ -6694,6 +6698,8 @@ private struct WorkspaceDemandIntakeView: View {
                     Task {
                         await appState.loadDocument(path: scopeFreeze.scopePath)
                     }
+                } freezeAction: {
+                    appState.requestScopeFreezeWrite(in: workspace)
                 }
 
                 DemandTaskTransferPreview(plan: transferPlan) {
@@ -6904,6 +6910,7 @@ private struct DemandIntakeReadinessRow: View {
 private struct ScopeFreezePreview: View {
     let evidence: ScopeFreezeEvidence
     let openAction: () -> Void
+    let freezeAction: () -> Void
 
     private var title: String {
         evidence.ready ? "范围已冻结 / Scope frozen" : "范围待冻结 / Scope freeze"
@@ -6934,6 +6941,15 @@ private struct ScopeFreezePreview: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.mini)
+
+                Button {
+                    freezeAction()
+                } label: {
+                    Label("冻结范围", systemImage: "checkmark.seal")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.mini)
+                .disabled(evidence.scopeFrozen)
             }
 
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 88), spacing: 8)], alignment: .leading, spacing: 8) {
@@ -6961,6 +6977,105 @@ private struct ScopeFreezePreview: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(evidence.status.color.opacity(0.14))
         }
+    }
+}
+
+private struct ScopeFreezeWriteSheet: View {
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmed = false
+    let plan: ScopeFreezeWritePlan
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("冻结范围 / Freeze scope")
+                    .font(.title3.weight(.semibold))
+                Text("Nexus will append a scope-freeze confirmation block to 需求/scope.md after confirmation.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            SectionBlock(title: "写入摘要 / Summary") {
+                VStack(alignment: .leading, spacing: 8) {
+                    TaskStatusMetaRow(label: "Workspace", value: plan.workspaceName)
+                    TaskStatusMetaRow(label: "File", value: plan.scopePath)
+                    TaskStatusMetaRow(label: "Status", value: plan.status.displayLabel)
+                    Text(plan.summary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            SectionBlock(title: plan.canWrite ? "将追加的内容 / New block" : "前置项 / Blockers") {
+                if plan.canWrite {
+                    Text(plan.appendedMarkdown.trimmingCharacters(in: .whitespacesAndNewlines))
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(NexusPalette.badge)
+                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(plan.items) { item in
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: item.systemImage)
+                                    .foregroundStyle(item.status.color)
+                                    .frame(width: 14)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.label)
+                                        .font(.caption.weight(.semibold))
+                                    Text(item.detail)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                            .padding(8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(NexusPalette.badge)
+                            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        }
+                    }
+                }
+            }
+
+            Toggle("确认写入 需求/scope.md / Confirm local write", isOn: $confirmed)
+                .disabled(!plan.canWrite)
+
+            HStack {
+                Button("Cancel") {
+                    appState.pendingScopeFreezeWrite = nil
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Spacer()
+
+                Button(appState.isInitializingDemandIntake ? "Writing" : "Freeze") {
+                    Task {
+                        await appState.confirmPendingScopeFreezeWrite(confirmed: confirmed)
+                        if appState.lastError == nil {
+                            dismiss()
+                        }
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!confirmed || !plan.canWrite || appState.isInitializingDemandIntake)
+            }
+
+            if let error = appState.lastError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(NexusPalette.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(22)
+        .frame(width: 560)
     }
 }
 
