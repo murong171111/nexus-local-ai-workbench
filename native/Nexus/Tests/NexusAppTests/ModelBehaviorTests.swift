@@ -30,6 +30,7 @@ final class ModelBehaviorTests: XCTestCase {
             "struct WorkspaceMainStageEvidenceLink",
             "struct WorkspaceListStageBadge",
             "struct WorkspaceListSummary",
+            "struct WorkspaceDetailNavigationItem",
             "func mainStage("
         ]
 
@@ -56,7 +57,8 @@ final class ModelBehaviorTests: XCTestCase {
             "TaskStatusWritebackModels.swift",
             "WorkspaceMainStageEvidence.swift",
             "WorkspaceListStageBadges.swift",
-            "WorkspaceListSummary.swift"
+            "WorkspaceListSummary.swift",
+            "WorkspaceDetailNavigation.swift"
         ]
 
         for fileName in ownedWorkflowFiles {
@@ -586,6 +588,56 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(summary.missingWorktreeCount, 1)
         XCTAssertEqual(summary.dirtyServiceCount, 1)
         XCTAssertTrue(summary.archivedExclusionLabel.contains("活跃统计已排除"))
+    }
+
+    func testWorkspaceDetailNavigationMapOnlyRoutesToSections() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "detail-navigation",
+            name: "Detail Navigation",
+            tasks: [
+                WorkspaceTask(
+                    id: "blocked-task",
+                    title: "Fix blocked task",
+                    status: "blocked",
+                    detail: "Waiting on dependency",
+                    priority: "high",
+                    source: "workspace",
+                    sourceEventID: nil,
+                    sourceLine: 42
+                )
+            ]
+        )
+        let mainStage = WorkspaceMainStage(
+            id: .development,
+            status: .blocked,
+            title: "Development",
+            reason: "Blocked task",
+            primaryActionLabel: "查看任务",
+            primaryActionSystemImage: "checklist",
+            primaryAction: .task("blocked-task"),
+            evidence: ["tasks.md"],
+            nextStageAllowed: false
+        )
+        let demandStatus = DemandIntakeStatus(
+            directoryPath: "\(workspace.path)/需求",
+            exists: true,
+            ready: false,
+            missingCount: 1,
+            files: []
+        )
+
+        let navigationMap = WorkspaceDetailNavigationMap(
+            workspace: workspace,
+            mainStage: mainStage,
+            demandStatus: demandStatus
+        )
+
+        XCTAssertEqual(navigationMap.items.map(\.section), WorkspaceDetailSection.allCases)
+        XCTAssertTrue(navigationMap.items.allSatisfy(\.isNavigationOnly))
+        XCTAssertEqual(navigationMap.items.first { $0.section == .command }?.detail, WorkspaceMainStageID.development.shortLabel)
+        XCTAssertEqual(navigationMap.items.first { $0.section == .demand }?.detail, "缺 1")
+        XCTAssertEqual(navigationMap.items.first { $0.section == .workflow }?.detail, "1 阻塞")
     }
 
     func testMainStageKeepsFreshScopingWorkspaceAtCreatedBeforeDemandEvidence() {

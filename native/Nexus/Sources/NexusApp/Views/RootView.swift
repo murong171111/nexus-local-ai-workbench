@@ -5298,77 +5298,10 @@ private struct WorkspaceActiveDocumentBanner: View {
     }
 }
 
-private enum WorkspaceDetailSection: String, CaseIterable, Identifiable {
-    case overview
-    case command
-    case demand
-    case workflow
-    case services
-    case risk
-    case documents
-    case activity
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .overview:
-            "概览 / Overview"
-        case .command:
-            "工作台 / Command"
-        case .demand:
-            "需求 / Demand"
-        case .workflow:
-            "任务交付 / Workflow"
-        case .services:
-            "服务 / Services"
-        case .risk:
-            "风险 / Risk"
-        case .documents:
-            "文档 / Docs"
-        case .activity:
-            "活动 / Activity"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .overview:
-            "rectangle.grid.2x2"
-        case .command:
-            "point.3.connected.trianglepath.dotted"
-        case .demand:
-            "text.badge.checkmark"
-        case .workflow:
-            "checklist"
-        case .services:
-            "square.stack.3d.up"
-        case .risk:
-            "exclamationmark.triangle"
-        case .documents:
-            "doc.text"
-        case .activity:
-            "clock"
-        }
-    }
-}
-
 private struct WorkspaceDetailMapView: View {
     @EnvironmentObject private var appState: AppState
     let workspace: WorkspaceSummary
     let action: (WorkspaceDetailSection) -> Void
-
-    private var openTaskCount: Int {
-        workspace.tasks.filter(\.isActive).count
-    }
-
-    private var blockedTaskCount: Int {
-        workspace.tasks.filter { $0.isActive && $0.isBlocked }.count
-    }
-
-    private var missingWorktreeCount: Int {
-        workspace.services.filter { !$0.worktreeExists }.count
-    }
 
     private var mainStage: WorkspaceMainStage {
         workspace.mainStage(
@@ -5384,33 +5317,41 @@ private struct WorkspaceDetailMapView: View {
         )
     }
 
+    private var navigationMap: WorkspaceDetailNavigationMap {
+        WorkspaceDetailNavigationMap(
+            workspace: workspace,
+            mainStage: mainStage,
+            demandStatus: demandStatus
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 8) {
                 Label("详情导航 / Detail map", systemImage: "map")
                     .font(.caption.weight(.semibold))
                 Spacer()
-                Text("\(WorkspaceDetailSection.allCases.count) 区块")
+                Text("\(navigationMap.items.count) 区块")
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundStyle(.secondary)
             }
 
             LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
-                ForEach(WorkspaceDetailSection.allCases) { section in
+                ForEach(navigationMap.items) { item in
                     Button {
-                        action(section)
+                        runNavigationAction(item.action)
                     } label: {
                         HStack(alignment: .top, spacing: 8) {
-                            Image(systemName: section.systemImage)
+                            Image(systemName: item.systemImage)
                                 .font(.caption)
-                                .foregroundStyle(tone(for: section))
+                                .foregroundStyle(item.tone.color)
                                 .frame(width: 15)
 
                             VStack(alignment: .leading, spacing: 3) {
-                                Text(section.title)
+                                Text(item.title)
                                     .font(.caption.weight(.semibold))
                                     .lineLimit(1)
-                                Text(detail(for: section))
+                                Text(item.detail)
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
@@ -5422,11 +5363,11 @@ private struct WorkspaceDetailMapView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                         .overlay {
                             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .stroke(tone(for: section).opacity(0.14))
+                                .stroke(item.tone.color.opacity(0.14))
                         }
                     }
                     .buttonStyle(.plain)
-                    .help(section.title)
+                    .help(item.title)
                 }
             }
         }
@@ -5439,89 +5380,32 @@ private struct WorkspaceDetailMapView: View {
         [GridItem(.adaptive(minimum: 118), spacing: 8, alignment: .leading)]
     }
 
-    private func detail(for section: WorkspaceDetailSection) -> String {
-        switch section {
-        case .overview:
-            workspace.lifecycle.label
-        case .command:
-            primaryPathDetail
-        case .demand:
-            demandDetail
-        case .workflow:
-            blockedTaskCount > 0 ? "\(blockedTaskCount) 阻塞" : "\(openTaskCount) 开放"
-        case .services:
-            workspace.services.isEmpty ? "待确认" : "\(workspace.services.count) 服务 / 缺 \(missingWorktreeCount)"
-        case .risk:
-            workspace.risks.isEmpty ? "暂无风险" : "\(workspace.risks.count) 信号"
-        case .documents:
-            "\(workspace.documentLinks.count) 文档"
-        case .activity:
-            workspace.activities.isEmpty ? "无活动" : "\(workspace.activities.count) 活动"
-        }
-    }
-
-    private func tone(for section: WorkspaceDetailSection) -> Color {
-        switch section {
-        case .overview:
-            return workspace.isArchived ? .secondary : NexusPalette.accent
-        case .command:
-            return commandTone
-        case .demand:
-            return demandTone
-        case .workflow:
-            if blockedTaskCount > 0 {
-                return NexusPalette.danger
-            }
-            return openTaskCount > 0 ? NexusPalette.warning : NexusPalette.success
-        case .services:
-            if workspace.services.isEmpty {
-                return NexusPalette.warning
-            }
-            return missingWorktreeCount > 0 ? NexusPalette.warning : NexusPalette.success
-        case .risk:
-            return workspace.risks.isEmpty ? NexusPalette.success : NexusPalette.warning
-        case .documents:
-            return NexusPalette.accent
-        case .activity:
-            return .secondary
-        }
-    }
-
-    private var commandTone: Color {
-        mainStage.status.color
-    }
-
     private var demandStatus: DemandIntakeStatus {
         appState.demandIntakeDisplayStatus(for: workspace)
     }
 
-    private var demandDetail: String {
-        if demandStatus.ready {
-            return "已就绪"
+    private func runNavigationAction(_ navigationAction: WorkspaceDetailNavigationAction) {
+        switch navigationAction {
+        case .navigate(let section):
+            action(section)
         }
-        return demandStatus.exists ? "缺 \(demandStatus.missingCount)" : "待初始化"
     }
+}
 
-    private var demandTone: Color {
-        if demandStatus.ready {
-            return NexusPalette.success
+private extension WorkspaceDetailNavigationTone {
+    var color: Color {
+        switch self {
+        case .accent:
+            NexusPalette.accent
+        case .success:
+            NexusPalette.success
+        case .warning:
+            NexusPalette.warning
+        case .danger:
+            NexusPalette.danger
+        case .secondary:
+            .secondary
         }
-        return demandStatus.exists ? NexusPalette.warning : NexusPalette.accent
-    }
-
-    private var primaryPathDetail: String {
-        mainStage.id.shortLabel
-    }
-
-    private func hasConfirmedTargetBranch(_ branch: String) -> Bool {
-        let normalized = branch.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !normalized.isEmpty else { return false }
-        return !normalized.contains("待确认")
-            && !normalized.contains("未确认")
-            && !normalized.contains("pending")
-            && !normalized.contains("tbd")
-            && !normalized.contains("todo")
-            && normalized != "-"
     }
 }
 

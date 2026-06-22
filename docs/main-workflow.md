@@ -408,7 +408,7 @@ Plan:
 - Make primary action come from the stage model. `[started]`
 - Make stage evidence route back to the matching document or confirmed lifecycle action. `[started with WorkspaceMainStageEvidenceLink]`
 - Move secondary handoff/local tools below the stage evidence.
-- Keep detail map, but make it navigation only.
+- Keep detail map, but make it navigation only. `[started with WorkspaceDetailNavigationMap]`
 
 ### Documents
 
