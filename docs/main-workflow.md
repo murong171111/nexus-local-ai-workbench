@@ -425,8 +425,8 @@ Plan:
   - gate participation
   - create policy
 - Surface the metadata in Native Documents Hub cards. `[started with WorkspaceDocumentRole]`
-- Keep SQL artifacts as review-only dynamic entries.
-- Add clear distinction between Markdown preview and SQL source review.
+- Keep SQL artifacts as review-only dynamic entries. `[started with WorkspaceDocumentPresentation]`
+- Add clear distinction between Markdown preview and SQL source review. `[started with source-only SQL presentation]`
 
 ### Demand Intake
 

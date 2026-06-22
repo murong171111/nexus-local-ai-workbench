@@ -6735,6 +6735,9 @@ private struct ResolvedWorkspaceDocumentEntry: Identifiable {
     var description: String { entry.description }
     var systemImage: String { entry.systemImage }
     var role: WorkspaceDocumentRole { entry.role }
+    var presentation: WorkspaceDocumentPresentation {
+        WorkspaceDocumentPresentation.resolve(entryKey: entry.key, path: path)
+    }
 }
 
 private struct WorkspaceDocumentGroupHeader: View {
@@ -7553,6 +7556,11 @@ private struct WorkspaceDocumentEntryTile: View {
                 .foregroundStyle(.primary)
                 .lineLimit(2)
 
+            Label(entry.presentation.label, systemImage: entry.presentation.systemImage)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(entry.presentation.reviewOnly ? NexusPalette.warning : .secondary)
+                .lineLimit(1)
+
             VStack(alignment: .leading, spacing: 3) {
                 Label(entry.role.updateTiming, systemImage: "clock.arrow.circlepath")
                     .lineLimit(2)
@@ -7777,8 +7785,16 @@ private struct NativeDocumentPreview: View {
     let closeAction: () -> Void
     @State private var mode: NativeDocumentMode = .preview
 
+    private var presentation: WorkspaceDocumentPresentation {
+        WorkspaceDocumentPresentation.resolve(
+            key: "",
+            path: document.path,
+            isMarkdown: document.isMarkdown
+        )
+    }
+
     private var shouldRenderPreview: Bool {
-        document.isMarkdown && mode == .preview
+        presentation.allowsRenderedPreview && mode == .preview
     }
 
     private var markdownText: AttributedString? {
@@ -7792,7 +7808,7 @@ private struct NativeDocumentPreview: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 10) {
-                Image(systemName: document.isMarkdown ? "doc.richtext" : "doc.plaintext")
+                Image(systemName: presentation.systemImage)
                     .foregroundStyle(NexusPalette.accent)
                     .frame(width: 16)
 
@@ -7808,7 +7824,7 @@ private struct NativeDocumentPreview: View {
 
                 Spacer()
 
-                if document.isMarkdown {
+                if presentation.allowsRenderedPreview {
                     Picker("Document mode", selection: $mode) {
                         ForEach(NativeDocumentMode.allCases) { mode in
                             Text(mode.rawValue).tag(mode)
@@ -7835,6 +7851,25 @@ private struct NativeDocumentPreview: View {
                 .buttonStyle(.borderless)
                 .help("只关闭文档预览，保留工作区详情 / Close document preview only")
             }
+
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: presentation.systemImage)
+                    .foregroundStyle(presentation.reviewOnly ? NexusPalette.warning : NexusPalette.accent)
+                    .frame(width: 15)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(presentation.label)
+                        .font(.caption.weight(.semibold))
+                    Text(presentation.detail)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background((presentation.reviewOnly ? NexusPalette.warning : NexusPalette.accent).opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
 
             if let focusHint {
                 HStack(alignment: .top, spacing: 8) {
@@ -7885,10 +7920,10 @@ private struct NativeDocumentPreview: View {
         .background(NexusPalette.badge)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .onChange(of: document.path) { _ in
-            mode = document.isMarkdown ? .preview : .source
+            mode = presentation.prefersSource ? .source : .preview
         }
         .onAppear {
-            mode = document.isMarkdown ? .preview : .source
+            mode = presentation.prefersSource ? .source : .preview
         }
     }
 }

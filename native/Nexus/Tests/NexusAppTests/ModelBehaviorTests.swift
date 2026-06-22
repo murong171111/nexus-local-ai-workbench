@@ -804,6 +804,45 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(role.createPolicy.contains("不会自动生成 SQL 产物"))
     }
 
+    func testWorkspaceDocumentPresentationSeparatesMarkdownPreviewFromSqlSourceReview() {
+        let markdown = WorkspaceDocumentPresentation.resolve(
+            key: "delivery",
+            path: "/tmp/workspace/交付记录.md",
+            isMarkdown: true
+        )
+        XCTAssertFalse(markdown.prefersSource)
+        XCTAssertTrue(markdown.allowsRenderedPreview)
+        XCTAssertFalse(markdown.reviewOnly)
+
+        let plainSource = WorkspaceDocumentPresentation.resolve(
+            key: "worktreeScript",
+            path: "/tmp/workspace/scripts/worktree-commands.sh",
+            isMarkdown: false
+        )
+        XCTAssertTrue(plainSource.prefersSource)
+        XCTAssertFalse(plainSource.allowsRenderedPreview)
+        XCTAssertFalse(plainSource.reviewOnly)
+
+        let sql = WorkspaceDocumentPresentation.resolve(
+            key: "sql/V5__add_pay_log.sql",
+            path: "/tmp/workspace/sql/V5__add_pay_log.sql",
+            isMarkdown: false
+        )
+        XCTAssertTrue(sql.prefersSource)
+        XCTAssertFalse(sql.allowsRenderedPreview)
+        XCTAssertTrue(sql.reviewOnly)
+        XCTAssertTrue(sql.detail.contains("只做源码复查"))
+
+        let sqlNote = WorkspaceDocumentPresentation.resolve(
+            key: "sql-doc/SQL变更说明.md",
+            path: "/tmp/workspace/sql/SQL变更说明.md",
+            isMarkdown: true
+        )
+        XCTAssertTrue(sqlNote.prefersSource)
+        XCTAssertFalse(sqlNote.allowsRenderedPreview)
+        XCTAssertTrue(sqlNote.reviewOnly)
+    }
+
     func testWorkspaceSqlSummaryPromotesSqlToTopLevelStatus() {
         let missingRollback = workspaceForWorkflowSummary(
             stage: "delivery",

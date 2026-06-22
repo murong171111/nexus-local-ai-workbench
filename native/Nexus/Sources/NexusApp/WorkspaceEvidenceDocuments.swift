@@ -180,3 +180,66 @@ struct WorkspaceDocumentRole: Hashable {
         )
     ]
 }
+
+struct WorkspaceDocumentPresentation: Hashable {
+    let label: String
+    let detail: String
+    let systemImage: String
+    let prefersSource: Bool
+    let allowsRenderedPreview: Bool
+    let reviewOnly: Bool
+
+    static func resolve(
+        key: String,
+        path: String,
+        isMarkdown: Bool
+    ) -> WorkspaceDocumentPresentation {
+        if isSqlEvidence(key: key, path: path) {
+            return WorkspaceDocumentPresentation(
+                label: "SQL 源码复查 / SQL source",
+                detail: "SQL 产物是交付证据，只做源码复查；正式 SQL、回滚 SQL 和说明文档不走普通 Markdown 预览口径。",
+                systemImage: "cylinder.split.1x2",
+                prefersSource: true,
+                allowsRenderedPreview: false,
+                reviewOnly: true
+            )
+        }
+
+        if isMarkdown {
+            return WorkspaceDocumentPresentation(
+                label: "Markdown 预览 / Markdown",
+                detail: "标准 Markdown 工作区文档可在预览和源码之间切换。",
+                systemImage: "doc.richtext",
+                prefersSource: false,
+                allowsRenderedPreview: true,
+                reviewOnly: false
+            )
+        }
+
+        return WorkspaceDocumentPresentation(
+            label: "源码查看 / Source",
+            detail: "非 Markdown 文件按源码查看，避免渲染改变证据内容。",
+            systemImage: "doc.plaintext",
+            prefersSource: true,
+            allowsRenderedPreview: false,
+            reviewOnly: false
+        )
+    }
+
+    static func resolve(entryKey: String, path: String) -> WorkspaceDocumentPresentation {
+        resolve(
+            key: entryKey,
+            path: path,
+            isMarkdown: path.lowercased().hasSuffix(".md")
+        )
+    }
+
+    private static func isSqlEvidence(key: String, path: String) -> Bool {
+        let normalizedKey = key.lowercased()
+        let normalizedPath = path.lowercased()
+        return normalizedKey.hasPrefix("sql/")
+            || normalizedKey.hasPrefix("sql-doc/")
+            || normalizedPath.contains("/sql/")
+            || normalizedPath.hasSuffix(".sql")
+    }
+}
