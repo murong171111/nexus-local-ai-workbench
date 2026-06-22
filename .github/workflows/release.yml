@@ -51,14 +51,17 @@ jobs:
         run: |
           set -euo pipefail
           test -x dist/Nexus.app/Contents/MacOS/Nexus
-          tar -czf "dist/nexus-native-${{ matrix.artifact }}.tar.gz" -C dist Nexus.app
+          native/Nexus/Scripts/package-dmg.sh \
+            --app dist/Nexus.app \
+            --output "dist/nexus-native-${{ matrix.artifact }}.dmg" \
+            --volume-name "Nexus"
 
       - name: Upload Native artifact
         uses: actions/upload-artifact@v4
         with:
           name: nexus-native-${{ matrix.artifact }}
           if-no-files-found: error
-          path: dist/nexus-native-${{ matrix.artifact }}.tar.gz
+          path: dist/nexus-native-${{ matrix.artifact }}.dmg
 
   publish:
     name: Publish GitHub Release
@@ -100,9 +103,9 @@ jobs:
           fi
 
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" release-assets/*.tar.gz --clobber
+            gh release upload "$RELEASE_TAG" release-assets/*.dmg --clobber
           else
-            gh release create "$RELEASE_TAG" release-assets/*.tar.gz \
+            gh release create "$RELEASE_TAG" release-assets/*.dmg \
               --title "Nexus $RELEASE_TAG" \
               --notes-file CHANGELOG.md \
               "${FLAGS[@]}"

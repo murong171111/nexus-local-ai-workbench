@@ -7,7 +7,7 @@ This audit records the remaining legacy product surfaces and the deletion order 
 | Path | Current role | Native replacement evidence | Retirement state |
 | --- | --- | --- | --- |
 | `src` | React/Tauri preview UI and TypeScript model reference. | `native/Nexus/Sources/NexusApp`, `NativeWorkspaceScanner`, `NativeDocumentStore`, `NativeDemandIntakeStore`, `NativeSearchIndexStore`, `NativeWidgetSnapshotStore`. | Frozen reference. Delete after Native app launch, Settings, workspace detail, documents, search, task, workflow, and widget snapshot paths are validated from Swift only. |
-| `src-tauri` | Tauri package, command bridge, app icons, and old DMG path. | `native/Nexus/Scripts/build-app-bundle.sh`, `native/Nexus/Packaging/Info.plist`, `.github/workflows/release.yml`, `docs/distribution.md`. | Frozen packaging reference. Delete after Native app bundle, URL scheme, signed app identity, notarization, DMG packaging, and release workflow are verified. |
+| `src-tauri` | Tauri package, command bridge, app icons, and old DMG path. | `native/Nexus/Scripts/build-app-bundle.sh`, `native/Nexus/Scripts/package-dmg.sh`, `native/Nexus/Packaging/Info.plist`, `.github/workflows/release.yml`, `docs/distribution.md`. | Frozen packaging reference. Delete after Native app bundle, URL scheme, signed app identity, notarization, DMG packaging, and release workflow are verified. |
 | `crates` | Rust Core and FFI bridge reference for migration-era local rules. | M2 Native Local Core evidence: 10/10 Native domains in `AppState.nativeLocalCoreEvidence()`. | Frozen rule reference. Delete after Native local-core behavior has parity evidence and no Swift happy path requires `NEXUS_CORE_LIBRARY`. |
 
 ## Native Deletion Order
@@ -21,4 +21,4 @@ This audit records the remaining legacy product surfaces and the deletion order 
 
 ## Current M3 Decision
 
-Do not delete the directories in one large commit. The Native app bundle and Native WidgetKit target now exist, but public distribution still needs signing, notarization, DMG packaging, and release dry-run evidence. Until those are present, the legacy directories stay as frozen reference material and deletion remains blocked.
+Do not delete the directories in one large commit. The Native app bundle, Native WidgetKit target, and unsigned DMG dry-run path now exist, but public distribution still needs signing, notarization, signed WidgetKit embedding, and release dry-run evidence. Until those are present, the legacy directories stay as frozen reference material and deletion remains blocked.

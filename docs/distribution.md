@@ -18,7 +18,7 @@ swift test --package-path native/Nexus
 swift build --package-path native/Nexus
 ```
 
-The package produces the `NexusNative` executable and verifies the Swift local-core, workflow evidence, Widget snapshot, and distribution readiness models. `native/Nexus/Scripts/build-app-bundle.sh` wraps that executable into a local unsigned `Nexus.app` bundle for installation checks. Signing, notarization, WidgetKit embedding, and DMG packaging remain M3 follow-up work.
+The package produces the `NexusNative` executable and verifies the Swift local-core, workflow evidence, Widget snapshot, and distribution readiness models. `native/Nexus/Scripts/build-app-bundle.sh` wraps that executable into a local unsigned `Nexus.app` bundle for installation checks. `native/Nexus/Scripts/package-dmg.sh` packages the app into an unsigned `Nexus.dmg` for release dry runs. Signing, notarization, and WidgetKit embedding remain M3 follow-up work.
 
 ## Installable App Target
 
@@ -70,9 +70,9 @@ The current repository does not yet contain the final installable app target. En
 Two workflows are expected for M3:
 
 - `CI`: runs Swift tests for `native/Nexus` and any remaining compatibility checks required by touched legacy reference code.
-- `Release`: currently builds the SwiftPM-backed `Nexus.app` bundle from `native/Nexus`, packages `nexus-native-<architecture>.tar.gz`, uploads those Native artifacts to GitHub Releases, and does not publish legacy preview artifacts.
+- `Release`: currently builds the SwiftPM-backed `Nexus.app` bundle from `native/Nexus`, packages `nexus-native-<architecture>.dmg`, uploads those Native artifacts to GitHub Releases, and does not publish legacy preview artifacts.
 
-The unsigned app archive is a transitional M3 proof that the release channel is Native-first. The final M3 release workflow should sign and notarize `Nexus.app`, package `Nexus.dmg`, then publish those artifacts instead of the transitional archive.
+The unsigned DMG is a transitional M3 proof that the release channel is Native-first. The final M3 release workflow should sign and notarize `Nexus.app`, then publish signed and notarized DMG artifacts instead of the unsigned dry-run image.
 
 Pushing workflow files requires a GitHub token with the `workflow` scope.
 

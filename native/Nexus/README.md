@@ -79,7 +79,19 @@ Build a local unsigned `.app` bundle from the SwiftPM executable:
 native/Nexus/Scripts/build-app-bundle.sh --arch arm64 --output native/Nexus/build/Release/Nexus.app
 ```
 
-The bundle is suitable for local installation checks and `nexus://` URL scheme registration experiments. Signing, notarization, Widget Extension embedding, DMG packaging, and updater integration are intentionally separate later M3 steps. The SwiftPM test target covers native model behavior such as menu-bar status priority, lifecycle fallback stages, and Task Center filters.
+Package an unsigned DMG for local release dry runs:
+
+```bash
+native/Nexus/Scripts/package-dmg.sh --app native/Nexus/build/Release/Nexus.app --output native/Nexus/build/Release/Nexus.dmg
+```
+
+When a sandbox cannot create disk images, validate the same staging and command path without writing a DMG:
+
+```bash
+native/Nexus/Scripts/package-dmg.sh --dry-run --app native/Nexus/build/Release/Nexus.app --output native/Nexus/build/Release/Nexus.dmg
+```
+
+The bundle and DMG are suitable for local installation checks and `nexus://` URL scheme registration experiments. Signing, notarization, Widget Extension embedding, and updater integration are intentionally separate later M3 steps. The SwiftPM test target covers native model behavior such as menu-bar status priority, lifecycle fallback stages, and Task Center filters.
 
 ## Rust Core Bridge
 
