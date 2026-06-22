@@ -2534,16 +2534,39 @@ final class AppState: ObservableObject {
         }
 
         do {
-            let response = try await bridge.createWorkspaceDocument(
-                request: CreateWorkspaceDocumentRequest(
+            let response: CreateWorkspaceDocumentResponse
+            do {
+                response = try NativeDocumentStore.createWorkspaceDocument(
                     workspacePath: workspace.path,
                     documentKey: documentKey,
                     relativePath: relativePath,
-                    confirmed: confirmed,
-                    auditRoot: auditRootPath,
-                    actor: "Nexus Native"
+                    confirmed: confirmed
                 )
-            )
+                if response.created {
+                    await recordWorkspaceAction(
+                        action: "document.created",
+                        target: response.path,
+                        summary: "Created workspace document \(response.relativePath)",
+                        metadata: [
+                            "workspace": workspace.path,
+                            "documentKey": response.documentKey,
+                            "relativePath": response.relativePath,
+                            "documentPath": response.path
+                        ]
+                    )
+                }
+            } catch {
+                response = try await bridge.createWorkspaceDocument(
+                    request: CreateWorkspaceDocumentRequest(
+                        workspacePath: workspace.path,
+                        documentKey: documentKey,
+                        relativePath: relativePath,
+                        confirmed: confirmed,
+                        auditRoot: auditRootPath,
+                        actor: "Nexus Native"
+                    )
+                )
+            }
             if response.created || response.alreadyExists {
                 await refreshFromBridge()
                 await loadDocument(path: response.path)

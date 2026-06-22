@@ -1090,6 +1090,77 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(source.content, "select 1;\n")
     }
 
+    func testNativeDocumentStoreCreatesStandardDocumentsWithoutOverwriting() throws {
+        let workspaceURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-create-document-\(UUID().uuidString)")
+        defer {
+            try? FileManager.default.removeItem(at: workspaceURL)
+        }
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+
+        let created = try NativeDocumentStore.createWorkspaceDocument(
+            workspacePath: workspaceURL.path,
+            documentKey: "tasks",
+            relativePath: "tasks.md",
+            confirmed: true
+        )
+        let existing = try NativeDocumentStore.createWorkspaceDocument(
+            workspacePath: workspaceURL.path,
+            documentKey: "tasks",
+            relativePath: "./tasks.md",
+            confirmed: true
+        )
+        let content = try String(contentsOf: workspaceURL.appendingPathComponent("tasks.md"), encoding: .utf8)
+
+        XCTAssertEqual(created.path, workspaceURL.appendingPathComponent("tasks.md").path)
+        XCTAssertEqual(created.relativePath, "tasks.md")
+        XCTAssertEqual(created.created, true)
+        XCTAssertEqual(created.alreadyExists, false)
+        XCTAssertTrue(content.contains("| 任务 | 状态 | 说明 |"))
+        XCTAssertEqual(existing.created, false)
+        XCTAssertEqual(existing.alreadyExists, true)
+    }
+
+    func testNativeDocumentStoreRejectsUnsafeDocumentCreation() throws {
+        let workspaceURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-create-document-reject-\(UUID().uuidString)")
+        defer {
+            try? FileManager.default.removeItem(at: workspaceURL)
+        }
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+
+        XCTAssertThrowsError(
+            try NativeDocumentStore.createWorkspaceDocument(
+                workspacePath: workspaceURL.path,
+                documentKey: "tasks",
+                relativePath: "tasks.md",
+                confirmed: false
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("explicit confirmation"))
+        }
+        XCTAssertThrowsError(
+            try NativeDocumentStore.createWorkspaceDocument(
+                workspacePath: workspaceURL.path,
+                documentKey: "tasks",
+                relativePath: "../tasks.md",
+                confirmed: true
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("parent directories"))
+        }
+        XCTAssertThrowsError(
+            try NativeDocumentStore.createWorkspaceDocument(
+                workspacePath: workspaceURL.path,
+                documentKey: "sql",
+                relativePath: "sql/change.sql",
+                confirmed: true
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("unsupported workspace document key"))
+        }
+    }
+
     func testNativeSearchModelsGroupAndScopeResultsWithoutBridge() {
         let results = [
             SearchResult(
