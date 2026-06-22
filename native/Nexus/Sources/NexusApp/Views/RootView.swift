@@ -110,6 +110,10 @@ struct RootView: View {
             DemandTaskTransferSheet(plan: plan)
                 .environmentObject(appState)
         }
+        .sheet(item: $appState.pendingDeliveryRecordWrite) { plan in
+            DeliveryRecordWriteSheet(plan: plan)
+                .environmentObject(appState)
+        }
         .sheet(item: $appState.pendingLifecycleStatusUpdate) { update in
             LifecycleStatusUpdateSheet(update: update)
                 .environmentObject(appState)
@@ -10450,9 +10454,15 @@ private struct WorkflowStatusView: View {
                     }
                 )
 
-                DeliveryGateEvidenceCardView(evidence: deliveryGate) { action in
-                    runDeliveryGateAction(action)
-                }
+                DeliveryGateEvidenceCardView(
+                    evidence: deliveryGate,
+                    action: { action in
+                        runDeliveryGateAction(action)
+                    },
+                    writeAction: {
+                        appState.requestDeliveryRecordWrite(in: workspace)
+                    }
+                )
 
                 ValidationPrEvidenceCardView(evidence: validationPrEvidence) { action in
                     runDeliveryGateAction(action)
@@ -12087,6 +12097,7 @@ private struct DevelopmentTaskCheckRow: View {
 private struct DeliveryGateEvidenceCardView: View {
     let evidence: DeliveryGateEvidence
     let action: (WorkspaceMainStageAction) -> Void
+    let writeAction: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -12113,6 +12124,15 @@ private struct DeliveryGateEvidenceCardView: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+
+                Button {
+                    writeAction()
+                } label: {
+                    Label("写入记录", systemImage: "square.and.pencil")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(evidence.status == .archived)
             }
 
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], alignment: .leading, spacing: 8) {
@@ -12155,6 +12175,89 @@ private struct DeliveryGateEvidenceCardView: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(evidence.status.color.opacity(0.14))
         }
+    }
+}
+
+private struct DeliveryRecordWriteSheet: View {
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmed = false
+    let plan: DeliveryRecordWritePlan
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("写入交付记录 / Update delivery record")
+                    .font(.title3.weight(.semibold))
+                Text("Nexus will append the current Delivery Gate snapshot after confirmation.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            SectionBlock(title: "写入摘要 / Summary") {
+                VStack(alignment: .leading, spacing: 8) {
+                    TaskStatusMetaRow(label: "Workspace", value: plan.workspaceName)
+                    TaskStatusMetaRow(label: "File", value: plan.deliveryPath)
+                    TaskStatusMetaRow(label: "Status", value: plan.status.displayLabel)
+                    TaskStatusMetaRow(label: "Checks", value: "\(plan.items.count)")
+                    Text(plan.summary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            SectionBlock(title: plan.canWrite ? "将追加的快照 / New snapshot" : "不可写入 / Read-only") {
+                if plan.canWrite {
+                    Text(plan.appendedMarkdown.trimmingCharacters(in: .whitespacesAndNewlines))
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(NexusPalette.badge)
+                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                } else {
+                    Text(plan.summary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Toggle("确认追加到交付记录 / Confirm local write", isOn: $confirmed)
+                .disabled(!plan.canWrite)
+
+            HStack {
+                Button("Cancel") {
+                    appState.pendingDeliveryRecordWrite = nil
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Spacer()
+
+                Button(appState.isUpdatingDeliveryRecord ? "Writing" : "Append") {
+                    Task {
+                        await appState.confirmPendingDeliveryRecordWrite(confirmed: confirmed)
+                        if appState.lastError == nil {
+                            dismiss()
+                        }
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!confirmed || !plan.canWrite || appState.isUpdatingDeliveryRecord)
+            }
+
+            if let error = appState.lastError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(NexusPalette.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(22)
+        .frame(width: 620)
     }
 }
 

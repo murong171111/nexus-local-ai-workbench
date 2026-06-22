@@ -484,7 +484,7 @@ Target files:
 
 Plan:
 
-- Build a single `DeliveryGate` model. `[started with DeliveryGateEvidence]`
+- Build a single `DeliveryGate` model. `[started with DeliveryGateEvidence and confirmed delivery-record snapshot writes]`
 - Reuse it for delivery and archive. `[started with ArchiveGateEvidence in Command Center and Workflow]`
 - Keep SQL formal/rollback guard as a hard blocker. `[started through SQL health check evidence]`
 - Show PR/CI evidence as optional until GitHub integration is explicitly added. `[started with ValidationPrEvidence]`

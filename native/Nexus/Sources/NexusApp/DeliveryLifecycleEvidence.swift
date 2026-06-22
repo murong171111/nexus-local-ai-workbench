@@ -634,6 +634,106 @@ struct DeliveryGateEvidence: Hashable {
     }
 }
 
+struct DeliveryRecordWritePlanItem: Identifiable, Hashable {
+    let id: String
+    let label: String
+    let detail: String
+    let status: WorkflowPathStatus
+    let evidencePath: String?
+}
+
+struct DeliveryRecordWritePlan: Identifiable, Hashable {
+    let id: String
+    let workspaceID: WorkspaceSummary.ID
+    let workspaceName: String
+    let deliveryPath: String
+    let status: WorkflowPathStatus
+    let summary: String
+    let items: [DeliveryRecordWritePlanItem]
+    let appendedMarkdown: String
+
+    var canWrite: Bool {
+        status != .archived && !appendedMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    static func resolve(workspace: WorkspaceSummary, gate: DeliveryGateEvidence) -> DeliveryRecordWritePlan {
+        let deliveryPath = workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md"
+        let id = "\(workspace.id)-delivery-record"
+
+        guard gate.status != .archived else {
+            return DeliveryRecordWritePlan(
+                id: id,
+                workspaceID: workspace.id,
+                workspaceName: workspace.name,
+                deliveryPath: deliveryPath,
+                status: .archived,
+                summary: "已归档工作区默认只读；恢复开发后再追加交付记录。",
+                items: [],
+                appendedMarkdown: ""
+            )
+        }
+
+        let items = gate.checks.map { check in
+            DeliveryRecordWritePlanItem(
+                id: check.id,
+                label: check.label,
+                detail: check.detail,
+                status: check.status,
+                evidencePath: check.path
+            )
+        }
+        return DeliveryRecordWritePlan(
+            id: id,
+            workspaceID: workspace.id,
+            workspaceName: workspace.name,
+            deliveryPath: deliveryPath,
+            status: gate.status == .ready ? .next : gate.status,
+            summary: "确认后只会向交付记录追加当前 Delivery Gate 快照，不覆盖人工记录。",
+            items: items,
+            appendedMarkdown: deliverySnapshotMarkdown(workspace: workspace, gate: gate, items: items)
+        )
+    }
+
+    private static func deliverySnapshotMarkdown(
+        workspace: WorkspaceSummary,
+        gate: DeliveryGateEvidence,
+        items: [DeliveryRecordWritePlanItem]
+    ) -> String {
+        var lines = [
+            "",
+            "## Nexus Delivery Gate Snapshot",
+            "",
+            "- 工作区：\(workspace.name)",
+            "- 生命周期：\(workspace.lifecycle.stage)",
+            "- 目标分支：\(workspace.branch)",
+            "- 门禁状态：\(gate.status.displayLabel)",
+            "- 下一步：\(gate.primaryActionLabel)",
+            "- 说明：\(gate.reason)",
+            "",
+            "| 检查项 | 状态 | 证据 | 说明 |",
+            "| --- | --- | --- | --- |"
+        ]
+
+        for item in items {
+            lines.append("| \(escapeMarkdownCell(item.label)) | \(item.status.displayLabel) | \(escapeMarkdownCell(item.evidencePath ?? "-")) | \(escapeMarkdownCell(item.detail)) |")
+        }
+
+        lines.append(contentsOf: [
+            "",
+            "- 写入来源：Nexus Native confirmed write。",
+            "- 后续要求：如有 SQL、PR/CI、发布或遗留风险结论，继续追加在本交付记录中。"
+        ])
+        return lines.joined(separator: "\n")
+    }
+
+    private static func escapeMarkdownCell(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "|", with: "\\|")
+            .replacingOccurrences(of: "\n", with: " ")
+    }
+}
+
 struct ArchiveGateCheck: Hashable, Identifiable {
     let id: String
     let label: String

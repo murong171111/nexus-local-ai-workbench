@@ -171,6 +171,7 @@ final class AppState: ObservableObject {
     @Published var demandIntakeLoadingWorkspaceID: WorkspaceSummary.ID?
     @Published var demandIntakeStatusesByWorkspace: [WorkspaceSummary.ID: DemandIntakeStatus] = [:]
     @Published var isUpdatingTask = false
+    @Published var isUpdatingDeliveryRecord = false
     @Published var isUpdatingLifecycle = false
     @Published var lastError: String?
     @Published var bridgeMode: String
@@ -188,6 +189,7 @@ final class AppState: ObservableObject {
     @Published var pendingTaskStatusUpdate: TaskStatusUpdate?
     @Published var pendingScopeFreezeWrite: ScopeFreezeWritePlan?
     @Published var pendingDemandTaskTransfer: DemandTaskTransferPlan?
+    @Published var pendingDeliveryRecordWrite: DeliveryRecordWritePlan?
     @Published var pendingLifecycleStatusUpdate: LifecycleStatusUpdate?
     @Published var lastCreatedWorkspace: CreateWorkspaceResponse?
     @Published var pendingWorktreeSetupWorkspace: WorkspaceSummary?
@@ -2561,6 +2563,75 @@ final class AppState: ObservableObject {
 
     func deliveryGateEvidence(for workspace: WorkspaceSummary) -> DeliveryGateEvidence {
         DeliveryGateEvidence.resolve(workspace: workspace)
+    }
+
+    func deliveryRecordWritePlan(for workspace: WorkspaceSummary) -> DeliveryRecordWritePlan {
+        DeliveryRecordWritePlan.resolve(
+            workspace: workspace,
+            gate: deliveryGateEvidence(for: workspace)
+        )
+    }
+
+    func requestDeliveryRecordWrite(in workspace: WorkspaceSummary) {
+        pendingDeliveryRecordWrite = deliveryRecordWritePlan(for: workspace)
+        lastError = nil
+    }
+
+    func confirmPendingDeliveryRecordWrite(confirmed: Bool) async {
+        guard let plan = pendingDeliveryRecordWrite else {
+            return
+        }
+        guard confirmed else {
+            lastError = "需要确认后才会写入交付记录。"
+            return
+        }
+        guard plan.canWrite else {
+            lastError = plan.summary
+            return
+        }
+
+        isUpdatingDeliveryRecord = true
+        lastError = nil
+        defer {
+            isUpdatingDeliveryRecord = false
+        }
+
+        do {
+            var content = (try? String(contentsOfFile: plan.deliveryPath, encoding: .utf8)) ?? "# 交付记录\n"
+            if !content.hasSuffix("\n") {
+                content.append("\n")
+            }
+            content.append(plan.appendedMarkdown)
+            if !content.hasSuffix("\n") {
+                content.append("\n")
+            }
+            try content.write(toFile: plan.deliveryPath, atomically: true, encoding: .utf8)
+            pendingDeliveryRecordWrite = nil
+            await recordWorkspaceAction(
+                action: "delivery_record.snapshot_appended",
+                target: plan.deliveryPath,
+                summary: "Appended Delivery Gate snapshot to delivery record",
+                metadata: [
+                    "deliveryPath": plan.deliveryPath,
+                    "status": plan.status.rawValue,
+                    "checkCount": "\(plan.items.count)"
+                ],
+                workspaceOverride: workspaces.first { $0.id == plan.workspaceID }
+            )
+            await refreshFromBridge()
+            focusWorkspace(id: plan.workspaceID)
+            markLocalWriteFeedback(
+                title: "交付记录已更新 / Delivery record updated",
+                detail: "已追加当前 Delivery Gate 快照；SQL、PR/CI、发布或遗留风险结论可继续补在交付记录中。",
+                workspaceID: plan.workspaceID,
+                workspaceName: plan.workspaceName,
+                documentPath: plan.deliveryPath,
+                documentLabel: "打开交付记录",
+                systemImage: "shippingbox"
+            )
+        } catch {
+            lastError = error.localizedDescription
+        }
     }
 
     func archiveGateEvidence(

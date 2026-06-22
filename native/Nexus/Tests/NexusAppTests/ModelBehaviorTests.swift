@@ -1548,6 +1548,43 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertFalse(stage.nextStageAllowed)
     }
 
+    func testDeliveryRecordWritePlanAppendsCurrentGateSnapshot() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "delivery-record-write",
+            name: "Delivery Record Write",
+            healthChecks: [
+                WorkspaceHealthCheck(id: "delivery-record", label: "交付记录", detail: "交付记录可用", status: "pass", action: "delivery"),
+                WorkspaceHealthCheck(id: "sql-directory", label: "SQL", detail: "未声明 SQL 变更。", status: "pass", action: "sql")
+            ]
+        )
+        let delivery = DeliveryGateEvidence.resolve(workspace: workspace)
+        let plan = DeliveryRecordWritePlan.resolve(workspace: workspace, gate: delivery)
+
+        XCTAssertEqual(plan.status, .next)
+        XCTAssertTrue(plan.canWrite)
+        XCTAssertEqual(plan.items.map(\.id), ["branch", "services", "tasks", "risks", "delivery-record", "sql", "dirty-services"])
+        XCTAssertTrue(plan.appendedMarkdown.contains("## Nexus Delivery Gate Snapshot"))
+        XCTAssertTrue(plan.appendedMarkdown.contains("门禁状态：就绪 / ready"))
+        XCTAssertTrue(plan.appendedMarkdown.contains("| 检查项 | 状态 | 证据 | 说明 |"))
+        XCTAssertTrue(plan.appendedMarkdown.contains("Nexus Native confirmed write"))
+        XCTAssertFalse(plan.appendedMarkdown.contains("## 完整交付结论"))
+    }
+
+    func testDeliveryRecordWritePlanKeepsArchivedWorkspaceReadOnly() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "archived",
+            id: "delivery-record-write-archived"
+        )
+        let delivery = DeliveryGateEvidence.resolve(workspace: workspace)
+        let plan = DeliveryRecordWritePlan.resolve(workspace: workspace, gate: delivery)
+
+        XCTAssertEqual(plan.status, .archived)
+        XCTAssertFalse(plan.canWrite)
+        XCTAssertTrue(plan.appendedMarkdown.isEmpty)
+        XCTAssertTrue(plan.summary.contains("只读"))
+    }
+
     func testArchiveGateEvidenceReusesDeliveryBlockersBeforeArchive() {
         let workspace = workspaceForWorkflowSummary(
             stage: "developing",
