@@ -8651,6 +8651,7 @@ private struct CommandCenterPrimaryStep {
     let title: String
     let detail: String
     let blockerSummary: String
+    let primaryEvidenceLabel: String?
     let status: WorkflowPathStatus
     let systemImage: String
     let actionLabel: String
@@ -8662,6 +8663,7 @@ private struct CommandCenterPrimaryStep {
         title: String,
         detail: String,
         blockerSummary: String,
+        primaryEvidenceLabel: String?,
         status: WorkflowPathStatus,
         systemImage: String,
         actionLabel: String,
@@ -8672,6 +8674,7 @@ private struct CommandCenterPrimaryStep {
         self.title = title
         self.detail = detail
         self.blockerSummary = blockerSummary
+        self.primaryEvidenceLabel = primaryEvidenceLabel
         self.status = status
         self.systemImage = systemImage
         self.actionLabel = actionLabel
@@ -8685,6 +8688,7 @@ private struct CommandCenterPrimaryStep {
             title: stage.title,
             detail: stage.reason,
             blockerSummary: stage.blockerSummary,
+            primaryEvidenceLabel: stage.answer.primaryEvidenceLink?.label,
             status: stage.status,
             systemImage: stage.id.systemImage,
             actionLabel: stage.primaryActionLabel,
@@ -8732,6 +8736,14 @@ private struct CommandCenterPrimaryStepView: View {
                     .foregroundStyle(step.status.color)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
+
+                if let primaryEvidenceLabel = step.primaryEvidenceLabel {
+                    Label("证据：\(primaryEvidenceLabel)", systemImage: "doc.text.magnifyingglass")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
             }
 
             Spacer()

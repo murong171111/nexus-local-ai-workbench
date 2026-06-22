@@ -1171,6 +1171,7 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(answer.nextAction, .document("sql"))
         XCTAssertEqual(answer.evidenceLinks.map(\.label), stage.evidence)
         XCTAssertEqual(answer.routedEvidenceLinks.map(\.label), ["sql/release.sql", "交付记录.md"])
+        XCTAssertEqual(answer.primaryEvidenceLink?.label, "sql/release.sql")
         XCTAssertTrue(answer.canAnswerCurrentState)
     }
 
@@ -1188,6 +1189,7 @@ final class ModelBehaviorTests: XCTestCase {
         )
 
         XCTAssertTrue(stage.answer.routedEvidenceLinks.isEmpty)
+        XCTAssertNil(stage.answer.primaryEvidenceLink)
         XCTAssertFalse(stage.answer.canAnswerCurrentState)
     }
 

@@ -21,6 +21,10 @@ struct WorkspaceStageAnswer: Hashable {
         evidenceLinks.filter { $0.action != nil }
     }
 
+    var primaryEvidenceLink: WorkspaceMainStageEvidenceLink? {
+        routedEvidenceLinks.first
+    }
+
     var canAnswerCurrentState: Bool {
         !stageLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
