@@ -192,6 +192,7 @@ final class AppState: ObservableObject {
     @Published var pendingWorktreeSetupWorkspace: WorkspaceSummary?
     @Published var lastWorktreeSetupResponse: SetupWorktreesResponse?
     @Published var codexHandoffFeedback: CodexHandoffFeedback?
+    @Published var lastCopiedCodexHandoffPayload: String?
     @Published var localWriteFeedback: LocalWriteFeedback?
     @Published var workspaceLinkFeedback: WorkspaceLinkFeedback?
     @Published var codexSessionLinksByWorkspace: [WorkspaceSummary.ID: [CodexSessionLink]] = [:]
@@ -1207,8 +1208,10 @@ final class AppState: ObservableObject {
             setWorkspaceFilter(.risky)
             if let workspace = workspaceForAutomationSignal(signal) {
                 selectedWorkspaceID = workspace.id
+                let prompt = riskReviewPrompt(for: workspace)
                 NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(riskReviewPrompt(for: workspace), forType: .string)
+                NSPasteboard.general.setString(prompt, forType: .string)
+                lastCopiedCodexHandoffPayload = prompt
                 await recordRiskReviewHandoffCopied(for: workspace)
             }
         case "update-delivery":

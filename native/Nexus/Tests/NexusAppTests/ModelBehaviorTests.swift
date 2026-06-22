@@ -4,6 +4,61 @@ import XCTest
 @testable import NexusApp
 
 final class ModelBehaviorTests: XCTestCase {
+    func testNativeModelLayeringKeepsWorkflowLogicOutOfBaseModels() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let appSources = packageRoot.appendingPathComponent("Sources/NexusApp")
+        let modelsPath = appSources.appendingPathComponent("Models.swift")
+        let models = try String(contentsOf: modelsPath, encoding: .utf8)
+
+        let forbiddenModelSymbols = [
+            "struct WorkspaceBoardColumn",
+            "enum WorkspaceBoardScope",
+            "struct MenuBarStatusSummary",
+            "struct WorkspaceLifecycle",
+            "struct WorkspaceWorkflowSummary",
+            "struct WorkspaceSqlSummary",
+            "struct DemandTaskTransferPlan",
+            "struct AgentActionSurface",
+            "struct DeliveryGateEvidence",
+            "struct DevelopmentTaskEvidence",
+            "struct WorktreeSetupEvidence",
+            "struct DemandIntakeReadinessEvidence",
+            "func mainStage("
+        ]
+
+        for symbol in forbiddenModelSymbols {
+            XCTAssertFalse(
+                models.contains(symbol),
+                "\(symbol) belongs in a dedicated workflow/evidence file, not Models.swift"
+            )
+        }
+
+        let ownedWorkflowFiles = [
+            "PrimaryWorkflowStageResolver.swift",
+            "DemandScopeEvidence.swift",
+            "ServiceWorktreeEvidence.swift",
+            "DevelopmentTaskEvidence.swift",
+            "DeliveryLifecycleEvidence.swift",
+            "DemandTaskTransfer.swift",
+            "WorkspaceEvidenceDocuments.swift",
+            "WorkspaceWorkflowSummary.swift",
+            "WorkspaceBoardModels.swift",
+            "MenuBarStatusModels.swift",
+            "AgentWorkflowModels.swift",
+            "WorkspaceLifecycleModels.swift"
+        ]
+
+        for fileName in ownedWorkflowFiles {
+            XCTAssertTrue(
+                FileManager.default.fileExists(atPath: appSources.appendingPathComponent(fileName).path),
+                "\(fileName) is part of the Native model layering guardrail"
+            )
+        }
+    }
+
     func testNativeSetupReadinessSkipsInitializationWhenEnvironmentIsReady() {
         let readiness = NativeSetupReadiness(
             health: environmentHealth(ready: true, workspaceCount: 2, sourceRepoCount: 5),
@@ -330,11 +385,99 @@ final class ModelBehaviorTests: XCTestCase {
         )
     }
 
-    func testWorkspaceBoardColumnsFollowMainWorkflowOrder() {
-        let demandWorkspace = workspaceForWorkflowSummary(
+    func testMainStageKeepsFreshScopingWorkspaceAtCreatedBeforeDemandEvidence() {
+        let workspace = workspaceForWorkflowSummary(
             stage: "scoping",
-            id: "board-demand",
-            name: "需求预检"
+            id: "fresh-workspace",
+            name: "Fresh Workspace"
+        )
+
+        let stage = workspace.mainStage()
+
+        XCTAssertEqual(stage.id, .created)
+        XCTAssertEqual(stage.status, .next)
+        XCTAssertEqual(stage.primaryAction, .demandIntake)
+        XCTAssertTrue(stage.reason.contains("尚未读取到需求预检证据"))
+        XCTAssertFalse(stage.nextStageAllowed)
+    }
+
+    func testMainStageTreatsMissingDemandDirectoryAsCreatedBeforeDemandIntake() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "scoping",
+            id: "missing-demand-directory",
+            name: "Missing Demand Directory"
+        )
+        let demandStatus = DemandIntakeStatus(
+            directoryPath: "\(workspace.path)/需求",
+            exists: false,
+            ready: false,
+            missingCount: 5,
+            files: []
+        )
+        let readiness = DemandIntakeReadinessEvidence.resolve(status: demandStatus, workspace: workspace)
+
+        let stage = workspace.mainStage(
+            demandIntakeStatus: demandStatus,
+            demandReadiness: readiness
+        )
+
+        XCTAssertEqual(stage.id, .created)
+        XCTAssertEqual(stage.primaryAction, .demandIntake)
+        XCTAssertTrue(stage.evidenceSummary.contains("需求/"))
+    }
+
+    func testMainStageAlwaysExplainsStageActionAndEvidence() {
+        let workspaces = WorkspaceSummary.previewData + [
+            workspaceForWorkflowSummary(
+                stage: "scoping",
+                id: "contract-created",
+                name: "Contract Created"
+            ),
+            workspaceForWorkflowSummary(
+                stage: "archived",
+                id: "contract-archived",
+                name: "Contract Archived"
+            ),
+            workspaceForWorkflowSummary(
+                stage: "developing",
+                id: "contract-active-task",
+                name: "Contract Active Task",
+                tasks: [
+                    WorkspaceTask(
+                        id: "contract-task",
+                        title: "Keep main path explicit",
+                        status: "待办",
+                        detail: "Exercise development-stage explanation.",
+                        priority: "high",
+                        source: "workspace",
+                        sourceEventID: nil,
+                        sourceLine: 9
+                    )
+                ]
+            )
+        ]
+
+        for workspace in workspaces {
+            let stage = workspace.mainStage()
+
+            XCTAssertTrue(
+                WorkspaceBoardColumn.visibleStageOrder.contains(stage.id),
+                "\(workspace.id) produced an unknown main stage: \(stage.id)"
+            )
+            XCTAssertFalse(stage.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, workspace.id)
+            XCTAssertFalse(stage.reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, workspace.id)
+            XCTAssertFalse(stage.primaryActionLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, workspace.id)
+            XCTAssertFalse(stage.primaryActionSystemImage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, workspace.id)
+            XCTAssertFalse(stage.evidence.isEmpty, workspace.id)
+            XCTAssertFalse(stage.evidenceSummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, workspace.id)
+        }
+    }
+
+    func testWorkspaceBoardColumnsFollowMainWorkflowOrder() {
+        let createdWorkspace = workspaceForWorkflowSummary(
+            stage: "scoping",
+            id: "board-created",
+            name: "已建档"
         )
         let deliveryWorkspace = workspaceForWorkflowSummary(
             stage: "developing",
@@ -350,19 +493,19 @@ final class ModelBehaviorTests: XCTestCase {
             name: "已归档"
         )
 
-        let columns = WorkspaceBoardColumn.columns(for: [archivedWorkspace, deliveryWorkspace, demandWorkspace])
+        let columns = WorkspaceBoardColumn.columns(for: [archivedWorkspace, deliveryWorkspace, createdWorkspace])
 
         XCTAssertEqual(columns.map(\.id), WorkspaceBoardColumn.visibleStageOrder)
-        XCTAssertEqual(columns.first(where: { $0.id == .demandIntake })?.workspaces.map(\.id), ["board-demand"])
+        XCTAssertEqual(columns.first(where: { $0.id == .created })?.workspaces.map(\.id), ["board-created"])
         XCTAssertEqual(columns.first(where: { $0.id == .deliveryCheck })?.workspaces.map(\.id), ["board-delivery"])
         XCTAssertEqual(columns.first(where: { $0.id == .archived })?.workspaces.map(\.id), ["board-archive"])
     }
 
     func testWorkspaceBoardScopeFiltersWithoutChangingColumnOrder() {
-        let demandWorkspace = workspaceForWorkflowSummary(
+        let createdWorkspace = workspaceForWorkflowSummary(
             stage: "scoping",
-            id: "board-demand",
-            name: "需求预检"
+            id: "board-created",
+            name: "已建档"
         )
         let deliveryWorkspace = workspaceForWorkflowSummary(
             stage: "developing",
@@ -377,14 +520,14 @@ final class ModelBehaviorTests: XCTestCase {
             id: "board-archive",
             name: "已归档"
         )
-        let workspaces = [archivedWorkspace, deliveryWorkspace, demandWorkspace]
+        let workspaces = [archivedWorkspace, deliveryWorkspace, createdWorkspace]
 
         let attentionColumns = WorkspaceBoardColumn.columns(for: workspaces, scope: .attention)
         let deliveryColumns = WorkspaceBoardColumn.columns(for: workspaces, scope: .delivery)
         let archivedColumns = WorkspaceBoardColumn.columns(for: workspaces, scope: .archived)
 
         XCTAssertEqual(attentionColumns.map(\.id), WorkspaceBoardColumn.visibleStageOrder)
-        XCTAssertEqual(attentionColumns.flatMap { $0.workspaces.map(\.id) }, ["board-demand", "board-delivery"])
+        XCTAssertEqual(attentionColumns.flatMap { $0.workspaces.map(\.id) }, ["board-created", "board-delivery"])
         XCTAssertEqual(deliveryColumns.flatMap { $0.workspaces.map(\.id) }, ["board-delivery"])
         XCTAssertEqual(archivedColumns.flatMap { $0.workspaces.map(\.id) }, ["board-archive"])
     }
@@ -2302,7 +2445,9 @@ final class ModelBehaviorTests: XCTestCase {
 
         await appState.runAutomationSignalAction(riskSignal())
 
-        let copiedPrompt = NSPasteboard.general.string(forType: .string) ?? ""
+        let copiedPrompt = appState.lastCopiedCodexHandoffPayload
+            ?? NSPasteboard.general.string(forType: .string)
+            ?? ""
         XCTAssertEqual(appState.selectedFilter, .risky)
         XCTAssertEqual(appState.selectedWorkspaceID, riskWorkspace.id)
         XCTAssertTrue(copiedPrompt.contains("Risk Workspace"))
