@@ -3043,13 +3043,18 @@ final class AppState: ObservableObject {
         }
 
         do {
-            let status = try await bridge.readDemandIntakeStatus(
-                request: DemandIntakeStatusRequest(workspacePath: workspace.path)
-            )
+            let status = try NativeDemandIntakeStore.status(workspacePath: workspace.path)
             demandIntakeStatusesByWorkspace[workspace.id] = status
         } catch {
-            lastError = error.localizedDescription
-            demandIntakeStatusesByWorkspace[workspace.id] = Self.fallbackDemandIntakeStatus(for: workspace)
+            do {
+                let status = try await bridge.readDemandIntakeStatus(
+                    request: DemandIntakeStatusRequest(workspacePath: workspace.path)
+                )
+                demandIntakeStatusesByWorkspace[workspace.id] = status
+            } catch {
+                lastError = error.localizedDescription
+                demandIntakeStatusesByWorkspace[workspace.id] = Self.fallbackDemandIntakeStatus(for: workspace)
+            }
         }
     }
 
@@ -3067,17 +3072,40 @@ final class AppState: ObservableObject {
         }
 
         do {
-            let response = try await bridge.initializeDemandIntake(
-                request: InitializeDemandIntakeRequest(
+            let response: InitializeDemandIntakeResponse
+            do {
+                response = try NativeDemandIntakeStore.initialize(
                     workspacePath: workspace.path,
                     demandName: demandName,
                     lanhuLink: lanhuLink,
                     notes: notes,
-                    confirmed: confirmed,
-                    auditRoot: auditRootPath,
-                    actor: "Nexus Native"
+                    confirmed: confirmed
                 )
-            )
+                await recordWorkspaceAction(
+                    action: "demand_intake.initialized",
+                    target: response.status.directoryPath,
+                    summary: "Initialized demand intake files for \(demandName)",
+                    metadata: [
+                        "workspacePath": workspace.path,
+                        "demandName": demandName,
+                        "lanhuLink": lanhuLink,
+                        "createdFiles": response.createdFiles.joined(separator: ","),
+                        "missingCount": "\(response.status.missingCount)"
+                    ]
+                )
+            } catch {
+                response = try await bridge.initializeDemandIntake(
+                    request: InitializeDemandIntakeRequest(
+                        workspacePath: workspace.path,
+                        demandName: demandName,
+                        lanhuLink: lanhuLink,
+                        notes: notes,
+                        confirmed: confirmed,
+                        auditRoot: auditRootPath,
+                        actor: "Nexus Native"
+                    )
+                )
+            }
             demandIntakeStatusesByWorkspace[workspace.id] = response.status
             await refreshFromBridge()
             markLocalWriteFeedback(

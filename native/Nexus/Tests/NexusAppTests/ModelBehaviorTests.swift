@@ -1023,6 +1023,13 @@ final class ModelBehaviorTests: XCTestCase {
             ]
         )
         XCTAssertEqual(
+            fullyNative.domains.first { $0.domain == .demandIntake }?.evidence,
+            [
+                "native/Nexus/Sources/NexusApp/DemandScopeEvidence.swift",
+                "native/Nexus/Sources/NexusApp/NativeDemandIntakeStore.swift"
+            ]
+        )
+        XCTAssertEqual(
             partiallyNative.domains.filter { $0.status == .review }.map(\.domain),
             [.gitWorktreeStatus, .audit, .widgetSnapshot, .searchIndex]
         )
@@ -1158,6 +1165,88 @@ final class ModelBehaviorTests: XCTestCase {
             )
         ) { error in
             XCTAssertTrue(error.localizedDescription.contains("unsupported workspace document key"))
+        }
+    }
+
+    func testNativeDemandIntakeStoreReportsStatusFromWorkspaceFiles() throws {
+        let workspaceURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-demand-status-\(UUID().uuidString)")
+        let demandURL = workspaceURL.appendingPathComponent("需求")
+        defer {
+            try? FileManager.default.removeItem(at: workspaceURL)
+        }
+        try FileManager.default.createDirectory(at: demandURL, withIntermediateDirectories: true)
+        try "# 需求确认卡\n".write(to: demandURL.appendingPathComponent("requirement.md"), atomically: true, encoding: .utf8)
+        try "# 待确认问题\n".write(to: demandURL.appendingPathComponent("questions.md"), atomically: true, encoding: .utf8)
+
+        let status = try NativeDemandIntakeStore.status(workspacePath: workspaceURL.path)
+
+        XCTAssertEqual(status.directoryPath, demandURL.path)
+        XCTAssertEqual(status.exists, true)
+        XCTAssertEqual(status.ready, false)
+        XCTAssertEqual(status.missingCount, 3)
+        XCTAssertEqual(status.files.map(\.filename), ["requirement.md", "questions.md", "scope.md", "tasks.md", "delivery.md"])
+        XCTAssertEqual(status.files.filter { $0.exists }.map(\.filename), ["requirement.md", "questions.md"])
+    }
+
+    func testNativeDemandIntakeStoreInitializesMissingFilesWithoutOverwriting() throws {
+        let workspaceURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-demand-init-\(UUID().uuidString)")
+        let demandURL = workspaceURL.appendingPathComponent("需求")
+        defer {
+            try? FileManager.default.removeItem(at: workspaceURL)
+        }
+        try FileManager.default.createDirectory(at: demandURL, withIntermediateDirectories: true)
+        try "# Existing questions\n".write(to: demandURL.appendingPathComponent("questions.md"), atomically: true, encoding: .utf8)
+
+        let response = try NativeDemandIntakeStore.initialize(
+            workspacePath: workspaceURL.path,
+            demandName: "会员权益页",
+            lanhuLink: "https://lanhu.example/design",
+            notes: "先确认首屏",
+            confirmed: true
+        )
+
+        XCTAssertEqual(response.status.ready, true)
+        XCTAssertEqual(response.status.missingCount, 0)
+        XCTAssertEqual(response.createdFiles, ["requirement.md", "scope.md", "tasks.md", "delivery.md"])
+        XCTAssertTrue(try String(contentsOf: demandURL.appendingPathComponent("requirement.md"), encoding: .utf8).contains("会员权益页"))
+        XCTAssertTrue(try String(contentsOf: demandURL.appendingPathComponent("requirement.md"), encoding: .utf8).contains("https://lanhu.example/design"))
+        XCTAssertEqual(try String(contentsOf: demandURL.appendingPathComponent("questions.md"), encoding: .utf8), "# Existing questions\n")
+    }
+
+    func testNativeDemandIntakeStoreRequiresConfirmationAndFileEntries() throws {
+        let workspaceURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-demand-reject-\(UUID().uuidString)")
+        let demandURL = workspaceURL.appendingPathComponent("需求")
+        defer {
+            try? FileManager.default.removeItem(at: workspaceURL)
+        }
+        try FileManager.default.createDirectory(at: demandURL, withIntermediateDirectories: true)
+
+        XCTAssertThrowsError(
+            try NativeDemandIntakeStore.initialize(
+                workspacePath: workspaceURL.path,
+                demandName: "",
+                lanhuLink: "",
+                notes: "",
+                confirmed: false
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("explicit confirmation"))
+        }
+
+        try FileManager.default.createDirectory(at: demandURL.appendingPathComponent("tasks.md"), withIntermediateDirectories: true)
+        XCTAssertThrowsError(
+            try NativeDemandIntakeStore.initialize(
+                workspacePath: workspaceURL.path,
+                demandName: "Demo",
+                lanhuLink: "",
+                notes: "",
+                confirmed: true
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("file path exists but is not a file"))
         }
     }
 

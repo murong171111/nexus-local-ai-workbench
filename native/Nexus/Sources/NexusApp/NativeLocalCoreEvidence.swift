@@ -175,7 +175,10 @@ private extension NativeLocalCoreDomain {
                 "native/Nexus/Sources/NexusApp/NativeDocumentStore.swift"
             ]
         case .demandIntake:
-            ["native/Nexus/Sources/NexusApp/DemandScopeEvidence.swift"]
+            [
+                "native/Nexus/Sources/NexusApp/DemandScopeEvidence.swift",
+                "native/Nexus/Sources/NexusApp/NativeDemandIntakeStore.swift"
+            ]
         case .readiness:
             [
                 "native/Nexus/Sources/NexusApp/MainWorkflowAcceptanceEvidence.swift",
