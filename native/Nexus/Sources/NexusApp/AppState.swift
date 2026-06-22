@@ -2602,6 +2602,10 @@ final class AppState: ObservableObject {
         )
     }
 
+    func nativeLocalCoreEvidence() -> NativeLocalCoreEvidence {
+        NativeLocalCoreEvidence.resolve(bridgeMode: bridgeMode)
+    }
+
     func deliveryRecordWritePlan(for workspace: WorkspaceSummary) -> DeliveryRecordWritePlan {
         DeliveryRecordWritePlan.resolve(
             workspace: workspace,

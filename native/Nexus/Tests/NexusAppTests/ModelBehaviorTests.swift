@@ -29,6 +29,7 @@ final class ModelBehaviorTests: XCTestCase {
             "struct WorktreeSetupMutationPolicy",
             "struct MainWorkflowAcceptanceEvidence",
             "struct MainWorkflowLegacyBoundary",
+            "struct NativeLocalCoreEvidence",
             "struct DemandIntakeReadinessEvidence",
             "struct DemandIntakeM1ActionPolicy",
             "struct TaskStatusUpdate",
@@ -984,6 +985,40 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(acceptance.checks.first { $0.id == .legacyBoundary }?.status, .ready)
         XCTAssertEqual(acceptance.checks.first { $0.id == .worktreeStateCoverage }?.status, .ready)
         XCTAssertEqual(acceptance.checks.first { $0.id == .stageCoverage }?.status, .blocked)
+    }
+
+    func testNativeLocalCoreEvidenceTracksM2BridgeDependencies() {
+        let preview = NativeLocalCoreEvidence.resolve(
+            bridgeMode: "Preview bridge: set NEXUS_CORE_LIBRARY to load Rust Core"
+        )
+        let partiallyNative = NativeLocalCoreEvidence.resolve(
+            bridgeMode: "Rust Core bridge: /tmp/libnexus_ffi.dylib",
+            nativeDomains: [.workspaceScanning, .documentInventory]
+        )
+        let fullyNative = NativeLocalCoreEvidence.resolve(
+            bridgeMode: "Swift Native local core",
+            nativeDomains: Set(NativeLocalCoreDomain.allCases)
+        )
+
+        XCTAssertEqual(preview.status, .blocked)
+        XCTAssertTrue(preview.bridgeIsLegacyDependency)
+        XCTAssertEqual(preview.domains.map(\.status), Array(repeating: .blocked, count: NativeLocalCoreDomain.allCases.count))
+        XCTAssertEqual(partiallyNative.status, .blocked)
+        XCTAssertEqual(partiallyNative.domains.filter { $0.status == .ready }.map(\.domain), [.workspaceScanning, .documentInventory])
+        XCTAssertEqual(fullyNative.status, .ready)
+        XCTAssertFalse(fullyNative.bridgeIsLegacyDependency)
+        XCTAssertTrue(fullyNative.reason.contains("M2 Native Local Core"))
+    }
+
+    @MainActor
+    func testAppStateExposesNativeLocalCoreEvidenceFromBridgeMode() {
+        let appState = appStateForAutomationTests(workspaces: [])
+
+        let evidence = appState.nativeLocalCoreEvidence()
+
+        XCTAssertEqual(evidence.status, .blocked)
+        XCTAssertEqual(evidence.domains.map(\.domain), NativeLocalCoreDomain.allCases)
+        XCTAssertTrue(evidence.reason.contains("legacy bridge"))
     }
 
     func testMainWorkflowAcceptanceEvidenceBlocksMissingStagesAndEvidence() {
