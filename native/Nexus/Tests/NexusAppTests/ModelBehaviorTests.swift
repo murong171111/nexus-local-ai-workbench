@@ -27,6 +27,7 @@ final class ModelBehaviorTests: XCTestCase {
             "struct DevelopmentTaskSource",
             "struct WorktreeSetupEvidence",
             "struct WorktreeSetupMutationPolicy",
+            "struct MainWorkflowAcceptanceEvidence",
             "struct DemandIntakeReadinessEvidence",
             "struct DemandIntakeM1ActionPolicy",
             "struct TaskStatusUpdate",
@@ -778,6 +779,75 @@ final class ModelBehaviorTests: XCTestCase {
             XCTAssertFalse(stage.evidence.isEmpty, workspace.id)
             XCTAssertFalse(stage.evidenceSummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, workspace.id)
         }
+    }
+
+    func testMainWorkflowAcceptanceEvidenceRequiresEveryStageActionAndEvidence() {
+        let stages = WorkspaceMainStageID.allCases.map { stageID in
+            WorkspaceMainStage(
+                id: stageID,
+                status: stageID == .archived ? .ready : .next,
+                title: stageID.label,
+                reason: "Stage \(stageID.rawValue) is represented in the Native main path.",
+                primaryActionLabel: "继续",
+                primaryActionSystemImage: stageID.systemImage,
+                primaryAction: .document("status"),
+                evidence: ["\(stageID.rawValue).md"],
+                nextStageAllowed: stageID == .archived
+            )
+        }
+
+        let acceptance = MainWorkflowAcceptanceEvidence.resolve(stages: stages)
+
+        XCTAssertTrue(acceptance.ready)
+        XCTAssertEqual(acceptance.status, .ready)
+        XCTAssertEqual(acceptance.observedStages, WorkspaceMainStageID.allCases)
+        XCTAssertTrue(acceptance.missingStages.isEmpty)
+        XCTAssertTrue(acceptance.stagesMissingPrimaryAction.isEmpty)
+        XCTAssertTrue(acceptance.stagesMissingEvidence.isEmpty)
+        XCTAssertEqual(acceptance.checks.map(\.id), [.stageCoverage, .stageActionEvidence])
+        XCTAssertTrue(acceptance.reason.contains("全部阶段"))
+    }
+
+    func testMainWorkflowAcceptanceEvidenceBlocksMissingStagesAndEvidence() {
+        let stages = [
+            WorkspaceMainStage(
+                id: .created,
+                status: .next,
+                title: "工作区已建档",
+                reason: "Created stage is present.",
+                primaryActionLabel: "开始预检",
+                primaryActionSystemImage: "folder.badge.plus",
+                primaryAction: .demandIntake,
+                evidence: ["workspace.md"],
+                nextStageAllowed: false
+            ),
+            WorkspaceMainStage(
+                id: .demandIntake,
+                status: .blocked,
+                title: "完成需求预检",
+                reason: "Demand intake still needs evidence.",
+                primaryActionLabel: "",
+                primaryActionSystemImage: "text.badge.checkmark",
+                primaryAction: .demandIntake,
+                evidence: [],
+                nextStageAllowed: false
+            )
+        ]
+
+        let acceptance = MainWorkflowAcceptanceEvidence.resolve(stages: stages)
+
+        XCTAssertFalse(acceptance.ready)
+        XCTAssertEqual(acceptance.status, .blocked)
+        XCTAssertEqual(acceptance.observedStages, [.created, .demandIntake])
+        XCTAssertEqual(
+            acceptance.missingStages,
+            [.scopeFreeze, .serviceBranchConfirm, .worktreeSetup, .development, .deliveryCheck, .archived]
+        )
+        XCTAssertEqual(acceptance.stagesMissingPrimaryAction, [.demandIntake])
+        XCTAssertEqual(acceptance.stagesMissingEvidence, [.demandIntake])
+        XCTAssertTrue(acceptance.reason.contains("还缺阶段"))
+        XCTAssertTrue(acceptance.reason.contains("缺主动作"))
+        XCTAssertTrue(acceptance.reason.contains("缺证据"))
     }
 
     func testMainStageEvidenceLinksOpenKnownEvidenceSources() {

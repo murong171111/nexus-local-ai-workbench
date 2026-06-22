@@ -523,8 +523,8 @@ The main workflow must not require new legacy features to become true.
 
 M1 is complete when:
 
-- A real workspace can move through every stage in the Native Mac app.
-- Every stage has one primary action and one evidence source.
+- A real workspace can move through every stage in the Native Mac app. `[started with MainWorkflowAcceptanceEvidence stage coverage]`
+- Every stage has one primary action and one evidence source. `[started with MainWorkflowAcceptanceEvidence action/evidence checks]`
 - Demand intake blocks development until scope and P0 questions are handled.
 - Root `tasks.md` is the only execution task source.
 - Worktree status distinguishes source repo, worktree, branch, dirty, and clean states.
