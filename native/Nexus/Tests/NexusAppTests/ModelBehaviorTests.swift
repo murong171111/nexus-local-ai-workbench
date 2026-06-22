@@ -30,6 +30,7 @@ final class ModelBehaviorTests: XCTestCase {
             "struct MainWorkflowAcceptanceEvidence",
             "struct MainWorkflowLegacyBoundary",
             "struct NativeLocalCoreEvidence",
+            "struct NativeDistributionReadinessEvidence",
             "struct DemandIntakeReadinessEvidence",
             "struct DemandIntakeM1ActionPolicy",
             "struct TaskStatusUpdate",
@@ -1013,6 +1014,69 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(fullyNative.reason.contains("M2 Native Local Core"))
     }
 
+    func testNativeDistributionReadinessBlocksUntilInstallWidgetLegacyAndReleaseAreNative() {
+        let root = "/repo"
+        let files: Set<String> = [
+            "\(root)/native/Nexus/Package.swift",
+            "\(root)/widget/NexusWidget/NexusWidget.swift",
+            "\(root)/docs/distribution.md",
+            "\(root)/docs/release-process.md",
+            "\(root)/.github/workflows/ci.yml",
+            "\(root)/.github/workflows/release.yml"
+        ]
+        let directories: Set<String> = ["\(root)/src", "\(root)/src-tauri", "\(root)/crates"]
+        let evidence = NativeDistributionReadinessEvidence.resolve(
+            repositoryRoot: root,
+            m1Ready: true,
+            m2Ready: false,
+            realLifecycleProven: false,
+            fileExists: { files.contains($0) },
+            directoryExists: { directories.contains($0) },
+            fileContains: { path, needle in
+                path.hasSuffix("ci.yml") && needle == "swift test"
+                    || path.hasSuffix("release.yml") && needle == "tauri"
+                    || path.hasSuffix("release-process.md") && needle == "Tauri"
+            }
+        )
+
+        XCTAssertEqual(evidence.status, .blocked)
+        XCTAssertEqual(evidence.checks.map(\.requirement), NativeDistributionRequirement.allCases)
+        XCTAssertEqual(evidence.checks.first { $0.requirement == .installTarget }?.status, .blocked)
+        XCTAssertEqual(evidence.checks.first { $0.requirement == .widgetExtension }?.status, .blocked)
+        XCTAssertEqual(evidence.checks.first { $0.requirement == .legacyDeletion }?.status, .blocked)
+        XCTAssertEqual(evidence.checks.first { $0.requirement == .releaseReadiness }?.status, .blocked)
+        XCTAssertTrue(evidence.reason.contains("M3"))
+    }
+
+    func testNativeDistributionReadinessCanPassAfterNativeInstallAndDeletionProof() {
+        let root = "/repo"
+        let files: Set<String> = [
+            "\(root)/native/Nexus/Package.swift",
+            "\(root)/native/Nexus/Nexus.xcodeproj/project.pbxproj",
+            "\(root)/widget/NexusWidget/NexusWidget.swift",
+            "\(root)/docs/distribution.md",
+            "\(root)/docs/release-process.md",
+            "\(root)/.github/workflows/ci.yml",
+            "\(root)/.github/workflows/release.yml"
+        ]
+        let directories: Set<String> = ["\(root)/native/NexusWidget"]
+        let evidence = NativeDistributionReadinessEvidence.resolve(
+            repositoryRoot: root,
+            m1Ready: true,
+            m2Ready: true,
+            realLifecycleProven: true,
+            fileExists: { files.contains($0) },
+            directoryExists: { directories.contains($0) },
+            fileContains: { path, needle in
+                path.hasSuffix("ci.yml") && needle == "swift test"
+            }
+        )
+
+        XCTAssertTrue(evidence.ready)
+        XCTAssertEqual(evidence.status, .ready)
+        XCTAssertTrue(evidence.checks.allSatisfy { $0.status == .ready })
+    }
+
     @MainActor
     func testAppStateExposesNativeLocalCoreEvidenceFromBridgeMode() {
         let appState = appStateForAutomationTests(workspaces: [])
@@ -1022,6 +1086,16 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(evidence.status, .blocked)
         XCTAssertEqual(evidence.domains.map(\.domain), NativeLocalCoreDomain.allCases)
         XCTAssertTrue(evidence.reason.contains("legacy bridge"))
+    }
+
+    @MainActor
+    func testAppStateExposesNativeDistributionReadinessEvidence() {
+        let appState = appStateForAutomationTests(workspaces: [])
+
+        let evidence = appState.nativeDistributionReadinessEvidence(repositoryRoot: "/missing")
+
+        XCTAssertEqual(evidence.checks.map(\.requirement), NativeDistributionRequirement.allCases)
+        XCTAssertEqual(evidence.status, .blocked)
     }
 
     func testMainWorkflowAcceptanceEvidenceBlocksMissingStagesAndEvidence() {

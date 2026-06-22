@@ -2606,6 +2606,17 @@ final class AppState: ObservableObject {
         NativeLocalCoreEvidence.resolve(bridgeMode: bridgeMode)
     }
 
+    func nativeDistributionReadinessEvidence(
+        repositoryRoot: String = FileManager.default.currentDirectoryPath
+    ) -> NativeDistributionReadinessEvidence {
+        NativeDistributionReadinessEvidence.resolve(
+            repositoryRoot: repositoryRoot,
+            m1Ready: workspaces.first.map { mainWorkflowAcceptanceEvidence(for: $0).ready } ?? false,
+            m2Ready: nativeLocalCoreEvidence().ready,
+            realLifecycleProven: false
+        )
+    }
+
     func deliveryRecordWritePlan(for workspace: WorkspaceSummary) -> DeliveryRecordWritePlan {
         DeliveryRecordWritePlan.resolve(
             workspace: workspace,

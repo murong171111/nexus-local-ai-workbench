@@ -1,0 +1,172 @@
+import Foundation
+
+enum NativeDistributionRequirement: String, CaseIterable, Hashable {
+    case installTarget
+    case widgetExtension
+    case legacyDeletion
+    case releaseReadiness
+
+    var label: String {
+        switch self {
+        case .installTarget:
+            return "安装目标 / Install target"
+        case .widgetExtension:
+            return "WidgetKit 目标 / Widget target"
+        case .legacyDeletion:
+            return "Legacy 删除 / Legacy deletion"
+        case .releaseReadiness:
+            return "发布就绪 / Release readiness"
+        }
+    }
+}
+
+struct NativeDistributionCheck: Hashable, Identifiable {
+    let requirement: NativeDistributionRequirement
+    let status: WorkflowPathStatus
+    let detail: String
+    let evidence: [String]
+
+    var id: NativeDistributionRequirement { requirement }
+}
+
+struct NativeDistributionReadinessEvidence: Hashable {
+    let status: WorkflowPathStatus
+    let reason: String
+    let checks: [NativeDistributionCheck]
+
+    var ready: Bool {
+        status == .ready
+    }
+
+    static func resolve(
+        repositoryRoot: String,
+        m1Ready: Bool,
+        m2Ready: Bool,
+        realLifecycleProven: Bool,
+        fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
+        directoryExists: (String) -> Bool = { path in
+            var isDirectory = ObjCBool(false)
+            let exists = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+            return exists && isDirectory.boolValue
+        },
+        fileContains: (String, String) -> Bool = { path, needle in
+            guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { return false }
+            return text.contains(needle)
+        }
+    ) -> NativeDistributionReadinessEvidence {
+        let checks = [
+            installTargetCheck(repositoryRoot: repositoryRoot, fileExists: fileExists),
+            widgetExtensionCheck(
+                repositoryRoot: repositoryRoot,
+                fileExists: fileExists,
+                directoryExists: directoryExists,
+                fileContains: fileContains
+            ),
+            legacyDeletionCheck(
+                repositoryRoot: repositoryRoot,
+                m1Ready: m1Ready,
+                m2Ready: m2Ready,
+                realLifecycleProven: realLifecycleProven,
+                directoryExists: directoryExists
+            ),
+            releaseReadinessCheck(
+                repositoryRoot: repositoryRoot,
+                m1Ready: m1Ready,
+                m2Ready: m2Ready,
+                fileExists: fileExists,
+                fileContains: fileContains
+            )
+        ]
+        let blockers = checks.filter { $0.status == .blocked }
+        let status: WorkflowPathStatus = blockers.isEmpty ? .ready : .blocked
+        let reason = blockers.isEmpty
+            ? "M3 Native Distribution 已具备安装目标、Widget Extension、legacy 删除条件和发布证据。"
+            : "M3 仍有 \(blockers.count) 个分发条件未满足：\(blockers.map { $0.requirement.label }.joined(separator: ", "))。"
+        return NativeDistributionReadinessEvidence(status: status, reason: reason, checks: checks)
+    }
+
+    private static func installTargetCheck(
+        repositoryRoot: String,
+        fileExists: (String) -> Bool
+    ) -> NativeDistributionCheck {
+        let packagePath = "\(repositoryRoot)/native/Nexus/Package.swift"
+        let xcodeProjectPath = "\(repositoryRoot)/native/Nexus/Nexus.xcodeproj/project.pbxproj"
+        let hasSwiftPackage = fileExists(packagePath)
+        let hasInstallableAppTarget = fileExists(xcodeProjectPath)
+        return NativeDistributionCheck(
+            requirement: .installTarget,
+            status: hasSwiftPackage && hasInstallableAppTarget ? .ready : .blocked,
+            detail: hasSwiftPackage && hasInstallableAppTarget
+                ? "Native app has a Swift package and Xcode app target for local installation."
+                : "SwiftPM executable 不等于可本地安装的 .app；需要 Xcode app target 或等价安装证据后，Native 才能替代 Tauri bundle。",
+            evidence: [packagePath, xcodeProjectPath]
+        )
+    }
+
+    private static func widgetExtensionCheck(
+        repositoryRoot: String,
+        fileExists: (String) -> Bool,
+        directoryExists: (String) -> Bool,
+        fileContains: (String, String) -> Bool
+    ) -> NativeDistributionCheck {
+        let widgetSource = "\(repositoryRoot)/widget/NexusWidget/NexusWidget.swift"
+        let packagePath = "\(repositoryRoot)/native/Nexus/Package.swift"
+        let hasWidgetSource = fileExists(widgetSource)
+        let hasNativeWidgetTarget = directoryExists("\(repositoryRoot)/native/NexusWidget")
+            || fileContains(packagePath, "NexusWidget")
+        let ready = hasWidgetSource && hasNativeWidgetTarget
+        return NativeDistributionCheck(
+            requirement: .widgetExtension,
+            status: ready ? .ready : .blocked,
+            detail: ready
+                ? "WidgetKit source is attached to the Native target path."
+                : "WidgetKit Swift source exists only as a standalone source file; add a native Widget Extension target before M3 can pass.",
+            evidence: [widgetSource, packagePath]
+        )
+    }
+
+    private static func legacyDeletionCheck(
+        repositoryRoot: String,
+        m1Ready: Bool,
+        m2Ready: Bool,
+        realLifecycleProven: Bool,
+        directoryExists: (String) -> Bool
+    ) -> NativeDistributionCheck {
+        let legacyDirectories = ["src", "src-tauri", "crates"].map { "\(repositoryRoot)/\($0)" }
+        let legacyStillPresent = legacyDirectories.filter(directoryExists)
+        let ready = m1Ready && m2Ready && realLifecycleProven && legacyStillPresent.isEmpty
+        return NativeDistributionCheck(
+            requirement: .legacyDeletion,
+            status: ready ? .ready : .blocked,
+            detail: ready
+                ? "Legacy Web/Tauri/Rust/TypeScript paths have been removed after Native proof."
+                : "Legacy deletion is blocked until M1, M2, one real lifecycle proof, and controlled removal of src/src-tauri/crates are complete.",
+            evidence: legacyStillPresent.isEmpty ? legacyDirectories : legacyStillPresent
+        )
+    }
+
+    private static func releaseReadinessCheck(
+        repositoryRoot: String,
+        m1Ready: Bool,
+        m2Ready: Bool,
+        fileExists: (String) -> Bool,
+        fileContains: (String, String) -> Bool
+    ) -> NativeDistributionCheck {
+        let distributionDoc = "\(repositoryRoot)/docs/distribution.md"
+        let releaseDoc = "\(repositoryRoot)/docs/release-process.md"
+        let ciWorkflow = "\(repositoryRoot)/.github/workflows/ci.yml"
+        let releaseWorkflow = "\(repositoryRoot)/.github/workflows/release.yml"
+        let hasDocs = fileExists(distributionDoc) && fileExists(releaseDoc)
+        let ciMentionsSwift = fileContains(ciWorkflow, "swift test")
+        let releaseStillTauri = fileContains(releaseWorkflow, "tauri") || fileContains(releaseDoc, "Tauri")
+        let ready = m1Ready && m2Ready && hasDocs && ciMentionsSwift && !releaseStillTauri
+        return NativeDistributionCheck(
+            requirement: .releaseReadiness,
+            status: ready ? .ready : .blocked,
+            detail: ready
+                ? "Release docs and CI point at the Swift-native app and WidgetKit path."
+                : "Release readiness is blocked until M1/M2 are stable and release docs/workflows stop pointing users to Tauri artifacts.",
+            evidence: [distributionDoc, releaseDoc, ciWorkflow, releaseWorkflow]
+        )
+    }
+}
