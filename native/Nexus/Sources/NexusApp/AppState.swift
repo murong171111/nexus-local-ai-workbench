@@ -2431,22 +2431,19 @@ final class AppState: ObservableObject {
             detail: "\(signal.title) · \(signal.count) item(s) · 可交给 Codex 继续处理。",
             systemImage: "bolt.badge.clock"
         )
-        _ = try? await bridge.appendAuditEvent(
-            request: AppendAuditEventRequest(
-                auditRoot: auditRootPath,
-                event: AuditEventInput(
-                    actor: "Nexus Native",
-                    action: "automation_signal_handoff.copied",
-                    target: workspaceRoot,
-                    summary: "Copied handoff for \(signal.title)",
-                    metadata: [
-                        "signalId": signal.id,
-                        "kind": signal.kind,
-                        "severity": signal.severity,
-                        "action": signal.action,
-                        "count": "\(signal.count)"
-                    ]
-                )
+        await recordNativeAuditEvent(
+            AuditEventInput(
+                actor: "Nexus Native",
+                action: "automation_signal_handoff.copied",
+                target: workspaceRoot,
+                summary: "Copied handoff for \(signal.title)",
+                metadata: [
+                    "signalId": signal.id,
+                    "kind": signal.kind,
+                    "severity": signal.severity,
+                    "action": signal.action,
+                    "count": "\(signal.count)"
+                ]
             )
         )
     }
@@ -2672,6 +2669,7 @@ final class AppState: ObservableObject {
 
     func nativeLocalCorePartialDomains() -> Set<NativeLocalCoreDomain> {
         [
+            .audit,
             .gitWorktreeStatus
         ]
     }
@@ -4126,23 +4124,20 @@ final class AppState: ObservableObject {
     }
 
     private func recordSettingsProfileAudit(action: String, target: String, summary: String) async {
-        _ = try? await bridge.appendAuditEvent(
-            request: AppendAuditEventRequest(
-                auditRoot: auditRootPath,
-                event: AuditEventInput(
-                    actor: "Nexus Native",
-                    action: action,
-                    target: target,
-                    summary: summary,
-                    metadata: [
-                        "path": target,
-                        "workspacesRoot": workspaceRoot,
-                        "sourceReposRoot": sourceReposRoot,
-                        "docsRoot": docsRoot,
-                        "codexUrl": codexURL,
-                        "refreshIntervalSeconds": "\(refreshIntervalSeconds)"
-                    ]
-                )
+        await recordNativeAuditEvent(
+            AuditEventInput(
+                actor: "Nexus Native",
+                action: action,
+                target: target,
+                summary: summary,
+                metadata: [
+                    "path": target,
+                    "workspacesRoot": workspaceRoot,
+                    "sourceReposRoot": sourceReposRoot,
+                    "docsRoot": docsRoot,
+                    "codexUrl": codexURL,
+                    "refreshIntervalSeconds": "\(refreshIntervalSeconds)"
+                ]
             )
         )
     }
@@ -4210,16 +4205,13 @@ final class AppState: ObservableObject {
         eventMetadata["name"] = workspace.name
         eventMetadata["path"] = workspace.path
 
-        _ = try? await bridge.appendAuditEvent(
-            request: AppendAuditEventRequest(
-                auditRoot: auditRootPath,
-                event: AuditEventInput(
-                    actor: "Nexus Native",
-                    action: action,
-                    target: target,
-                    summary: summary,
-                    metadata: eventMetadata
-                )
+        await recordNativeAuditEvent(
+            AuditEventInput(
+                actor: "Nexus Native",
+                action: action,
+                target: target,
+                summary: summary,
+                metadata: eventMetadata
             )
         )
     }
@@ -4253,16 +4245,28 @@ final class AppState: ObservableObject {
             return
         }
 
+        await recordNativeAuditEvent(
+            AuditEventInput(
+                actor: "Nexus Native",
+                action: action,
+                target: target,
+                summary: summary,
+                metadata: eventMetadata
+            )
+        )
+    }
+
+    private func recordNativeAuditEvent(_ event: AuditEventInput) async {
+        do {
+            _ = try NativeAuditEventStore.append(auditRoot: auditRootPath, event: event)
+        } catch {
+            lastError = "Native audit failed: \(error.localizedDescription)"
+        }
+
         _ = try? await bridge.appendAuditEvent(
             request: AppendAuditEventRequest(
                 auditRoot: auditRootPath,
-                event: AuditEventInput(
-                    actor: "Nexus Native",
-                    action: action,
-                    target: target,
-                    summary: summary,
-                    metadata: eventMetadata
-                )
+                event: event
             )
         )
     }

@@ -284,7 +284,7 @@ Until then, legacy code is frozen reference, not the product direction.
 
 ### M2: Native Local Core
 
-- Replace Rust bridge dependencies for workspace scanning, document inventory, demand intake, readiness, git/worktree status, audit, and settings. `[started with NativeLocalCoreEvidence surfaced in Settings; AppState tracks 4/7 Swift-owned domains and Git/Worktree as partial Swift-owned rules while scan/setup still depend on the legacy bridge]`
+- Replace Rust bridge dependencies for workspace scanning, document inventory, demand intake, readiness, git/worktree status, audit, and settings. `[started with NativeLocalCoreEvidence surfaced in Settings; AppState tracks 4/7 Swift-owned domains plus Git/Worktree and Audit as partial Swift-owned domains while scan/setup and bridge audit compatibility remain legacy-dependent]`
 - Keep import/export compatibility for existing workspace files.
 - Move verification toward Swift tests.
 

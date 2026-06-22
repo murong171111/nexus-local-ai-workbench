@@ -166,7 +166,10 @@ private extension NativeLocalCoreDomain {
         case .gitWorktreeStatus:
             ["native/Nexus/Sources/NexusApp/ServiceWorktreeEvidence.swift"]
         case .audit:
-            ["native/Nexus/Sources/NexusApp/AppState.swift"]
+            [
+                "native/Nexus/Sources/NexusApp/NativeAuditEventStore.swift",
+                "native/Nexus/Sources/NexusApp/AppState.swift"
+            ]
         case .settings:
             ["native/Nexus/Sources/NexusApp/AppState.swift"]
         }
