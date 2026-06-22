@@ -9,7 +9,7 @@ struct WorkspaceListStageBadge: Identifiable, Hashable {
 
 extension WorkspaceMainStage {
     var listBadges: [WorkspaceListStageBadge] {
-        [
+        var badges = [
             WorkspaceListStageBadge(
                 id: "stage",
                 label: id.shortLabel,
@@ -29,6 +29,19 @@ extension WorkspaceMainStage {
                 status: nextStageAllowed ? .ready : status
             )
         ]
+
+        if let primaryEvidence = answer.primaryEvidenceLink {
+            badges.append(
+                WorkspaceListStageBadge(
+                    id: "evidence",
+                    label: primaryEvidence.label,
+                    systemImage: primaryEvidence.systemImage,
+                    status: status
+                )
+            )
+        }
+
+        return badges
     }
 }
 

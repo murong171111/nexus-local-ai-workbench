@@ -1274,8 +1274,8 @@ final class ModelBehaviorTests: XCTestCase {
         )
         let blockedBadges = blockedStage.listBadges
 
-        XCTAssertEqual(blockedBadges.map(\.id), ["stage", "status", "action"])
-        XCTAssertEqual(blockedBadges.map(\.label), ["Worktree", "阻塞 / block", "修复来源"])
+        XCTAssertEqual(blockedBadges.map(\.id), ["stage", "status", "action", "evidence"])
+        XCTAssertEqual(blockedBadges.map(\.label), ["Worktree", "阻塞 / block", "修复来源", "services.md"])
         XCTAssertTrue(blockedBadges.allSatisfy { $0.status == .blocked })
 
         let readyStage = WorkspaceMainStage(
@@ -1291,7 +1291,8 @@ final class ModelBehaviorTests: XCTestCase {
         )
         let readyBadges = readyStage.listBadges
 
-        XCTAssertEqual(readyBadges.map(\.label), ["归档", "就绪 / ready", "归档"])
+        XCTAssertEqual(readyBadges.map(\.label), ["归档", "就绪 / ready", "归档", "交付记录.md"])
+        XCTAssertEqual(readyBadges.last?.id, "evidence")
         XCTAssertEqual(readyBadges.last?.status, .ready)
     }
 

@@ -391,7 +391,7 @@ Target files:
 Plan:
 
 - Introduce a Swift-owned `WorkspaceMainStage` model.
-- Derive list badges from main-stage state instead of many independent metrics. `[started with WorkspaceListStageBadge]`
+- Derive list badges from main-stage state instead of many independent metrics. `[started with WorkspaceListStageBadge including primary evidence]`
 - Keep filters: all, active, risk, blocked, archived.
 - Make archived exclusion explicit in task/risk/worktree counts. `[started with WorkspaceListSummary]`
 
