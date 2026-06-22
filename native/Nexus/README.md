@@ -73,7 +73,13 @@ swift build --package-path native/Nexus
 swift test --package-path native/Nexus
 ```
 
-This does not produce a signed `.app` bundle yet. Packaging, signing, notarization, Widget Extension targets, and updater integration are intentionally separate later steps. The SwiftPM test target covers native model behavior such as menu-bar status priority, lifecycle fallback stages, and Task Center filters.
+Build a local unsigned `.app` bundle from the SwiftPM executable:
+
+```bash
+native/Nexus/Scripts/build-app-bundle.sh --arch arm64 --output native/Nexus/build/Release/Nexus.app
+```
+
+The bundle is suitable for local installation checks and `nexus://` URL scheme registration experiments. Signing, notarization, Widget Extension embedding, DMG packaging, and updater integration are intentionally separate later M3 steps. The SwiftPM test target covers native model behavior such as menu-bar status priority, lifecycle fallback stages, and Task Center filters.
 
 ## Rust Core Bridge
 

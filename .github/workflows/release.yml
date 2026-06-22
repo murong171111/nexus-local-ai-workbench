@@ -43,16 +43,15 @@ jobs:
       - name: Run Native Swift tests
         run: swift test --package-path native/Nexus
 
-      - name: Build Native executable
-        run: swift build --configuration release --arch ${{ matrix.arch }} --package-path native/Nexus
+      - name: Build Native app bundle
+        run: native/Nexus/Scripts/build-app-bundle.sh --arch ${{ matrix.arch }} --output dist/Nexus.app
 
       - name: Package Native artifact
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p dist
-          cp "native/Nexus/.build/${{ matrix.arch }}-apple-macosx/release/NexusNative" dist/NexusNative
-          tar -czf "dist/nexus-native-${{ matrix.artifact }}.tar.gz" -C dist NexusNative
+          test -x dist/Nexus.app/Contents/MacOS/Nexus
+          tar -czf "dist/nexus-native-${{ matrix.artifact }}.tar.gz" -C dist Nexus.app
 
       - name: Upload Native artifact
         uses: actions/upload-artifact@v4

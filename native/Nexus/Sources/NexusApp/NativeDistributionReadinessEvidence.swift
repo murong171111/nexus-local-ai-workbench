@@ -95,15 +95,19 @@ struct NativeDistributionReadinessEvidence: Hashable {
     ) -> NativeDistributionCheck {
         let packagePath = "\(repositoryRoot)/native/Nexus/Package.swift"
         let xcodeProjectPath = "\(repositoryRoot)/native/Nexus/Nexus.xcodeproj/project.pbxproj"
+        let bundleScriptPath = "\(repositoryRoot)/native/Nexus/Scripts/build-app-bundle.sh"
+        let bundleInfoPath = "\(repositoryRoot)/native/Nexus/Packaging/Info.plist"
         let hasSwiftPackage = fileExists(packagePath)
-        let hasInstallableAppTarget = fileExists(xcodeProjectPath)
+        let hasXcodeAppTarget = fileExists(xcodeProjectPath)
+        let hasSwiftPMBundleTarget = fileExists(bundleScriptPath) && fileExists(bundleInfoPath)
+        let hasInstallableAppTarget = hasXcodeAppTarget || hasSwiftPMBundleTarget
         return NativeDistributionCheck(
             requirement: .installTarget,
             status: hasSwiftPackage && hasInstallableAppTarget ? .ready : .blocked,
             detail: hasSwiftPackage && hasInstallableAppTarget
-                ? "Native app has a Swift package and Xcode app target for local installation."
+                ? "Native app has a Swift package and installable app bundle path for local installation."
                 : "SwiftPM executable 不等于可本地安装的 .app；需要 Xcode app target 或等价安装证据后，Native 才能替代 Tauri bundle。",
-            evidence: [packagePath, xcodeProjectPath]
+            evidence: [packagePath, xcodeProjectPath, bundleScriptPath, bundleInfoPath]
         )
     }
 

@@ -1879,6 +1879,46 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(evidence.readinessSummary, "1/4 Ready checks")
     }
 
+    func testNativeDistributionReadinessAcceptsSwiftPMAppBundleEvidence() {
+        let root = "/repo"
+        let files: Set<String> = [
+            "\(root)/native/Nexus/Package.swift",
+            "\(root)/native/Nexus/Scripts/build-app-bundle.sh",
+            "\(root)/native/Nexus/Packaging/Info.plist",
+            "\(root)/widget/NexusWidget/NexusWidget.swift",
+            "\(root)/docs/distribution.md",
+            "\(root)/docs/release-process.md",
+            "\(root)/.github/workflows/ci.yml",
+            "\(root)/.github/workflows/release.yml"
+        ]
+        let evidence = NativeDistributionReadinessEvidence.resolve(
+            repositoryRoot: root,
+            m1Ready: true,
+            m2Ready: true,
+            realLifecycleProven: true,
+            fileExists: { files.contains($0) },
+            directoryExists: { _ in false },
+            fileContains: { path, needle in
+                switch needle {
+                case "swift test":
+                    return path.hasSuffix("ci.yml")
+                case "native/Nexus", "NexusNative", "Swift":
+                    return path.hasSuffix("release.yml")
+                        || path.hasSuffix("distribution.md")
+                        || path.hasSuffix("release-process.md")
+                default:
+                    return false
+                }
+            }
+        )
+
+        let installTarget = evidence.checks.first { $0.requirement == .installTarget }
+        XCTAssertEqual(installTarget?.status, .ready)
+        XCTAssertTrue(installTarget?.detail.contains("installable app bundle path") == true)
+        XCTAssertTrue(installTarget?.evidence.contains("\(root)/native/Nexus/Scripts/build-app-bundle.sh") == true)
+        XCTAssertEqual(evidence.checks.first { $0.requirement == .widgetExtension }?.status, .blocked)
+    }
+
     func testNativeDistributionReadinessCanPassAfterNativeInstallAndDeletionProof() {
         let root = "/repo"
         let files: Set<String> = [

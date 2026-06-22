@@ -18,7 +18,7 @@ swift test --package-path native/Nexus
 swift build --package-path native/Nexus
 ```
 
-The package produces the `NexusNative` executable and verifies the Swift local-core, workflow evidence, Widget snapshot, and distribution readiness models. It is not yet a distributable `.app` bundle; M3 remains blocked until `native/Nexus/Nexus.xcodeproj` or an equivalent app target builds an installable `Nexus.app`.
+The package produces the `NexusNative` executable and verifies the Swift local-core, workflow evidence, Widget snapshot, and distribution readiness models. `native/Nexus/Scripts/build-app-bundle.sh` wraps that executable into a local unsigned `Nexus.app` bundle for installation checks. Signing, notarization, WidgetKit embedding, and DMG packaging remain M3 follow-up work.
 
 ## Installable App Target
 
@@ -70,9 +70,9 @@ The current repository does not yet contain the final installable app target. En
 Two workflows are expected for M3:
 
 - `CI`: runs Swift tests for `native/Nexus` and any remaining compatibility checks required by touched legacy reference code.
-- `Release`: currently builds the SwiftPM `NexusNative` executable from `native/Nexus`, packages `nexus-native-<architecture>.tar.gz`, uploads those Native artifacts to GitHub Releases, and does not publish legacy preview artifacts.
+- `Release`: currently builds the SwiftPM-backed `Nexus.app` bundle from `native/Nexus`, packages `nexus-native-<architecture>.tar.gz`, uploads those Native artifacts to GitHub Releases, and does not publish legacy preview artifacts.
 
-The executable artifact is a transitional M3 proof that the release channel is Native-first. It does not replace the installable app target. The final M3 release workflow should build signed Native app artifacts from `native/Nexus`, package `Nexus.app` and `Nexus.dmg`, then publish those artifacts instead of the transitional executable archive.
+The unsigned app archive is a transitional M3 proof that the release channel is Native-first. The final M3 release workflow should sign and notarize `Nexus.app`, package `Nexus.dmg`, then publish those artifacts instead of the transitional archive.
 
 Pushing workflow files requires a GitHub token with the `workflow` scope.
 
