@@ -115,10 +115,22 @@ struct NativeLocalCoreEvidence: Hashable {
         }
         let blockers = domains.filter { $0.status == .blocked }
         let partials = domains.filter { $0.status == .review }
-        let status: WorkflowPathStatus = blockers.isEmpty ? .ready : .blocked
-        let reason = blockers.isEmpty
-            ? "M2 Native Local Core 已覆盖工作区扫描、文档、需求、就绪、git/worktree、审计、设置、Widget 快照、Codex 会话和搜索索引。"
-            : "M2 仍有 \(blockers.count) 个本地核心域依赖 legacy bridge：\(blockers.map { $0.domain.label }.joined(separator: ", "))。\(partialDetail(partials))"
+        let status: WorkflowPathStatus
+        if !blockers.isEmpty {
+            status = .blocked
+        } else if !partials.isEmpty {
+            status = .review
+        } else {
+            status = .ready
+        }
+        let reason: String
+        if !blockers.isEmpty {
+            reason = "M2 仍有 \(blockers.count) 个本地核心域依赖 legacy bridge：\(blockers.map { $0.domain.label }.joined(separator: ", "))。\(partialDetail(partials))"
+        } else if !partials.isEmpty {
+            reason = "M2 Native Local Core 已无 blocked 域；仍有 \(partials.count) 个域需要补齐 Native 规则：\(partials.map { $0.domain.label }.joined(separator: ", "))。"
+        } else {
+            reason = "M2 Native Local Core 已覆盖工作区扫描、文档、需求、就绪、git/worktree、审计、设置、Widget 快照、Codex 会话和搜索索引。"
+        }
         return NativeLocalCoreEvidence(
             status: status,
             bridgeMode: bridgeMode,
@@ -168,7 +180,10 @@ private extension NativeLocalCoreDomain {
     var nativeEvidence: [String] {
         switch self {
         case .workspaceScanning:
-            ["native/Nexus/Sources/NexusApp/AppState.swift"]
+            [
+                "native/Nexus/Sources/NexusApp/NativeWorkspaceScanner.swift",
+                "native/Nexus/Sources/NexusApp/AppState.swift"
+            ]
         case .documentInventory:
             [
                 "native/Nexus/Sources/NexusApp/WorkspaceEvidenceDocuments.swift",

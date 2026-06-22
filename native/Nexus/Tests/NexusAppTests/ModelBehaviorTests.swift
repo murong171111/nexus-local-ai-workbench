@@ -1070,6 +1070,19 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(fullyNative.reason.contains("M2 Native Local Core"))
     }
 
+    func testNativeLocalCoreEvidenceReviewsPartialDomainsWithoutBlockers() {
+        let evidence = NativeLocalCoreEvidence.resolve(
+            bridgeMode: "Swift Native local core",
+            nativeDomains: Set(NativeLocalCoreDomain.allCases).subtracting([.workspaceScanning, .gitWorktreeStatus]),
+            partialNativeDomains: [.workspaceScanning, .gitWorktreeStatus]
+        )
+
+        XCTAssertEqual(evidence.status, .review)
+        XCTAssertEqual(evidence.migrationSummary, "8/10 Native domains · 2 partial")
+        XCTAssertTrue(evidence.reason.contains("已无 blocked 域"))
+        XCTAssertEqual(evidence.domains.filter { $0.status == .review }.map(\.domain), [.workspaceScanning, .gitWorktreeStatus])
+    }
+
     func testNativeDocumentStoreReadsLocalSnapshots() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-native-document-\(UUID().uuidString)")
@@ -1289,6 +1302,83 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(repos.first?.branch, "main")
         XCTAssertEqual(repos.first?.dirty, true)
         XCTAssertEqual(repos.first?.summary, "有未提交改动")
+    }
+
+    func testNativeWorkspaceScannerBuildsDashboardFromLocalFiles() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-workspace-scan-\(UUID().uuidString)")
+        let workspace = root.appendingPathComponent("2026-06-23-native-dashboard")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try FileManager.default.createDirectory(at: workspace.appendingPathComponent("sql"), withIntermediateDirectories: true)
+        try """
+        # Native Dashboard
+
+        - 需求名称: Swift Native 仪表盘
+        - 目标分支: feature/native-dashboard
+        """.write(to: workspace.appendingPathComponent("workspace.md"), atomically: true, encoding: .utf8)
+        try """
+        # STATUS
+
+        - 当前状态: developing
+        - 风险: Rust scanWorkspaces 尚未完全替换
+        """.write(to: workspace.appendingPathComponent("STATUS.md"), atomically: true, encoding: .utf8)
+        try """
+        # Tasks
+
+        | 任务 | 状态 | 说明 | 优先级 |
+        | --- | --- | --- | --- |
+        | 接入 Native scanner | 进行中 | AppState Native-first | high |
+        | 删除 bridge 兜底 | 待办 | 等 Git/worktree 规则补齐 | medium |
+        """.write(to: workspace.appendingPathComponent("tasks.md"), atomically: true, encoding: .utf8)
+        try """
+        | 服务 | 范围 |
+        | --- | --- |
+        | nexus-app | confirmed |
+        | nexus-cli | candidate |
+        """.write(to: workspace.appendingPathComponent("services.md"), atomically: true, encoding: .utf8)
+        try "select 1;\n".write(to: workspace.appendingPathComponent("sql/change.sql"), atomically: true, encoding: .utf8)
+        try "# SQL notes\n".write(to: workspace.appendingPathComponent("sql/README.md"), atomically: true, encoding: .utf8)
+
+        let dashboard = try NativeWorkspaceScanner.scan(
+            workspacesRoot: root.path,
+            sourceReposRoot: "/tmp/source-repos",
+            docsRoot: "/tmp/docs",
+            now: Date(timeIntervalSince1970: 0)
+        )
+
+        XCTAssertEqual(dashboard.generatedAt, "1970-01-01T00:00:00Z")
+        XCTAssertEqual(dashboard.workspaces.map(\.folder), ["2026-06-23-native-dashboard"])
+        let snapshot = try XCTUnwrap(dashboard.workspaces.first)
+        XCTAssertEqual(snapshot.name, "Swift Native 仪表盘")
+        XCTAssertEqual(snapshot.state, "developing")
+        XCTAssertEqual(snapshot.targetBranch, "feature/native-dashboard")
+        XCTAssertEqual(snapshot.confirmedServices, ["nexus-app"])
+        XCTAssertEqual(snapshot.candidateServices, ["nexus-cli"])
+        XCTAssertEqual(snapshot.taskCounts.doing, 1)
+        XCTAssertEqual(snapshot.taskCounts.todo, 1)
+        XCTAssertEqual(snapshot.riskCount, 1)
+        XCTAssertEqual(snapshot.links["workspace"]?.hasSuffix("/2026-06-23-native-dashboard/workspace.md"), true)
+        XCTAssertEqual(snapshot.sqlFiles?.map(\.relativePath), ["sql/change.sql"])
+        XCTAssertEqual(snapshot.sqlDocuments?.map(\.relativePath), ["sql/README.md"])
+        XCTAssertEqual(snapshot.tasks?.map(\.source), ["workspace", "workspace"])
+    }
+
+    func testNativeWorkspaceScannerReturnsEmptyDashboardForMissingRoot() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-workspace-missing-\(UUID().uuidString)")
+
+        let dashboard = try NativeWorkspaceScanner.scan(
+            workspacesRoot: root.path,
+            sourceReposRoot: "/tmp/source-repos",
+            docsRoot: "/tmp/docs",
+            now: Date(timeIntervalSince1970: 0)
+        )
+
+        XCTAssertEqual(dashboard.generatedAt, "1970-01-01T00:00:00Z")
+        XCTAssertEqual(dashboard.workspacesRoot, root.path)
+        XCTAssertTrue(dashboard.workspaces.isEmpty)
     }
 
     func testNativeSearchModelsGroupAndScopeResultsWithoutBridge() {
@@ -1707,19 +1797,19 @@ final class ModelBehaviorTests: XCTestCase {
 
         let evidence = appState.nativeLocalCoreEvidence()
 
-        XCTAssertEqual(evidence.status, .blocked)
+        XCTAssertEqual(evidence.status, .review)
         XCTAssertEqual(evidence.domains.map(\.domain), NativeLocalCoreDomain.allCases)
-        XCTAssertEqual(evidence.migrationSummary, "8/10 Native domains · 1 partial")
+        XCTAssertEqual(evidence.migrationSummary, "8/10 Native domains · 2 partial")
         XCTAssertEqual(
             evidence.domains.filter { $0.status == .ready }.map(\.domain),
             [.documentInventory, .demandIntake, .readiness, .audit, .settings, .widgetSnapshot, .codexSessions, .searchIndex]
         )
         XCTAssertEqual(
             evidence.domains.filter { $0.status == .review }.map(\.domain),
-            [.gitWorktreeStatus]
+            [.workspaceScanning, .gitWorktreeStatus]
         )
-        XCTAssertTrue(evidence.reason.contains("legacy bridge"))
-        XCTAssertTrue(evidence.reason.contains("部分 Swift 化"))
+        XCTAssertTrue(evidence.reason.contains("已无 blocked 域"))
+        XCTAssertTrue(evidence.reason.contains("Git / Worktree"))
     }
 
     @MainActor

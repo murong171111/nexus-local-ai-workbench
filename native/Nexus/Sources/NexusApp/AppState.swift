@@ -984,14 +984,26 @@ final class AppState: ObservableObject {
         }
 
         do {
-            let dashboard = try await bridge.scanWorkspaces(
-                request: ScanWorkspacesRequest(
+            let dashboard: DashboardSnapshot
+            let resolvedBridgeMode: String
+            do {
+                dashboard = try NativeWorkspaceScanner.scan(
                     workspacesRoot: workspaceRoot,
                     sourceReposRoot: sourceReposRoot,
-                    docsRoot: docsRoot,
-                    auditRoot: auditRootPath
+                    docsRoot: docsRoot
                 )
-            )
+                resolvedBridgeMode = "Swift Native local core"
+            } catch {
+                dashboard = try await bridge.scanWorkspaces(
+                    request: ScanWorkspacesRequest(
+                        workspacesRoot: workspaceRoot,
+                        sourceReposRoot: sourceReposRoot,
+                        docsRoot: docsRoot,
+                        auditRoot: auditRootPath
+                    )
+                )
+                resolvedBridgeMode = bridge.modeDescription
+            }
             let mappedWorkspaces = dashboard.workspaces.map(WorkspaceSummary.init(snapshot:))
             let nativeAuditEvents = (try? NativeAuditEventStore.loadRecent(auditRoot: auditRootPath, limit: 40)) ?? []
             let enrichedWorkspaces = Self.workspaces(mappedWorkspaces, applyingNativeAuditEvents: nativeAuditEvents)
@@ -1005,11 +1017,11 @@ final class AppState: ObservableObject {
                 request: ReadAgentEventsRequest(eventsRoot: agentEventsRootPath, limit: 8)
             )) ?? []
             await rebuildSearchIndex(reportErrors: false)
-            bridgeMode = bridge.modeDescription
+            bridgeMode = resolvedBridgeMode
             agentStatus = AgentStatus(
                 title: "Ready",
                 detail: "\(bridgeMode) · \(enrichedWorkspaces.count) workspaces loaded",
-                connectedTools: ["Codex", "Git", "Nexus Core"]
+                connectedTools: resolvedBridgeMode.contains("Swift Native") ? ["Codex", "Git", "Native"] : ["Codex", "Git", "Nexus Core"]
             )
         } catch {
             lastError = error.localizedDescription
@@ -2634,6 +2646,7 @@ final class AppState: ObservableObject {
 
     func nativeLocalCorePartialDomains() -> Set<NativeLocalCoreDomain> {
         [
+            .workspaceScanning,
             .gitWorktreeStatus
         ]
     }
