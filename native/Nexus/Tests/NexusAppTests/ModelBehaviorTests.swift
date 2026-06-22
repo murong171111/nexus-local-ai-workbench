@@ -28,6 +28,7 @@ final class ModelBehaviorTests: XCTestCase {
             "struct DemandIntakeReadinessEvidence",
             "struct TaskStatusUpdate",
             "struct WorkspaceMainStageEvidenceLink",
+            "struct WorkspaceListStageBadge",
             "func mainStage("
         ]
 
@@ -52,7 +53,8 @@ final class ModelBehaviorTests: XCTestCase {
             "AgentWorkflowModels.swift",
             "WorkspaceLifecycleModels.swift",
             "TaskStatusWritebackModels.swift",
-            "WorkspaceMainStageEvidence.swift"
+            "WorkspaceMainStageEvidence.swift",
+            "WorkspaceListStageBadges.swift"
         ]
 
         for fileName in ownedWorkflowFiles {
@@ -631,6 +633,41 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(links[3].action, .path("/tmp/workspace/STATUS.md"))
         XCTAssertEqual(links[4].action, .lifecycle(.restoreDevelopment))
         XCTAssertNil(links[5].action)
+    }
+
+    func testWorkspaceListStageBadgesComeFromMainStage() {
+        let blockedStage = WorkspaceMainStage(
+            id: .worktreeSetup,
+            status: .blocked,
+            title: "Create worktree",
+            reason: "Missing source repository.",
+            primaryActionLabel: "修复来源",
+            primaryActionSystemImage: "folder.badge.questionmark",
+            primaryAction: .document("services"),
+            evidence: ["services.md"],
+            nextStageAllowed: false
+        )
+        let blockedBadges = blockedStage.listBadges
+
+        XCTAssertEqual(blockedBadges.map(\.id), ["stage", "status", "action"])
+        XCTAssertEqual(blockedBadges.map(\.label), ["Worktree", "阻塞 / block", "修复来源"])
+        XCTAssertTrue(blockedBadges.allSatisfy { $0.status == .blocked })
+
+        let readyStage = WorkspaceMainStage(
+            id: .archived,
+            status: .ready,
+            title: "Ready to archive",
+            reason: "Delivery complete.",
+            primaryActionLabel: "归档",
+            primaryActionSystemImage: "archivebox",
+            primaryAction: .lifecycle(.archived),
+            evidence: ["交付记录.md"],
+            nextStageAllowed: true
+        )
+        let readyBadges = readyStage.listBadges
+
+        XCTAssertEqual(readyBadges.map(\.label), ["归档", "就绪 / ready", "归档"])
+        XCTAssertEqual(readyBadges.last?.status, .ready)
     }
 
     func testWorkspaceBoardColumnsFollowMainWorkflowOrder() {

@@ -3173,8 +3173,9 @@ private struct WorkspaceCard: View {
 
             HStack(spacing: 8) {
                 Pill(label: workspace.branch, systemImage: "arrow.triangle.branch")
-                Pill(label: workspace.state.label, systemImage: "circle.dashed")
-                Pill(label: workspace.aiState, systemImage: "sparkle.magnifyingglass")
+                ForEach(mainStage.listBadges) { badge in
+                    WorkspaceListStagePill(badge: badge)
+                }
             }
 
             LifecycleCompactView(lifecycle: workspace.lifecycle)
@@ -3203,6 +3204,21 @@ private struct WorkspaceCard: View {
             return workspace.isArchived ? NexusPalette.accent.opacity(0.65) : NexusPalette.accent
         }
         return workspace.isArchived ? NexusPalette.border.opacity(0.65) : NexusPalette.border
+    }
+}
+
+private struct WorkspaceListStagePill: View {
+    let badge: WorkspaceListStageBadge
+
+    var body: some View {
+        Label(badge.label, systemImage: badge.systemImage)
+            .font(.caption)
+            .foregroundStyle(badge.status.color)
+            .lineLimit(1)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(badge.status.color.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 }
 
