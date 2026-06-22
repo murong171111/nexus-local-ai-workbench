@@ -1808,6 +1808,44 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(validation.reason.contains("PR"))
     }
 
+    func testValidationPrWritePlanAppendsReviewSnapshotWithoutCallingGithub() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "done",
+            id: "validation-pr-write",
+            healthChecks: [
+                WorkspaceHealthCheck(id: "delivery-record", label: "交付记录", detail: "交付记录可用", status: "pass", action: "delivery"),
+                WorkspaceHealthCheck(id: "sql-directory", label: "SQL", detail: "未声明 SQL 变更。", status: "pass", action: "sql")
+            ]
+        )
+        let validation = ValidationPrEvidence.resolve(
+            workspace: workspace,
+            deliveryGate: DeliveryGateEvidence.resolve(workspace: workspace)
+        )
+        let plan = ValidationPrWritePlan.resolve(workspace: workspace, evidence: validation)
+
+        XCTAssertEqual(plan.status, .review)
+        XCTAssertTrue(plan.canWrite)
+        XCTAssertEqual(plan.items.map(\.id), ["local-check", "delivery-record", "task-risk", "pr-ci", "lifecycle"])
+        XCTAssertTrue(plan.appendedMarkdown.contains("## Nexus Validation / PR Snapshot"))
+        XCTAssertTrue(plan.appendedMarkdown.contains("验证状态：复核 / review"))
+        XCTAssertTrue(plan.appendedMarkdown.contains("不直接调用 GitHub"))
+        XCTAssertTrue(plan.appendedMarkdown.contains("Nexus Native confirmed write"))
+    }
+
+    func testValidationPrWritePlanKeepsArchivedWorkspaceReadOnly() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "archived",
+            id: "validation-pr-write-archived"
+        )
+        let validation = ValidationPrEvidence.resolve(workspace: workspace)
+        let plan = ValidationPrWritePlan.resolve(workspace: workspace, evidence: validation)
+
+        XCTAssertEqual(plan.status, .archived)
+        XCTAssertFalse(plan.canWrite)
+        XCTAssertTrue(plan.appendedMarkdown.isEmpty)
+        XCTAssertTrue(plan.summary.contains("只读"))
+    }
+
     func testValidationPrEvidenceReadyWhenDoneHasPrCiEvidence() {
         let workspace = workspaceForWorkflowSummary(
             stage: "done",

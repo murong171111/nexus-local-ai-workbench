@@ -1618,3 +1618,102 @@ struct ValidationPrEvidence: Hashable {
         }
     }
 }
+
+struct ValidationPrWritePlanItem: Identifiable, Hashable {
+    let id: String
+    let label: String
+    let detail: String
+    let status: WorkflowPathStatus
+    let evidencePath: String?
+}
+
+struct ValidationPrWritePlan: Identifiable, Hashable {
+    let id: String
+    let workspaceID: WorkspaceSummary.ID
+    let workspaceName: String
+    let deliveryPath: String
+    let status: WorkflowPathStatus
+    let summary: String
+    let items: [ValidationPrWritePlanItem]
+    let appendedMarkdown: String
+
+    var canWrite: Bool {
+        status != .archived && !appendedMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    static func resolve(workspace: WorkspaceSummary, evidence: ValidationPrEvidence) -> ValidationPrWritePlan {
+        let deliveryPath = workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md"
+        let id = "\(workspace.id)-validation-pr"
+
+        guard evidence.status != .archived else {
+            return ValidationPrWritePlan(
+                id: id,
+                workspaceID: workspace.id,
+                workspaceName: workspace.name,
+                deliveryPath: deliveryPath,
+                status: .archived,
+                summary: "已归档工作区默认只读；恢复开发后再追加验证/PR 结论。",
+                items: [],
+                appendedMarkdown: ""
+            )
+        }
+
+        let items = evidence.checks.map { check in
+            ValidationPrWritePlanItem(
+                id: check.id,
+                label: check.label,
+                detail: check.detail,
+                status: check.status,
+                evidencePath: check.path
+            )
+        }
+        return ValidationPrWritePlan(
+            id: id,
+            workspaceID: workspace.id,
+            workspaceName: workspace.name,
+            deliveryPath: deliveryPath,
+            status: evidence.status == .ready ? .next : evidence.status,
+            summary: "确认后只会向交付记录追加当前验证/PR 复核快照，不会调用 GitHub 或写回生命周期。",
+            items: items,
+            appendedMarkdown: validationPrMarkdown(workspace: workspace, evidence: evidence, items: items)
+        )
+    }
+
+    private static func validationPrMarkdown(
+        workspace: WorkspaceSummary,
+        evidence: ValidationPrEvidence,
+        items: [ValidationPrWritePlanItem]
+    ) -> String {
+        var lines = [
+            "",
+            "## Nexus Validation / PR Snapshot",
+            "",
+            "- 工作区：\(workspace.name)",
+            "- 生命周期：\(workspace.lifecycle.stage)",
+            "- 验证状态：\(evidence.status.displayLabel)",
+            "- 下一步：\(evidence.primaryActionLabel)",
+            "- 说明：\(evidence.reason)",
+            "",
+            "| 检查项 | 状态 | 证据 | 说明 |",
+            "| --- | --- | --- | --- |"
+        ]
+
+        for item in items {
+            lines.append("| \(escapeMarkdownCell(item.label)) | \(item.status.displayLabel) | \(escapeMarkdownCell(item.evidencePath ?? "-")) | \(escapeMarkdownCell(item.detail)) |")
+        }
+
+        lines.append(contentsOf: [
+            "",
+            "- 写入来源：Nexus Native confirmed write。",
+            "- 集成边界：本记录不直接调用 GitHub；PR、CI、发布或遗留风险结论仍以交付记录和人工链接为准。"
+        ])
+        return lines.joined(separator: "\n")
+    }
+
+    private static func escapeMarkdownCell(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "|", with: "\\|")
+            .replacingOccurrences(of: "\n", with: " ")
+    }
+}

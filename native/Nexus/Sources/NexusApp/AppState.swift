@@ -191,6 +191,7 @@ final class AppState: ObservableObject {
     @Published var pendingDemandTaskTransfer: DemandTaskTransferPlan?
     @Published var pendingDeliveryRecordWrite: DeliveryRecordWritePlan?
     @Published var pendingArchiveChecklistWrite: ArchiveChecklistWritePlan?
+    @Published var pendingValidationPrWrite: ValidationPrWritePlan?
     @Published var pendingLifecycleStatusUpdate: LifecycleStatusUpdate?
     @Published var lastCreatedWorkspace: CreateWorkspaceResponse?
     @Published var pendingWorktreeSetupWorkspace: WorkspaceSummary?
@@ -2710,6 +2711,76 @@ final class AppState: ObservableObject {
                 documentPath: plan.deliveryPath,
                 documentLabel: "打开交付记录",
                 systemImage: "archivebox"
+            )
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    func validationPrWritePlan(for workspace: WorkspaceSummary) -> ValidationPrWritePlan {
+        let delivery = deliveryGateEvidence(for: workspace)
+        return ValidationPrWritePlan.resolve(
+            workspace: workspace,
+            evidence: ValidationPrEvidence.resolve(workspace: workspace, deliveryGate: delivery)
+        )
+    }
+
+    func requestValidationPrWrite(in workspace: WorkspaceSummary) {
+        pendingValidationPrWrite = validationPrWritePlan(for: workspace)
+        lastError = nil
+    }
+
+    func confirmPendingValidationPrWrite(confirmed: Bool) async {
+        guard let plan = pendingValidationPrWrite else {
+            return
+        }
+        guard confirmed else {
+            lastError = "需要确认后才会写入验证/PR 快照。"
+            return
+        }
+        guard plan.canWrite else {
+            lastError = plan.summary
+            return
+        }
+
+        isUpdatingDeliveryRecord = true
+        lastError = nil
+        defer {
+            isUpdatingDeliveryRecord = false
+        }
+
+        do {
+            var content = (try? String(contentsOfFile: plan.deliveryPath, encoding: .utf8)) ?? "# 交付记录\n"
+            if !content.hasSuffix("\n") {
+                content.append("\n")
+            }
+            content.append(plan.appendedMarkdown)
+            if !content.hasSuffix("\n") {
+                content.append("\n")
+            }
+            try content.write(toFile: plan.deliveryPath, atomically: true, encoding: .utf8)
+            pendingValidationPrWrite = nil
+            await recordWorkspaceAction(
+                action: "validation_pr.snapshot_appended",
+                target: plan.deliveryPath,
+                summary: "Appended validation and PR snapshot to delivery record",
+                metadata: [
+                    "deliveryPath": plan.deliveryPath,
+                    "status": plan.status.rawValue,
+                    "checkCount": "\(plan.items.count)"
+                ],
+                workspaceOverride: workspaces.first { $0.id == plan.workspaceID }
+            )
+            await refreshFromBridge()
+            focusWorkspace(id: plan.workspaceID)
+            markLocalWriteFeedback(
+                title: "验证/PR 快照已写入 / Validation snapshot saved",
+                detail: "已追加当前验证、PR、CI 和发布复核快照；外部 PR/CI 链接仍以人工记录为准。",
+                workspaceID: plan.workspaceID,
+                workspaceName: plan.workspaceName,
+                documentPath: plan.deliveryPath,
+                documentLabel: "打开交付记录",
+                systemImage: "point.3.connected.trianglepath.dotted"
             )
         } catch {
             lastError = error.localizedDescription
