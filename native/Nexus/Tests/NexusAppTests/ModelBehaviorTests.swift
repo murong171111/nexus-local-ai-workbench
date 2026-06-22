@@ -1830,6 +1830,9 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(evidence.checks.first { $0.requirement == .legacyDeletion }?.status, .blocked)
         XCTAssertEqual(evidence.checks.first { $0.requirement == .releaseReadiness }?.status, .blocked)
         XCTAssertEqual(evidence.readinessSummary, "0/4 Ready checks")
+        XCTAssertTrue(evidence.checks.first { $0.requirement == .legacyDeletion }?.detail.contains("M2 Native Local Core is not ready") == true)
+        XCTAssertTrue(evidence.checks.first { $0.requirement == .legacyDeletion }?.detail.contains("No real archived workspace lifecycle proof") == true)
+        XCTAssertTrue(evidence.checks.first { $0.requirement == .legacyDeletion }?.evidence.contains("\(root)/src-tauri") == true)
         XCTAssertTrue(evidence.reason.contains("M3"))
     }
 
@@ -1899,6 +1902,45 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertEqual(evidence.checks.map(\.requirement), NativeDistributionRequirement.allCases)
         XCTAssertEqual(evidence.status, .blocked)
+    }
+
+    @MainActor
+    func testAppStateDerivesNativeLifecycleProofFromArchivedWorkspace() {
+        let archived = workspaceForWorkflowSummary(
+            stage: "archived",
+            id: "archived-proof",
+            services: [
+                ServiceStatus(
+                    name: "order",
+                    branch: "feature/workflow-summary",
+                    worktree: "ready",
+                    gitSummary: "clean",
+                    worktreeExists: true,
+                    sourceExists: true
+                )
+            ],
+            tasks: [
+                WorkspaceTask(
+                    id: "done-task",
+                    title: "Done",
+                    status: "done",
+                    detail: "Done",
+                    priority: "normal",
+                    source: "workspace",
+                    sourceEventID: nil,
+                    sourceLine: nil
+                )
+            ]
+        )
+        let blocked = workspaceForWorkflowSummary(
+            stage: "archived",
+            id: "archived-blocked",
+            risks: [RiskAlert(title: "Risk", detail: "Open risk")]
+        )
+
+        XCTAssertTrue(appStateForAutomationTests(workspaces: [archived]).nativeLifecycleProofAvailable())
+        XCTAssertFalse(appStateForAutomationTests(workspaces: [blocked]).nativeLifecycleProofAvailable())
+        XCTAssertFalse(appStateForAutomationTests(workspaces: []).nativeLifecycleProofAvailable())
     }
 
     func testWidgetSnapshotCarriesMainStageAnswerCompatibly() throws {

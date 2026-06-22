@@ -2657,8 +2657,21 @@ final class AppState: ObservableObject {
             repositoryRoot: repositoryRoot,
             m1Ready: workspaces.first.map { mainWorkflowAcceptanceEvidence(for: $0).ready } ?? false,
             m2Ready: nativeLocalCoreEvidence().ready,
-            realLifecycleProven: false
+            realLifecycleProven: nativeLifecycleProofAvailable()
         )
+    }
+
+    func nativeLifecycleProofAvailable() -> Bool {
+        workspaces.contains { workspace in
+            let lifecycleStage = workspace.lifecycle.stage.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let archived = workspace.state == .archived || lifecycleStage == "archived"
+            let hasDeliveryEvidence = workspace.documentLinks["delivery"]?.isEmpty == false
+            let servicesReady = !workspace.services.isEmpty && workspace.services.allSatisfy { service in
+                service.sourceExists && service.worktreeExists
+            }
+            let noActiveTasks = workspace.tasks.allSatisfy { !$0.isActive }
+            return archived && hasDeliveryEvidence && servicesReady && noActiveTasks && workspace.risks.isEmpty
+        }
     }
 
     func deliveryRecordWritePlan(for workspace: WorkspaceSummary) -> DeliveryRecordWritePlan {

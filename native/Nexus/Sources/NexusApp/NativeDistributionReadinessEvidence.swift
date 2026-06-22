@@ -138,15 +138,43 @@ struct NativeDistributionReadinessEvidence: Hashable {
     ) -> NativeDistributionCheck {
         let legacyDirectories = ["src", "src-tauri", "crates"].map { "\(repositoryRoot)/\($0)" }
         let legacyStillPresent = legacyDirectories.filter(directoryExists)
+        let blockers = legacyDeletionBlockers(
+            m1Ready: m1Ready,
+            m2Ready: m2Ready,
+            realLifecycleProven: realLifecycleProven,
+            legacyStillPresent: legacyStillPresent
+        )
         let ready = m1Ready && m2Ready && realLifecycleProven && legacyStillPresent.isEmpty
         return NativeDistributionCheck(
             requirement: .legacyDeletion,
             status: ready ? .ready : .blocked,
             detail: ready
                 ? "Legacy Web/Tauri/Rust/TypeScript paths have been removed after Native proof."
-                : "Legacy deletion is blocked until M1, M2, one real lifecycle proof, and controlled removal of src/src-tauri/crates are complete.",
-            evidence: legacyStillPresent.isEmpty ? legacyDirectories : legacyStillPresent
+                : "Legacy deletion blockers: \(blockers.joined(separator: " "))",
+            evidence: legacyStillPresent.isEmpty ? legacyDirectories : legacyStillPresent + blockers
         )
+    }
+
+    private static func legacyDeletionBlockers(
+        m1Ready: Bool,
+        m2Ready: Bool,
+        realLifecycleProven: Bool,
+        legacyStillPresent: [String]
+    ) -> [String] {
+        var blockers: [String] = []
+        if !m1Ready {
+            blockers.append("M1 main workflow acceptance is not ready.")
+        }
+        if !m2Ready {
+            blockers.append("M2 Native Local Core is not ready.")
+        }
+        if !realLifecycleProven {
+            blockers.append("No real archived workspace lifecycle proof is available.")
+        }
+        if !legacyStillPresent.isEmpty {
+            blockers.append("Legacy directories still exist: \(legacyStillPresent.joined(separator: ", ")).")
+        }
+        return blockers
     }
 
     private static func releaseReadinessCheck(
