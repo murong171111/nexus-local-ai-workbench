@@ -1160,6 +1160,100 @@ struct ArchiveGateEvidence: Hashable {
     }
 }
 
+struct ArchiveChecklistWritePlan: Identifiable, Hashable {
+    let id: String
+    let workspaceID: WorkspaceSummary.ID
+    let workspaceName: String
+    let deliveryPath: String
+    let status: WorkflowPathStatus
+    let summary: String
+    let items: [ArchiveConfirmationPlanItem]
+    let appendedMarkdown: String
+
+    var canWrite: Bool {
+        status != .archived && !items.isEmpty && !appendedMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    static func resolve(workspace: WorkspaceSummary, archiveGate: ArchiveGateEvidence) -> ArchiveChecklistWritePlan {
+        let deliveryPath = workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md"
+        let id = "\(workspace.id)-archive-checklist"
+
+        guard archiveGate.status != .archived else {
+            return ArchiveChecklistWritePlan(
+                id: id,
+                workspaceID: workspace.id,
+                workspaceName: workspace.name,
+                deliveryPath: deliveryPath,
+                status: .archived,
+                summary: "已归档工作区默认只读；恢复开发后再追加归档清单。",
+                items: archiveGate.confirmationPlan,
+                appendedMarkdown: ""
+            )
+        }
+
+        guard !archiveGate.confirmationPlan.isEmpty else {
+            return ArchiveChecklistWritePlan(
+                id: id,
+                workspaceID: workspace.id,
+                workspaceName: workspace.name,
+                deliveryPath: deliveryPath,
+                status: archiveGate.status,
+                summary: "当前没有可写入的归档确认项。",
+                items: [],
+                appendedMarkdown: ""
+            )
+        }
+
+        return ArchiveChecklistWritePlan(
+            id: id,
+            workspaceID: workspace.id,
+            workspaceName: workspace.name,
+            deliveryPath: deliveryPath,
+            status: archiveGate.status == .ready ? .next : archiveGate.status,
+            summary: "确认后只会向交付记录追加当前归档确认清单，不会写回生命周期状态。",
+            items: archiveGate.confirmationPlan,
+            appendedMarkdown: archiveChecklistMarkdown(workspace: workspace, archiveGate: archiveGate)
+        )
+    }
+
+    private static func archiveChecklistMarkdown(
+        workspace: WorkspaceSummary,
+        archiveGate: ArchiveGateEvidence
+    ) -> String {
+        var lines = [
+            "",
+            "## Nexus Archive Checklist",
+            "",
+            "- 工作区：\(workspace.name)",
+            "- 生命周期：\(workspace.lifecycle.stage)",
+            "- 归档状态：\(archiveGate.status.displayLabel)",
+            "- 下一步：\(archiveGate.primaryActionLabel)",
+            "- 说明：\(archiveGate.reason)",
+            "",
+            "| 确认项 | 状态 | 证据 | 操作 | 说明 |",
+            "| --- | --- | --- | --- | --- |"
+        ]
+
+        for item in archiveGate.confirmationPlan {
+            lines.append("| \(escapeMarkdownCell(item.title)) | \(item.status.displayLabel) | \(escapeMarkdownCell(item.evidencePath ?? "-")) | \(escapeMarkdownCell(item.action.displayLabel)) | \(escapeMarkdownCell(item.confirmationHint)) |")
+        }
+
+        lines.append(contentsOf: [
+            "",
+            "- 写入来源：Nexus Native confirmed write。",
+            "- 生命周期写回：本清单只记录归档前证据；最终进入 delivery、done、archived 或 restore 仍需通过生命周期确认弹窗。"
+        ])
+        return lines.joined(separator: "\n")
+    }
+
+    private static func escapeMarkdownCell(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "|", with: "\\|")
+            .replacingOccurrences(of: "\n", with: " ")
+    }
+}
+
 struct ValidationPrCheck: Hashable, Identifiable {
     let id: String
     let label: String

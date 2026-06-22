@@ -114,6 +114,10 @@ struct RootView: View {
             DeliveryRecordWriteSheet(plan: plan)
                 .environmentObject(appState)
         }
+        .sheet(item: $appState.pendingArchiveChecklistWrite) { plan in
+            ArchiveChecklistWriteSheet(plan: plan)
+                .environmentObject(appState)
+        }
         .sheet(item: $appState.pendingLifecycleStatusUpdate) { update in
             LifecycleStatusUpdateSheet(update: update)
                 .environmentObject(appState)
@@ -10468,9 +10472,15 @@ private struct WorkflowStatusView: View {
                     runDeliveryGateAction(action)
                 }
 
-                ArchiveGateEvidenceCardView(evidence: archiveGate) { action in
-                    runDeliveryGateAction(action)
-                }
+                ArchiveGateEvidenceCardView(
+                    evidence: archiveGate,
+                    action: { action in
+                        runDeliveryGateAction(action)
+                    },
+                    writeAction: {
+                        appState.requestArchiveChecklistWrite(in: workspace)
+                    }
+                )
 
                 DeliveryFocusCardView(step: deliveryFocusStep) {
                     runDeliveryFocusAction(deliveryFocusStep.action)
@@ -12261,6 +12271,89 @@ private struct DeliveryRecordWriteSheet: View {
     }
 }
 
+private struct ArchiveChecklistWriteSheet: View {
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmed = false
+    let plan: ArchiveChecklistWritePlan
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("写入归档清单 / Save archive checklist")
+                    .font(.title3.weight(.semibold))
+                Text("Nexus will append the current archive confirmation checklist after confirmation.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            SectionBlock(title: "写入摘要 / Summary") {
+                VStack(alignment: .leading, spacing: 8) {
+                    TaskStatusMetaRow(label: "Workspace", value: plan.workspaceName)
+                    TaskStatusMetaRow(label: "File", value: plan.deliveryPath)
+                    TaskStatusMetaRow(label: "Status", value: plan.status.displayLabel)
+                    TaskStatusMetaRow(label: "Items", value: "\(plan.items.count)")
+                    Text(plan.summary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            SectionBlock(title: plan.canWrite ? "将追加的清单 / New checklist" : "不可写入 / Read-only") {
+                if plan.canWrite {
+                    Text(plan.appendedMarkdown.trimmingCharacters(in: .whitespacesAndNewlines))
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(NexusPalette.badge)
+                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                } else {
+                    Text(plan.summary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Toggle("确认追加到交付记录 / Confirm local write", isOn: $confirmed)
+                .disabled(!plan.canWrite)
+
+            HStack {
+                Button("Cancel") {
+                    appState.pendingArchiveChecklistWrite = nil
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Spacer()
+
+                Button(appState.isUpdatingDeliveryRecord ? "Writing" : "Append") {
+                    Task {
+                        await appState.confirmPendingArchiveChecklistWrite(confirmed: confirmed)
+                        if appState.lastError == nil {
+                            dismiss()
+                        }
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!confirmed || !plan.canWrite || appState.isUpdatingDeliveryRecord)
+            }
+
+            if let error = appState.lastError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(NexusPalette.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(22)
+        .frame(width: 620)
+    }
+}
+
 private struct DeliveryResolutionPlanRow: View {
     let item: DeliveryResolutionPlanItem
     let action: () -> Void
@@ -12381,6 +12474,7 @@ private struct DeliveryGateCheckRow: View {
 private struct ArchiveGateEvidenceCardView: View {
     let evidence: ArchiveGateEvidence
     let action: (WorkspaceMainStageAction) -> Void
+    let writeAction: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -12407,6 +12501,15 @@ private struct ArchiveGateEvidenceCardView: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+
+                Button {
+                    writeAction()
+                } label: {
+                    Label("写入清单", systemImage: "square.and.pencil")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(evidence.status == .archived || evidence.confirmationPlan.isEmpty)
             }
 
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], alignment: .leading, spacing: 8) {

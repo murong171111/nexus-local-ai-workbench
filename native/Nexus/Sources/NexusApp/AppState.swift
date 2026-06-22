@@ -190,6 +190,7 @@ final class AppState: ObservableObject {
     @Published var pendingScopeFreezeWrite: ScopeFreezeWritePlan?
     @Published var pendingDemandTaskTransfer: DemandTaskTransferPlan?
     @Published var pendingDeliveryRecordWrite: DeliveryRecordWritePlan?
+    @Published var pendingArchiveChecklistWrite: ArchiveChecklistWritePlan?
     @Published var pendingLifecycleStatusUpdate: LifecycleStatusUpdate?
     @Published var lastCreatedWorkspace: CreateWorkspaceResponse?
     @Published var pendingWorktreeSetupWorkspace: WorkspaceSummary?
@@ -2644,6 +2645,75 @@ final class AppState: ObservableObject {
             deliveryGate: delivery,
             validationPr: validationPr ?? ValidationPrEvidence.resolve(workspace: workspace, deliveryGate: delivery)
         )
+    }
+
+    func archiveChecklistWritePlan(for workspace: WorkspaceSummary) -> ArchiveChecklistWritePlan {
+        ArchiveChecklistWritePlan.resolve(
+            workspace: workspace,
+            archiveGate: archiveGateEvidence(for: workspace)
+        )
+    }
+
+    func requestArchiveChecklistWrite(in workspace: WorkspaceSummary) {
+        pendingArchiveChecklistWrite = archiveChecklistWritePlan(for: workspace)
+        lastError = nil
+    }
+
+    func confirmPendingArchiveChecklistWrite(confirmed: Bool) async {
+        guard let plan = pendingArchiveChecklistWrite else {
+            return
+        }
+        guard confirmed else {
+            lastError = "需要确认后才会写入归档清单。"
+            return
+        }
+        guard plan.canWrite else {
+            lastError = plan.summary
+            return
+        }
+
+        isUpdatingDeliveryRecord = true
+        lastError = nil
+        defer {
+            isUpdatingDeliveryRecord = false
+        }
+
+        do {
+            var content = (try? String(contentsOfFile: plan.deliveryPath, encoding: .utf8)) ?? "# 交付记录\n"
+            if !content.hasSuffix("\n") {
+                content.append("\n")
+            }
+            content.append(plan.appendedMarkdown)
+            if !content.hasSuffix("\n") {
+                content.append("\n")
+            }
+            try content.write(toFile: plan.deliveryPath, atomically: true, encoding: .utf8)
+            pendingArchiveChecklistWrite = nil
+            await recordWorkspaceAction(
+                action: "archive_checklist.snapshot_appended",
+                target: plan.deliveryPath,
+                summary: "Appended archive checklist to delivery record",
+                metadata: [
+                    "deliveryPath": plan.deliveryPath,
+                    "status": plan.status.rawValue,
+                    "itemCount": "\(plan.items.count)"
+                ],
+                workspaceOverride: workspaces.first { $0.id == plan.workspaceID }
+            )
+            await refreshFromBridge()
+            focusWorkspace(id: plan.workspaceID)
+            markLocalWriteFeedback(
+                title: "归档清单已写入 / Archive checklist saved",
+                detail: "已追加当前归档确认清单；最终生命周期变更仍需通过确认弹窗写回。",
+                workspaceID: plan.workspaceID,
+                workspaceName: plan.workspaceName,
+                documentPath: plan.deliveryPath,
+                documentLabel: "打开交付记录",
+                systemImage: "archivebox"
+            )
+        } catch {
+            lastError = error.localizedDescription
+        }
     }
 
     func demandTaskTransferPlan(for workspace: WorkspaceSummary) -> DemandTaskTransferPlan {

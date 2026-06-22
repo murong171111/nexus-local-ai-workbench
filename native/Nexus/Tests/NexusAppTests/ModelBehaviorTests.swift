@@ -1706,6 +1706,42 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(stage.nextStageAllowed)
     }
 
+    func testArchiveChecklistWritePlanAppendsFinalChecklistWithoutLifecycleWriteback() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "done",
+            id: "archive-checklist-write",
+            healthChecks: [
+                WorkspaceHealthCheck(id: "delivery-record", label: "交付记录", detail: "交付记录可用", status: "pass", action: "delivery"),
+                WorkspaceHealthCheck(id: "sql-directory", label: "SQL", detail: "未声明 SQL 变更。", status: "pass", action: "sql")
+            ]
+        )
+        let delivery = DeliveryGateEvidence.resolve(workspace: workspace)
+        let archive = ArchiveGateEvidence.resolve(workspace: workspace, deliveryGate: delivery)
+        let plan = ArchiveChecklistWritePlan.resolve(workspace: workspace, archiveGate: archive)
+
+        XCTAssertEqual(plan.status, .next)
+        XCTAssertTrue(plan.canWrite)
+        XCTAssertEqual(plan.items.map(\.action), [.reviewDelivery, .reviewValidation, .archive])
+        XCTAssertTrue(plan.appendedMarkdown.contains("## Nexus Archive Checklist"))
+        XCTAssertTrue(plan.appendedMarkdown.contains("归档状态：就绪 / ready"))
+        XCTAssertTrue(plan.appendedMarkdown.contains("Nexus Native confirmed write"))
+        XCTAssertTrue(plan.appendedMarkdown.contains("最终进入 delivery、done、archived 或 restore 仍需通过生命周期确认弹窗"))
+    }
+
+    func testArchiveChecklistWritePlanKeepsArchivedWorkspaceReadOnly() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "archived",
+            id: "archive-checklist-write-archived"
+        )
+        let archive = ArchiveGateEvidence.resolve(workspace: workspace)
+        let plan = ArchiveChecklistWritePlan.resolve(workspace: workspace, archiveGate: archive)
+
+        XCTAssertEqual(plan.status, .archived)
+        XCTAssertFalse(plan.canWrite)
+        XCTAssertTrue(plan.appendedMarkdown.isEmpty)
+        XCTAssertTrue(plan.summary.contains("只读"))
+    }
+
     func testArchiveGateEvidenceKeepsArchivedWorkspaceReadOnly() {
         let workspace = workspaceForWorkflowSummary(
             stage: "archived",
