@@ -553,34 +553,15 @@ final class AppState: ObservableObject {
     }
 
     private func persistWidgetSnapshot(_ snapshot: WidgetSnapshot) {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-
         do {
-            let payload = try encoder.encode(snapshot)
-            var writtenPaths: [String] = []
-
-            let appSupportURL = URL(fileURLWithPath: applicationSupportRootPath, isDirectory: true)
-            try FileManager.default.createDirectory(
-                at: appSupportURL,
-                withIntermediateDirectories: true
+            let writtenPaths = try NativeWidgetSnapshotStore.write(
+                snapshot: snapshot,
+                applicationSupportRoot: applicationSupportRootPath,
+                appGroupURL: FileManager.default.containerURL(
+                    forSecurityApplicationGroupIdentifier: Self.widgetAppGroupIdentifier
+                ),
+                fileName: Self.widgetSnapshotFileName
             )
-            let appSupportSnapshotURL = appSupportURL.appendingPathComponent(Self.widgetSnapshotFileName)
-            try payload.write(to: appSupportSnapshotURL, options: .atomic)
-            writtenPaths.append(appSupportSnapshotURL.path)
-
-            if let appGroupURL = FileManager.default.containerURL(
-                forSecurityApplicationGroupIdentifier: Self.widgetAppGroupIdentifier
-            ) {
-                try FileManager.default.createDirectory(
-                    at: appGroupURL,
-                    withIntermediateDirectories: true
-                )
-                let appGroupSnapshotURL = appGroupURL.appendingPathComponent(Self.widgetSnapshotFileName)
-                try payload.write(to: appGroupSnapshotURL, options: .atomic)
-                writtenPaths.append(appGroupSnapshotURL.path)
-            }
-
             widgetSnapshotStoragePaths = writtenPaths
             widgetSnapshotStorageStatus = writtenPaths.count > 1
                 ? "Application Support + App Group"
@@ -2672,7 +2653,8 @@ final class AppState: ObservableObject {
     func nativeLocalCorePartialDomains() -> Set<NativeLocalCoreDomain> {
         [
             .audit,
-            .gitWorktreeStatus
+            .gitWorktreeStatus,
+            .widgetSnapshot
         ]
     }
 

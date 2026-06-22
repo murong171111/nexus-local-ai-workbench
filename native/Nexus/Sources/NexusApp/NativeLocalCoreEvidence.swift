@@ -8,6 +8,7 @@ enum NativeLocalCoreDomain: String, CaseIterable, Hashable {
     case gitWorktreeStatus
     case audit
     case settings
+    case widgetSnapshot
 
     var label: String {
         switch self {
@@ -25,6 +26,8 @@ enum NativeLocalCoreDomain: String, CaseIterable, Hashable {
             return "审计日志 / Audit"
         case .settings:
             return "设置配置 / Settings"
+        case .widgetSnapshot:
+            return "Widget 快照 / Widget snapshot"
         }
     }
 
@@ -44,6 +47,8 @@ enum NativeLocalCoreDomain: String, CaseIterable, Hashable {
             return "NexusBridge.appendAuditEvent"
         case .settings:
             return "NexusBridge scan roots and profile import/export contracts"
+        case .widgetSnapshot:
+            return "NexusBridge.widgetSnapshot"
         }
     }
 }
@@ -102,7 +107,7 @@ struct NativeLocalCoreEvidence: Hashable {
         let partials = domains.filter { $0.status == .review }
         let status: WorkflowPathStatus = blockers.isEmpty ? .ready : .blocked
         let reason = blockers.isEmpty
-            ? "M2 Native Local Core 已覆盖工作区扫描、文档、需求、就绪、git/worktree、审计和设置。"
+            ? "M2 Native Local Core 已覆盖工作区扫描、文档、需求、就绪、git/worktree、审计、设置和 Widget 快照。"
             : "M2 仍有 \(blockers.count) 个本地核心域依赖 legacy bridge：\(blockers.map { $0.domain.label }.joined(separator: ", "))。\(partialDetail(partials))"
         return NativeLocalCoreEvidence(
             status: status,
@@ -172,6 +177,11 @@ private extension NativeLocalCoreDomain {
             ]
         case .settings:
             ["native/Nexus/Sources/NexusApp/AppState.swift"]
+        case .widgetSnapshot:
+            [
+                "native/Nexus/Sources/NexusApp/NativeWidgetSnapshotStore.swift",
+                "native/Nexus/Sources/NexusApp/AppState.swift"
+            ]
         }
     }
 }

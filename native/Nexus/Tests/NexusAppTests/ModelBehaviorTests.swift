@@ -1001,7 +1001,7 @@ final class ModelBehaviorTests: XCTestCase {
         let partiallyNative = NativeLocalCoreEvidence.resolve(
             bridgeMode: "Rust Core bridge: /tmp/libnexus_ffi.dylib",
             nativeDomains: [.workspaceScanning, .documentInventory],
-            partialNativeDomains: [.audit, .gitWorktreeStatus]
+            partialNativeDomains: [.audit, .gitWorktreeStatus, .widgetSnapshot]
         )
         let fullyNative = NativeLocalCoreEvidence.resolve(
             bridgeMode: "Swift Native local core",
@@ -1010,13 +1010,16 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertEqual(preview.status, .blocked)
         XCTAssertTrue(preview.bridgeIsLegacyDependency)
-        XCTAssertEqual(preview.migrationSummary, "0/7 Native domains")
+        XCTAssertEqual(preview.migrationSummary, "0/8 Native domains")
         XCTAssertEqual(preview.domains.map(\.status), Array(repeating: .blocked, count: NativeLocalCoreDomain.allCases.count))
         XCTAssertEqual(partiallyNative.status, .blocked)
-        XCTAssertEqual(partiallyNative.migrationSummary, "2/7 Native domains · 2 partial")
+        XCTAssertEqual(partiallyNative.migrationSummary, "2/8 Native domains · 3 partial")
         XCTAssertEqual(partiallyNative.domains.filter { $0.status == .ready }.map(\.domain), [.workspaceScanning, .documentInventory])
         XCTAssertEqual(partiallyNative.domains.first { $0.domain == .documentInventory }?.evidence, ["native/Nexus/Sources/NexusApp/WorkspaceEvidenceDocuments.swift"])
-        XCTAssertEqual(partiallyNative.domains.filter { $0.status == .review }.map(\.domain), [.gitWorktreeStatus, .audit])
+        XCTAssertEqual(
+            partiallyNative.domains.filter { $0.status == .review }.map(\.domain),
+            [.gitWorktreeStatus, .audit, .widgetSnapshot]
+        )
         XCTAssertEqual(
             partiallyNative.domains.first { $0.domain == .gitWorktreeStatus }?.evidence,
             [
@@ -1032,8 +1035,16 @@ final class ModelBehaviorTests: XCTestCase {
                 "NexusBridge.appendAuditEvent"
             ]
         )
+        XCTAssertEqual(
+            partiallyNative.domains.first { $0.domain == .widgetSnapshot }?.evidence,
+            [
+                "native/Nexus/Sources/NexusApp/NativeWidgetSnapshotStore.swift",
+                "native/Nexus/Sources/NexusApp/AppState.swift",
+                "NexusBridge.widgetSnapshot"
+            ]
+        )
         XCTAssertEqual(fullyNative.status, .ready)
-        XCTAssertEqual(fullyNative.migrationSummary, "7/7 Native domains")
+        XCTAssertEqual(fullyNative.migrationSummary, "8/8 Native domains")
         XCTAssertFalse(fullyNative.bridgeIsLegacyDependency)
         XCTAssertTrue(fullyNative.reason.contains("M2 Native Local Core"))
     }
@@ -1093,6 +1104,48 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertEqual(events.map(\.id), ["new"])
         XCTAssertEqual(try NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 0), [])
+    }
+
+    func testNativeWidgetSnapshotStoreWritesApplicationAndGroupSnapshots() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-widget-snapshot-\(UUID().uuidString)")
+        let appSupportRoot = root.appendingPathComponent("Application Support").path
+        let appGroupURL = root.appendingPathComponent("App Group")
+        let fileName = "widget-snapshot.json"
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        let snapshot = WidgetSnapshot(
+            generatedAt: "2026-06-23T05:45:00Z",
+            workspacesRoot: "/tmp/workspaces",
+            activeWorkspace: "Demo",
+            activeWorkspaceFolder: "demo-workspace",
+            workspaceCount: 1,
+            riskCount: 0,
+            dirtyServiceCount: 0,
+            missingWorktreeCount: 0,
+            topRisks: [],
+            mainStage: "开发任务 / Development",
+            mainStageStatus: "下一步 / next",
+            mainStageBlockerSummary: "可以继续开发。",
+            mainStageNextAction: "打开任务",
+            mainStageEvidence: "tasks.md",
+            deepLink: "nexus://workspace/demo-workspace"
+        )
+
+        let paths = try NativeWidgetSnapshotStore.write(
+            snapshot: snapshot,
+            applicationSupportRoot: appSupportRoot,
+            appGroupURL: appGroupURL,
+            fileName: fileName
+        )
+
+        XCTAssertEqual(paths.count, 2)
+        XCTAssertTrue(paths.allSatisfy { $0.hasSuffix(fileName) })
+        let payloads = try paths.map { try Data(contentsOf: URL(fileURLWithPath: $0)) }
+        let decodedSnapshots = try payloads.map { try JSONDecoder().decode(WidgetSnapshot.self, from: $0) }
+        XCTAssertTrue(decodedSnapshots.allSatisfy { $0.mainStage == "开发任务 / Development" })
+        XCTAssertEqual(payloads[0], payloads[1])
     }
 
     @MainActor
@@ -1209,14 +1262,14 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertEqual(evidence.status, .blocked)
         XCTAssertEqual(evidence.domains.map(\.domain), NativeLocalCoreDomain.allCases)
-        XCTAssertEqual(evidence.migrationSummary, "4/7 Native domains · 2 partial")
+        XCTAssertEqual(evidence.migrationSummary, "4/8 Native domains · 3 partial")
         XCTAssertEqual(
             evidence.domains.filter { $0.status == .ready }.map(\.domain),
             [.documentInventory, .demandIntake, .readiness, .settings]
         )
         XCTAssertEqual(
             evidence.domains.filter { $0.status == .review }.map(\.domain),
-            [.gitWorktreeStatus, .audit]
+            [.gitWorktreeStatus, .audit, .widgetSnapshot]
         )
         XCTAssertTrue(evidence.reason.contains("legacy bridge"))
         XCTAssertTrue(evidence.reason.contains("部分 Swift 化"))
