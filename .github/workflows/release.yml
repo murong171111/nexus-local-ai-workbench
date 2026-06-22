@@ -28,50 +28,38 @@ jobs:
         include:
           - label: Apple Silicon
             runner: macos-14
-            target: aarch64-apple-darwin
+            arch: arm64
+            artifact: arm64-apple-macos
           - label: Intel
             runner: macos-13
-            target: x86_64-apple-darwin
+            arch: x86_64
+            artifact: x86_64-apple-macos
     runs-on: ${{ matrix.runner }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: ".node-version"
-          cache: "npm"
+      - name: Run Native Swift tests
+        run: swift test --package-path native/Nexus
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
+      - name: Build Native executable
+        run: swift build --configuration release --arch ${{ matrix.arch }} --package-path native/Nexus
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Package Native artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp "native/Nexus/.build/${{ matrix.arch }}-apple-macosx/release/NexusNative" dist/NexusNative
+          tar -czf "dist/nexus-native-${{ matrix.artifact }}.tar.gz" -C dist NexusNative
 
-      - name: Run tests
-        run: npm run test
-
-      - name: Build frontend
-        run: npm run build
-
-      - name: Type-check widget source
-        run: npm run widget:typecheck
-
-      - name: Build Tauri bundle
-        run: npm run tauri:build -- --target ${{ matrix.target }}
-
-      - name: Upload DMG artifact
+      - name: Upload Native artifact
         uses: actions/upload-artifact@v4
         with:
-          name: nexus-${{ matrix.target }}-dmg
+          name: nexus-native-${{ matrix.artifact }}
           if-no-files-found: error
-          path: |
-            src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
-            src-tauri/target/release/bundle/dmg/*.dmg
+          path: dist/nexus-native-${{ matrix.artifact }}.tar.gz
 
   publish:
     name: Publish GitHub Release
@@ -113,9 +101,9 @@ jobs:
           fi
 
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" release-assets/*.dmg --clobber
+            gh release upload "$RELEASE_TAG" release-assets/*.tar.gz --clobber
           else
-            gh release create "$RELEASE_TAG" release-assets/*.dmg \
+            gh release create "$RELEASE_TAG" release-assets/*.tar.gz \
               --title "Nexus $RELEASE_TAG" \
               --notes-file CHANGELOG.md \
               "${FLAGS[@]}"

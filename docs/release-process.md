@@ -49,7 +49,9 @@ git tag v0.1.1
 git push origin main --tags
 ```
 
-The release workflow should build the Native app target for Apple Silicon and Intel, package `Nexus.app` and `Nexus.dmg`, and publish those Native artifacts to the GitHub Release.
+The current release workflow builds the SwiftPM `NexusNative` executable for Apple Silicon and Intel runners, packages `nexus-native-<architecture>.tar.gz`, and publishes those Native artifacts to the GitHub Release. This keeps the release channel on the Native path while the installable app target is still under M3 development.
+
+The final public release workflow should build the Native app target for Apple Silicon and Intel, package `Nexus.app` and `Nexus.dmg`, and publish those signed Native artifacts to the GitHub Release.
 
 You can also run the `Release` workflow manually with a tag input.
 

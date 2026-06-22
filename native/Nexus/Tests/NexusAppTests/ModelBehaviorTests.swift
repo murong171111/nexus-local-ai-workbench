@@ -1838,6 +1838,47 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(evidence.reason.contains("M3"))
     }
 
+    func testNativeDistributionReadinessAllowsNativeReleaseWorkflowBeforeInstallTargetExists() {
+        let root = "/repo"
+        let files: Set<String> = [
+            "\(root)/native/Nexus/Package.swift",
+            "\(root)/widget/NexusWidget/NexusWidget.swift",
+            "\(root)/docs/distribution.md",
+            "\(root)/docs/release-process.md",
+            "\(root)/.github/workflows/ci.yml",
+            "\(root)/.github/workflows/release.yml"
+        ]
+        let directories: Set<String> = ["\(root)/src", "\(root)/src-tauri", "\(root)/crates"]
+        let evidence = NativeDistributionReadinessEvidence.resolve(
+            repositoryRoot: root,
+            m1Ready: true,
+            m2Ready: true,
+            realLifecycleProven: true,
+            fileExists: { files.contains($0) },
+            directoryExists: { directories.contains($0) },
+            fileContains: { path, needle in
+                switch needle {
+                case "swift test":
+                    return path.hasSuffix("ci.yml")
+                case "native/Nexus", "NexusNative", "Swift":
+                    return path.hasSuffix("release.yml")
+                        || path.hasSuffix("distribution.md")
+                        || path.hasSuffix("release-process.md")
+                default:
+                    return false
+                }
+            }
+        )
+
+        let releaseReadiness = evidence.checks.first { $0.requirement == .releaseReadiness }
+        XCTAssertEqual(releaseReadiness?.status, .ready)
+        XCTAssertTrue(releaseReadiness?.detail.contains("Swift-native artifacts") == true)
+        XCTAssertEqual(evidence.checks.first { $0.requirement == .installTarget }?.status, .blocked)
+        XCTAssertEqual(evidence.checks.first { $0.requirement == .widgetExtension }?.status, .blocked)
+        XCTAssertEqual(evidence.checks.first { $0.requirement == .legacyDeletion }?.status, .blocked)
+        XCTAssertEqual(evidence.readinessSummary, "1/4 Ready checks")
+    }
+
     func testNativeDistributionReadinessCanPassAfterNativeInstallAndDeletionProof() {
         let root = "/repo"
         let files: Set<String> = [

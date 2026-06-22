@@ -220,7 +220,7 @@ struct NativeDistributionReadinessEvidence: Hashable {
             requirement: .releaseReadiness,
             status: ready ? .ready : .blocked,
             detail: ready
-                ? "Release docs and CI point at the Swift-native app and WidgetKit path."
+                ? "Release docs, CI, and release workflow point at Swift-native artifacts."
                 : "Release readiness blockers: \(blockers.joined(separator: " "))",
             evidence: [distributionDoc, releaseDoc, ciWorkflow, releaseWorkflow] + blockers
         )

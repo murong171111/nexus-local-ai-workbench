@@ -70,7 +70,9 @@ The current repository does not yet contain the final installable app target. En
 Two workflows are expected for M3:
 
 - `CI`: runs Swift tests for `native/Nexus` and any remaining compatibility checks required by touched legacy reference code.
-- `Release`: builds signed Native app artifacts from `native/Nexus`, packages `Nexus.app` and `Nexus.dmg`, uploads those artifacts to GitHub Releases, and does not publish legacy preview artifacts.
+- `Release`: currently builds the SwiftPM `NexusNative` executable from `native/Nexus`, packages `nexus-native-<architecture>.tar.gz`, uploads those Native artifacts to GitHub Releases, and does not publish legacy preview artifacts.
+
+The executable artifact is a transitional M3 proof that the release channel is Native-first. It does not replace the installable app target. The final M3 release workflow should build signed Native app artifacts from `native/Nexus`, package `Nexus.app` and `Nexus.dmg`, then publish those artifacts instead of the transitional executable archive.
 
 Pushing workflow files requires a GitHub token with the `workflow` scope.
 
