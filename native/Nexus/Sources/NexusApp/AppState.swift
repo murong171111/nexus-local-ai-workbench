@@ -517,13 +517,39 @@ final class AppState: ObservableObject {
                 generatedAt: ISO8601DateFormatter().string(from: Date())
             )
         )
-        widgetSnapshot = nextWidgetSnapshot
-        if let nextWidgetSnapshot {
-            persistWidgetSnapshot(nextWidgetSnapshot)
+        let enrichedWidgetSnapshot = nextWidgetSnapshot.map(enrichWidgetSnapshotWithMainStage)
+        widgetSnapshot = enrichedWidgetSnapshot
+        if let enrichedWidgetSnapshot {
+            persistWidgetSnapshot(enrichedWidgetSnapshot)
         } else {
             widgetSnapshotStorageStatus = "Snapshot unavailable"
             widgetSnapshotStoragePaths = []
         }
+    }
+
+    private func enrichWidgetSnapshotWithMainStage(_ snapshot: WidgetSnapshot) -> WidgetSnapshot {
+        guard let workspace = selectedWorkspace else {
+            return snapshot
+        }
+
+        let answer = workspace.mainStage().answer
+        return WidgetSnapshot(
+            generatedAt: snapshot.generatedAt,
+            workspacesRoot: snapshot.workspacesRoot,
+            activeWorkspace: snapshot.activeWorkspace,
+            activeWorkspaceFolder: snapshot.activeWorkspaceFolder,
+            workspaceCount: snapshot.workspaceCount,
+            riskCount: snapshot.riskCount,
+            dirtyServiceCount: snapshot.dirtyServiceCount,
+            missingWorktreeCount: snapshot.missingWorktreeCount,
+            topRisks: snapshot.topRisks,
+            mainStage: answer.stageLabel,
+            mainStageStatus: answer.status.displayLabel,
+            mainStageBlockerSummary: answer.blockerSummary,
+            mainStageNextAction: answer.nextActionLabel,
+            mainStageEvidence: answer.primaryEvidenceLink?.label,
+            deepLink: snapshot.deepLink
+        )
     }
 
     private func persistWidgetSnapshot(_ snapshot: WidgetSnapshot) {

@@ -14,6 +14,11 @@ struct NexusSnapshot: Decodable {
     let dirtyServiceCount: Int
     let missingWorktreeCount: Int
     let topRisks: [String]
+    let mainStage: String?
+    let mainStageStatus: String?
+    let mainStageBlockerSummary: String?
+    let mainStageNextAction: String?
+    let mainStageEvidence: String?
     let deepLink: String
 
     static let empty = NexusSnapshot(
@@ -26,6 +31,11 @@ struct NexusSnapshot: Decodable {
         dirtyServiceCount: 0,
         missingWorktreeCount: 0,
         topRisks: ["Open Nexus to generate widget data."],
+        mainStage: nil,
+        mainStageStatus: nil,
+        mainStageBlockerSummary: nil,
+        mainStageNextAction: nil,
+        mainStageEvidence: nil,
         deepLink: "nexus://"
     )
 }
@@ -108,6 +118,13 @@ struct NexusWidgetView: View {
 
             if let risk = snapshot.topRisks.first {
                 Text(risk)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            if let mainStage = snapshot.mainStage {
+                Text([mainStage, snapshot.mainStageNextAction, snapshot.mainStageEvidence].compactMap(\.self).joined(separator: " · "))
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
                     .lineLimit(2)

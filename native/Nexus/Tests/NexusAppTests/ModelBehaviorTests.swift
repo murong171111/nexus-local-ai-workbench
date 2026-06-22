@@ -1106,6 +1106,51 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(evidence.status, .blocked)
     }
 
+    func testWidgetSnapshotCarriesMainStageAnswerCompatibly() throws {
+        let snapshot = WidgetSnapshot(
+            generatedAt: "2026-06-23T05:00:00Z",
+            workspacesRoot: "/tmp/workspaces",
+            activeWorkspace: "Delivery Workspace",
+            activeWorkspaceFolder: "2026-06-23-delivery",
+            workspaceCount: 1,
+            riskCount: 0,
+            dirtyServiceCount: 0,
+            missingWorktreeCount: 0,
+            topRisks: [],
+            mainStage: "交付检查 / Delivery",
+            mainStageStatus: "阻塞 / block",
+            mainStageBlockerSummary: "阻塞：SQL rollback evidence is missing.",
+            mainStageNextAction: "查看 SQL",
+            mainStageEvidence: "sql/release.sql",
+            deepLink: "nexus://workspace/2026-06-23-delivery"
+        )
+
+        let encoded = try JSONEncoder().encode(snapshot)
+        let encodedText = String(decoding: encoded, as: UTF8.self)
+
+        XCTAssertTrue(encodedText.contains("mainStage"))
+        XCTAssertTrue(encodedText.contains("mainStageEvidence"))
+
+        let legacyJSON = """
+        {
+          "generatedAt": "2026-06-23T05:00:00Z",
+          "workspacesRoot": "/tmp/workspaces",
+          "activeWorkspace": "Delivery Workspace",
+          "activeWorkspaceFolder": "2026-06-23-delivery",
+          "workspaceCount": 1,
+          "riskCount": 0,
+          "dirtyServiceCount": 0,
+          "missingWorktreeCount": 0,
+          "topRisks": [],
+          "deepLink": "nexus://workspace/2026-06-23-delivery"
+        }
+        """
+
+        let decodedLegacy = try JSONDecoder().decode(WidgetSnapshot.self, from: Data(legacyJSON.utf8))
+        XCTAssertNil(decodedLegacy.mainStage)
+        XCTAssertNil(decodedLegacy.mainStageEvidence)
+    }
+
     func testMainWorkflowAcceptanceEvidenceBlocksMissingStagesAndEvidence() {
         let stages = [
             WorkspaceMainStage(

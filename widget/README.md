@@ -25,6 +25,11 @@ The main app writes:
   "dirtyServiceCount": 0,
   "missingWorktreeCount": 3,
   "topRisks": [],
+  "mainStage": "交付检查 / Delivery",
+  "mainStageStatus": "阻塞 / block",
+  "mainStageBlockerSummary": "阻塞：SQL rollback evidence is missing.",
+  "mainStageNextAction": "查看 SQL",
+  "mainStageEvidence": "sql/release.sql",
   "deepLink": "nexus://workspace/2026-01-01-sample-workspace"
 }
 ```

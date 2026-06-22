@@ -280,7 +280,7 @@ Until then, legacy code is frozen reference, not the product direction.
 - Workspace list and detail use Swift-native domain state.
 - Demand intake and document preview are Native-first.
 - Git/worktree and delivery readiness use Native-owned rules.
-- Main path shows one current stage, one blocker summary, one recommended next step, and the primary evidence file. `[started with WorkspaceStageAnswer blockerSummary and primaryEvidenceLink surfaced in Command Center, workspace list, handoff prompts, and menu bar status]`
+- Main path shows one current stage, one blocker summary, one recommended next step, and the primary evidence file. `[started with WorkspaceStageAnswer blockerSummary and primaryEvidenceLink surfaced in Command Center, workspace list, handoff prompts, menu bar status, and Widget snapshot]`
 
 ### M2: Native Local Core
 
@@ -291,7 +291,7 @@ Until then, legacy code is frozen reference, not the product direction.
 ### M3: Native Distribution Readiness
 
 - Native app becomes the install target. `[started with NativeDistributionReadinessEvidence install target check surfaced in Settings]`
-- WidgetKit is attached to the native app target. `[started with NativeDistributionReadinessEvidence widget target check surfaced in Settings]`
+- WidgetKit is attached to the native app target. `[started with NativeDistributionReadinessEvidence widget target check surfaced in Settings and main-stage snapshot fields]`
 - Tauri is removed after deletion conditions are met. `[started with NativeDistributionReadinessEvidence legacy deletion check surfaced in Settings]`
 - Signing, notarization, updater, and release notes can be addressed after M1/M2 are stable. `[started with NativeDistributionReadinessEvidence release readiness check surfaced in Settings]`
 

@@ -1430,6 +1430,11 @@ public struct WidgetSnapshot: Codable, Equatable, Sendable {
     public let dirtyServiceCount: Int
     public let missingWorktreeCount: Int
     public let topRisks: [String]
+    public let mainStage: String?
+    public let mainStageStatus: String?
+    public let mainStageBlockerSummary: String?
+    public let mainStageNextAction: String?
+    public let mainStageEvidence: String?
     public let deepLink: String
 
     public init(
@@ -1442,6 +1447,11 @@ public struct WidgetSnapshot: Codable, Equatable, Sendable {
         dirtyServiceCount: Int,
         missingWorktreeCount: Int,
         topRisks: [String],
+        mainStage: String? = nil,
+        mainStageStatus: String? = nil,
+        mainStageBlockerSummary: String? = nil,
+        mainStageNextAction: String? = nil,
+        mainStageEvidence: String? = nil,
         deepLink: String
     ) {
         self.generatedAt = generatedAt
@@ -1453,6 +1463,11 @@ public struct WidgetSnapshot: Codable, Equatable, Sendable {
         self.dirtyServiceCount = dirtyServiceCount
         self.missingWorktreeCount = missingWorktreeCount
         self.topRisks = topRisks
+        self.mainStage = mainStage
+        self.mainStageStatus = mainStageStatus
+        self.mainStageBlockerSummary = mainStageBlockerSummary
+        self.mainStageNextAction = mainStageNextAction
+        self.mainStageEvidence = mainStageEvidence
         self.deepLink = deepLink
     }
 }
