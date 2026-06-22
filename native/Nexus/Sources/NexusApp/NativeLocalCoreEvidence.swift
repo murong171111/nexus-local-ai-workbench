@@ -198,6 +198,7 @@ private extension NativeLocalCoreDomain {
             ["native/Nexus/Sources/NexusApp/AppState.swift"]
         case .widgetSnapshot:
             [
+                "native/Nexus/Sources/NexusApp/NativeWidgetSnapshotBuilder.swift",
                 "native/Nexus/Sources/NexusApp/NativeWidgetSnapshotStore.swift",
                 "native/Nexus/Sources/NexusApp/AppState.swift"
             ]

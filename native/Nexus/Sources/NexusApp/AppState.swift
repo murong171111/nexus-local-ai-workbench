@@ -507,48 +507,14 @@ final class AppState: ObservableObject {
     }
 
     private func refreshWidgetSnapshot() async {
-        let nextWidgetSnapshot = try? await bridge.widgetSnapshot(
-            request: WidgetSnapshotRequest(
-                workspacesRoot: workspaceRoot,
-                sourceReposRoot: sourceReposRoot,
-                docsRoot: docsRoot,
-                activeFolder: selectedWorkspaceID ?? "",
-                generatedAt: ISO8601DateFormatter().string(from: Date())
-            )
+        let nextWidgetSnapshot = NativeWidgetSnapshotBuilder.build(
+            generatedAt: ISO8601DateFormatter().string(from: Date()),
+            workspacesRoot: workspaceRoot,
+            workspaces: workspaces,
+            activeWorkspaceID: selectedWorkspaceID
         )
-        let enrichedWidgetSnapshot = nextWidgetSnapshot.map(enrichWidgetSnapshotWithMainStage)
-        widgetSnapshot = enrichedWidgetSnapshot
-        if let enrichedWidgetSnapshot {
-            persistWidgetSnapshot(enrichedWidgetSnapshot)
-        } else {
-            widgetSnapshotStorageStatus = "Snapshot unavailable"
-            widgetSnapshotStoragePaths = []
-        }
-    }
-
-    private func enrichWidgetSnapshotWithMainStage(_ snapshot: WidgetSnapshot) -> WidgetSnapshot {
-        guard let workspace = selectedWorkspace else {
-            return snapshot
-        }
-
-        let answer = workspace.mainStage().answer
-        return WidgetSnapshot(
-            generatedAt: snapshot.generatedAt,
-            workspacesRoot: snapshot.workspacesRoot,
-            activeWorkspace: snapshot.activeWorkspace,
-            activeWorkspaceFolder: snapshot.activeWorkspaceFolder,
-            workspaceCount: snapshot.workspaceCount,
-            riskCount: snapshot.riskCount,
-            dirtyServiceCount: snapshot.dirtyServiceCount,
-            missingWorktreeCount: snapshot.missingWorktreeCount,
-            topRisks: snapshot.topRisks,
-            mainStage: answer.stageLabel,
-            mainStageStatus: answer.status.displayLabel,
-            mainStageBlockerSummary: answer.blockerSummary,
-            mainStageNextAction: answer.nextActionLabel,
-            mainStageEvidence: answer.primaryEvidenceLink?.label,
-            deepLink: snapshot.deepLink
-        )
+        widgetSnapshot = nextWidgetSnapshot
+        persistWidgetSnapshot(nextWidgetSnapshot)
     }
 
     private func persistWidgetSnapshot(_ snapshot: WidgetSnapshot) {
@@ -2660,15 +2626,15 @@ final class AppState: ObservableObject {
             .demandIntake,
             .readiness,
             .searchIndex,
-            .settings
+            .settings,
+            .widgetSnapshot
         ]
     }
 
     func nativeLocalCorePartialDomains() -> Set<NativeLocalCoreDomain> {
         [
             .audit,
-            .gitWorktreeStatus,
-            .widgetSnapshot
+            .gitWorktreeStatus
         ]
     }
 

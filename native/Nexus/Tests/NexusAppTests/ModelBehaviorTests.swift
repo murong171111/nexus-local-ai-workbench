@@ -1000,8 +1000,8 @@ final class ModelBehaviorTests: XCTestCase {
         )
         let partiallyNative = NativeLocalCoreEvidence.resolve(
             bridgeMode: "Rust Core bridge: /tmp/libnexus_ffi.dylib",
-            nativeDomains: [.workspaceScanning, .documentInventory, .searchIndex],
-            partialNativeDomains: [.audit, .gitWorktreeStatus, .widgetSnapshot]
+            nativeDomains: [.workspaceScanning, .documentInventory, .searchIndex, .widgetSnapshot],
+            partialNativeDomains: [.audit, .gitWorktreeStatus]
         )
         let fullyNative = NativeLocalCoreEvidence.resolve(
             bridgeMode: "Swift Native local core",
@@ -1013,8 +1013,8 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(preview.migrationSummary, "0/10 Native domains")
         XCTAssertEqual(preview.domains.map(\.status), Array(repeating: .blocked, count: NativeLocalCoreDomain.allCases.count))
         XCTAssertEqual(partiallyNative.status, .blocked)
-        XCTAssertEqual(partiallyNative.migrationSummary, "3/10 Native domains · 3 partial")
-        XCTAssertEqual(partiallyNative.domains.filter { $0.status == .ready }.map(\.domain), [.workspaceScanning, .documentInventory, .searchIndex])
+        XCTAssertEqual(partiallyNative.migrationSummary, "4/10 Native domains · 2 partial")
+        XCTAssertEqual(partiallyNative.domains.filter { $0.status == .ready }.map(\.domain), [.workspaceScanning, .documentInventory, .widgetSnapshot, .searchIndex])
         XCTAssertEqual(
             partiallyNative.domains.first { $0.domain == .documentInventory }?.evidence,
             [
@@ -1031,7 +1031,7 @@ final class ModelBehaviorTests: XCTestCase {
         )
         XCTAssertEqual(
             partiallyNative.domains.filter { $0.status == .review }.map(\.domain),
-            [.gitWorktreeStatus, .audit, .widgetSnapshot]
+            [.gitWorktreeStatus, .audit]
         )
         XCTAssertEqual(
             partiallyNative.domains.first { $0.domain == .gitWorktreeStatus }?.evidence,
@@ -1052,9 +1052,9 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(
             partiallyNative.domains.first { $0.domain == .widgetSnapshot }?.evidence,
             [
+                "native/Nexus/Sources/NexusApp/NativeWidgetSnapshotBuilder.swift",
                 "native/Nexus/Sources/NexusApp/NativeWidgetSnapshotStore.swift",
-                "native/Nexus/Sources/NexusApp/AppState.swift",
-                "NexusBridge.widgetSnapshot"
+                "native/Nexus/Sources/NexusApp/AppState.swift"
             ]
         )
         XCTAssertEqual(
@@ -1546,6 +1546,56 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(payloads[0], payloads[1])
     }
 
+    func testNativeWidgetSnapshotBuilderUsesCurrentWorkspaceState() {
+        let blockedWorkspace = workspaceForWorkflowSummary(
+            stage: "development",
+            id: "blocked-widget",
+            name: "Blocked Widget",
+            folder: "blocked widget",
+            risks: [
+                RiskAlert(title: "SQL risk", detail: "Rollback evidence missing")
+            ],
+            services: [
+                ServiceStatus(
+                    name: "order",
+                    branch: "feature/widget",
+                    worktree: "/tmp/workspace/repos/order",
+                    gitSummary: "dirty",
+                    worktreeExists: true,
+                    sourceExists: true
+                ),
+                ServiceStatus(
+                    name: "cashier",
+                    branch: "未创建",
+                    worktree: "/tmp/workspace/repos/cashier",
+                    gitSummary: "missing",
+                    worktreeExists: false,
+                    sourceExists: true
+                )
+            ]
+        )
+        let readyWorkspace = workspaceForWorkflowSummary(stage: "development", id: "ready-widget", name: "Ready Widget")
+
+        let snapshot = NativeWidgetSnapshotBuilder.build(
+            generatedAt: "2026-06-23T06:20:00Z",
+            workspacesRoot: "/tmp/workspaces",
+            workspaces: [readyWorkspace, blockedWorkspace],
+            activeWorkspaceID: "blocked-widget"
+        )
+
+        XCTAssertEqual(snapshot.generatedAt, "2026-06-23T06:20:00Z")
+        XCTAssertEqual(snapshot.activeWorkspace, "Blocked Widget")
+        XCTAssertEqual(snapshot.activeWorkspaceFolder, "blocked widget")
+        XCTAssertEqual(snapshot.workspaceCount, 2)
+        XCTAssertEqual(snapshot.riskCount, 1)
+        XCTAssertEqual(snapshot.dirtyServiceCount, 1)
+        XCTAssertEqual(snapshot.missingWorktreeCount, 1)
+        XCTAssertEqual(snapshot.topRisks, ["Blocked Widget: Rollback evidence missing"])
+        XCTAssertNotNil(snapshot.mainStage)
+        XCTAssertNotNil(snapshot.mainStageNextAction)
+        XCTAssertEqual(snapshot.deepLink, "nexus://workspace/blocked%20widget")
+    }
+
     @MainActor
     func testAppStateMergesNativeAuditEventsIntoWorkspaceActivities() {
         let workspace = workspaceForWorkflowSummary(
@@ -1660,14 +1710,14 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertEqual(evidence.status, .blocked)
         XCTAssertEqual(evidence.domains.map(\.domain), NativeLocalCoreDomain.allCases)
-        XCTAssertEqual(evidence.migrationSummary, "6/10 Native domains · 3 partial")
+        XCTAssertEqual(evidence.migrationSummary, "7/10 Native domains · 2 partial")
         XCTAssertEqual(
             evidence.domains.filter { $0.status == .ready }.map(\.domain),
-            [.documentInventory, .demandIntake, .readiness, .settings, .codexSessions, .searchIndex]
+            [.documentInventory, .demandIntake, .readiness, .settings, .widgetSnapshot, .codexSessions, .searchIndex]
         )
         XCTAssertEqual(
             evidence.domains.filter { $0.status == .review }.map(\.domain),
-            [.gitWorktreeStatus, .audit, .widgetSnapshot]
+            [.gitWorktreeStatus, .audit]
         )
         XCTAssertTrue(evidence.reason.contains("legacy bridge"))
         XCTAssertTrue(evidence.reason.contains("部分 Swift 化"))
