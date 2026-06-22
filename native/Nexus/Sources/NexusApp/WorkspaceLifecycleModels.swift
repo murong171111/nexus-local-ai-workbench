@@ -231,6 +231,35 @@ struct LifecycleStatusUpdate: Identifiable, Hashable {
             ]
         }
 
+        if transition == .archived {
+            return [
+                LifecyclePostWriteCheck(
+                    id: "archive-refresh",
+                    label: "刷新归档 / Refresh",
+                    detail: "归档写回后刷新 Native 状态，确认工作区退出活跃风险、任务和 worktree 统计。",
+                    status: .next,
+                    systemImage: "arrow.clockwise",
+                    evidencePath: workspace.documentLinks["status"] ?? "\(workspace.path)/STATUS.md"
+                ),
+                LifecyclePostWriteCheck(
+                    id: "delivery-evidence",
+                    label: "交付记录 / Delivery",
+                    detail: "确认交付记录保留变更、SQL、验证、PR/CI、风险结论和归档清单。",
+                    status: .review,
+                    systemImage: "doc.text.magnifyingglass",
+                    evidencePath: workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md"
+                ),
+                LifecyclePostWriteCheck(
+                    id: "handoff-evidence",
+                    label: "恢复线索 / Handoff",
+                    detail: "确认 handoff 或 Codex session 链接足够恢复上下文，并说明再次开发的入口。",
+                    status: .review,
+                    systemImage: "point.3.connected.trianglepath.dotted",
+                    evidencePath: workspace.documentLinks["handoff"] ?? "\(workspace.path)/handoff.md"
+                )
+            ]
+        }
+
         return [
             LifecyclePostWriteCheck(
                 id: "status-refresh",

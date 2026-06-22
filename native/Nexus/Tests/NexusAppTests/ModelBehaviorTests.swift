@@ -264,6 +264,36 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(checks.first?.detail.contains("重新计算阶段") == true)
     }
 
+    func testLifecycleArchivePostWriteChecksKeepWorkspaceReadOnlyAndEvidenceVisible() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "done",
+            id: "archive-post-write",
+            path: "/tmp/archive-post-write"
+        )
+        let checks = LifecycleStatusUpdate.postWriteChecks(
+            for: .archived,
+            workspace: workspace
+        )
+        let update = LifecycleStatusUpdate(
+            workspaceID: workspace.id,
+            workspaceName: workspace.name,
+            workspacePath: workspace.path,
+            currentStage: workspace.lifecycle.stage,
+            currentLabel: workspace.lifecycle.label,
+            nextState: LifecycleTransition.archived.state,
+            nextLabel: LifecycleTransition.archived.label,
+            focus: LifecycleTransition.archived.focus,
+            nextAction: LifecycleTransition.archived.nextAction,
+            postWriteChecks: checks
+        )
+
+        XCTAssertFalse(update.requiresLocalCheckAfterWrite)
+        XCTAssertEqual(checks.map(\.id), ["archive-refresh", "delivery-evidence", "handoff-evidence"])
+        XCTAssertTrue(update.evidencePaths.contains("/tmp/archive-post-write/交付记录.md"))
+        XCTAssertTrue(update.evidencePaths.contains("/tmp/archive-post-write/handoff.md"))
+        XCTAssertTrue(checks.first?.detail.contains("退出活跃风险") == true)
+    }
+
     func testTaskCenterFiltersMatchHighPriorityAgentAndDeferredTasks() {
         let blocked = TaskCenterItem(
             workspaceID: "workspace-a",

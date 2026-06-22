@@ -317,6 +317,7 @@ Native M1 UI:
 - archived workspace remains visible under Archive
 - archived workspace does not count toward active risk/task/worktree totals
 - archive confirmation plan makes the final checklist explicit before lifecycle writeback to `archived`
+- archive lifecycle writeback shows a post-write checklist for active-count refresh, delivery evidence, and handoff recovery context
 - archived detail is read-only by default, with handoff and delivery evidence as the primary review path
 - restore requires confirmation, writes lifecycle back to `developing`, and shows a post-write checklist that requires local check plus branch, worktree, task/risk, and delivery-record review
 
