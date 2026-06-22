@@ -1328,6 +1328,7 @@ final class AppState: ObservableObject {
         let taskLines = taskHandoffLines(for: workspace)
         let actionLines = sessionActionHandoffLines(for: workspace)
         let localCheckLines = localCheckHandoffLines()
+        let mainStageLines = mainStageAnswerHandoffLines(for: workspace)
 
         return [
             "继续处理这个 Nexus 本地工作区。",
@@ -1348,6 +1349,9 @@ final class AppState: ObservableObject {
             "- 延期任务: \(deferredTaskCount)",
             "- 阻塞任务: \(blockedTaskCount)",
             "- Worktree 缺失: \(workspace.services.filter { !$0.worktreeExists }.count)",
+            "",
+            "## 主路径回答",
+            mainStageLines.joined(separator: "\n"),
             "",
             "## 最近本地检查",
             localCheckLines.joined(separator: "\n"),
@@ -1403,6 +1407,17 @@ final class AppState: ObservableObject {
             "- 活跃任务: \(check.openTaskCount)（高优先级 \(check.highPriorityTaskCount)）",
             "- worktree 问题: 缺失 \(check.missingWorktreeCount)，未提交 \(check.dirtyServiceCount)",
             check.auditError.map { "- 审计写入失败: \($0)" } ?? "- 审计: \(check.auditEventId == nil ? "未写入" : "已写入")"
+        ]
+    }
+
+    private func mainStageAnswerHandoffLines(for workspace: WorkspaceSummary) -> [String] {
+        let answer = workspace.mainStage().answer
+        return [
+            "- 当前阶段: \(answer.stageLabel)",
+            "- 状态: \(answer.status.displayLabel)",
+            "- 阻塞/就绪: \(answer.blockerSummary)",
+            "- 下一步: \(answer.nextActionLabel)",
+            "- 主证据: \(answer.primaryEvidenceLink?.label ?? "未路由")"
         ]
     }
 
@@ -2318,6 +2333,9 @@ final class AppState: ObservableObject {
                 : selected.sessionActions.prefix(5).map { action in
                     "[\(action.priority)/\(action.status)] \(action.label): \(action.detail) · 文档: \(action.documentKey)"
                 }.joined(separator: " | ")
+            let mainStageAnswer = mainStageAnswerHandoffLines(for: selected)
+                .map { $0.replacingOccurrences(of: "- ", with: "", options: [.anchored]) }
+                .joined(separator: " | ")
             let codexSessionDetails = codexSessionLinks(for: selected).isEmpty
                 ? "未绑定"
                 : codexSessionLinks(for: selected).prefix(5).map { link in
@@ -2330,6 +2348,7 @@ final class AppState: ObservableObject {
                 "- 涉及服务: \(selected.serviceSummary.isEmpty ? "待确认" : selected.serviceSummary)",
                 "- 风险数: \(selected.risks.count)",
                 "- 活跃任务: \(selected.tasks.filter(\.isActive).count)",
+                "- 主路径回答: \(mainStageAnswer)",
                 "- 缺失 worktree: \(missingWorktreeDetails.isEmpty ? "无" : missingWorktreeDetails)",
                 "- Worktree 脚本: \(worktreeScriptPath)",
                 "- Worktree 检查: \(worktreeChecks.isEmpty ? "未生成" : worktreeChecks)",

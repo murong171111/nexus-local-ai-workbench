@@ -198,7 +198,7 @@ When adding a new workflow rule, first choose the nearest owner above. Add a new
 
 - Keep AI collaboration as stage-aware handoff, review, and continuation support.
 - Bind multiple Codex sessions to a workspace, but identify the current continuation session separately from historical analysis/PR sessions.
-- Generate minimal context from the current stage, blocker, evidence files, and latest local checks.
+- Generate minimal context from the current stage, blocker, evidence files, and latest local checks. `[started with WorkspaceStageAnswer lines in workspace and automation handoff prompts]`
 - Do not make Nexus directly invoke AI in M1.
 
 ### 7. Mac System Experience

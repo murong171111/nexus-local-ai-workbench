@@ -3641,6 +3641,8 @@ final class ModelBehaviorTests: XCTestCase {
         let prompt = appState.automationSignalHandoffPrompt(for: riskSignal())
 
         XCTAssertTrue(prompt.contains("- 当前工作区: Scoping Workspace"))
+        XCTAssertTrue(prompt.contains("- 主路径回答: 当前阶段:"))
+        XCTAssertTrue(prompt.contains("主证据:"))
         XCTAssertTrue(prompt.contains("Nexus 推荐动作"))
         XCTAssertTrue(prompt.contains("[high/blocked] 确认目标分支 / Confirm branch"))
         XCTAssertTrue(prompt.contains("文档: branches"))
@@ -3743,6 +3745,9 @@ final class ModelBehaviorTests: XCTestCase {
             XCTAssertTrue(prompt.contains("Architecture thread"))
             XCTAssertTrue(prompt.contains("codex://thread/session-1"))
         }
+        XCTAssertTrue(prompts[0].contains("## 主路径回答"))
+        XCTAssertTrue(prompts[0].contains("- 当前阶段:"))
+        XCTAssertTrue(prompts[0].contains("- 主证据:"))
         XCTAssertTrue(prompts[0].contains("notes: Resume design review"))
         XCTAssertTrue(prompts[4].contains("- Codex 会话: Architecture thread: codex://thread/session-1"))
     }
