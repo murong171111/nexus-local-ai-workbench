@@ -1056,25 +1056,10 @@ final class AppState: ObservableObject {
     }
 
     func rebuildSearchIndex(reportErrors: Bool = true) async {
-        do {
-            searchIndexSummary = try await bridge.rebuildSearchIndex(
-                request: RebuildSearchIndexRequest(
-                    indexPath: searchIndexPath,
-                    workspacesRoot: workspaceRoot,
-                    sourceReposRoot: sourceReposRoot,
-                    docsRoot: docsRoot
-                )
-            )
-            searchError = nil
-            if hasSearchQuery {
-                await searchForCurrentQuery()
-            }
-        } catch {
-            searchIndexSummary = nil
-            searchError = error.localizedDescription
-            if reportErrors {
-                lastError = error.localizedDescription
-            }
+        searchIndexSummary = NativeSearchIndexStore.rebuildSummary(indexPath: searchIndexPath, workspaces: workspaces)
+        searchError = nil
+        if hasSearchQuery {
+            await searchForCurrentQuery()
         }
     }
 
@@ -1092,18 +1077,14 @@ final class AppState: ObservableObject {
             isSearching = false
         }
 
-        do {
-            let indexedResults = try await bridge.searchIndex(
-                request: SearchIndexRequest(indexPath: searchIndexPath, query: trimmedQuery, limit: 30)
-            )
-            searchResults = indexedResults.isEmpty ? fallbackSearchResults(matching: trimmedQuery) : indexedResults
-            selectedSearchResultIndex = 0
-            searchError = nil
-        } catch {
-            searchResults = fallbackSearchResults(matching: trimmedQuery)
-            selectedSearchResultIndex = 0
-            searchError = error.localizedDescription
-        }
+        let documentResults = NativeSearchIndexStore.searchResults(
+            matching: trimmedQuery,
+            in: workspaces,
+            limit: 30
+        )
+        searchResults = documentResults.isEmpty ? fallbackSearchResults(matching: trimmedQuery) : documentResults
+        selectedSearchResultIndex = 0
+        searchError = nil
     }
 
     func setAutomationScheduleEnabled(_ enabled: Bool) {
@@ -2678,6 +2659,7 @@ final class AppState: ObservableObject {
             .documentInventory,
             .demandIntake,
             .readiness,
+            .searchIndex,
             .settings
         ]
     }
@@ -2686,7 +2668,6 @@ final class AppState: ObservableObject {
         [
             .audit,
             .gitWorktreeStatus,
-            .searchIndex,
             .widgetSnapshot
         ]
     }
