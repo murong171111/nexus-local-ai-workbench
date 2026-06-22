@@ -1039,6 +1039,7 @@ final class ModelBehaviorTests: XCTestCase {
                 "native/Nexus/Sources/NexusApp/ServiceWorktreeEvidence.swift",
                 "native/Nexus/Sources/NexusApp/NativeSourceRepositoryStore.swift",
                 "native/Nexus/Sources/NexusApp/NativeWorkspaceScanner.swift",
+                "native/Nexus/Sources/NexusApp/NativeWorktreeSetupStore.swift",
                 "NexusBridge.scanWorkspaces / setupWorktrees"
             ]
         )
@@ -3138,6 +3139,83 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(actions.map(\.id), ["run-local-check"])
         XCTAssertNil(actions.first?.document)
         XCTAssertEqual(actions.first?.status, .next)
+    }
+
+    func testNativeWorktreeSetupStoreCreatesAndSkipsLocalWorktrees() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-worktree-setup-\(UUID().uuidString)")
+        let remote = root.appendingPathComponent("remote-order.git")
+        let sourceRoot = root.appendingPathComponent("source-repos")
+        let source = sourceRoot.appendingPathComponent("order")
+        let workspace = root.appendingPathComponent("workspace")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try FileManager.default.createDirectory(at: sourceRoot, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        try runGit(["init", "--bare", remote.path], in: root)
+        try runGit(["clone", remote.path, source.path], in: root)
+        try runGit(["config", "user.email", "nexus@example.com"], in: source)
+        try runGit(["config", "user.name", "Nexus Test"], in: source)
+        try "demo\n".write(to: source.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+        try runGit(["add", "README.md"], in: source)
+        try runGit(["commit", "-m", "init"], in: source)
+        try runGit(["branch", "feature/native-setup"], in: source)
+        try runGit(["push", "origin", "HEAD:main"], in: source)
+        try runGit(["push", "origin", "feature/native-setup"], in: source)
+
+        let response = try NativeWorktreeSetupStore.setup(
+            request: SetupWorktreesRequest(
+                workspacePath: workspace.path,
+                sourceReposRoot: sourceRoot.path,
+                services: ["order"],
+                targetBranch: "feature/native-setup",
+                confirmed: true
+            )
+        )
+
+        XCTAssertEqual(response.created.map(\.service), ["order"])
+        XCTAssertTrue(response.skipped.isEmpty)
+        XCTAssertTrue(response.failed.isEmpty)
+        XCTAssertTrue(response.command.contains("git -C"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: workspace.appendingPathComponent("repos/order/.git").path))
+
+        let second = try NativeWorktreeSetupStore.setup(
+            request: SetupWorktreesRequest(
+                workspacePath: workspace.path,
+                sourceReposRoot: sourceRoot.path,
+                services: ["order"],
+                targetBranch: "feature/native-setup",
+                confirmed: true
+            )
+        )
+
+        XCTAssertTrue(second.created.isEmpty)
+        XCTAssertEqual(second.skipped.map(\.service), ["order"])
+        XCTAssertTrue(second.failed.isEmpty)
+    }
+
+    func testNativeWorktreeSetupStoreRequiresConfirmation() throws {
+        let workspace = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-worktree-unconfirmed-\(UUID().uuidString)")
+        defer {
+            try? FileManager.default.removeItem(at: workspace)
+        }
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+
+        XCTAssertThrowsError(
+            try NativeWorktreeSetupStore.setup(
+                request: SetupWorktreesRequest(
+                    workspacePath: workspace.path,
+                    sourceReposRoot: "/tmp/source-repos",
+                    services: ["order"],
+                    targetBranch: "feature/native-setup",
+                    confirmed: false
+                )
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("explicit confirmation"))
+        }
     }
 
     func testDevelopmentTaskEvidenceRoutesNextActiveTask() {

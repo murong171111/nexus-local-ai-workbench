@@ -3907,7 +3907,7 @@ final class AppState: ObservableObject {
         }
 
         do {
-            let response = try await bridge.setupWorktrees(
+            let response = try NativeWorktreeSetupStore.setup(
                 request: SetupWorktreesRequest(
                     workspacePath: workspace.path,
                     sourceReposRoot: sourceReposRoot,
@@ -3919,6 +3919,19 @@ final class AppState: ObservableObject {
                 )
             )
             lastWorktreeSetupResponse = response
+            await recordNativeAuditEvent(
+                AuditEventInput(
+                    actor: "Nexus Native",
+                    action: "worktree_setup.executed",
+                    target: workspace.path,
+                    summary: "Created \(response.created.count), skipped \(response.skipped.count), failed \(response.failed.count) workspace-local worktrees",
+                    metadata: [
+                        "created": "\(response.created.count)",
+                        "skipped": "\(response.skipped.count)",
+                        "failed": "\(response.failed.count)"
+                    ]
+                )
+            )
             await refreshFromBridge()
         } catch {
             lastError = error.localizedDescription

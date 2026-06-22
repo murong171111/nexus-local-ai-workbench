@@ -203,7 +203,8 @@ private extension NativeLocalCoreDomain {
             [
                 "native/Nexus/Sources/NexusApp/ServiceWorktreeEvidence.swift",
                 "native/Nexus/Sources/NexusApp/NativeSourceRepositoryStore.swift",
-                "native/Nexus/Sources/NexusApp/NativeWorkspaceScanner.swift"
+                "native/Nexus/Sources/NexusApp/NativeWorkspaceScanner.swift",
+                "native/Nexus/Sources/NexusApp/NativeWorktreeSetupStore.swift"
             ]
         case .audit:
             [
