@@ -50,6 +50,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added native archive gate evidence in Command Center and Workflow; archive now reuses delivery hard checks and routes entering delivery, marking done, or archiving through confirmed lifecycle writeback.
 - Added native local-write feedback after task and lifecycle writebacks, including source-document review and follow-up check actions.
 - Added affected-workspace focus from native local-write feedback so task-center writebacks can return users to the refreshed workspace detail.
+- Migrated confirmed Task Center complete/defer writes from the Swift/Rust bridge happy path to a Swift Native `tasks.md` store with matching `workspace_task.updated` audit events.
 - Converged native local-write feedback actions so source-document and follow-up check actions focus the affected workspace first and wrap cleanly in the inspector.
 - Added unified native operation feedback for local errors, with copy-error, refresh, environment-check, Settings, and dismiss actions in the inspector.
 - Added a compact recent-writeback card to the native Task Center for task status updates that changed `tasks.md`.

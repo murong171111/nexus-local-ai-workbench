@@ -28,7 +28,7 @@ Nexus 是一个面向 macOS 的本地 AI 开发工作台，用来管理需求工
 - 原生工作区详情支持一键用 Finder、IDE、Terminal 或 Codex 打开当前工作区，其中 Codex 会先复制包含本地检查、服务/worktree、任务、交付和推荐动作的工作区接力包；IDE 使用 Settings 中的 URL 模板，默认适配 IntelliJ IDEA。
 - 原生工作区详情支持绑定多个 Codex 会话深度链接，可查看、打开、复制和删除，并把绑定保存到工作区内的 `codex-sessions.json`；当近期 Agent Event 带有匹配当前工作区的 Codex 深链 metadata 时，Sessions 区块会给出建议绑定。
 - Tauri 工作区详情抽屉也会读写工作区内的 `codex-sessions.json`，可以在同一条详情流里绑定、查看、打开、复制和删除多个 Codex 会话链接。
-- 原生 SwiftUI 壳支持本地任务中心，从 `tasks.md` 展示未完成任务，可显示任务来源行号并定位源文档，支持持久化筛选、最近任务写回反馈，也能显示 Agent 写回的任务，并在写入后提供聚焦 Agent 任务和打开 `tasks.md` 的后续动作，同时支持确认后完成、延期任务，以及复制任务级上下文并打开 Codex。延期任务仍保留在延期筛选中，但不会继续触发活跃任务告警或交付阻塞。
+- 原生 SwiftUI 壳支持本地任务中心，从 `tasks.md` 展示未完成任务，可显示任务来源行号并定位源文档，支持持久化筛选、最近任务写回反馈，也能显示 Agent 写回的任务，并在写入后提供聚焦 Agent 任务和打开 `tasks.md` 的后续动作，同时支持确认后完成、延期任务，以及复制任务级上下文并打开 Codex。确认完成/延期会由 Swift Native 本地核心写回 root `tasks.md` 并记录 `workspace_task.updated` 审计事件。延期任务仍保留在延期筛选中，但不会继续触发活跃任务告警或交付阻塞。
 - Rust Core 和原生本地检查会把 `进行中`/`待办` 任务汇总为 `active-tasks` 检查项，并生成 `continue-active-tasks` 下一步动作，让未完成任务直接回到 `tasks.md`，不会只藏在任务数量里。
 - 原生 SwiftUI 壳支持工作区筛选持久化、实时计数、空筛选禁用，以及从侧边栏或空状态一键恢复全部工作区。
 - 原生 SwiftUI 壳支持 macOS 菜单栏状态入口，可快速查看工作区、风险、任务、worktree 和未提交服务状态，并执行刷新、设置和复制摘要动作；缺失 worktree 或未提交服务会进入菜单栏标题和复制摘要。

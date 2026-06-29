@@ -3772,7 +3772,7 @@ final class AppState: ObservableObject {
         }
 
         do {
-            let response = try await bridge.updateWorkspaceTask(
+            let response = try NativeWorkspaceTaskStore.update(
                 request: UpdateWorkspaceTaskRequest(
                     workspacePath: update.workspacePath,
                     taskId: update.taskID,

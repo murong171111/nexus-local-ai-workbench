@@ -1034,6 +1034,11 @@ final class ModelBehaviorTests: XCTestCase {
                 "native/Nexus/Sources/NexusApp/NativeDemandIntakeStore.swift"
             ]
         )
+        XCTAssertTrue(
+            fullyNative.domains.first { $0.domain == .readiness }?.evidence.contains(
+                "native/Nexus/Sources/NexusApp/NativeWorkspaceTaskStore.swift"
+            ) ?? false
+        )
         XCTAssertEqual(
             partiallyNative.domains.filter { $0.status == .review }.map(\.domain),
             [.gitWorktreeStatus]
@@ -1172,6 +1177,81 @@ final class ModelBehaviorTests: XCTestCase {
         ) { error in
             XCTAssertTrue(error.localizedDescription.contains("safe single directory"))
         }
+    }
+
+    func testNativeWorkspaceTaskStoreRequiresConfirmationAndRewritesStatus() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-task-status-\(UUID().uuidString)")
+        let workspaceURL = root.appendingPathComponent("2026-05-28-task-status")
+        let auditRoot = root.appendingPathComponent("audit")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        let tasksURL = workspaceURL.appendingPathComponent("tasks.md")
+        let originalTasks = """
+        # Tasks
+
+        | 任务 | 状态 | 说明 |
+        | --- | --- | --- |
+        | 核对任务中心 | 进行中 | priority=high |
+        | Review permission request | 待办 | priority=medium event=agent-1 |
+        """ + "\n"
+        try originalTasks.write(to: tasksURL, atomically: true, encoding: .utf8)
+
+        XCTAssertThrowsError(
+            try NativeWorkspaceTaskStore.update(
+                request: UpdateWorkspaceTaskRequest(
+                    workspacePath: workspaceURL.path,
+                    taskId: "2026-05-28-task-status:task-0",
+                    status: "已完成",
+                    confirmed: false
+                )
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("explicit confirmation"))
+        }
+
+        let completed = try NativeWorkspaceTaskStore.update(
+            request: UpdateWorkspaceTaskRequest(
+                workspacePath: workspaceURL.path,
+                taskId: "2026-05-28-task-status:task-0",
+                status: "已完成",
+                confirmed: true,
+                auditRoot: auditRoot.path,
+                actor: "Nexus Test"
+            )
+        )
+        let deferred = try NativeWorkspaceTaskStore.update(
+            request: UpdateWorkspaceTaskRequest(
+                workspacePath: workspaceURL.path,
+                taskId: "2026-05-28-task-status:agent-1",
+                status: "延期",
+                detail: "priority=medium event=agent-1 deferred=2026-05-28",
+                confirmed: true,
+                auditRoot: auditRoot.path,
+                actor: "Nexus Test"
+            )
+        )
+        let content = try String(contentsOf: tasksURL, encoding: .utf8)
+        let events = try NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 5)
+
+        XCTAssertEqual(completed.path, tasksURL.path)
+        XCTAssertEqual(completed.previousStatus, "进行中")
+        XCTAssertEqual(completed.task.title, "核对任务中心")
+        XCTAssertEqual(completed.task.status, "已完成")
+        XCTAssertEqual(completed.task.priority, "high")
+        XCTAssertEqual(deferred.previousStatus, "待办")
+        XCTAssertEqual(deferred.task.id, "2026-05-28-task-status:agent-1")
+        XCTAssertEqual(deferred.task.source, "agent")
+        XCTAssertEqual(deferred.task.sourceEventId, "agent-1")
+        XCTAssertTrue(content.contains("| 核对任务中心 | 已完成 | priority=high |"))
+        XCTAssertTrue(content.contains("| Review permission request | 延期 | priority=medium event=agent-1 deferred=2026-05-28 |"))
+        XCTAssertTrue(content.hasSuffix("\n"))
+        XCTAssertEqual(events.first?.action, "workspace_task.updated")
+        XCTAssertEqual(events.first?.actor, "Nexus Test")
+        XCTAssertEqual(events.first?.metadata["taskId"], "2026-05-28-task-status:agent-1")
+        XCTAssertEqual(events.first?.metadata["status"], "延期")
     }
 
     func testNativeDocumentStoreReadsLocalSnapshots() throws {
