@@ -2780,7 +2780,11 @@ final class ModelBehaviorTests: XCTestCase {
                         || path.hasSuffix("verify-release-bundle.sh")
                         || path.hasSuffix("AppState.swift")
                 case "sidecar_checksums",
-                     "updateChannel":
+                     "updateChannel",
+                     "Release manifest schemaVersion must be 1",
+                     "Release manifest app must be Nexus",
+                     "Release manifest sizeBytes must match DMG size",
+                     "sizeBytes":
                     return path.hasSuffix("verify-release-bundle.sh")
                 case "signed WidgetKit",
                      "real-credential notarized release run",
@@ -3042,7 +3046,11 @@ final class ModelBehaviorTests: XCTestCase {
                         || path.hasSuffix("verify-release-bundle.sh")
                         || path.hasSuffix("AppState.swift")
                 case "sidecar_checksums",
-                     "updateChannel":
+                     "updateChannel",
+                     "Release manifest schemaVersion must be 1",
+                     "Release manifest app must be Nexus",
+                     "Release manifest sizeBytes must match DMG size",
+                     "sizeBytes":
                     return path.hasSuffix("verify-release-bundle.sh")
                 case "struct NativeUpdateChannelStatus",
                      "automaticUpdatesEnabled: false",

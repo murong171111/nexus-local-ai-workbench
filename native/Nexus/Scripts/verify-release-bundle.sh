@@ -178,6 +178,7 @@ from pathlib import Path
 manifest_path = Path(sys.argv[1])
 dmg_paths = [Path(path) for path in sys.argv[2:]]
 dmgs = {path.name for path in dmg_paths}
+dmg_sizes = {path.name: path.stat().st_size for path in dmg_paths}
 sidecars = {f"{path.name}.sha256" for path in dmg_paths}
 sidecar_checksums = {}
 for path in dmg_paths:
@@ -186,6 +187,10 @@ for path in dmg_paths:
     sidecar_checksums[sidecar_path.name] = checksum
 
 data = json.loads(manifest_path.read_text(encoding="utf-8"))
+if data.get("schemaVersion") != 1:
+    raise SystemExit("Release manifest schemaVersion must be 1")
+if data.get("app") != "Nexus":
+    raise SystemExit("Release manifest app must be Nexus")
 if data.get("updateChannel") != "manual-github-release":
     raise SystemExit("Release manifest updateChannel must be manual-github-release")
 if data.get("automaticUpdatesEnabled") is not False:
@@ -200,15 +205,20 @@ for artifact in artifacts:
     dmg = artifact.get("dmg")
     checksum_file = artifact.get("checksumFile")
     sha256 = artifact.get("sha256")
+    size_bytes = artifact.get("sizeBytes")
     if not dmg or not checksum_file:
         raise SystemExit("Release manifest artifact is missing dmg or checksumFile")
     if not isinstance(sha256, str) or len(sha256) != 64:
         raise SystemExit(f"Release manifest artifact has invalid sha256: {dmg}")
+    if not isinstance(size_bytes, int) or size_bytes <= 0:
+        raise SystemExit(f"Release manifest artifact has invalid sizeBytes: {dmg}")
     manifest_dmgs.add(dmg)
     if checksum_file not in sidecars:
         raise SystemExit(f"Release manifest references missing checksum sidecar: {checksum_file}")
     if sha256 != sidecar_checksums.get(checksum_file):
         raise SystemExit(f"Release manifest sha256 must match checksum sidecar: {dmg}")
+    if size_bytes != dmg_sizes.get(dmg):
+        raise SystemExit(f"Release manifest sizeBytes must match DMG size: {dmg}")
 
 missing = dmgs - manifest_dmgs
 extra = manifest_dmgs - dmgs

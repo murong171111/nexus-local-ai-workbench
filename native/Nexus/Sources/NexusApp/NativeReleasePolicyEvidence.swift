@@ -212,9 +212,13 @@ struct NativeReleasePolicyEvidence: Hashable {
         ]
         let verifierNeedles = [
             "Release manifest sha256 must match checksum sidecar",
+            "Release manifest schemaVersion must be 1",
+            "Release manifest app must be Nexus",
+            "Release manifest sizeBytes must match DMG size",
             "sidecar_checksums",
             "updateChannel",
-            "automaticUpdatesEnabled"
+            "automaticUpdatesEnabled",
+            "sizeBytes"
         ]
         var missing = missingNeedles(generatorNeedles, path: releaseManifestScript, fileContains: fileContains)
         missing.append(contentsOf: verifierNeedles

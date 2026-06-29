@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Added
 
+- Native release bundle verification now rejects release manifests whose schema, app identity, or artifact size metadata do not match the final Native DMG assets.
 - Native release-note verification now rejects release manifests whose tag, manual update channel, or automatic-update disabled flag do not match the public release gate.
 - Native release policy evidence and release-note verification now require release notes to state the update metadata requested remotely before updater/public release gates can pass.
 - Native lifecycle proof bundle exports now return audit event IDs alongside audit-log paths after confirmed Swift writes.
