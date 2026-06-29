@@ -94,7 +94,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added a native Automation Action Center that turns local check signals into focus, delivery, task, worktree, and Codex handoff actions.
 - Refined native Automation Action Center delivery routing so delivery signals target the relevant workspace, prefer SQL artifact issues, and include delivery/SQL check evidence in copied Codex prompts.
 - Refined native Automation Action Center task routing so copied task-check prompts target the workspace with high-priority or open tasks instead of the incidental current selection.
-- Added native Automation Action Center branch routing so local checks emit branch-alignment signals, count branch issues, open the relevant `branches.md`, and copy branch-aware Codex prompts.
+- Added native Automation Action Center branch routing so local checks emit target-branch availability signals, count branch issues, open the relevant `branches.md`, and copy branch-aware Codex prompts.
 - Refined native Automation Action Center dirty-service routing so dirty git checks are separate from missing worktrees, select the affected workspace, and open a service-scoped Codex handoff with concrete dirty service evidence.
 - Added inline local-check receipts in Command Center and Risk Review so manual checks leave visible status, metric, audit, and copy-summary feedback near the workflow that triggered them.
 - Added a compact native workspace-detail status overview for lifecycle, branch, services, risk, tasks, delivery, Codex sessions, and latest local-check state.

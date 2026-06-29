@@ -36,11 +36,11 @@
             "exists": true,
             "branch": "main...origin/main",
             "dirty": false,
-            "summary": "干净"
+            "summary": "target branch missing: chen/sample-workspace"
           }
         }
       ],
-      "risks": ["分支不一致: order(chen/old-branch)", "交付记录待补充"],
+      "risks": ["目标分支不可用: order(chen/sample-workspace)", "交付记录待补充"],
       "riskCount": 2,
       "updated": "2026-01-01",
       "links": {

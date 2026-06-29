@@ -34,7 +34,7 @@ pub use documents::{
 };
 pub use git::{
     expand_user_path, git_status, normalize_git_branch, scan_source_repos, target_branch_confirmed,
-    GitStatus, SourceRepo,
+    target_branch_exists, GitStatus, SourceRepo,
 };
 pub use index::{
     rebuild_search_index, search_index, RebuildSearchIndexResponse, SearchResult,

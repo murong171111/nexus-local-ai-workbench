@@ -180,7 +180,10 @@ test("todayString returns an ISO date", () => {
 test("workspaceScore prioritizes risks and dirty worktrees", () => {
   const scored = workspace({
     riskCount: 2,
-    gitRows: [gitRow("order", { worktree: { dirty: true } }), gitRow("store", { worktree: { branch: "chen/other" } })]
+    gitRows: [
+      gitRow("order", { worktree: { dirty: true } }),
+      gitRow("store", { worktree: { branch: "chen/other" }, source: { summary: "target branch missing: chen/demo" } })
+    ]
   });
   assert.equal(workspaceScore(scored), 28);
 });
@@ -191,7 +194,7 @@ test("workspaceWorktreeSignals maps git rows into stable attention signals", () 
       targetBranch: "chen/demo",
       gitRows: [
         gitRow("missing", { worktree: { exists: false, branch: "未创建", summary: "missing" } }),
-        gitRow("mismatch", { worktree: { branch: "chen/other", summary: "wrong branch" } }),
+        gitRow("missing-target", { worktree: { branch: "chen/other", summary: "wrong branch" }, source: { summary: "target branch missing: chen/demo" } }),
         gitRow("dirty", { worktree: { dirty: true, summary: "M file.ts" } }),
         gitRow("source-dirty", { source: { dirty: true, summary: "M src/lib.rs" } }),
         gitRow("clean")
@@ -203,13 +206,13 @@ test("workspaceWorktreeSignals maps git rows into stable attention signals", () 
     signals.map((signal) => [signal.service, signal.kind, signal.priority]),
     [
       ["missing", "missing", "high"],
-      ["mismatch", "branch-mismatch", "high"],
+      ["missing-target", "target-branch-missing", "high"],
       ["dirty", "dirty", "medium"],
       ["source-dirty", "source-dirty", "low"],
       ["clean", "clean", "low"]
     ]
   );
-  assert.match(signals[1].detail, /expected chen\/demo/);
+  assert.match(signals[1].detail, /target branch chen\/demo/);
   assert.match(signals[2].detail, /M file\.ts/);
 });
 
@@ -218,7 +221,7 @@ test("workspaceScore includes missing worktree signals before branch and dirty s
     riskCount: 1,
     gitRows: [
       gitRow("missing", { worktree: { exists: false } }),
-      gitRow("mismatch", { worktree: { branch: "chen/other" } }),
+      gitRow("missing-target", { worktree: { branch: "chen/other" }, source: { summary: "target branch missing: chen/demo" } }),
       gitRow("dirty", { worktree: { dirty: true } })
     ]
   });
@@ -325,13 +328,13 @@ test("hasConfirmedTargetBranch ignores pending branch placeholders", () => {
   assert.equal(hasConfirmedTargetBranch("<target-branch>"), false);
 });
 
-test("branchAlignmentRows returns worktrees that are not on the target branch", () => {
+test("branchAlignmentRows returns services whose source repo lacks the target branch", () => {
   const rows = branchAlignmentRows(
     workspace({
       targetBranch: "chen/demo",
       gitRows: [
-        gitRow("order", { worktree: { branch: "chen/demo...origin/chen/demo" }, source: { branch: "main" } }),
-        gitRow("store", { worktree: { branch: "chen/other" }, source: { branch: "master" } }),
+        gitRow("order", { worktree: { branch: "chen/other" }, source: { branch: "main", summary: "target branch available: chen/demo" } }),
+        gitRow("store", { worktree: { branch: "chen/other" }, source: { branch: "master", summary: "target branch missing: chen/demo" } }),
         gitRow("message", { worktree: { exists: false, branch: "未创建" }, source: { branch: "main" } })
       ]
     })
@@ -388,9 +391,9 @@ test("workspaceMatchesFilter excludes archived workspaces from active attention 
 test("filterWorkspaces combines query and saved-filter-compatible ids", () => {
   const risky = workspace({ name: "Risky checkout", folder: "risky", riskCount: 1, risks: ["risk"] });
   const branchMismatch = workspace({
-    name: "Branch mismatch",
+    name: "Target branch missing",
     folder: "branch",
-    gitRows: [gitRow("order", { worktree: { branch: "chen/other" } })]
+    gitRows: [gitRow("order", { worktree: { branch: "chen/other" }, source: { summary: "target branch missing: chen/demo" } })]
   });
   const archived = workspace({ name: "Archived checkout", folder: "archived", state: "archived", riskCount: 5 });
 
@@ -415,7 +418,7 @@ test("widgetSnapshotFromDashboard summarizes active workspace state", () => {
         name: "Risky Workspace",
         folder: "2026-01-01-risky",
         riskCount: 2,
-        risks: ["branch mismatch", "missing delivery note"],
+        risks: ["target branch unavailable", "missing delivery note"],
         gitRows: [
           gitRow("order", { worktree: { dirty: true } }),
           gitRow("store", { worktree: { exists: false, summary: "missing" } })
@@ -431,7 +434,7 @@ test("widgetSnapshotFromDashboard summarizes active workspace state", () => {
   assert.equal(snapshot.riskCount, 2);
   assert.equal(snapshot.dirtyServiceCount, 1);
   assert.equal(snapshot.missingWorktreeCount, 1);
-  assert.deepEqual(snapshot.topRisks, ["Risky Workspace: branch mismatch", "Risky Workspace: missing delivery note"]);
+  assert.deepEqual(snapshot.topRisks, ["Risky Workspace: target branch unavailable", "Risky Workspace: missing delivery note"]);
   assert.equal(snapshot.deepLink, "nexus://workspace/2026-01-01-risky");
   assert.match(snapshot.generatedAt, /^\d{4}-\d{2}-\d{2}T/);
 });

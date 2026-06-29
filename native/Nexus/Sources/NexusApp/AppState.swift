@@ -2061,7 +2061,7 @@ final class AppState: ObservableObject {
             "## 处理要求",
             "- 先确认该服务是否应该在当前需求范围内。",
             "- 如果 worktree 缺失，先回到 Nexus 执行确认后的 worktree 创建流程，不要直接在 source repo 切分支。",
-            "- 如果存在未提交或分支不一致，先说明风险，再决定是否继续开发、提交或调整文档。",
+            "- 如果存在未提交或目标分支不可用，先说明风险，再决定是否继续开发、提交或调整文档。",
             "- 涉及代码、SQL、业务逻辑、配置或验证变化时，同步更新 changes.md、交付记录和必要 SQL 产物。"
         ].joined(separator: "\n")
     }
@@ -2292,6 +2292,7 @@ final class AppState: ObservableObject {
             let branchChecks = selected.healthChecks
                 .filter { check in
                     check.id == "target-branch"
+                        || check.id == "target-branch-availability"
                         || check.id == "branch-alignment"
                         || check.action == "branches"
                 }
@@ -3928,7 +3929,7 @@ final class AppState: ObservableObject {
             return
         }
         guard evidence.branchMismatchServices.isEmpty else {
-            lastError = "存在分支不一致的 worktree：\(evidence.branchMismatchServices.joined(separator: ", "))。"
+            lastError = "存在目标分支不可用的服务：\(evidence.branchMismatchServices.joined(separator: ", "))。"
             return
         }
         guard mutationPolicy.canRequestConfirmation else {
@@ -4123,9 +4124,15 @@ final class AppState: ObservableObject {
     private func workspaceHasBranchIssue(_ workspace: WorkspaceSummary) -> Bool {
         workspace.risks.contains { risk in
             let normalized = "\(risk.title) \(risk.detail)".lowercased()
-            return normalized.contains("分支不一致") || normalized.contains("branch mismatch")
+            return normalized.contains("目标分支不可用")
+                || normalized.contains("目标分支缺失")
+                || normalized.contains("target branch unavailable")
+                || normalized.contains("target branch missing")
+                || normalized.contains("分支不一致")
+                || normalized.contains("branch mismatch")
         } || workspace.healthChecks.contains { check in
-            check.id == "branch-alignment" && !Self.healthStatusIsPassing(check.status)
+            (check.id == "target-branch-availability" || check.id == "branch-alignment")
+                && !Self.healthStatusIsPassing(check.status)
         }
     }
 

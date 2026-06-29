@@ -2353,7 +2353,7 @@ private struct WorktreeSetupFollowUpCheckView: View {
                     label: "分支",
                     value: check.branchMismatchCount,
                     tone: check.branchMismatchCount > 0 ? NexusPalette.warning : NexusPalette.success,
-                    help: "分支不一致工作区数量 / Branch mismatch workspace count"
+                    help: "目标分支问题工作区数量 / Target branch issue workspace count"
                 )
                 WorktreeSetupCheckMetric(
                     label: "WT",
@@ -5652,7 +5652,7 @@ private struct WorktreeSetupEvidencePreview: View {
 
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], alignment: .leading, spacing: 8) {
                 WorkflowMetric(label: "Missing", value: "\(evidence.missingServices.count)", tone: evidence.missingServices.isEmpty ? NexusPalette.success : NexusPalette.warning)
-                WorkflowMetric(label: "Mismatch", value: "\(evidence.branchMismatchServices.count)", tone: evidence.branchMismatchServices.isEmpty ? NexusPalette.success : NexusPalette.danger)
+                WorkflowMetric(label: "Target", value: "\(evidence.branchMismatchServices.count)", tone: evidence.branchMismatchServices.isEmpty ? NexusPalette.success : NexusPalette.danger)
                 WorkflowMetric(label: "Sources", value: "\(evidence.missingSourceServices.count)", tone: evidence.missingSourceServices.isEmpty ? NexusPalette.success : NexusPalette.danger)
                 WorkflowMetric(label: "Plan", value: "\(planCreateCount)/\(planBlockedCount)", tone: planBlockedCount == 0 ? NexusPalette.success : NexusPalette.danger)
                 WorkflowMetric(label: "Script", value: evidence.setupScriptExists ? "yes" : "review", tone: evidence.setupScriptExists ? NexusPalette.success : NexusPalette.warning)
@@ -9345,7 +9345,7 @@ private struct WorkspaceCommandCenterView: View {
             return "源仓库缺 \(evidence.missingSourceServices.count)"
         }
         if !evidence.branchMismatchServices.isEmpty {
-            return "分支不一致 \(evidence.branchMismatchServices.count)"
+            return "目标分支缺 \(evidence.branchMismatchServices.count)"
         }
         if !evidence.missingServices.isEmpty {
             return "缺 \(evidence.missingServices.count) 个"

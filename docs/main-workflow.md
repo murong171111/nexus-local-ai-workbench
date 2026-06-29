@@ -174,7 +174,7 @@ Native M1 UI:
 - service rows distinguish source repo and workspace worktree
 - a service/branch evidence card explains target branch, service scope, source repo, and branch policy readiness
 - Command Center includes an explicit service/branch step between scope freeze and worktree setup
-- branch mismatch is a blocker or warning depending on stage
+- target branch availability is checked against source repository refs; current worktree branch mismatch is informational unless recorded as an exception risk
 - source repo remains read-only by default
 
 ### 5. Worktree Setup
@@ -196,19 +196,19 @@ Primary action:
 Readiness:
 
 - all confirmed services have workspace-local worktrees
-- each worktree is on the target branch or explicitly marked as exception
+- each confirmed service source repository has the target branch or a remote-tracking ref
 - no setup command is hidden from the user
 
 Blocked when:
 
 - source repo missing
 - target branch missing and creation is not confirmed
-- existing worktree branch mismatches target branch
+- target branch is missing from the service source repository
 - worktree creation failed for any required service
 
 Native M1 UI:
 
-- a worktree setup evidence card explains missing worktrees, branch mismatches, source repo availability, and setup command visibility
+- a worktree setup evidence card explains missing worktrees, target branch availability, source repo availability, and setup command visibility
 - Command Center worktree step uses the same evidence instead of only counting missing worktrees
 - setup sheet lists service, source path, target path, target branch, and expected command
 - result distinguishes created, skipped, and failed
@@ -473,7 +473,7 @@ Plan:
 - Replace generic service rows with five explicit states. `[started with ServiceWorktreeRowState]`
   - missing source repo
   - missing worktree
-  - branch mismatch
+  - target branch missing
   - dirty
   - clean
 - Keep all mutation behind confirmation. `[started with WorktreeSetupMutationPolicy]`

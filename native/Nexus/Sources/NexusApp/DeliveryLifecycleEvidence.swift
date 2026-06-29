@@ -346,7 +346,7 @@ struct DeliveryGateEvidence: Hashable {
             return DeliveryGateCheck(
                 id: "services",
                 label: "服务与 worktree / Services",
-                detail: "\(workspace.services.count) 个服务均已有 workspace-local worktree，且分支与目标分支一致。",
+                detail: "\(workspace.services.count) 个服务均已有 workspace-local worktree，且目标分支可用。",
                 status: .ready,
                 systemImage: "square.stack.3d.up",
                 path: workspace.documentLinks["services"] ?? "\(workspace.path)/services.md",

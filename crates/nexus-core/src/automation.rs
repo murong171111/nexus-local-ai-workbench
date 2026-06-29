@@ -348,9 +348,17 @@ fn workspace_has_delivery_issue(workspace: &WorkspaceData) -> bool {
 fn workspace_has_branch_issue(workspace: &WorkspaceData) -> bool {
     workspace.risks.iter().any(|risk| {
         let normalized = risk.to_lowercase();
-        risk.contains("分支不一致") || normalized.contains("branch mismatch")
+        risk.contains("目标分支不可用")
+            || risk.contains("目标分支缺失")
+            || normalized.contains("target branch unavailable")
+            || normalized.contains("target branch missing")
+            || risk.contains("分支不一致")
+            || normalized.contains("branch mismatch")
     }) || workspace.health_checks.iter().any(|check| {
-        check.id == "branch-alignment" && !matches!(check.status.as_str(), "pass" | "ok")
+        matches!(
+            check.id.as_str(),
+            "target-branch-availability" | "branch-alignment"
+        ) && !matches!(check.status.as_str(), "pass" | "ok")
     })
 }
 
@@ -456,19 +464,25 @@ mod tests {
     }
 
     #[test]
-    fn local_automation_check_reports_branch_alignment_signal() {
+    fn local_automation_check_reports_target_branch_availability_signal() {
         let root = std::env::temp_dir().join(format!(
             "nexus-core-automation-branch-{}",
             std::process::id()
         ));
+        let source_root = root.join("source-repos");
+        let source_order = source_root.join("order");
         let workspace = root.join("2026-05-31-branch-demo");
         let worktree = workspace.join("repos").join("order");
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(workspace.join("sql")).unwrap();
+        fs::create_dir_all(&source_order).unwrap();
         fs::create_dir_all(&worktree).unwrap();
         fs::write(
             workspace.join("workspace.md"),
-            "# Branch Demo\n\n- 需求名称: Branch Demo\n- 当前状态: developing\n- 目标分支: chen/target-branch\n- 源仓库集合: ~/source-repos\n",
+            format!(
+                "# Branch Demo\n\n- 需求名称: Branch Demo\n- 当前状态: developing\n- 目标分支: chen/target-branch\n- 源仓库集合: {}\n",
+                source_root.to_string_lossy()
+            ),
         )
         .unwrap();
         fs::write(
@@ -488,10 +502,16 @@ mod tests {
             .status()
             .unwrap();
         assert!(init_status.success());
+        let init_source_status = Command::new("git")
+            .args(["init", "-b", "main"])
+            .current_dir(&source_order)
+            .status()
+            .unwrap();
+        assert!(init_source_status.success());
 
         let response = local_automation_check(LocalAutomationCheckRequest {
             workspaces_root: root.to_string_lossy().to_string(),
-            source_repos_root: "~/source-repos".to_string(),
+            source_repos_root: source_root.to_string_lossy().to_string(),
             docs_root: "~/docs".to_string(),
             audit_root: None,
             actor: None,
@@ -503,6 +523,89 @@ mod tests {
         assert!(response.signals.iter().any(|signal| {
             signal.id == "branch.check" && signal.action == "review-branches" && signal.count == 1
         }));
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn local_automation_check_allows_different_worktree_branch_when_target_exists() {
+        let root = std::env::temp_dir().join(format!(
+            "nexus-core-automation-branch-exists-{}",
+            std::process::id()
+        ));
+        let source_root = root.join("source-repos");
+        let source_order = source_root.join("order");
+        let workspace = root.join("2026-05-31-branch-exists-demo");
+        let worktree = workspace.join("repos").join("order");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(workspace.join("sql")).unwrap();
+        fs::create_dir_all(&source_order).unwrap();
+        fs::create_dir_all(&worktree).unwrap();
+        fs::write(
+            workspace.join("workspace.md"),
+            "# Branch Exists Demo\n\n- 需求名称: Branch Exists Demo\n- 当前状态: developing\n- 目标分支: chen/target-branch\n",
+        )
+        .unwrap();
+        fs::write(
+            workspace.join("services.md"),
+            "# Services\n\n## 已确认相关\n\n| 服务 | 源仓库 | 说明 |\n| --- | --- | --- |\n| order | source | core |\n",
+        )
+        .unwrap();
+        fs::write(workspace.join("tasks.md"), "# Tasks\n").unwrap();
+        fs::write(
+            workspace.join("交付记录.md"),
+            "# 交付记录\n\n## SQL 变更\n\n- 是否有 SQL 变更：否\n",
+        )
+        .unwrap();
+        let init_worktree_status = Command::new("git")
+            .args(["init", "-b", "chen/old-branch"])
+            .current_dir(&worktree)
+            .status()
+            .unwrap();
+        assert!(init_worktree_status.success());
+        let init_source_status = Command::new("git")
+            .args(["init", "-b", "main"])
+            .current_dir(&source_order)
+            .status()
+            .unwrap();
+        assert!(init_source_status.success());
+        let commit_status = Command::new("git")
+            .args([
+                "-c",
+                "user.email=nexus@example.com",
+                "-c",
+                "user.name=Nexus Test",
+                "commit",
+                "--allow-empty",
+                "-m",
+                "init",
+            ])
+            .current_dir(&source_order)
+            .status()
+            .unwrap();
+        assert!(commit_status.success());
+        let branch_status = Command::new("git")
+            .args(["branch", "chen/target-branch"])
+            .current_dir(&source_order)
+            .status()
+            .unwrap();
+        assert!(branch_status.success());
+
+        let response = local_automation_check(LocalAutomationCheckRequest {
+            workspaces_root: root.to_string_lossy().to_string(),
+            source_repos_root: source_root.to_string_lossy().to_string(),
+            docs_root: "~/docs".to_string(),
+            audit_root: None,
+            actor: None,
+            generated_at: "2026-05-31T10:00:00Z".to_string(),
+        })
+        .unwrap();
+
+        assert_eq!(response.branch_mismatch_count, 0);
+        assert!(!response
+            .signals
+            .iter()
+            .any(|signal| signal.id == "branch.check"));
 
         fs::remove_dir_all(root).unwrap();
     }

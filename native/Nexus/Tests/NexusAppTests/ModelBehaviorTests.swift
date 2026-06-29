@@ -960,7 +960,7 @@ final class ModelBehaviorTests: XCTestCase {
                     name: "branch-mismatch",
                     branch: "develop",
                     worktree: "ready",
-                    gitSummary: "clean",
+                    gitSummary: "target branch missing: feature/native-main",
                     worktreeExists: true,
                     sourceExists: true
                 ),
@@ -1382,7 +1382,13 @@ final class ModelBehaviorTests: XCTestCase {
         }
         try FileManager.default.createDirectory(at: sourceOrder, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: worktreeOrder, withIntermediateDirectories: true)
-        try runGit(["init", "-b", "feature/native-git"], in: sourceOrder)
+        try runGit(["init", "-b", "main"], in: sourceOrder)
+        try runGit(["config", "user.email", "nexus@example.com"], in: sourceOrder)
+        try runGit(["config", "user.name", "Nexus Test"], in: sourceOrder)
+        try "demo\n".write(to: sourceOrder.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+        try runGit(["add", "README.md"], in: sourceOrder)
+        try runGit(["commit", "-m", "init"], in: sourceOrder)
+        try runGit(["branch", "feature/native-git"], in: sourceOrder)
         try runGit(["init", "-b", "feature/native-git"], in: worktreeOrder)
         try """
         # Native Git
@@ -1426,6 +1432,8 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(snapshot.gitRows.first { $0.service == "order" }?.worktree.exists, true)
         XCTAssertEqual(snapshot.gitRows.first { $0.service == "order" }?.worktree.branch, "feature/native-git")
         XCTAssertEqual(snapshot.gitRows.first { $0.service == "order" }?.source.exists, true)
+        XCTAssertEqual(snapshot.gitRows.first { $0.service == "order" }?.source.branch, "main")
+        XCTAssertTrue(snapshot.gitRows.first { $0.service == "order" }?.source.summary.contains("target branch available: feature/native-git") ?? false)
         XCTAssertEqual(snapshot.gitRows.first { $0.service == "cashier" }?.worktree.exists, false)
         XCTAssertEqual(snapshot.gitRows.first { $0.service == "cashier" }?.source.exists, false)
 
@@ -2982,9 +2990,9 @@ final class ModelBehaviorTests: XCTestCase {
             services: [
                 ServiceStatus(
                     name: "order",
-                    branch: "feature/service-branch",
+                    branch: "main",
                     worktree: "missing",
-                    gitSummary: "source clean",
+                    gitSummary: "source current: main; target branch available: feature/service-branch",
                     worktreeExists: false,
                     sourceExists: true
                 )
@@ -3001,6 +3009,9 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertEqual(serviceBranch.status, .ready)
         XCTAssertTrue(serviceBranch.targetBranchMissingServices.isEmpty)
+        XCTAssertTrue(
+            serviceBranch.checks.first { $0.id == "target-branch-availability" }?.detail.contains("source 当前检出分支不作为阻塞条件") ?? false
+        )
         XCTAssertEqual(worktree.status, .next)
         XCTAssertEqual(worktree.missingServices, ["order"])
         XCTAssertEqual(stage.id, .worktreeSetup)
@@ -3066,7 +3077,7 @@ final class ModelBehaviorTests: XCTestCase {
                 name: "branch-mismatch",
                 branch: "dev",
                 worktree: "ready",
-                gitSummary: "clean",
+                gitSummary: "target branch missing: feature/worktree",
                 worktreeExists: true,
                 sourceExists: true
             ),
@@ -3093,9 +3104,9 @@ final class ModelBehaviorTests: XCTestCase {
         }
 
         XCTAssertEqual(states.map(\.kind), ServiceWorktreeRowStateKind.allCases)
-        XCTAssertEqual(states.map(\.label), ["source 缺失", "缺 worktree", "分支不一致", "未提交", "clean"])
+        XCTAssertEqual(states.map(\.label), ["source 缺失", "缺 worktree", "目标分支缺失", "未提交", "clean"])
         XCTAssertEqual(states.map(\.status), [.blocked, .next, .blocked, .review, .ready])
-        XCTAssertTrue(states.first { $0.kind == .branchMismatch }?.detail.contains("dev") ?? false)
+        XCTAssertTrue(states.first { $0.kind == .branchMismatch }?.detail.contains("feature/worktree") ?? false)
     }
 
     func testServiceWorktreeRowStatePrioritizesRepositoryAndBranchBlockersBeforeDirty() {
@@ -3115,7 +3126,18 @@ final class ModelBehaviorTests: XCTestCase {
                 name: "payments",
                 branch: "dev",
                 worktree: "ready",
-                gitSummary: "dirty",
+                gitSummary: "dirty; target branch missing: feature/worktree",
+                worktreeExists: true,
+                sourceExists: true
+            ),
+            targetBranch: "feature/worktree"
+        )
+        let differentCurrentBranchAndDirty = ServiceWorktreeRowState.resolve(
+            service: ServiceStatus(
+                name: "cashier",
+                branch: "dev",
+                worktree: "ready",
+                gitSummary: "dirty; target branch available: feature/worktree",
                 worktreeExists: true,
                 sourceExists: true
             ),
@@ -3124,9 +3146,27 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertEqual(missingSourceAndDirty.kind, .missingSourceRepo)
         XCTAssertEqual(branchMismatchAndDirty.kind, .branchMismatch)
+        XCTAssertEqual(differentCurrentBranchAndDirty.kind, .dirty)
     }
 
-    func testServiceWorktreeRowStateWaitsForConfirmedTargetBeforeBranchMismatch() {
+    func testServiceWorktreeRowStateAllowsDifferentCurrentBranchWhenTargetBranchExists() {
+        let state = ServiceWorktreeRowState.resolve(
+            service: ServiceStatus(
+                name: "order",
+                branch: "dev",
+                worktree: "ready",
+                gitSummary: "target branch available: feature/worktree",
+                worktreeExists: true,
+                sourceExists: true
+            ),
+            targetBranch: "feature/worktree"
+        )
+
+        XCTAssertEqual(state.kind, .clean)
+        XCTAssertTrue(state.detail.contains("目标分支未缺失"))
+    }
+
+    func testServiceWorktreeRowStateWaitsForConfirmedTargetBeforeAvailabilityCheck() {
         let pendingTarget = ServiceWorktreeRowState.resolve(
             service: ServiceStatus(
                 name: "orders",
@@ -3199,7 +3239,7 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(stage.primaryAction, .worktree)
     }
 
-    func testWorktreeSetupEvidenceBlocksBranchMismatch() {
+    func testWorktreeSetupEvidenceBlocksUnavailableTargetBranch() {
         let workspace = workspaceForWorkflowSummary(
             stage: "developing",
             id: "worktree-mismatch",
@@ -3209,7 +3249,7 @@ final class ModelBehaviorTests: XCTestCase {
                     name: "order",
                     branch: "dev",
                     worktree: "ready",
-                    gitSummary: "clean",
+                    gitSummary: "target branch missing: feature/worktree",
                     worktreeExists: true,
                     sourceExists: true
                 )
@@ -3224,14 +3264,78 @@ final class ModelBehaviorTests: XCTestCase {
         )
 
         XCTAssertEqual(worktree.status, .blocked)
-        XCTAssertEqual(worktree.branchMismatchServices, ["order(dev)"])
+        XCTAssertEqual(worktree.branchMismatchServices, ["order(feature/worktree)"])
         XCTAssertEqual(worktree.setupPlan.map(\.action), [.blocked])
         XCTAssertEqual(worktree.setupPlan.first?.currentBranch, "dev")
+        XCTAssertTrue(worktree.setupPlan.first?.reason.contains("未发现目标分支") ?? false)
         XCTAssertEqual(worktree.mutationPolicy.blockedServices, ["order"])
         XCTAssertFalse(worktree.mutationPolicy.canRequestConfirmation)
         XCTAssertFalse(worktree.mutationPolicy.canRun(afterConfirmation: true))
         XCTAssertEqual(stage.id, .worktreeSetup)
         XCTAssertEqual(stage.primaryAction, .document("branches"))
+    }
+
+    func testWorktreeSetupEvidenceAllowsDifferentCurrentBranchWhenTargetBranchExists() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "worktree-current-branch-differs",
+            branch: "feature/worktree",
+            services: [
+                ServiceStatus(
+                    name: "order",
+                    branch: "dev",
+                    worktree: "ready",
+                    gitSummary: "target branch available: feature/worktree",
+                    worktreeExists: true,
+                    sourceExists: true
+                )
+            ]
+        )
+        let worktree = WorktreeSetupEvidence.resolve(workspace: workspace)
+        let stage = workspace.mainStage(
+            demandReadiness: readyDemandReadiness(),
+            scopeFreeze: readyScopeFreeze(),
+            serviceBranch: readyServiceBranch(for: workspace),
+            worktreeSetup: worktree
+        )
+
+        XCTAssertEqual(worktree.status, .ready)
+        XCTAssertTrue(worktree.branchMismatchServices.isEmpty)
+        XCTAssertEqual(worktree.setupPlan.map(\.action), [.skip])
+        XCTAssertEqual(worktree.setupPlan.first?.currentBranch, "dev")
+        XCTAssertTrue(worktree.setupPlan.first?.reason.contains("目标分支 feature/worktree 可用") ?? false)
+        XCTAssertNotEqual(stage.id, .worktreeSetup)
+    }
+
+    func testWorktreeSetupEvidenceCreatesMissingWorktreeWhenSourceCurrentBranchDiffersButTargetExists() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "worktree-source-current-branch-differs",
+            branch: "feature/worktree",
+            services: [
+                ServiceStatus(
+                    name: "order",
+                    branch: "main",
+                    worktree: "missing",
+                    gitSummary: "source current: main; target branch available: feature/worktree",
+                    worktreeExists: false,
+                    sourceExists: true
+                )
+            ]
+        )
+        let worktree = WorktreeSetupEvidence.resolve(workspace: workspace)
+        let stage = workspace.mainStage(
+            demandReadiness: readyDemandReadiness(),
+            scopeFreeze: readyScopeFreeze(),
+            serviceBranch: readyServiceBranch(for: workspace),
+            worktreeSetup: worktree
+        )
+
+        XCTAssertEqual(worktree.status, .next)
+        XCTAssertTrue(worktree.branchMismatchServices.isEmpty)
+        XCTAssertEqual(worktree.setupPlan.map(\.action), [.create])
+        XCTAssertEqual(worktree.setupPlan.first?.currentBranch, "main")
+        XCTAssertEqual(stage.id, .worktreeSetup)
     }
 
     func testWorktreeSetupEvidenceBlocksMissingSourceRepos() {
@@ -4597,7 +4701,7 @@ final class ModelBehaviorTests: XCTestCase {
     }
 
     @MainActor
-    func testAutomationBranchHandoffPromptTargetsBranchMismatchWorkspace() {
+    func testAutomationBranchHandoffPromptTargetsUnavailableTargetBranchWorkspace() {
         let selectedCleanWorkspace = workspaceForWorkflowSummary(
             stage: "developing",
             id: "selected-clean-branch",
@@ -4613,15 +4717,15 @@ final class ModelBehaviorTests: XCTestCase {
             path: "/tmp/workspaces/2026-05-31-branch-workspace",
             healthChecks: [
                 WorkspaceHealthCheck(
-                    id: "branch-alignment",
-                    label: "分支一致",
-                    detail: "不一致: order(chen/old-branch)",
+                    id: "target-branch-availability",
+                    label: "分支可用",
+                    detail: "缺少目标分支: order(chen/target-branch)",
                     status: "fail",
                     action: "branches"
                 )
             ],
             risks: [
-                RiskAlert(title: "分支不一致", detail: "order(chen/old-branch)")
+                RiskAlert(title: "目标分支不可用", detail: "order(chen/target-branch)")
             ]
         )
         let appState = appStateForAutomationTests(workspaces: [selectedCleanWorkspace, branchWorkspace])
@@ -4631,7 +4735,7 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertTrue(prompt.contains("- 当前工作区: Branch Workspace"))
         XCTAssertTrue(prompt.contains("- 分支记录: /tmp/workspaces/2026-05-31-branch-workspace/branches.md"))
-        XCTAssertTrue(prompt.contains("order(chen/old-branch)"))
+        XCTAssertTrue(prompt.contains("order(chen/target-branch)"))
         XCTAssertFalse(prompt.contains("- 当前工作区: Selected Clean Branch"))
     }
 

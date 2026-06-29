@@ -69,7 +69,7 @@ Source repositories are read from a separate configured root. Nexus treats sourc
 - Read-only operations: scan Markdown files, inspect git status, compare worktree branches with workspace target branches, preview documents.
 - Rebuildable cache operations: create or refresh the SQLite/FTS index from human-readable workspace files.
 - Confirmed local writes: create workspace folders, recover missing standard documents, create selected worktrees, export settings profiles, write widget snapshots, and append audit events.
-- Semi-automated worktree setup: Nexus generates reviewable shell commands, explains missing worktrees, branch mismatches, source repository availability, and setup script visibility, and can create missing `repos/<service>` worktrees only after explicit confirmation.
+- Semi-automated worktree setup: Nexus generates reviewable shell commands, explains missing worktrees, target branch availability in source repositories, source repository availability, and setup script visibility, and can create missing `repos/<service>` worktrees only after explicit confirmation.
 - High-frequency cache writes such as widget snapshot refreshes are intentionally not audit-logged to keep the audit trail focused on user-visible state changes.
 - Future dangerous operations such as branch deletion, worktree removal, reset, or clean should require explicit confirmation.
 
