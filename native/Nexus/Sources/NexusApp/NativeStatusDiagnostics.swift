@@ -133,6 +133,27 @@ struct WorkspaceStatusDiagnosticCard: Hashable {
         items.filter(\.isAttention).count
     }
 
+    var visibleItems: [NativeStatusDiagnosticItem] {
+        let attentionItems = items.filter(\.isAttention)
+        if !attentionItems.isEmpty {
+            return Array(attentionItems.prefix(2))
+        }
+        return Array(items.prefix(2))
+    }
+
+    var collapsedItems: [NativeStatusDiagnosticItem] {
+        let visibleIDs = Set(visibleItems.map(\.id))
+        return items.filter { !visibleIDs.contains($0.id) }
+    }
+
+    var detailsCollapsedByDefault: Bool {
+        !collapsedItems.isEmpty
+    }
+
+    var detailLabel: String {
+        "诊断明细 / Diagnostics (\(collapsedItems.count))"
+    }
+
     var isReady: Bool {
         status == .ready && attentionCount == 0
     }

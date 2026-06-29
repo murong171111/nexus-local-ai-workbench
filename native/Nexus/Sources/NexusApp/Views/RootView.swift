@@ -5453,6 +5453,7 @@ private struct WorkspaceDetailView: View {
 private struct WorkspaceStatusDiagnosticCardView: View {
     let card: WorkspaceStatusDiagnosticCard
     let action: () -> Void
+    @State private var detailsExpanded = false
 
     var body: some View {
         SectionBlock(title: card.title) {
@@ -5492,12 +5493,31 @@ private struct WorkspaceStatusDiagnosticCardView: View {
                 }
 
                 LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
-                    ForEach(card.items) { item in
+                    ForEach(card.visibleItems) { item in
                         DiagnosticMetric(item: item)
                             .padding(8)
                             .background(NexusPalette.badge)
                             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     }
+                }
+
+                if card.detailsCollapsedByDefault {
+                    DisclosureGroup(isExpanded: $detailsExpanded) {
+                        LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
+                            ForEach(card.collapsedItems) { item in
+                                DiagnosticMetric(item: item)
+                                    .padding(8)
+                                    .background(NexusPalette.badge)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            }
+                        }
+                        .padding(.top, 4)
+                    } label: {
+                        Label(card.detailLabel, systemImage: "list.bullet.rectangle")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .font(.caption)
                 }
             }
         }
@@ -11265,6 +11285,8 @@ private struct WorkspaceCreationFollowUpRow: View {
 
 private struct InitializationReceiptView: View {
     let receipt: CreateWorkspaceResponse
+    @State private var checksExpanded = false
+    @State private var filesExpanded = false
 
     private var checks: [WorkspaceInitializationCheck] {
         receipt.initializationChecks ?? []
@@ -11284,6 +11306,14 @@ private struct InitializationReceiptView: View {
 
     private var missingFileCount: Int {
         files.filter { !$0.exists }.count
+    }
+
+    private var receiptValue: String {
+        "\(checks.filter { $0.status == "pass" || $0.status == "ready" }.count)/\(checks.count) checks · \(files.filter(\.exists).count)/\(files.count) files"
+    }
+
+    private var checksLabel: String {
+        "检查明细 / Checks (\(checks.count))"
     }
 
     private var headline: String {
@@ -11323,9 +11353,10 @@ private struct InitializationReceiptView: View {
 
                 Spacer()
 
-                Text("\(files.filter(\.exists).count)/\(files.count)")
+                Text(receiptValue)
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(headlineColor)
+                    .lineLimit(1)
             }
 
             if checks.isEmpty && files.isEmpty {
@@ -11333,21 +11364,37 @@ private struct InitializationReceiptView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                VStack(alignment: .leading, spacing: 7) {
-                    ForEach(checks) { check in
-                        InitializationCheckRow(check: check)
+                if !checks.isEmpty {
+                    DisclosureGroup(isExpanded: $checksExpanded) {
+                        VStack(alignment: .leading, spacing: 7) {
+                            ForEach(checks) { check in
+                                InitializationCheckRow(check: check)
+                            }
+                        }
+                        .padding(.top, 6)
+                    } label: {
+                        Label(checksLabel, systemImage: "checklist.checked")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
                     }
+                    .font(.caption)
                 }
 
-                DisclosureGroup("生成文件 / Generated files") {
-                    VStack(alignment: .leading, spacing: 6) {
-                        ForEach(files) { file in
-                            InitializationFileRow(file: file)
+                if !files.isEmpty {
+                    DisclosureGroup(isExpanded: $filesExpanded) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(files) { file in
+                                InitializationFileRow(file: file)
+                            }
                         }
+                        .padding(.top, 6)
+                    } label: {
+                        Label("生成文件 / Generated files (\(files.count))", systemImage: "doc.text")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
                     }
-                    .padding(.top, 6)
+                    .font(.caption)
                 }
-                .font(.caption)
             }
         }
         .padding(10)

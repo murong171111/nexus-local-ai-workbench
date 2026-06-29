@@ -415,6 +415,10 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(card.primaryActionLabel, "检查路径设置")
         XCTAssertEqual(card.status, .blocked)
         XCTAssertEqual(card.items.map(\.id), ["directories", "index", "widget", "audit"])
+        XCTAssertEqual(card.visibleItems.map(\.id), ["directories", "widget"])
+        XCTAssertEqual(card.collapsedItems.map(\.id), ["index", "audit"])
+        XCTAssertTrue(card.detailsCollapsedByDefault)
+        XCTAssertEqual(card.detailLabel, "诊断明细 / Diagnostics (2)")
         XCTAssertEqual(card.attentionCount, 3)
         XCTAssertFalse(card.isReady)
     }
