@@ -1,5 +1,11 @@
 import Foundation
 
+private func deliveryRecordPath(for workspace: WorkspaceSummary) -> String {
+    workspace.documentLinks["delivery-cn"]
+        ?? workspace.documentLinks["delivery"]
+        ?? "\(workspace.path)/交付记录.md"
+}
+
 struct DeliveryGateCheck: Hashable, Identifiable {
     let id: String
     let label: String
@@ -429,7 +435,7 @@ struct DeliveryGateEvidence: Hashable {
     }
 
     private static func deliveryRecordCheck(workspace: WorkspaceSummary) -> DeliveryGateCheck {
-        let path = workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md"
+        let path = deliveryRecordPath(for: workspace)
         if let check = workspace.healthChecks.first(where: { $0.id == "delivery-record" || $0.action == "delivery" }) {
             let normalized = check.status.lowercased()
             let status: WorkflowPathStatus
@@ -482,7 +488,7 @@ struct DeliveryGateEvidence: Hashable {
         workspace: WorkspaceSummary,
         sql: WorkspaceSqlSummary
     ) -> DeliveryGateCheck {
-        let path = workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md"
+        let path = deliveryRecordPath(for: workspace)
         let action: WorkspaceMainStageAction = sql.status == .pending ? .localCheck : .document("sql")
         return DeliveryGateCheck(
             id: "sql",
@@ -522,7 +528,7 @@ struct DeliveryGateEvidence: Hashable {
 
     private static func deliveryEvidence(workspace: WorkspaceSummary, checks: [DeliveryGateCheck]) -> [String] {
         var values = [
-            workspace.documentLinks["delivery"] ?? "交付记录.md",
+            deliveryRecordPath(for: workspace),
             workspace.documentLinks["tasks"] ?? "tasks.md",
             "sql/",
             "repos/<service>"
@@ -657,7 +663,7 @@ struct DeliveryRecordWritePlan: Identifiable, Hashable {
     }
 
     static func resolve(workspace: WorkspaceSummary, gate: DeliveryGateEvidence) -> DeliveryRecordWritePlan {
-        let deliveryPath = workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md"
+        let deliveryPath = deliveryRecordPath(for: workspace)
         let id = "\(workspace.id)-delivery-record"
 
         guard gate.status != .archived else {
@@ -964,7 +970,7 @@ struct ArchiveGateEvidence: Hashable {
 
     private static func archiveEvidence(workspace: WorkspaceSummary) -> [String] {
         [
-            workspace.documentLinks["delivery"] ?? "交付记录.md",
+            deliveryRecordPath(for: workspace),
             workspace.documentLinks["handoff"] ?? "handoff.md",
             workspace.documentLinks["status"] ?? "STATUS.md",
             "workspace.md",
@@ -979,7 +985,7 @@ struct ArchiveGateEvidence: Hashable {
             detail: "任务、风险、服务/worktree、交付记录、SQL 和未提交服务检查暂无硬阻塞。",
             status: .ready,
             systemImage: "checkmark.seal",
-            path: workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md",
+            path: deliveryRecordPath(for: workspace),
             action: .document("delivery")
         )
     }
@@ -1061,7 +1067,7 @@ struct ArchiveGateEvidence: Hashable {
                 action: .reviewDelivery,
                 status: .ready,
                 detail: "交付门禁已通过。归档前最后确认代码、逻辑、配置、SQL、验证和风险结论都已写入交付记录。",
-                evidencePath: workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md",
+                evidencePath: deliveryRecordPath(for: workspace),
                 gateAction: .document("delivery"),
                 confirmationHint: "交付记录是归档后恢复上下文的第一入口。"
             )
@@ -1077,7 +1083,7 @@ struct ArchiveGateEvidence: Hashable {
                     action: .reviewValidation,
                     status: validation.status == .archived ? .ready : validation.status,
                     detail: validation.reason,
-                    evidencePath: workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md",
+                    evidencePath: deliveryRecordPath(for: workspace),
                     gateAction: validation.primaryAction,
                     confirmationHint: validation.status == .ready
                         ? "已发现 PR、CI、验证或发布证据；归档前确认结论可追溯。"
@@ -1175,7 +1181,7 @@ struct ArchiveChecklistWritePlan: Identifiable, Hashable {
     }
 
     static func resolve(workspace: WorkspaceSummary, archiveGate: ArchiveGateEvidence) -> ArchiveChecklistWritePlan {
-        let deliveryPath = workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md"
+        let deliveryPath = deliveryRecordPath(for: workspace)
         let id = "\(workspace.id)-archive-checklist"
 
         guard archiveGate.status != .archived else {
@@ -1311,7 +1317,7 @@ struct ValidationPrEvidence: Hashable {
                         detail: delivery.reason,
                         status: delivery.status,
                         systemImage: delivery.primaryActionSystemImage,
-                        path: workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md",
+                        path: deliveryRecordPath(for: workspace),
                         action: delivery.primaryAction
                     )
                 ],
@@ -1442,7 +1448,7 @@ struct ValidationPrEvidence: Hashable {
                 : deliveryGate.reason,
             status: deliveryGate.ready ? .ready : deliveryGate.status,
             systemImage: "doc.text",
-            path: workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md",
+            path: deliveryRecordPath(for: workspace),
             action: deliveryGate.ready ? .document("delivery") : deliveryGate.primaryAction
         )
     }
@@ -1493,7 +1499,7 @@ struct ValidationPrEvidence: Hashable {
                 : "尚未发现 PR、CI、发布或最终验证结论。没有 GitHub 集成前，把这些结论写入交付记录或 PR 交接。",
             status: hasEvidence ? .ready : .review,
             systemImage: hasEvidence ? "checkmark.seal" : "point.3.connected.trianglepath.dotted",
-            path: workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md",
+            path: deliveryRecordPath(for: workspace),
             action: hasEvidence ? .document("delivery") : .validationHandoff
         )
     }
@@ -1642,7 +1648,7 @@ struct ValidationPrWritePlan: Identifiable, Hashable {
     }
 
     static func resolve(workspace: WorkspaceSummary, evidence: ValidationPrEvidence) -> ValidationPrWritePlan {
-        let deliveryPath = workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md"
+        let deliveryPath = deliveryRecordPath(for: workspace)
         let id = "\(workspace.id)-validation-pr"
 
         guard evidence.status != .archived else {

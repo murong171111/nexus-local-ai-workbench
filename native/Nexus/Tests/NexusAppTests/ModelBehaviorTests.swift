@@ -3827,6 +3827,223 @@ final class ModelBehaviorTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testNativeStoresCanProveEndToEndWorkspaceLifecycle() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-e2e-lifecycle-\(UUID().uuidString)")
+        let remote = root.appendingPathComponent("remote-order.git")
+        let sourceRoot = root.appendingPathComponent("source-repos")
+        let source = sourceRoot.appendingPathComponent("order")
+        let workspacesRoot = root.appendingPathComponent("workspaces")
+        let auditRoot = root.appendingPathComponent("audit")
+        let branch = "feature/native-e2e"
+        let folder = "2026-06-29-native-e2e"
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        try FileManager.default.createDirectory(at: sourceRoot, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: workspacesRoot, withIntermediateDirectories: true)
+        try runGit(["init", "--bare", remote.path], in: root)
+        try runGit(["clone", remote.path, source.path], in: root)
+        try runGit(["config", "user.email", "nexus@example.com"], in: source)
+        try runGit(["config", "user.name", "Nexus Test"], in: source)
+        try "native e2e\n".write(to: source.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+        try runGit(["add", "README.md"], in: source)
+        try runGit(["commit", "-m", "init"], in: source)
+        try runGit(["branch", branch], in: source)
+        try runGit(["push", "origin", "HEAD:main"], in: source)
+        try runGit(["push", "origin", branch], in: source)
+
+        let created = try NativeWorkspaceCreationStore.create(
+            request: CreateWorkspaceRequest(
+                name: "Native E2E Lifecycle",
+                folder: folder,
+                workspacesRoot: workspacesRoot.path,
+                sourceReposRoot: sourceRoot.path,
+                services: ["order"],
+                targetBranch: branch,
+                confirmed: true,
+                auditRoot: auditRoot.path,
+                actor: "Nexus Test"
+            )
+        )
+        let workspaceURL = URL(fileURLWithPath: created.path)
+        let demandURL = workspaceURL.appendingPathComponent("需求")
+
+        let worktree = try NativeWorktreeSetupStore.setup(
+            request: SetupWorktreesRequest(
+                workspacePath: workspaceURL.path,
+                sourceReposRoot: sourceRoot.path,
+                services: ["order"],
+                targetBranch: branch,
+                confirmed: true
+            )
+        )
+        XCTAssertEqual(worktree.created.map(\.service), ["order"])
+
+        _ = try NativeDemandIntakeStore.initialize(
+            workspacePath: workspaceURL.path,
+            demandName: "Native E2E Lifecycle",
+            lanhuLink: "https://lanhu.example/native-e2e",
+            notes: "Build one real lifecycle proof from native stores.",
+            confirmed: true
+        )
+        try """
+        # 需求确认卡
+
+        - 真实需求目标：Native stores 端到端写入生命周期证据。
+        - 用户流程：创建工作区、冻结范围、转入任务、完成交付并归档。
+        - 验收标准：AppState nativeLifecycleProofAvailable 返回 true。
+        """.write(to: demandURL.appendingPathComponent("requirement.md"), atomically: true, encoding: .utf8)
+        try "# 待确认问题\n\n## P0 阻塞开发\n\n- [x] 无 P0 待确认项。\n".write(
+            to: demandURL.appendingPathComponent("questions.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try """
+        # 本次开发范围
+
+        ## 已确认并实现
+
+        - 用 Native stores 写入生命周期证据。
+
+        ## 暂不实现
+
+        - 不触发真实 GitHub PR 或 Apple notarization。
+
+        ## 仍待确认
+
+        - 无 P0 待确认项。
+
+        ## 进入开发条件
+
+        - [ ] 本文件已冻结本次开发范围。
+        """.write(to: demandURL.appendingPathComponent("scope.md"), atomically: true, encoding: .utf8)
+        try """
+        # 需求列表
+
+        | 需求点 | 状态 | 优先级 | 来源 | 说明 |
+        | --- | --- | --- | --- | --- |
+        | 建立 Native 生命周期证据 | 待办 | P0 | 路线图 | create -> demand -> worktree -> delivery -> archive |
+        """.write(to: demandURL.appendingPathComponent("tasks.md"), atomically: true, encoding: .utf8)
+        try "# 需求交付\n\n- 预检完成，进入 Native lifecycle proof。\n".write(
+            to: demandURL.appendingPathComponent("delivery.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        var workspace = try scannedWorkspace(
+            folder: folder,
+            workspacesRoot: workspacesRoot,
+            sourceRoot: sourceRoot
+        )
+        let demandStatus = try NativeDemandIntakeStore.status(workspacePath: workspaceURL.path)
+        let scopeEvidence = ScopeFreezeEvidence.resolve(status: demandStatus, workspace: workspace)
+        let scopePlan = ScopeFreezeWritePlan.resolve(workspace: workspace, evidence: scopeEvidence)
+        XCTAssertTrue(scopePlan.canWrite)
+        _ = try NativeScopeFreezeStore.write(
+            plan: scopePlan,
+            confirmed: true,
+            auditRoot: auditRoot.path,
+            actor: "Nexus Test"
+        )
+
+        let transferPlan = DemandTaskTransferPlan.resolve(workspace: workspace, status: demandStatus)
+        XCTAssertEqual(transferPlan.transferableItems.map(\.title), ["建立 Native 生命周期证据"])
+        let transferred = try NativeDemandTaskTransferStore.transfer(
+            plan: transferPlan,
+            confirmed: true,
+            auditRoot: auditRoot.path,
+            actor: "Nexus Test"
+        )
+        XCTAssertEqual(transferred.transferredCount, 1)
+
+        for index in 0..<(7 + transferred.transferredCount) {
+            _ = try NativeWorkspaceTaskStore.update(
+                request: UpdateWorkspaceTaskRequest(
+                    workspacePath: workspaceURL.path,
+                    taskId: "\(folder):task-\(index)",
+                    status: "已完成",
+                    detail: "Native E2E proof completed.",
+                    confirmed: true,
+                    auditRoot: auditRoot.path,
+                    actor: "Nexus Test"
+                )
+            )
+        }
+
+        workspace = try scannedWorkspace(folder: folder, workspacesRoot: workspacesRoot, sourceRoot: sourceRoot)
+        XCTAssertTrue(workspace.services.allSatisfy { $0.sourceExists && $0.worktreeExists })
+        XCTAssertTrue(workspace.tasks.allSatisfy { !$0.isActive })
+        XCTAssertTrue(workspace.risks.isEmpty)
+
+        let deliveryGate = DeliveryGateEvidence.resolve(workspace: workspace)
+        let deliveryPlan = DeliveryRecordWritePlan.resolve(workspace: workspace, gate: deliveryGate)
+        XCTAssertTrue(deliveryPlan.canWrite)
+        _ = try NativeDeliveryRecordStore.appendDeliverySnapshot(
+            plan: deliveryPlan,
+            confirmed: true,
+            auditRoot: auditRoot.path,
+            actor: "Nexus Test"
+        )
+
+        let validation = ValidationPrEvidence.resolve(workspace: workspace, deliveryGate: deliveryGate)
+        let validationPlan = ValidationPrWritePlan.resolve(workspace: workspace, evidence: validation)
+        XCTAssertTrue(validationPlan.canWrite)
+        _ = try NativeDeliveryRecordStore.appendValidationPrSnapshot(
+            plan: validationPlan,
+            confirmed: true,
+            auditRoot: auditRoot.path,
+            actor: "Nexus Test"
+        )
+
+        let archive = ArchiveGateEvidence.resolve(workspace: workspace, deliveryGate: deliveryGate, validationPr: validation)
+        let archivePlan = ArchiveChecklistWritePlan.resolve(workspace: workspace, archiveGate: archive)
+        XCTAssertTrue(archivePlan.canWrite)
+        _ = try NativeDeliveryRecordStore.appendArchiveChecklist(
+            plan: archivePlan,
+            confirmed: true,
+            auditRoot: auditRoot.path,
+            actor: "Nexus Test"
+        )
+
+        _ = try NativeWorkspaceLifecycleStore.update(
+            request: UpdateWorkspaceLifecycleRequest(
+                workspacePath: workspaceURL.path,
+                state: "archived",
+                focus: "Native lifecycle proof captured",
+                nextAction: "Keep delivery record as audit evidence",
+                confirmed: true,
+                auditRoot: auditRoot.path,
+                actor: "Nexus Test"
+            )
+        )
+
+        let archived = try scannedWorkspace(folder: folder, workspacesRoot: workspacesRoot, sourceRoot: sourceRoot)
+        let deliveryRecord = try String(contentsOf: workspaceURL.appendingPathComponent("交付记录.md"), encoding: .utf8)
+        let actions = try NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 20).map(\.action)
+
+        XCTAssertEqual(archived.state, .archived)
+        XCTAssertEqual(archived.lifecycle.stage, "archived")
+        XCTAssertTrue(archived.documentLinks["delivery-cn"]?.hasSuffix("/交付记录.md") == true)
+        XCTAssertTrue(archived.services.allSatisfy { $0.sourceExists && $0.worktreeExists })
+        XCTAssertTrue(archived.tasks.allSatisfy { !$0.isActive })
+        XCTAssertTrue(archived.risks.isEmpty)
+        XCTAssertTrue(deliveryRecord.contains("## Nexus Delivery Gate Snapshot"))
+        XCTAssertTrue(deliveryRecord.contains("## Nexus Validation / PR Snapshot"))
+        XCTAssertTrue(deliveryRecord.contains("## Nexus Archive Checklist"))
+        XCTAssertTrue(actions.contains("workspace.created"))
+        XCTAssertTrue(actions.contains("scope.freeze_confirmed"))
+        XCTAssertTrue(actions.contains("demand_tasks.transferred"))
+        XCTAssertTrue(actions.contains("workspace_task.updated"))
+        XCTAssertTrue(actions.contains("delivery_record.snapshot_appended"))
+        XCTAssertTrue(actions.contains("validation_pr.snapshot_appended"))
+        XCTAssertTrue(actions.contains("archive_checklist.snapshot_appended"))
+        XCTAssertTrue(actions.contains("workspace_lifecycle.updated"))
+        XCTAssertTrue(appStateForAutomationTests(workspaces: [archived]).nativeLifecycleProofAvailable())
+    }
+
     func testDevelopmentTaskEvidenceRoutesNextActiveTask() {
         let workspace = workspaceForWorkflowSummary(
             stage: "developing",
@@ -5767,6 +5984,20 @@ final class ModelBehaviorTests: XCTestCase {
             docsRoot: "/tmp/docs",
             defaults: defaults
         )
+    }
+
+    private func scannedWorkspace(
+        folder: String,
+        workspacesRoot: URL,
+        sourceRoot: URL
+    ) throws -> WorkspaceSummary {
+        let dashboard = try NativeWorkspaceScanner.scan(
+            workspacesRoot: workspacesRoot.path,
+            sourceReposRoot: sourceRoot.path,
+            docsRoot: "/tmp/docs"
+        )
+        let snapshot = try XCTUnwrap(dashboard.workspaces.first { $0.folder == folder })
+        return WorkspaceSummary(snapshot: snapshot)
     }
 
     private func environmentHealth(

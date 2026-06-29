@@ -41,7 +41,17 @@ extension WorkspaceLifecycle {
             let normalized = "\(risk.title) \(risk.detail)".lowercased()
             return normalized.contains("交付") || normalized.contains("delivery")
         }
-        if state.lowercased().contains("blocked") || state.contains("阻塞") {
+        let normalizedState = state.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if ["archived", "archive"].contains(normalizedState) || state.contains("归档") {
+            self.init(
+                stage: "archived",
+                label: "已归档 / Archived",
+                detail: "工作区已归档，默认作为只读历史查看。",
+                progress: 100,
+                nextAction: "需要再次开发时从 handoff 恢复上下文。",
+                documentKey: "handoff"
+            )
+        } else if normalizedState.contains("blocked") || state.contains("阻塞") {
             self.init(
                 stage: "blocked",
                 label: "阻塞 / Blocked",

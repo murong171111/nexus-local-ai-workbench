@@ -1373,7 +1373,7 @@ final class AppState: ObservableObject {
             "- acceptance.md: \(workspace.documentLinks["acceptance"] ?? "\(workspace.path)/acceptance.md")",
             "- changes.md: \(workspace.documentLinks["changes"] ?? "\(workspace.path)/changes.md")",
             "- tasks.md: \(workspace.documentLinks["tasks"] ?? "\(workspace.path)/tasks.md")",
-            "- 交付记录: \(workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md")",
+            "- 交付记录: \(deliveryDocumentPath(for: workspace))",
             "- handoff.md: \(workspace.documentLinks["handoff"] ?? "\(workspace.path)/handoff.md")",
             "",
             "## 处理要求",
@@ -1448,7 +1448,7 @@ final class AppState: ObservableObject {
     }
 
     private func deliveryHandoffLines(for workspace: WorkspaceSummary) -> [String] {
-        let deliveryPath = workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md"
+        let deliveryPath = deliveryDocumentPath(for: workspace)
         let deliveryCheck = workspace.healthChecks.first { check in
             check.id == "delivery-record" || check.action == "delivery"
         }
@@ -1473,7 +1473,7 @@ final class AppState: ObservableObject {
         let sqlLines = workspace.healthChecks
             .filter { check in check.id == "sql-directory" || check.action == "sql" }
             .map { "- \($0.label) [\($0.status)]: \($0.detail)" }
-        let deliveryPath = workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md"
+        let deliveryPath = deliveryDocumentPath(for: workspace)
 
         return [
             "请帮我复核并补充这个 Nexus 工作区的交付记录。",
@@ -1530,7 +1530,7 @@ final class AppState: ObservableObject {
     func validationPrHandoffPrompt(for workspace: WorkspaceSummary) -> String {
         let openTasks = workspace.tasks.filter(\.isActive)
         let blockedTasks = openTasks.filter(\.isBlocked)
-        let deliveryPath = workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md"
+        let deliveryPath = deliveryDocumentPath(for: workspace)
         let tasksPath = workspace.documentLinks["tasks"] ?? "\(workspace.path)/tasks.md"
         let handoffPath = workspace.documentLinks["handoff"] ?? "\(workspace.path)/handoff.md"
         let branchPath = workspace.documentLinks["branches"] ?? "\(workspace.path)/branches.md"
@@ -1620,7 +1620,7 @@ final class AppState: ObservableObject {
 
         await recordWorkspaceAction(
             action: "codex_validation_pr_handoff.opened",
-            target: workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md",
+            target: deliveryDocumentPath(for: workspace),
             summary: "Copied validation and PR handoff and opened Codex",
             metadata: [
                 "tool": "Codex",
@@ -1661,7 +1661,7 @@ final class AppState: ObservableObject {
 
         await recordWorkspaceAction(
             action: "codex_delivery_handoff.opened",
-            target: workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md",
+            target: deliveryDocumentPath(for: workspace),
             summary: "Copied delivery update handoff and opened Codex",
             metadata: [
                 "tool": "Codex",
@@ -2055,7 +2055,7 @@ final class AppState: ObservableObject {
             "- acceptance.md: \(workspace.documentLinks["acceptance"] ?? "\(workspace.path)/acceptance.md")",
             "- changes.md: \(workspace.documentLinks["changes"] ?? "\(workspace.path)/changes.md")",
             "- tasks.md: \(workspace.documentLinks["tasks"] ?? "\(workspace.path)/tasks.md")",
-            "- 交付记录.md: \(workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md")",
+            "- 交付记录.md: \(deliveryDocumentPath(for: workspace))",
             "",
             "## 已绑定 Codex 会话",
             codexSessionHandoffLines(for: workspace).joined(separator: "\n"),
@@ -2452,8 +2452,7 @@ final class AppState: ObservableObject {
     func openSqlReviewDocument(in workspace: WorkspaceSummary) async {
         selectedWorkspaceID = workspace.id
         let path = workspace.sqlFiles.first?.path
-            ?? workspace.documentLinks["delivery"]
-            ?? "\(workspace.path)/交付记录.md"
+            ?? deliveryDocumentPath(for: workspace)
         await loadDocument(path: path)
     }
 
@@ -2681,7 +2680,8 @@ final class AppState: ObservableObject {
         workspaces.contains { workspace in
             let lifecycleStage = workspace.lifecycle.stage.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             let archived = workspace.state == .archived || lifecycleStage == "archived"
-            let hasDeliveryEvidence = workspace.documentLinks["delivery"]?.isEmpty == false
+            let hasDeliveryEvidence = workspace.documentLinks["delivery-cn"]?.isEmpty == false
+                || workspace.documentLinks["delivery"]?.isEmpty == false
             let servicesReady = !workspace.services.isEmpty && workspace.services.allSatisfy { service in
                 service.sourceExists && service.worktreeExists
             }
@@ -4031,7 +4031,9 @@ final class AppState: ObservableObject {
     }
 
     private func deliveryDocumentPath(for workspace: WorkspaceSummary) -> String {
-        workspace.documentLinks["delivery"] ?? "\(workspace.path)/交付记录.md"
+        workspace.documentLinks["delivery-cn"]
+            ?? workspace.documentLinks["delivery"]
+            ?? "\(workspace.path)/交付记录.md"
     }
 
     private func branchesDocumentPath(for workspace: WorkspaceSummary) -> String {
