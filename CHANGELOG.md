@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Added
 
+- Native release policy evidence and release-note verification now require release notes to state what update metadata is requested remotely before updater/public release gates can pass.
 - Native lifecycle proof bundle exports now return audit event IDs alongside audit-log paths after confirmed Swift writes.
 - Native workspace creation and worktree setup responses now preserve audit event IDs and audit-log paths after confirmed Swift writes.
 - Native demand initialization, scope freeze, demand-task transfer, task-status, and lifecycle writebacks now return audit event IDs and audit-log paths after confirmed Swift writes.

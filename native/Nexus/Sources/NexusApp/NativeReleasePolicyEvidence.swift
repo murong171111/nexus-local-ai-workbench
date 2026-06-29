@@ -125,7 +125,8 @@ struct NativeReleasePolicyEvidence: Hashable {
             "known blockers",
             "validation summary",
             "release manifest metadata",
-            "manifest SHA-256 values"
+            "manifest SHA-256 values",
+            "metadata is requested remotely"
         ]
         var missing = missingNeedles(requiredNeedles, path: releaseNotesDoc, fileContains: fileContains)
         let verifierNeedles = [
@@ -143,7 +144,8 @@ struct NativeReleasePolicyEvidence: Hashable {
             "nexus-native-release-manifest.json",
             "manifest SHA-256",
             "checksum sidecar",
-            "Release manifest sha256 must match checksum sidecar"
+            "Release manifest sha256 must match checksum sidecar",
+            "metadata requested remotely"
         ]
         missing.append(contentsOf: verifierNeedles
             .filter { !fileContains(releaseNotesVerifierScript, $0) }
@@ -176,7 +178,8 @@ struct NativeReleasePolicyEvidence: Hashable {
             "Automatic updates disabled",
             "Do not enable automatic updates",
             "Settings exposes a user-visible update channel",
-            "must not silently check for, download, or install updates"
+            "must not silently check for, download, or install updates",
+            "metadata is requested remotely"
         ]
         let missing = missingNeedles(requiredNeedles, path: releaseNotesDoc, fileContains: fileContains)
         let ready = fileExists(releaseNotesDoc) && missing.isEmpty

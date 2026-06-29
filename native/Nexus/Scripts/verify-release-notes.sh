@@ -13,7 +13,8 @@ Usage: verify-release-notes.sh --notes CHANGELOG.md --tag v0.1.1 [--assets-dir r
 
 Verifies Native release notes before publishing a GitHub Release.
 The selected notes section must mention Native artifacts, checksums, signing/notarization,
-known blockers, validation summary, release manifest metadata, and migration/rollback notes.
+known blockers, validation summary, release manifest metadata, update metadata requested remotely,
+and migration/rollback notes.
 When --assets-dir is provided, every nexus-native-*.dmg, matching .dmg.sha256 sidecar,
 and the manifest filename must be named in the notes.
 When --manifest is provided, every manifest SHA-256 value must appear in the notes
@@ -119,6 +120,7 @@ required_terms = [
     "known blocker",
     "validation summary",
     "release manifest",
+    "metadata requested remotely",
     "migration",
     "rollback",
 ]
