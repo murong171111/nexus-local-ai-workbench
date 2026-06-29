@@ -5,6 +5,7 @@ enum NativeLocalCoreDomain: String, CaseIterable, Hashable {
     case documentInventory
     case demandIntake
     case readiness
+    case confirmedWrites
     case gitWorktreeStatus
     case audit
     case settings
@@ -22,6 +23,8 @@ enum NativeLocalCoreDomain: String, CaseIterable, Hashable {
             return "需求预检 / Demand intake"
         case .readiness:
             return "就绪门禁 / Readiness"
+        case .confirmedWrites:
+            return "确认写入 / Confirmed writes"
         case .gitWorktreeStatus:
             return "Git / Worktree"
         case .audit:
@@ -47,6 +50,8 @@ enum NativeLocalCoreDomain: String, CaseIterable, Hashable {
             return "NexusBridge.readDemandIntakeStatus / initializeDemandIntake"
         case .readiness:
             return "NativeLocalAutomationCheck / NexusBridge.localAutomationCheck fallback"
+        case .confirmedWrites:
+            return "NexusBridge write fallbacks for demand, tasks, delivery, archive, and restore"
         case .gitWorktreeStatus:
             return "NexusBridge.scanWorkspaces / setupWorktrees"
         case .audit:
@@ -129,7 +134,7 @@ struct NativeLocalCoreEvidence: Hashable {
         } else if !partials.isEmpty {
             reason = "M2 Native Local Core 已无 blocked 域；仍有 \(partials.count) 个域需要补齐 Native 规则：\(partials.map { $0.domain.label }.joined(separator: ", "))。"
         } else {
-            reason = "M2 Native Local Core 已覆盖工作区扫描、文档、需求、就绪、git/worktree、审计、设置、Widget 快照、Codex 会话和搜索索引。"
+            reason = "M2 Native Local Core 已覆盖工作区扫描、文档、需求、就绪、confirmed writes、git/worktree、审计、设置、Widget 快照、Codex 会话和搜索索引。"
         }
         return NativeLocalCoreEvidence(
             status: status,
@@ -202,10 +207,18 @@ private extension NativeLocalCoreDomain {
                 "native/Nexus/Sources/NexusApp/NativeLocalAutomationCheck.swift",
                 "native/Nexus/Sources/NexusApp/MainWorkflowAcceptanceEvidence.swift",
                 "native/Nexus/Sources/NexusApp/NativeDistributionReadinessEvidence.swift",
+                "native/Nexus/Sources/NexusApp/NativeAuditEventStore.swift"
+            ]
+        case .confirmedWrites:
+            [
+                "native/Nexus/Sources/NexusApp/NativeDemandIntakeStore.swift",
+                "native/Nexus/Sources/NexusApp/NativeScopeFreezeStore.swift",
+                "native/Nexus/Sources/NexusApp/NativeDemandTaskTransferStore.swift",
                 "native/Nexus/Sources/NexusApp/NativeDeliveryRecordStore.swift",
                 "native/Nexus/Sources/NexusApp/NativeWorkspaceTaskStore.swift",
                 "native/Nexus/Sources/NexusApp/NativeWorkspaceLifecycleStore.swift",
-                "native/Nexus/Sources/NexusApp/NativeAuditEventStore.swift"
+                "native/Nexus/Sources/NexusApp/DeliveryLifecycleEvidence.swift",
+                "native/Nexus/Sources/NexusApp/AppState.swift"
             ]
         case .gitWorktreeStatus:
             [

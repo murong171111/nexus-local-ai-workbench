@@ -2659,6 +2659,7 @@ final class AppState: ObservableObject {
         [
             .audit,
             .codexSessions,
+            .confirmedWrites,
             .documentInventory,
             .demandIntake,
             .gitWorktreeStatus,

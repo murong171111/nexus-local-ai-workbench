@@ -1181,10 +1181,10 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertEqual(preview.status, .blocked)
         XCTAssertTrue(preview.bridgeIsLegacyDependency)
-        XCTAssertEqual(preview.migrationSummary, "0/10 Native domains")
+        XCTAssertEqual(preview.migrationSummary, "0/11 Native domains")
         XCTAssertEqual(preview.domains.map(\.status), Array(repeating: .blocked, count: NativeLocalCoreDomain.allCases.count))
         XCTAssertEqual(partiallyNative.status, .blocked)
-        XCTAssertEqual(partiallyNative.migrationSummary, "5/10 Native domains · 1 partial")
+        XCTAssertEqual(partiallyNative.migrationSummary, "5/11 Native domains · 1 partial")
         XCTAssertEqual(partiallyNative.domains.filter { $0.status == .ready }.map(\.domain), [.workspaceScanning, .documentInventory, .audit, .widgetSnapshot, .searchIndex])
         XCTAssertEqual(
             partiallyNative.domains.first { $0.domain == .documentInventory }?.evidence,
@@ -1209,16 +1209,34 @@ final class ModelBehaviorTests: XCTestCase {
         )
         XCTAssertTrue(
             fullyNative.domains.first { $0.domain == .readiness }?.evidence.contains(
-                "native/Nexus/Sources/NexusApp/NativeDeliveryRecordStore.swift"
+                "native/Nexus/Sources/NexusApp/NativeAuditEventStore.swift"
+            ) ?? false
+        )
+        XCTAssertEqual(
+            fullyNative.domains.first { $0.domain == .confirmedWrites }?.evidence,
+            [
+                "native/Nexus/Sources/NexusApp/NativeDemandIntakeStore.swift",
+                "native/Nexus/Sources/NexusApp/NativeScopeFreezeStore.swift",
+                "native/Nexus/Sources/NexusApp/NativeDemandTaskTransferStore.swift",
+                "native/Nexus/Sources/NexusApp/NativeDeliveryRecordStore.swift",
+                "native/Nexus/Sources/NexusApp/NativeWorkspaceTaskStore.swift",
+                "native/Nexus/Sources/NexusApp/NativeWorkspaceLifecycleStore.swift",
+                "native/Nexus/Sources/NexusApp/DeliveryLifecycleEvidence.swift",
+                "native/Nexus/Sources/NexusApp/AppState.swift"
+            ]
+        )
+        XCTAssertTrue(
+            fullyNative.domains.first { $0.domain == .confirmedWrites }?.detail.contains(
+                "确认写入"
             ) ?? false
         )
         XCTAssertTrue(
-            fullyNative.domains.first { $0.domain == .readiness }?.evidence.contains(
+            fullyNative.domains.first { $0.domain == .confirmedWrites }?.evidence.contains(
                 "native/Nexus/Sources/NexusApp/NativeWorkspaceTaskStore.swift"
             ) ?? false
         )
         XCTAssertTrue(
-            fullyNative.domains.first { $0.domain == .readiness }?.evidence.contains(
+            fullyNative.domains.first { $0.domain == .confirmedWrites }?.evidence.contains(
                 "native/Nexus/Sources/NexusApp/NativeWorkspaceLifecycleStore.swift"
             ) ?? false
         )
@@ -1260,7 +1278,7 @@ final class ModelBehaviorTests: XCTestCase {
             ]
         )
         XCTAssertEqual(fullyNative.status, .ready)
-        XCTAssertEqual(fullyNative.migrationSummary, "10/10 Native domains")
+        XCTAssertEqual(fullyNative.migrationSummary, "11/11 Native domains")
         XCTAssertFalse(fullyNative.bridgeIsLegacyDependency)
         XCTAssertTrue(fullyNative.reason.contains("M2 Native Local Core"))
     }
@@ -1273,7 +1291,7 @@ final class ModelBehaviorTests: XCTestCase {
         )
 
         XCTAssertEqual(evidence.status, .review)
-        XCTAssertEqual(evidence.migrationSummary, "8/10 Native domains · 2 partial")
+        XCTAssertEqual(evidence.migrationSummary, "9/11 Native domains · 2 partial")
         XCTAssertTrue(evidence.reason.contains("已无 blocked 域"))
         XCTAssertEqual(evidence.domains.filter { $0.status == .review }.map(\.domain), [.workspaceScanning, .gitWorktreeStatus])
     }
@@ -2538,7 +2556,7 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertEqual(evidence.status, .ready)
         XCTAssertEqual(evidence.domains.map(\.domain), NativeLocalCoreDomain.allCases)
-        XCTAssertEqual(evidence.migrationSummary, "10/10 Native domains")
+        XCTAssertEqual(evidence.migrationSummary, "11/11 Native domains")
         XCTAssertEqual(
             evidence.domains.filter { $0.status == .ready }.map(\.domain),
             [
@@ -2546,6 +2564,7 @@ final class ModelBehaviorTests: XCTestCase {
                 .documentInventory,
                 .demandIntake,
                 .readiness,
+                .confirmedWrites,
                 .gitWorktreeStatus,
                 .audit,
                 .settings,
