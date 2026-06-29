@@ -18,7 +18,7 @@ swift test --package-path native/Nexus
 swift build --package-path native/Nexus
 ```
 
-The package produces the `NexusNative` executable and verifies the Swift local-core, workflow evidence, Widget snapshot, and distribution readiness models. `native/Nexus/Scripts/build-app-bundle.sh` wraps that executable into a local `Nexus.app` bundle for installation checks. `native/Nexus/Scripts/package-dmg.sh` packages the app into `Nexus.dmg` for release dry runs. `native/Nexus/Scripts/sign-and-notarize.sh` signs the app or DMG and submits DMGs to Apple notarization when Developer ID credentials are available. WidgetKit embedding remains M3 follow-up work.
+The package produces the `NexusNative` executable and verifies the Swift local-core, workflow evidence, Widget snapshot, and distribution readiness models. `native/Nexus/Scripts/build-app-bundle.sh` wraps that executable into a local `Nexus.app` bundle for installation checks. `native/Nexus/Scripts/package-dmg.sh` packages the app into `Nexus.dmg` for release dry runs. `native/Nexus/Scripts/sign-and-notarize.sh` signs the app or DMG and submits DMGs to Apple notarization when Developer ID credentials are available. `native/Nexus/Scripts/verify-release-bundle.sh` verifies the final app bundle, DMG checksum sidecars, and `nexus-native-release-manifest.json` before publication. WidgetKit embedding remains M3 follow-up work.
 
 ## Installable App Target
 
@@ -50,6 +50,7 @@ The app bundle must include:
 - Confirm release docs and workflows point at the Native app artifact path.
 - Confirm every published Native DMG has a matching `.dmg.sha256` checksum asset.
 - Confirm `nexus-native-release-manifest.json` is generated from the same final DMG and checksum assets.
+- Confirm `native/Nexus/Scripts/verify-release-bundle.sh` passes for the app bundle, DMGs, checksum sidecars, and release manifest.
 - Confirm `NativeReleasePolicyEvidence` reports release notes, updater default, release manifest metadata, and public-release blocker policy as ready.
 - Confirm legacy preview artifacts are not published as product release assets.
 
@@ -73,7 +74,7 @@ The release workflow includes secret-gated certificate import, signing, and nota
 Two workflows are expected for M3:
 
 - `CI`: runs Swift tests for `native/Nexus` and any remaining compatibility checks required by touched legacy reference code.
-- `Release`: currently builds the SwiftPM-backed `Nexus.app` bundle from `native/Nexus`, optionally imports the Apple Developer certificate when certificate secrets are configured, optionally signs the app when Apple signing secrets are configured, packages `nexus-native-<architecture>.dmg`, optionally signs/notarizes the DMG, generates a matching `.dmg.sha256` checksum and `nexus-native-release-manifest.json` from the final DMG, uploads those Native artifacts to GitHub Releases, and does not publish legacy preview artifacts.
+- `Release`: currently builds the SwiftPM-backed `Nexus.app` bundle from `native/Nexus`, optionally imports the Apple Developer certificate when certificate secrets are configured, optionally signs the app when Apple signing secrets are configured, packages `nexus-native-<architecture>.dmg`, optionally signs/notarizes the DMG, generates a matching `.dmg.sha256` checksum and `nexus-native-release-manifest.json` from the final DMG, verifies the app/DMG/checksum/manifest bundle outputs, uploads those Native artifacts to GitHub Releases, and does not publish legacy preview artifacts.
 
 The unsigned DMG remains the local fallback when credentials are absent. The public M3 release gate requires a successful signed and notarized run with real Apple Developer credentials.
 

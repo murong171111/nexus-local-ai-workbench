@@ -221,6 +221,7 @@ struct NativeDistributionReadinessEvidence: Hashable {
         let signingScript = "\(repositoryRoot)/native/Nexus/Scripts/sign-and-notarize.sh"
         let certificateImportScript = "\(repositoryRoot)/native/Nexus/Scripts/import-apple-certificate.sh"
         let releaseManifestScript = "\(repositoryRoot)/native/Nexus/Scripts/generate-release-manifest.sh"
+        let releaseBundleVerifierScript = "\(repositoryRoot)/native/Nexus/Scripts/verify-release-bundle.sh"
         let hasDocs = fileExists(distributionDoc) && fileExists(releaseDoc) && fileExists(releaseNotesDoc)
         let ciMentionsSwift = fileContains(ciWorkflow, "swift test")
         let releaseMentionsNative = fileContains(releaseWorkflow, "native/Nexus")
@@ -238,6 +239,13 @@ struct NativeDistributionReadinessEvidence: Hashable {
             && fileContains(releaseManifestScript, "automaticUpdatesEnabled")
             && fileContains(releaseWorkflow, "generate-release-manifest.sh")
             && fileContains(releaseWorkflow, "nexus-native-release-manifest.json")
+        let hasReleaseBundleVerification = fileExists(releaseBundleVerifierScript)
+            && fileContains(releaseBundleVerifierScript, "Contents/Info.plist")
+            && fileContains(releaseBundleVerifierScript, "nexus-native-release-manifest.json")
+            && fileContains(releaseBundleVerifierScript, "automaticUpdatesEnabled")
+            && fileContains(releaseWorkflow, "verify-release-bundle.sh")
+            && fileContains(releaseWorkflow, "--app dist/Nexus.app")
+            && fileContains(releaseWorkflow, "--assets-dir release-assets")
         let hasSigningAndNotarization = fileExists(signingScript)
             && fileContains(signingScript, "codesign")
             && fileContains(signingScript, "notarytool")
@@ -275,6 +283,7 @@ struct NativeDistributionReadinessEvidence: Hashable {
             hasDmgPackaging: hasDmgPackaging,
             hasDmgChecksums: hasDmgChecksums,
             hasReleaseManifest: hasReleaseManifest,
+            hasReleaseBundleVerification: hasReleaseBundleVerification,
             hasSigningAndNotarization: hasSigningAndNotarization,
             hasCertificateImport: hasCertificateImport,
             distributionMentionsNative: distributionMentionsNative,
@@ -287,9 +296,9 @@ struct NativeDistributionReadinessEvidence: Hashable {
             requirement: .releaseReadiness,
             status: ready ? .ready : .blocked,
             detail: ready
-                ? "Release docs, CI, certificate import, signing, notarization, structured updater policy, release notes, checksums, release manifest, and release workflow point at Swift-native DMG artifacts."
+                ? "Release docs, CI, certificate import, signing, notarization, structured updater policy, release notes, checksums, release manifest, bundle verification, and release workflow point at Swift-native DMG artifacts."
                 : "Release readiness blockers: \(blockers.joined(separator: " "))",
-            evidence: [distributionDoc, releaseDoc, releaseNotesDoc, ciWorkflow, releaseWorkflow, dmgScript, signingScript, certificateImportScript, releaseManifestScript]
+            evidence: [distributionDoc, releaseDoc, releaseNotesDoc, ciWorkflow, releaseWorkflow, dmgScript, signingScript, certificateImportScript, releaseManifestScript, releaseBundleVerifierScript]
                 + releasePolicy.checks.flatMap(\.evidence)
                 + blockers
         )
@@ -304,6 +313,7 @@ struct NativeDistributionReadinessEvidence: Hashable {
         hasDmgPackaging: Bool,
         hasDmgChecksums: Bool,
         hasReleaseManifest: Bool,
+        hasReleaseBundleVerification: Bool,
         hasSigningAndNotarization: Bool,
         hasCertificateImport: Bool,
         distributionMentionsNative: Bool,
@@ -335,6 +345,9 @@ struct NativeDistributionReadinessEvidence: Hashable {
         }
         if !hasReleaseManifest {
             blockers.append("Release workflow does not publish Native update manifest metadata.")
+        }
+        if !hasReleaseBundleVerification {
+            blockers.append("Release workflow does not verify Native app, DMG, checksum, and manifest outputs.")
         }
         if !hasSigningAndNotarization {
             blockers.append("Release workflow does not sign and notarize Native artifacts.")

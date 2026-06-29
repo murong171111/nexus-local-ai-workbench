@@ -99,6 +99,14 @@ jobs:
           cd dist
           shasum -a 256 "nexus-native-${{ matrix.artifact }}.dmg" > "nexus-native-${{ matrix.artifact }}.dmg.sha256"
 
+      - name: Verify Native release bundle
+        shell: bash
+        run: |
+          native/Nexus/Scripts/verify-release-bundle.sh \
+            --app dist/Nexus.app \
+            --dmg "dist/nexus-native-${{ matrix.artifact }}.dmg" \
+            --checksum "dist/nexus-native-${{ matrix.artifact }}.dmg.sha256"
+
       - name: Upload Native artifact
         uses: actions/upload-artifact@v4
         with:
@@ -142,6 +150,13 @@ jobs:
             --assets-dir release-assets \
             --tag "${{ steps.release.outputs.tag }}" \
             --output release-assets/nexus-native-release-manifest.json
+
+      - name: Verify Native release manifest
+        shell: bash
+        run: |
+          native/Nexus/Scripts/verify-release-bundle.sh \
+            --assets-dir release-assets \
+            --manifest release-assets/nexus-native-release-manifest.json
 
       - name: Publish release
         env:

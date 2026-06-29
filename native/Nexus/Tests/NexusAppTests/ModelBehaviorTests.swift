@@ -2335,6 +2335,7 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(evidence.checks.first { $0.requirement == .legacyDeletion }?.detail.contains("Next step: follow the Native deletion order") == true)
         XCTAssertTrue(evidence.checks.first { $0.requirement == .legacyDeletion }?.evidence.contains("\(root)/src-tauri") == true)
         XCTAssertTrue(evidence.checks.first { $0.requirement == .releaseReadiness }?.detail.contains("Release workflow does not build a Native app artifact") == true)
+        XCTAssertTrue(evidence.checks.first { $0.requirement == .releaseReadiness }?.detail.contains("Release workflow does not verify Native app, DMG, checksum, and manifest outputs") == true)
         XCTAssertTrue(evidence.checks.first { $0.requirement == .releaseReadiness }?.detail.contains("Release notes gate is missing or incomplete") == true)
         XCTAssertTrue(evidence.checks.first { $0.requirement == .releaseReadiness }?.detail.contains("Updater policy gate is missing or incomplete") == true)
         XCTAssertTrue(evidence.checks.first { $0.requirement == .releaseReadiness }?.detail.contains("Release manifest metadata is missing or incomplete") == true)
@@ -2386,6 +2387,7 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertFalse(releaseReadiness?.detail.contains("Release workflow does not package Native DMG artifacts.") == true)
         XCTAssertTrue(releaseReadiness?.detail.contains("Release workflow does not publish Native DMG checksums.") == true)
         XCTAssertTrue(releaseReadiness?.detail.contains("Release workflow does not publish Native update manifest metadata.") == true)
+        XCTAssertTrue(releaseReadiness?.detail.contains("Release workflow does not verify Native app, DMG, checksum, and manifest outputs.") == true)
         XCTAssertTrue(releaseReadiness?.detail.contains("Release workflow does not sign and notarize Native artifacts.") == true)
         XCTAssertTrue(releaseReadiness?.detail.contains("Release workflow does not import Apple Developer signing certificates.") == true)
         XCTAssertTrue(releaseReadiness?.detail.contains("Release notes gate is missing or incomplete") == true)
@@ -2569,6 +2571,7 @@ final class ModelBehaviorTests: XCTestCase {
             "\(root)/native/Nexus/Scripts/sign-and-notarize.sh",
             "\(root)/native/Nexus/Scripts/import-apple-certificate.sh",
             "\(root)/native/Nexus/Scripts/generate-release-manifest.sh",
+            "\(root)/native/Nexus/Scripts/verify-release-bundle.sh",
             "\(root)/widget/NexusWidget/NexusWidget.swift",
             "\(root)/native/NexusWidget/Sources/NexusWidget/NexusWidget.swift",
             "\(root)/native/NexusWidget/Info.plist",
@@ -2598,11 +2601,14 @@ final class ModelBehaviorTests: XCTestCase {
                         || path.hasSuffix("release-process.md")
                 case "native:build":
                     return path.hasSuffix("release.yml")
-                case "package-dmg.sh", ".dmg", "sign-and-notarize.sh", "shasum -a 256", ".dmg.sha256", "*.sha256", "generate-release-manifest.sh", "import-apple-certificate.sh", "APPLE_CERTIFICATE", "APPLE_CERTIFICATE_PASSWORD":
+                case "package-dmg.sh", ".dmg", "sign-and-notarize.sh", "shasum -a 256", ".dmg.sha256", "*.sha256", "generate-release-manifest.sh", "verify-release-bundle.sh", "--app dist/Nexus.app", "--assets-dir release-assets", "import-apple-certificate.sh", "APPLE_CERTIFICATE", "APPLE_CERTIFICATE_PASSWORD":
                     return path.hasSuffix("release.yml")
                 case "nexus-native-release-manifest.json":
                     return path.hasSuffix("release.yml")
                         || path.hasSuffix("generate-release-manifest.sh")
+                        || path.hasSuffix("verify-release-bundle.sh")
+                case "Contents/Info.plist":
+                    return path.hasSuffix("verify-release-bundle.sh")
                 case "codesign", "notarytool":
                     return path.hasSuffix("sign-and-notarize.sh")
                 case "security import", "security create-keychain", "set-key-partition-list":
@@ -2613,6 +2619,7 @@ final class ModelBehaviorTests: XCTestCase {
                      "\"updateChannel\": \"manual-github-release\"",
                      "does not enable automatic updates":
                     return path.hasSuffix("generate-release-manifest.sh")
+                        || path.hasSuffix("verify-release-bundle.sh")
                 case "com.apple.widgetkit-extension":
                     return path.hasSuffix("Info.plist")
                 case "group.com.ks.nexus":

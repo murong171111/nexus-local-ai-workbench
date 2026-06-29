@@ -49,7 +49,7 @@ git tag v0.1.1
 git push origin main --tags
 ```
 
-The current release workflow builds the SwiftPM-backed `Nexus.app` bundle for Apple Silicon and Intel runners, optionally imports the Apple Developer certificate into a temporary keychain when certificate secrets are configured, optionally signs the app when Apple signing secrets are configured, packages `nexus-native-<architecture>.dmg`, optionally signs/notarizes the DMG, writes a matching `.dmg.sha256` checksum sidecar for the final DMG, generates `nexus-native-release-manifest.json` for the manual GitHub release channel, and publishes those Native artifacts to the GitHub Release. This keeps the release channel on the Native path while signed WidgetKit embedding, a real-credential notarized release run, and updater integration are still under M3 development.
+The current release workflow builds the SwiftPM-backed `Nexus.app` bundle for Apple Silicon and Intel runners, optionally imports the Apple Developer certificate into a temporary keychain when certificate secrets are configured, optionally signs the app when Apple signing secrets are configured, packages `nexus-native-<architecture>.dmg`, optionally signs/notarizes the DMG, writes a matching `.dmg.sha256` checksum sidecar for the final DMG, generates `nexus-native-release-manifest.json` for the manual GitHub release channel, runs `native/Nexus/Scripts/verify-release-bundle.sh` against the app bundle, DMGs, checksum sidecars, and manifest, and publishes those Native artifacts to the GitHub Release. This keeps the release channel on the Native path while signed WidgetKit embedding, a real-credential notarized release run, and updater integration are still under M3 development.
 
 The final public release workflow should build the Native app target for Apple Silicon and Intel, package `Nexus.app` and `Nexus.dmg`, prove signing/notarization with real Apple credentials, and publish those signed Native artifacts to the GitHub Release.
 
@@ -74,7 +74,7 @@ Recommended GitHub Secrets:
 - `APPLE_CERTIFICATE_PASSWORD`
 - `APPLE_SIGNING_IDENTITY`
 
-Use `native/Nexus/Scripts/import-apple-certificate.sh --help` to inspect the secret-gated certificate import path and `native/Nexus/Scripts/sign-and-notarize.sh --dry-run` to validate the local signing command path without Apple credentials. Public distribution is still blocked until signed WidgetKit embedding and a real notarized release run are verified.
+Use `native/Nexus/Scripts/import-apple-certificate.sh --help` to inspect the secret-gated certificate import path, `native/Nexus/Scripts/sign-and-notarize.sh --dry-run` to validate the local signing command path without Apple credentials, and `native/Nexus/Scripts/verify-release-bundle.sh --help` to inspect the final app/DMG/checksum/manifest verification path. Public distribution is still blocked until signed WidgetKit embedding and a real notarized release run are verified.
 
 ## Universal Build Options
 
