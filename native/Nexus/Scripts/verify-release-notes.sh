@@ -16,6 +16,8 @@ The selected notes section must mention Native artifacts, checksums, signing/not
 known blockers, validation summary, release manifest metadata, and migration/rollback notes.
 When --assets-dir is provided, every nexus-native-*.dmg, matching .dmg.sha256 sidecar,
 and the manifest filename must be named in the notes.
+When --manifest is provided, every manifest SHA-256 value must appear in the notes
+and match the matching .dmg.sha256 checksum sidecar.
 USAGE
 }
 
@@ -70,6 +72,7 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 python3 - "$NOTES_PATH" "$RELEASE_TAG" "$ASSETS_DIR" "$MANIFEST_PATH" "$ALLOW_UNRELEASED" <<'PY'
+import json
 import re
 import sys
 from pathlib import Path
@@ -125,6 +128,7 @@ if "automatic updates disabled" not in lower_section and "manual-github-release"
     missing.append("automatic updates disabled or manual-github-release")
 
 asset_names = []
+sidecar_checksums = {}
 if assets_dir:
     if not assets_dir.is_dir():
         raise SystemExit(f"Assets directory does not exist: {assets_dir}")
@@ -135,12 +139,39 @@ if assets_dir:
         checksum = dmg.with_name(f"{dmg.name}.sha256")
         if not checksum.exists():
             raise SystemExit(f"Missing checksum sidecar: {checksum}")
+        sidecar_checksums[checksum.name] = checksum.read_text(encoding="utf-8").split()[0].strip()
         asset_names.extend([dmg.name, checksum.name])
 
 if manifest_path:
     if not manifest_path.is_file():
         raise SystemExit(f"Release manifest does not exist: {manifest_path}")
     asset_names.append(manifest_path.name)
+    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    artifacts = data.get("artifacts")
+    if not isinstance(artifacts, list) or not artifacts:
+        raise SystemExit("Release manifest must include artifacts")
+    for artifact in artifacts:
+        if not isinstance(artifact, dict):
+            raise SystemExit("Release manifest artifact must be an object")
+        dmg = artifact.get("dmg")
+        checksum_file = artifact.get("checksumFile")
+        sha256 = artifact.get("sha256")
+        if not dmg or not checksum_file or not isinstance(sha256, str) or len(sha256) != 64:
+            raise SystemExit(f"Release manifest artifact is missing checksum metadata: {dmg or 'unknown'}")
+        fallback_sidecar = manifest_path.with_name(checksum_file)
+        if checksum_file not in sidecar_checksums and fallback_sidecar.exists():
+            sidecar_checksums[checksum_file] = fallback_sidecar.read_text(encoding="utf-8").split()[0].strip()
+        if checksum_file not in sidecar_checksums:
+            raise SystemExit(f"Release manifest references missing checksum sidecar: {checksum_file}")
+        if sha256 != sidecar_checksums[checksum_file]:
+            raise SystemExit(f"Release manifest sha256 must match checksum sidecar: {dmg}")
+        asset_names.extend([dmg, checksum_file])
+        if sha256 not in section:
+            missing.append(f"manifest SHA-256 for {dmg}: {sha256}")
+    if "manifest sha-256" not in lower_section and "manifest sha256" not in lower_section:
+        missing.append("manifest SHA-256")
+    if "checksum sidecar" not in lower_section:
+        missing.append("checksum sidecar")
 
 missing_assets = [name for name in asset_names if name not in section]
 if missing_assets:

@@ -13,11 +13,11 @@ Every public Native release must include release notes with:
 - migration and rollback notes for workspace data
 - known blockers and any intentionally skipped release requirements
 - validation summary for Swift tests, app launch, workspace lifecycle proof, and Widget snapshot writing
-- release manifest metadata, including `nexus-native-release-manifest.json` when Native DMGs are published
+- release manifest metadata, including `nexus-native-release-manifest.json` and manifest SHA-256 values that match the published `.dmg.sha256` checksum sidecar assets when Native DMGs are published
 
 The release notes must be linked from the GitHub Release before the release is marked public. If signing, notarization, WidgetKit embedding, updater metadata, or lifecycle proof is missing, the notes must call that out as a blocker rather than presenting the artifact as production ready.
 
-The release workflow verifies `CHANGELOG.md` with `native/Nexus/Scripts/verify-release-notes.sh` before publishing. For tagged releases, the matching changelog section must name every Native DMG, every `.dmg.sha256` sidecar, `nexus-native-release-manifest.json`, signing/notarization status, known blockers, validation summary, and migration/rollback notes.
+The release workflow verifies `CHANGELOG.md` with `native/Nexus/Scripts/verify-release-notes.sh` before publishing. For tagged releases, the matching changelog section must name every Native DMG, every `.dmg.sha256` sidecar, `nexus-native-release-manifest.json`, the manifest SHA-256 value for each DMG, checksum sidecar matching, signing/notarization status, known blockers, validation summary, and migration/rollback notes.
 
 ## Updater Gate
 

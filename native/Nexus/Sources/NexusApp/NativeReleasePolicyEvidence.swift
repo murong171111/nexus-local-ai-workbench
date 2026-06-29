@@ -124,7 +124,8 @@ struct NativeReleasePolicyEvidence: Hashable {
             "migration and rollback notes",
             "known blockers",
             "validation summary",
-            "release manifest metadata"
+            "release manifest metadata",
+            "manifest SHA-256 values"
         ]
         var missing = missingNeedles(requiredNeedles, path: releaseNotesDoc, fileContains: fileContains)
         let verifierNeedles = [
@@ -139,7 +140,10 @@ struct NativeReleasePolicyEvidence: Hashable {
             "rollback",
             "nexus-native-*.dmg",
             ".dmg.sha256",
-            "nexus-native-release-manifest.json"
+            "nexus-native-release-manifest.json",
+            "manifest SHA-256",
+            "checksum sidecar",
+            "Release manifest sha256 must match checksum sidecar"
         ]
         missing.append(contentsOf: verifierNeedles
             .filter { !fileContains(releaseNotesVerifierScript, $0) }
@@ -156,7 +160,7 @@ struct NativeReleasePolicyEvidence: Hashable {
             requirement: .releaseNotes,
             status: ready ? .ready : .blocked,
             detail: ready
-                ? "Release notes gate lists and verifies version, artifacts, checksums, signing status, blockers, validation, manifest, migration, and rollback requirements."
+                ? "Release notes gate lists and verifies version, artifacts, checksums, signing status, blockers, validation, manifest SHA-256 values, migration, and rollback requirements."
                 : "Release notes gate is missing or incomplete: \(missing.joined(separator: ", ")).",
             evidence: [releaseNotesDoc, releaseNotesVerifierScript, releaseWorkflow] + missing
         )

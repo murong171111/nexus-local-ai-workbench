@@ -2540,6 +2540,7 @@ final class ModelBehaviorTests: XCTestCase {
                      "migration and rollback notes",
                      "known blockers",
                      "release manifest metadata",
+                     "manifest SHA-256 values",
                      "Updater Gate",
                      "Automatic updates disabled",
                      "Do not enable automatic updates",
@@ -2558,8 +2559,12 @@ final class ModelBehaviorTests: XCTestCase {
                      "--assets-dir",
                      "--manifest",
                      "nexus-native-*.dmg",
-                     ".dmg.sha256":
+                     ".dmg.sha256",
+                     "manifest SHA-256",
+                     "checksum sidecar",
+                     "Release manifest sha256 must match checksum sidecar":
                     return path.hasSuffix("verify-release-notes.sh")
+                        || path.hasSuffix("verify-release-bundle.sh")
                 case "signing/notarization",
                      "known blocker",
                      "migration",
@@ -2587,8 +2592,7 @@ final class ModelBehaviorTests: XCTestCase {
                     return path.hasSuffix("generate-release-manifest.sh")
                         || path.hasSuffix("verify-release-bundle.sh")
                         || path.hasSuffix("AppState.swift")
-                case "Release manifest sha256 must match checksum sidecar",
-                     "sidecar_checksums",
+                case "sidecar_checksums",
                      "updateChannel":
                     return path.hasSuffix("verify-release-bundle.sh")
                 case "signed WidgetKit",
@@ -2797,8 +2801,12 @@ final class ModelBehaviorTests: XCTestCase {
                      "--tag",
                      "--assets-dir",
                      "--manifest",
-                     "nexus-native-*.dmg":
+                     "nexus-native-*.dmg",
+                     "manifest SHA-256",
+                     "checksum sidecar",
+                     "Release manifest sha256 must match checksum sidecar":
                     return path.hasSuffix("verify-release-notes.sh")
+                        || path.hasSuffix("verify-release-bundle.sh")
                 case "signing/notarization",
                      "known blocker",
                      "migration",
@@ -2832,8 +2840,7 @@ final class ModelBehaviorTests: XCTestCase {
                     return path.hasSuffix("generate-release-manifest.sh")
                         || path.hasSuffix("verify-release-bundle.sh")
                         || path.hasSuffix("AppState.swift")
-                case "Release manifest sha256 must match checksum sidecar",
-                     "sidecar_checksums",
+                case "sidecar_checksums",
                      "updateChannel":
                     return path.hasSuffix("verify-release-bundle.sh")
                 case "struct NativeUpdateChannelStatus",
@@ -2854,7 +2861,7 @@ final class ModelBehaviorTests: XCTestCase {
                     return path.hasSuffix("NexusWidget.entitlements")
                 case "Native Deletion Order", "Current Legacy Surfaces":
                     return path.hasSuffix("legacy-retirement-audit.md")
-                case "Release Notes Gate", "version/tag", "native artifact names", "checksums", "signing/notarization status", "migration and rollback notes", "known blockers", "release manifest metadata":
+                case "Release Notes Gate", "version/tag", "native artifact names", "checksums", "signing/notarization status", "migration and rollback notes", "known blockers", "release manifest metadata", "manifest SHA-256 values":
                     return path.hasSuffix("native-release-notes-and-updater.md")
                 case "Updater Gate", "Automatic updates disabled", "Do not enable automatic updates", "Settings exposes a user-visible update channel", "must not silently check for, download, or install updates":
                     return path.hasSuffix("native-release-notes-and-updater.md")

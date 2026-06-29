@@ -57,7 +57,7 @@ You can also run the `Release` workflow manually with a tag input.
 
 ## Release Notes And Updater Gate
 
-Before marking a release public, fill the Release Notes Gate in `docs/native-release-notes-and-updater.md`: version/tag, Native artifacts, `.dmg.sha256` checksums, `nexus-native-release-manifest.json`, signing/notarization status, known blockers, validation summary, and rollback notes. `NativeReleasePolicyEvidence` is the Swift-side evidence model for this gate, and `verify-release-notes.sh` is the release workflow verifier for the actual GitHub Release notes.
+Before marking a release public, fill the Release Notes Gate in `docs/native-release-notes-and-updater.md`: version/tag, Native artifacts, `.dmg.sha256` checksums, `nexus-native-release-manifest.json`, manifest SHA-256 values matching checksum sidecars, signing/notarization status, known blockers, validation summary, and rollback notes. `NativeReleasePolicyEvidence` is the Swift-side evidence model for this gate, and `verify-release-notes.sh` is the release workflow verifier for the actual GitHub Release notes.
 
 Keep automatic updates disabled until the Updater Gate in `docs/native-release-notes-and-updater.md` is satisfied with updater signing keys, appcast metadata, user-visible update settings, and signed/notarized Native artifacts. Native Settings currently surfaces the manual GitHub release channel and `nexus-native-release-manifest.json` while keeping automatic updates disabled.
 
