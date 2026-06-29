@@ -123,6 +123,14 @@ jobs:
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Generate Native release manifest
+        shell: bash
+        run: |
+          native/Nexus/Scripts/generate-release-manifest.sh \
+            --assets-dir release-assets \
+            --tag "${{ steps.release.outputs.tag }}" \
+            --output release-assets/nexus-native-release-manifest.json
+
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -136,9 +144,9 @@ jobs:
           fi
 
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" release-assets/*.dmg release-assets/*.sha256 --clobber
+            gh release upload "$RELEASE_TAG" release-assets/*.dmg release-assets/*.sha256 release-assets/nexus-native-release-manifest.json --clobber
           else
-            gh release create "$RELEASE_TAG" release-assets/*.dmg release-assets/*.sha256 \
+            gh release create "$RELEASE_TAG" release-assets/*.dmg release-assets/*.sha256 release-assets/nexus-native-release-manifest.json \
               --title "Nexus $RELEASE_TAG" \
               --notes-file CHANGELOG.md \
               "${FLAGS[@]}"

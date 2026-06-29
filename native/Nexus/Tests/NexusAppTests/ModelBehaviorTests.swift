@@ -2325,6 +2325,7 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertFalse(releaseReadiness?.detail.contains("Release workflow does not build a Native app artifact.") == true)
         XCTAssertFalse(releaseReadiness?.detail.contains("Release workflow does not package Native DMG artifacts.") == true)
         XCTAssertTrue(releaseReadiness?.detail.contains("Release workflow does not publish Native DMG checksums.") == true)
+        XCTAssertTrue(releaseReadiness?.detail.contains("Release workflow does not publish Native update manifest metadata.") == true)
         XCTAssertTrue(releaseReadiness?.detail.contains("Release workflow does not sign and notarize Native artifacts.") == true)
         XCTAssertTrue(releaseReadiness?.detail.contains("Release notes gate is missing or incomplete.") == true)
         XCTAssertTrue(releaseReadiness?.detail.contains("Updater policy gate is missing or incomplete.") == true)
@@ -2437,6 +2438,7 @@ final class ModelBehaviorTests: XCTestCase {
             "\(root)/native/Nexus/Nexus.xcodeproj/project.pbxproj",
             "\(root)/native/Nexus/Scripts/package-dmg.sh",
             "\(root)/native/Nexus/Scripts/sign-and-notarize.sh",
+            "\(root)/native/Nexus/Scripts/generate-release-manifest.sh",
             "\(root)/widget/NexusWidget/NexusWidget.swift",
             "\(root)/native/NexusWidget/Sources/NexusWidget/NexusWidget.swift",
             "\(root)/native/NexusWidget/Info.plist",
@@ -2466,10 +2468,15 @@ final class ModelBehaviorTests: XCTestCase {
                         || path.hasSuffix("release-process.md")
                 case "native:build":
                     return path.hasSuffix("release.yml")
-                case "package-dmg.sh", ".dmg", "sign-and-notarize.sh", "shasum -a 256", ".dmg.sha256", "*.sha256":
+                case "package-dmg.sh", ".dmg", "sign-and-notarize.sh", "shasum -a 256", ".dmg.sha256", "*.sha256", "generate-release-manifest.sh":
                     return path.hasSuffix("release.yml")
+                case "nexus-native-release-manifest.json":
+                    return path.hasSuffix("release.yml")
+                        || path.hasSuffix("generate-release-manifest.sh")
                 case "codesign", "notarytool":
                     return path.hasSuffix("sign-and-notarize.sh")
+                case "manual-github-release", "automaticUpdatesEnabled":
+                    return path.hasSuffix("generate-release-manifest.sh")
                 case "com.apple.widgetkit-extension":
                     return path.hasSuffix("Info.plist")
                 case "group.com.ks.nexus":

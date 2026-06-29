@@ -49,7 +49,7 @@ git tag v0.1.1
 git push origin main --tags
 ```
 
-The current release workflow builds the SwiftPM-backed `Nexus.app` bundle for Apple Silicon and Intel runners, optionally signs the app when Apple signing secrets are configured, packages `nexus-native-<architecture>.dmg`, optionally signs/notarizes the DMG, writes a matching `.dmg.sha256` checksum sidecar for the final DMG, and publishes those Native artifacts to the GitHub Release. This keeps the release channel on the Native path while final certificate import policy, signed WidgetKit embedding, and updater integration are still under M3 development.
+The current release workflow builds the SwiftPM-backed `Nexus.app` bundle for Apple Silicon and Intel runners, optionally signs the app when Apple signing secrets are configured, packages `nexus-native-<architecture>.dmg`, optionally signs/notarizes the DMG, writes a matching `.dmg.sha256` checksum sidecar for the final DMG, generates `nexus-native-release-manifest.json` for the manual GitHub release channel, and publishes those Native artifacts to the GitHub Release. This keeps the release channel on the Native path while final certificate import policy, signed WidgetKit embedding, and updater integration are still under M3 development.
 
 The final public release workflow should build the Native app target for Apple Silicon and Intel, package `Nexus.app` and `Nexus.dmg`, prove signing/notarization with real Apple credentials, and publish those signed Native artifacts to the GitHub Release.
 
@@ -57,7 +57,7 @@ You can also run the `Release` workflow manually with a tag input.
 
 ## Release Notes And Updater Gate
 
-Before marking a release public, fill the Release Notes Gate in `docs/native-release-notes-and-updater.md`: version/tag, Native artifacts, `.dmg.sha256` checksums, signing/notarization status, known blockers, validation summary, and rollback notes.
+Before marking a release public, fill the Release Notes Gate in `docs/native-release-notes-and-updater.md`: version/tag, Native artifacts, `.dmg.sha256` checksums, `nexus-native-release-manifest.json`, signing/notarization status, known blockers, validation summary, and rollback notes.
 
 Keep automatic updates disabled until the Updater Gate in `docs/native-release-notes-and-updater.md` is satisfied with updater signing keys, appcast metadata, user-visible update settings, and signed/notarized Native artifacts.
 
@@ -91,6 +91,6 @@ Before enabling automatic updates:
 
 - Sign and notarize releases.
 - Generate updater signing keys.
-- Publish stable appcast metadata or an equivalent update manifest.
+- Publish stable appcast metadata or an equivalent update manifest such as `nexus-native-release-manifest.json`.
 - Make update checks opt-in or clearly visible in Settings.
 - Document what metadata is requested remotely.
