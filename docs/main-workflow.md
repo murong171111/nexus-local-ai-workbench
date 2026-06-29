@@ -367,8 +367,9 @@ The current Native shell already has enough structure to receive the M1 workflow
 
 - App entry: `native/Nexus/Sources/NexusApp/NexusApp.swift` owns the app scene, menu bar extra, and settings scene.
 - Main state: `AppState` owns workspace selection, document preview, demand intake state, worktree setup state, search, automation, agent events, settings, and feedback surfaces.
-- Main window: `RootView` is already organized around sidebar, workspace list, and inspector/detail surfaces.
-- Workspace list: `WorkspaceListView` and `WorkspaceCard` show workspace identity, branch, lifecycle, service/task/worktree signals, and risk.
+- Main window: `RootView` is now organized around a top command bar plus two primary surfaces: Console for focused execution and Board for stage overview.
+- Console and Board: `WorkspaceConsoleView` keeps the selected workspace's current stage, blocker reason, next action, evidence files, document preview, and local action routing in one surface, while `WorkspaceBoardView` groups all workspaces by `WorkspaceMainStage` and routes selected cards back to Console.
+- Workspace list: the legacy `WorkspaceListView` and `WorkspaceCard` remain useful reference surfaces for identity, branch, lifecycle, service/task/worktree signals, and risk, but M1 attention should move through Console and Board.
 - Workspace detail: `WorkspaceDetailView` already composes a Main Workflow summary, Detail Map, Command Center, Codex Sessions, Demand Intake, Lifecycle, Workflow, Services, Risk Review, Documents, and Activity.
 - Documents: `WorkspaceDocumentsHubView` already opens standard workspace documents and scanned SQL artifacts with preview/source behavior.
 - Demand intake: `WorkspaceDemandIntakeView` already initializes and opens the fixed `需求/` archive files, and the Native shell now reads `需求/*.md` for requirement content, unresolved P0 questions, visible scope status, and requirement-task readiness.

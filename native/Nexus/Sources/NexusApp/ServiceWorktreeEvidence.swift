@@ -161,7 +161,7 @@ enum ServiceBranchMatcher {
     }
 
     private static func normalize(_ branch: String) -> String {
-        branch
+        (branch.split(separator: "...", maxSplits: 1).first.map(String.init) ?? branch)
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
             .replacingOccurrences(of: "origin/", with: "")

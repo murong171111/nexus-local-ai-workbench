@@ -9,6 +9,7 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - SwiftUI workspace navigation shell.
 - AppKit-ready Mac integration boundary.
 - Sample data view model that mirrors the Rust Core dashboard contract.
+- Top command bar with Console and Board as the primary Native surfaces: Console focuses one workspace's current stage, blocker reason, next action, evidence files, and document preview; Board groups all workspaces by main workflow stage and routes cards back to Console.
 - Native top-bar search popover backed by the Swift/Rust SQLite + FTS bridge, with preview metadata fallback.
 - Search result context previews with workspace risk, branch/service summary, and compact activity timeline.
 - Persisted native search scopes for workspace, state, workflow, SQL, and document-focused searches.
@@ -16,7 +17,7 @@ The current production-preview app remains the Tauri app. This SwiftUI/AppKit pa
 - Sidebar Settings sheet with persisted workspace, source repository, delivery document roots, Codex URL, IDE URL template, refresh interval, and compatible team profile import/export.
 - Native Settings path rows with per-path readiness, directory pickers, reveal actions, and environment checks for local path readiness, Git availability, workspace counts, and source repository counts.
 - Chinese-first action labels and hover help for native path recovery, task source-document opens, task status updates, and task Codex handoff.
-- Native create-workspace sheet that scans configured source repositories, filters and selects service scope, accepts manual service fallback, shows root/folder/destination/environment/scope preflight before local writes, and shows an initialization receipt after creation.
+- Native create-workspace sheet that scans configured source repositories, filters and selects service scope, accepts manual service fallback, separates naming/location, service/branch scope, and preflight into a three-step review before local writes, and shows an initialization receipt after creation.
 - Post-create next-step panel that focuses the new workspace and routes the user toward `handoff.md`, confirmed worktree setup, Codex handoff, or local checks.
 - Result-aware native Codex handoff from worktree setup results, including created, skipped, and failed service details.
 - In-card local-check feedback after running checks from native worktree setup results.

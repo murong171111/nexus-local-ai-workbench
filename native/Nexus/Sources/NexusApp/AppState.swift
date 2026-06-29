@@ -1007,6 +1007,7 @@ final class AppState: ObservableObject {
             let mappedWorkspaces = dashboard.workspaces.map(WorkspaceSummary.init(snapshot:))
             let nativeAuditEvents = (try? NativeAuditEventStore.loadRecent(auditRoot: auditRootPath, limit: 40)) ?? []
             let enrichedWorkspaces = Self.workspaces(mappedWorkspaces, applyingNativeAuditEvents: nativeAuditEvents)
+            demandIntakeStatusesByWorkspace = Self.nativeDemandIntakeStatuses(for: enrichedWorkspaces)
             workspaces = enrichedWorkspaces
             codexSessionLinksByWorkspace = Self.loadCodexSessionLinks(for: enrichedWorkspaces)
             if selectedWorkspaceID == nil || !enrichedWorkspaces.contains(where: { $0.id == selectedWorkspaceID }) {
@@ -1083,6 +1084,13 @@ final class AppState: ObservableObject {
             return
         }
 
+        guard Self.canUseUserNotifications else {
+            areAutomationNotificationsEnabled = false
+            automationNotificationStatus = "Unavailable in SwiftPM run"
+            defaults.set(false, forKey: DefaultsKey.areAutomationNotificationsEnabled)
+            return
+        }
+
         let authorization = await requestAutomationNotificationAuthorization()
         areAutomationNotificationsEnabled = authorization.granted
         automationNotificationStatus = authorization.status
@@ -1123,6 +1131,13 @@ final class AppState: ObservableObject {
     }
 
     func refreshAutomationNotificationStatus() async {
+        guard Self.canUseUserNotifications else {
+            automationNotificationStatus = "Unavailable in SwiftPM run"
+            areAutomationNotificationsEnabled = false
+            defaults.set(false, forKey: DefaultsKey.areAutomationNotificationsEnabled)
+            return
+        }
+
         let settings = await notificationSettings()
         automationNotificationStatus = Self.notificationStatusLabel(settings.authorizationStatus)
         if settings.authorizationStatus == .denied || settings.authorizationStatus == .notDetermined {
@@ -3218,6 +3233,10 @@ final class AppState: ObservableObject {
     }
 
     static func fallbackDemandIntakeStatus(for workspace: WorkspaceSummary) -> DemandIntakeStatus {
+        if let status = try? NativeDemandIntakeStore.status(workspacePath: workspace.path) {
+            return status
+        }
+
         let workspacePath = workspace.path.hasSuffix("/")
             ? String(workspace.path.dropLast())
             : workspace.path
@@ -3245,6 +3264,14 @@ final class AppState: ObservableObject {
             missingCount: files.count,
             files: files
         )
+    }
+
+    private static func nativeDemandIntakeStatuses(for workspaces: [WorkspaceSummary]) -> [WorkspaceSummary.ID: DemandIntakeStatus] {
+        Dictionary(uniqueKeysWithValues: workspaces.map { workspace in
+            let status = (try? NativeDemandIntakeStore.status(workspacePath: workspace.path))
+                ?? fallbackDemandIntakeStatus(for: workspace)
+            return (workspace.id, status)
+        })
     }
 
     func agentEventHandoffPrompt(for event: AgentEvent) async -> String {
@@ -4771,6 +4798,12 @@ final class AppState: ObservableObject {
 
     private func sendAutomationNotificationIfNeeded(_ response: LocalAutomationCheckResponse) async {
         guard areAutomationNotificationsEnabled else { return }
+        guard Self.canUseUserNotifications else {
+            automationNotificationStatus = "Unavailable in SwiftPM run"
+            areAutomationNotificationsEnabled = false
+            defaults.set(false, forKey: DefaultsKey.areAutomationNotificationsEnabled)
+            return
+        }
         guard automationNotificationMinimumStatus.allows(response.status) else { return }
         guard let notificationSignals = automationNotificationSignals(from: response), !notificationSignals.isEmpty else {
             return
@@ -4858,6 +4891,10 @@ final class AppState: ObservableObject {
         return supportedNotificationCooldownMinutes.min { left, right in
             abs(left - value) < abs(right - value)
         } ?? defaultNotificationCooldownMinutes
+    }
+
+    private static var canUseUserNotifications: Bool {
+        Bundle.main.bundleURL.pathExtension == "app"
     }
 
     private static func notificationStatusLabel(_ status: UNAuthorizationStatus) -> String {

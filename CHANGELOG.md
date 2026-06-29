@@ -8,6 +8,10 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Added
 
+- Native root view now opens through a top command bar with Console and Board as the two primary surfaces, making single-workspace execution and all-workspace stage overview explicit instead of keeping sidebar, list, and inspector equally dominant.
+- Native Console now keeps the selected workspace's current stage, blocker reason, next action, evidence files, standard documents, SQL artifacts, and document preview in one focused execution surface.
+- Native create-workspace now uses a three-step sheet for naming/location, service/branch scope, and local preflight before writing standard documents, while worktree setup remains a separate confirmed action.
+- Native workspace refresh now loads demand-intake status from the Swift-native store when possible, and branch comparison now ignores `branch...origin/branch` tracking suffixes before checking target-branch alignment.
 - Native Board now has its own scope switch for All, Attention, Delivery, and Archive views, plus clearer card-level worktree summaries for quick triage without changing global sidebar filters.
 - Native SwiftUI now includes a Board surface beside Console, grouping workspaces by main workflow stage with active, blocked, delivery, and archive metrics; selecting a board card returns to Console with that workspace focused.
 - Archived native workspaces now keep the Archive card read-only by default while exposing an explicit restore-to-development action through the existing lifecycle confirmation and audit flow.
