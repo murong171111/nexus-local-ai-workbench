@@ -217,6 +217,7 @@ struct NativeDistributionReadinessEvidence: Hashable {
         let ciWorkflow = "\(repositoryRoot)/.github/workflows/ci.yml"
         let releaseWorkflow = "\(repositoryRoot)/.github/workflows/release.yml"
         let dmgScript = "\(repositoryRoot)/native/Nexus/Scripts/package-dmg.sh"
+        let signingScript = "\(repositoryRoot)/native/Nexus/Scripts/sign-and-notarize.sh"
         let hasDocs = fileExists(distributionDoc) && fileExists(releaseDoc)
         let ciMentionsSwift = fileContains(ciWorkflow, "swift test")
         let releaseMentionsNative = fileContains(releaseWorkflow, "native/Nexus")
@@ -225,8 +226,10 @@ struct NativeDistributionReadinessEvidence: Hashable {
         let hasDmgPackaging = fileExists(dmgScript)
             && fileContains(releaseWorkflow, "package-dmg.sh")
             && fileContains(releaseWorkflow, ".dmg")
-        let hasSigningAndNotarization = fileContains(releaseWorkflow, "codesign")
-            && fileContains(releaseWorkflow, "notarytool")
+        let hasSigningAndNotarization = fileExists(signingScript)
+            && fileContains(signingScript, "codesign")
+            && fileContains(signingScript, "notarytool")
+            && fileContains(releaseWorkflow, "sign-and-notarize.sh")
         let distributionMentionsNative = fileContains(distributionDoc, "native/Nexus")
             || fileContains(distributionDoc, "NexusNative")
             || fileContains(distributionDoc, "Swift")
@@ -258,7 +261,7 @@ struct NativeDistributionReadinessEvidence: Hashable {
             detail: ready
                 ? "Release docs, CI, signing, notarization, and release workflow point at Swift-native DMG artifacts."
                 : "Release readiness blockers: \(blockers.joined(separator: " "))",
-            evidence: [distributionDoc, releaseDoc, ciWorkflow, releaseWorkflow, dmgScript] + blockers
+            evidence: [distributionDoc, releaseDoc, ciWorkflow, releaseWorkflow, dmgScript, signingScript] + blockers
         )
     }
 

@@ -35,6 +35,11 @@ jobs:
             arch: x86_64
             artifact: x86_64-apple-macos
     runs-on: ${{ matrix.runner }}
+    env:
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
 
     steps:
       - name: Checkout
@@ -46,6 +51,15 @@ jobs:
       - name: Build Native app bundle
         run: native/Nexus/Scripts/build-app-bundle.sh --arch ${{ matrix.arch }} --output dist/Nexus.app
 
+      - name: Sign Native app
+        if: ${{ env.APPLE_SIGNING_IDENTITY != '' }}
+        shell: bash
+        run: |
+          native/Nexus/Scripts/sign-and-notarize.sh \
+            --app dist/Nexus.app \
+            --identity "$APPLE_SIGNING_IDENTITY" \
+            --skip-notarization
+
       - name: Package Native artifact
         shell: bash
         run: |
@@ -55,6 +69,17 @@ jobs:
             --app dist/Nexus.app \
             --output "dist/nexus-native-${{ matrix.artifact }}.dmg" \
             --volume-name "Nexus"
+
+      - name: Sign and notarize Native DMG
+        if: ${{ env.APPLE_SIGNING_IDENTITY != '' && env.APPLE_ID != '' && env.APPLE_TEAM_ID != '' && env.APPLE_PASSWORD != '' }}
+        shell: bash
+        run: |
+          native/Nexus/Scripts/sign-and-notarize.sh \
+            --dmg "dist/nexus-native-${{ matrix.artifact }}.dmg" \
+            --identity "$APPLE_SIGNING_IDENTITY" \
+            --team-id "$APPLE_TEAM_ID" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD"
 
       - name: Upload Native artifact
         uses: actions/upload-artifact@v4

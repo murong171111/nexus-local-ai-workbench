@@ -2252,6 +2252,7 @@ final class ModelBehaviorTests: XCTestCase {
             "\(root)/native/Nexus/Package.swift",
             "\(root)/native/Nexus/Nexus.xcodeproj/project.pbxproj",
             "\(root)/native/Nexus/Scripts/package-dmg.sh",
+            "\(root)/native/Nexus/Scripts/sign-and-notarize.sh",
             "\(root)/widget/NexusWidget/NexusWidget.swift",
             "\(root)/native/NexusWidget/Sources/NexusWidget/NexusWidget.swift",
             "\(root)/native/NexusWidget/Info.plist",
@@ -2280,8 +2281,10 @@ final class ModelBehaviorTests: XCTestCase {
                         || path.hasSuffix("release-process.md")
                 case "native:build":
                     return path.hasSuffix("release.yml")
-                case "package-dmg.sh", ".dmg", "codesign", "notarytool":
+                case "package-dmg.sh", ".dmg", "sign-and-notarize.sh":
                     return path.hasSuffix("release.yml")
+                case "codesign", "notarytool":
+                    return path.hasSuffix("sign-and-notarize.sh")
                 case "com.apple.widgetkit-extension":
                     return path.hasSuffix("Info.plist")
                 case "group.com.ks.nexus":

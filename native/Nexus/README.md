@@ -92,7 +92,13 @@ When a sandbox cannot create disk images, validate the same staging and command 
 native/Nexus/Scripts/package-dmg.sh --dry-run --app native/Nexus/build/Release/Nexus.app --output native/Nexus/build/Release/Nexus.dmg
 ```
 
-The bundle and DMG are suitable for local installation checks and `nexus://` URL scheme registration experiments. Signing, notarization, Widget Extension embedding, and updater integration are intentionally separate later M3 steps. The SwiftPM test target covers native model behavior such as menu-bar status priority, lifecycle fallback stages, and Task Center filters.
+Validate the signing and notarization command path without Apple credentials:
+
+```bash
+native/Nexus/Scripts/sign-and-notarize.sh --dry-run --app native/Nexus/build/Release/Nexus.app --identity "Developer ID Application: Example" --skip-notarization
+```
+
+The bundle and DMG are suitable for local installation checks and `nexus://` URL scheme registration experiments. Signing and notarization automation now exists behind explicit Apple Developer credentials, while signed Widget Extension embedding and updater integration remain later M3 steps. The SwiftPM test target covers native model behavior such as menu-bar status priority, lifecycle fallback stages, and Task Center filters.
 
 ## Rust Core Bridge
 

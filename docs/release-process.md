@@ -49,9 +49,9 @@ git tag v0.1.1
 git push origin main --tags
 ```
 
-The current release workflow builds the SwiftPM-backed `Nexus.app` bundle for Apple Silicon and Intel runners, packages `nexus-native-<architecture>.dmg`, and publishes those Native artifacts to the GitHub Release. This keeps the release channel on the Native path while signing, notarization, and WidgetKit embedding are still under M3 development.
+The current release workflow builds the SwiftPM-backed `Nexus.app` bundle for Apple Silicon and Intel runners, optionally signs the app when Apple signing secrets are configured, packages `nexus-native-<architecture>.dmg`, optionally signs/notarizes the DMG, and publishes those Native artifacts to the GitHub Release. This keeps the release channel on the Native path while final certificate import policy, signed WidgetKit embedding, and updater integration are still under M3 development.
 
-The final public release workflow should build the Native app target for Apple Silicon and Intel, package `Nexus.app` and `Nexus.dmg`, and publish those signed Native artifacts to the GitHub Release.
+The final public release workflow should build the Native app target for Apple Silicon and Intel, package `Nexus.app` and `Nexus.dmg`, prove signing/notarization with real Apple credentials, and publish those signed Native artifacts to the GitHub Release.
 
 You can also run the `Release` workflow manually with a tag input.
 
@@ -68,7 +68,7 @@ Recommended GitHub Secrets:
 - `APPLE_CERTIFICATE_PASSWORD`
 - `APPLE_SIGNING_IDENTITY`
 
-The current release path is not ready for public distribution until the Native app target, WidgetKit extension target, signing, and notarization policy are implemented.
+Use `native/Nexus/Scripts/sign-and-notarize.sh --dry-run` to validate the local command path without Apple credentials. Public distribution is still blocked until certificate import, signed WidgetKit embedding, and a real notarized release run are verified.
 
 ## Universal Build Options
 

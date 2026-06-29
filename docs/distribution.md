@@ -18,7 +18,7 @@ swift test --package-path native/Nexus
 swift build --package-path native/Nexus
 ```
 
-The package produces the `NexusNative` executable and verifies the Swift local-core, workflow evidence, Widget snapshot, and distribution readiness models. `native/Nexus/Scripts/build-app-bundle.sh` wraps that executable into a local unsigned `Nexus.app` bundle for installation checks. `native/Nexus/Scripts/package-dmg.sh` packages the app into an unsigned `Nexus.dmg` for release dry runs. Signing, notarization, and WidgetKit embedding remain M3 follow-up work.
+The package produces the `NexusNative` executable and verifies the Swift local-core, workflow evidence, Widget snapshot, and distribution readiness models. `native/Nexus/Scripts/build-app-bundle.sh` wraps that executable into a local `Nexus.app` bundle for installation checks. `native/Nexus/Scripts/package-dmg.sh` packages the app into `Nexus.dmg` for release dry runs. `native/Nexus/Scripts/sign-and-notarize.sh` signs the app or DMG and submits DMGs to Apple notarization when Developer ID credentials are available. WidgetKit embedding remains M3 follow-up work.
 
 ## Installable App Target
 
@@ -63,16 +63,16 @@ Recommended GitHub Secrets:
 - `APPLE_CERTIFICATE_PASSWORD`
 - `APPLE_SIGNING_IDENTITY`
 
-The current repository does not yet contain the final installable app target. Enable signing only after the Native app target, WidgetKit extension target, and certificate handling policy are ready.
+The release workflow includes secret-gated signing and notarization steps. It only signs when `APPLE_SIGNING_IDENTITY` is present, and only notarizes when `APPLE_ID`, `APPLE_TEAM_ID`, and `APPLE_PASSWORD` are present. The current repository still needs a final certificate import policy and a signed WidgetKit extension target before public distribution is considered complete.
 
 ## GitHub Actions
 
 Two workflows are expected for M3:
 
 - `CI`: runs Swift tests for `native/Nexus` and any remaining compatibility checks required by touched legacy reference code.
-- `Release`: currently builds the SwiftPM-backed `Nexus.app` bundle from `native/Nexus`, packages `nexus-native-<architecture>.dmg`, uploads those Native artifacts to GitHub Releases, and does not publish legacy preview artifacts.
+- `Release`: currently builds the SwiftPM-backed `Nexus.app` bundle from `native/Nexus`, optionally signs it when Apple signing secrets are configured, packages `nexus-native-<architecture>.dmg`, optionally signs/notarizes the DMG, uploads those Native artifacts to GitHub Releases, and does not publish legacy preview artifacts.
 
-The unsigned DMG is a transitional M3 proof that the release channel is Native-first. The final M3 release workflow should sign and notarize `Nexus.app`, then publish signed and notarized DMG artifacts instead of the unsigned dry-run image.
+The unsigned DMG remains the local fallback when credentials are absent. The public M3 release gate requires a successful signed and notarized run with real Apple Developer credentials.
 
 Pushing workflow files requires a GitHub token with the `workflow` scope.
 
