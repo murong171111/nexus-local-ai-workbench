@@ -41,7 +41,7 @@ struct NexusSnapshot: Decodable {
 
     var mainStageLine: String? {
         guard let mainStage else { return nil }
-        return [mainStage, mainStageNextAction, mainStageEvidence].compactMap(\.self).joined(separator: " · ")
+        return [mainStage, mainStageNextAction, mainStageEvidence].compactMap { $0 }.joined(separator: " · ")
     }
 }
 

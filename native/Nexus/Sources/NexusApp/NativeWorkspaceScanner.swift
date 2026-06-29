@@ -406,9 +406,11 @@ enum NativeWorkspaceScanner {
     }
 
     private static func normalizedBranchForComparison(_ value: String) -> String {
-        value.trimmingCharacters(in: .whitespacesAndNewlines)
+        value.split(separator: "...", maxSplits: 1).first.map(String.init)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "origin/", with: "")
             .lowercased()
+            ?? ""
     }
 
     private static func documentLinks(at root: URL, fileManager: FileManager) -> [String: String] {

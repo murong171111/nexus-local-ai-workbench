@@ -43,38 +43,24 @@ struct RootView: View {
     @State private var primarySurface: NexusPrimarySurface = .console
 
     var body: some View {
-        HStack(spacing: 0) {
-            SidebarView(
+        VStack(spacing: 0) {
+            TopCommandBar(
+                primarySurface: $primarySurface,
                 isCreateWorkspacePresented: $isCreateWorkspacePresented,
                 isSettingsPresented: $isSettingsPresented
             )
-                .frame(width: 264)
-
             Divider()
 
-            VStack(spacing: 0) {
-                TopCommandBar(primarySurface: $primarySurface)
-                Divider()
-
-                if primarySurface == .console {
-                    WorkspaceListView(
-                        isCreateWorkspacePresented: $isCreateWorkspacePresented,
-                        isSettingsPresented: $isSettingsPresented
-                    )
-                } else {
-                    WorkspaceBoardView {
-                        primarySurface = .console
-                    }
+            if primarySurface == .console {
+                WorkspaceConsoleView(
+                    isCreateWorkspacePresented: $isCreateWorkspacePresented,
+                    isSettingsPresented: $isSettingsPresented
+                )
+            } else {
+                WorkspaceBoardView {
+                    primarySurface = .console
                 }
             }
-
-            Divider()
-
-            InspectorView(
-                isCreateWorkspacePresented: $isCreateWorkspacePresented,
-                isSettingsPresented: $isSettingsPresented
-            )
-                .frame(width: 328)
         }
         .background(NexusPalette.background)
         .task {
@@ -152,6 +138,8 @@ private enum NexusPrimarySurface: String, CaseIterable, Identifiable {
 private struct TopCommandBar: View {
     @EnvironmentObject private var appState: AppState
     @Binding var primarySurface: NexusPrimarySurface
+    @Binding var isCreateWorkspacePresented: Bool
+    @Binding var isSettingsPresented: Bool
     @FocusState private var searchFocused: Bool
 
     var body: some View {
@@ -252,6 +240,20 @@ private struct TopCommandBar: View {
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+
+            Button {
+                isCreateWorkspacePresented = true
+            } label: {
+                Label("New Workspace", systemImage: "plus")
+            }
+            .buttonStyle(.borderedProminent)
+
+            Button {
+                isSettingsPresented = true
+            } label: {
+                Label("Settings", systemImage: "gearshape")
+            }
+            .buttonStyle(.bordered)
         }
         .padding(.horizontal, 18)
         .frame(height: 58)
@@ -1165,121 +1167,144 @@ private struct CreateWorkspaceSheet: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("新建工作区 / New Workspace")
                     .font(.title3.weight(.semibold))
-                Text("This writes the standard Nexus workspace documents under the configured Workspaces root.")
+                Text("按三步建档：命名 -> 确认服务/分支 -> 预检后写入标准文档。worktree 创建仍是后续独立确认动作。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            Form {
-                if appState.workspaces.isEmpty {
-                    Section("首次使用 / First run") {
-                        CreateWorkspaceFirstRunTemplateCard {
-                            applyDemoTemplate()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    if appState.workspaces.isEmpty {
+                        SectionBlock(title: "首次使用 / First run") {
+                            CreateWorkspaceFirstRunTemplateCard {
+                                applyDemoTemplate()
+                            }
                         }
                     }
-                }
 
-                Section("基本信息 / Basics") {
-                    TextField("需求名称", text: $name)
-                        .onChange(of: name) { value in
-                            if !didEditFolder {
-                                folder = defaultFolder(for: value)
-                            }
-                        }
-                    TextField("工作区目录名", text: Binding(
-                        get: { folder },
-                        set: { value in
-                            didEditFolder = true
-                            folder = value
-                        }
-                    ))
-                    TextField("目标分支，留空则待确认", text: $targetBranch)
-                }
-
-                Section("服务范围 / Service scope") {
-                    HStack {
-                        Text("\(services.count) selected")
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Button(appState.isScanningSourceRepositories ? "Scanning" : "Scan repos") {
-                            Task {
-                                await appState.refreshSourceRepositories()
-                            }
-                        }
-                        .disabled(appState.isScanningSourceRepositories)
-                    }
-
-                    if !availableSourceRepositories.isEmpty {
-                        TextField("筛选源仓库 / Filter services", text: $serviceQuery)
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            ForEach(filteredSourceRepositories.prefix(12), id: \.name) { repository in
-                                SourceRepositorySelectionRow(
-                                    repository: repository,
-                                    isSelected: Binding(
-                                        get: { selectedServiceNames.contains(repository.name) },
-                                        set: { isSelected in
-                                            if isSelected {
-                                                selectedServiceNames.insert(repository.name)
-                                            } else {
-                                                selectedServiceNames.remove(repository.name)
-                                            }
-                                        }
-                                    )
-                                )
-                            }
-
-                            if filteredSourceRepositories.isEmpty {
-                                Text("No services match this filter. Clear the filter or type the service manually.")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            } else if filteredSourceRepositories.count > 12 {
-                                Text("Showing 12 of \(filteredSourceRepositories.count) matching repositories. Refine the filter to narrow the list.")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    } else if appState.isScanningSourceRepositories {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text("Scanning configured source repository root...")
+                    SectionBlock(title: "1. 命名与位置 / Name and destination") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            TextField("需求名称", text: $name)
+                                .textFieldStyle(.roundedBorder)
+                                .onChange(of: name) { value in
+                                    if !didEditFolder {
+                                        folder = defaultFolder(for: value)
+                                    }
+                                }
+                            TextField("工作区目录名", text: Binding(
+                                get: { folder },
+                                set: { value in
+                                    didEditFolder = true
+                                    folder = value
+                                }
+                            ))
+                                .textFieldStyle(.roundedBorder)
+                            TextField("目标分支，留空则待确认", text: $targetBranch)
+                                .textFieldStyle(.roundedBorder)
+                            Text("写入位置：\(destinationPath)")
+                                .font(.system(.caption, design: .monospaced))
                                 .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                                .textSelection(.enabled)
                         }
-                    } else {
-                        Text("No source repositories detected yet. You can scan again, type services manually, or leave service scope pending.")
-                            .foregroundStyle(.secondary)
                     }
 
-                    if let error = appState.sourceRepositoryScanError {
-                        Text(error)
-                            .foregroundStyle(NexusPalette.danger)
-                    }
-
-                    TextField("手动补充服务，逗号或空格分隔", text: $servicesText)
-                }
-
-                Section("创建确认 / Confirmation") {
-                    WorkspaceCreationPreflightView(
-                        items: preflightItems,
-                        canCreate: preflightCanCreate,
-                        isCheckingEnvironment: appState.isCheckingNativeEnvironment,
-                        runEnvironmentCheckAction: {
-                            Task {
-                                await appState.checkNativeEnvironment()
+                    SectionBlock(title: "2. 服务范围 / Service scope") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack {
+                                Text("\(services.count) selected")
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Button(appState.isScanningSourceRepositories ? "Scanning" : "Scan repos") {
+                                    Task {
+                                        await appState.refreshSourceRepositories()
+                                    }
+                                }
+                                .disabled(appState.isScanningSourceRepositories)
                             }
+
+                            if !availableSourceRepositories.isEmpty {
+                                TextField("筛选源仓库 / Filter services", text: $serviceQuery)
+                                    .textFieldStyle(.roundedBorder)
+
+                                VStack(alignment: .leading, spacing: 8) {
+                                    ForEach(filteredSourceRepositories.prefix(12), id: \.name) { repository in
+                                        SourceRepositorySelectionRow(
+                                            repository: repository,
+                                            isSelected: Binding(
+                                                get: { selectedServiceNames.contains(repository.name) },
+                                                set: { isSelected in
+                                                    if isSelected {
+                                                        selectedServiceNames.insert(repository.name)
+                                                    } else {
+                                                        selectedServiceNames.remove(repository.name)
+                                                    }
+                                                }
+                                            )
+                                        )
+                                    }
+
+                                    if filteredSourceRepositories.isEmpty {
+                                        Text("No services match this filter. Clear the filter or type the service manually.")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    } else if filteredSourceRepositories.count > 12 {
+                                        Text("Showing 12 of \(filteredSourceRepositories.count) matching repositories. Refine the filter to narrow the list.")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                .padding(10)
+                                .background(NexusPalette.badge)
+                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            } else if appState.isScanningSourceRepositories {
+                                HStack(spacing: 8) {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                    Text("Scanning configured source repository root...")
+                                        .foregroundStyle(.secondary)
+                                }
+                            } else {
+                                Text("No source repositories detected yet. You can scan again, type services manually, or leave service scope pending.")
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            if let error = appState.sourceRepositoryScanError {
+                                Text(error)
+                                    .foregroundStyle(NexusPalette.danger)
+                            }
+
+                            TextField("手动补充服务，逗号或空格分隔", text: $servicesText)
+                                .textFieldStyle(.roundedBorder)
                         }
-                    )
-                    WorkspaceCreationSummary(
-                        workspaceRoot: appState.workspaceRoot,
-                        folder: folder,
-                        targetBranch: targetBranch,
-                        services: services
-                    )
-                    Toggle("确认创建目录和标准 Markdown 文档", isOn: $confirmed)
+                    }
+
+                    SectionBlock(title: "3. 预检与确认 / Preflight") {
+                        VStack(alignment: .leading, spacing: 12) {
+                            WorkspaceCreationPreflightView(
+                                items: preflightItems,
+                                canCreate: preflightCanCreate,
+                                isCheckingEnvironment: appState.isCheckingNativeEnvironment,
+                                runEnvironmentCheckAction: {
+                                    Task {
+                                        await appState.checkNativeEnvironment()
+                                    }
+                                }
+                            )
+                            WorkspaceCreationSummary(
+                                workspaceRoot: appState.workspaceRoot,
+                                folder: folder,
+                                targetBranch: targetBranch,
+                                services: services
+                            )
+                            Toggle("确认创建目录和标准 Markdown 文档", isOn: $confirmed)
+                                .toggleStyle(.checkbox)
+                        }
+                    }
                 }
             }
+            .frame(minHeight: 420, maxHeight: 520)
 
             HStack {
                 Button("Cancel") {
@@ -1320,7 +1345,7 @@ private struct CreateWorkspaceSheet: View {
             await appState.refreshSourceRepositories()
         }
         .padding(22)
-        .frame(width: 620, height: 620)
+        .frame(width: 680, height: 700)
     }
 
     private func defaultFolder(for value: String) -> String {
@@ -2442,37 +2467,841 @@ private struct FlowTagsButtonRow: View {
     }
 }
 
-private struct WorkspaceListView: View {
+private struct WorkspaceConsoleView: View {
     @EnvironmentObject private var appState: AppState
     @Binding var isCreateWorkspacePresented: Bool
     @Binding var isSettingsPresented: Bool
 
     var body: some View {
         ScrollView {
-            if appState.filteredWorkspaces.isEmpty {
-                WorkspaceListEmptyStateView(
+            if let workspace = appState.selectedWorkspace {
+                let stage = mainStage(for: workspace)
+
+                VStack(alignment: .leading, spacing: 16) {
+                    WorkspaceConsoleHeader(workspace: workspace)
+
+                    WorkspaceConsolePrimaryPanel(
+                        workspace: workspace,
+                        stage: stage,
+                        action: { run(stage.primaryAction, in: workspace) },
+                        evidenceAction: { link in
+                            if let action = link.action {
+                                run(action, in: workspace)
+                            }
+                        }
+                    )
+
+                    WorkspaceConsoleWorkArea(
+                        workspace: workspace,
+                        stage: stage,
+                        openDocument: { key, fallback in
+                            Task {
+                                await appState.loadDocument(path: documentPath(for: key, fallback: fallback, in: workspace))
+                            }
+                        },
+                        openSql: {
+                            Task {
+                                await appState.openSqlReviewDocument(in: workspace)
+                            }
+                        }
+                    )
+                        .environmentObject(appState)
+
+                    DisclosureGroup("更多状态 / More status") {
+                        VStack(alignment: .leading, spacing: 12) {
+                            WorkspaceConsoleSummaryStrip(workspace: workspace)
+
+                            NextStepQueueView(actions: workspace.sessionActions) { action in
+                                run(action, in: workspace)
+                            }
+
+                            WorkflowStatusView(
+                                workspace: workspace,
+                                completeTaskAction: { task in
+                                    appState.requestTaskStatusUpdate(task, in: workspace, status: "已完成")
+                                },
+                                deferTaskAction: { task in
+                                    appState.requestTaskStatusUpdate(task, in: workspace, status: "延期")
+                                },
+                                openTaskDocumentAction: { task in
+                                    Task {
+                                        await appState.openTaskSource(task, in: workspace)
+                                    }
+                                },
+                                taskCodexAction: { task in
+                                    Task {
+                                        await appState.openTaskInCodex(task, in: workspace)
+                                    }
+                                },
+                                lifecycleAction: { transition in
+                                    appState.requestLifecycleStatusUpdate(transition, in: workspace)
+                                }
+                            )
+                            .environmentObject(appState)
+                        }
+                        .padding(.top, 8)
+                    }
+                    .padding(12)
+                    .background(NexusPalette.panel)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .padding(18)
+            } else {
+                WorkspaceConsoleEmptyStateView(
                     isCreateWorkspacePresented: $isCreateWorkspacePresented,
                     isSettingsPresented: $isSettingsPresented
                 )
                 .padding(18)
+            }
+        }
+        .background(NexusPalette.background)
+    }
+
+    private func mainStage(for workspace: WorkspaceSummary) -> WorkspaceMainStage {
+        appState.mainWorkflowStage(for: workspace)
+    }
+
+    private func run(_ action: WorkspaceSessionAction, in workspace: WorkspaceSummary) {
+        if action.instructionType == "worktree" {
+            appState.presentWorktreeSetup(for: workspace)
+            return
+        }
+
+        if action.instructionType == "demand" || action.documentKey == "demandIntake" {
+            Task {
+                await appState.loadDocument(path: "\(workspace.path)/需求/requirement.md")
+            }
+            return
+        }
+
+        if action.documentKey == "sql" {
+            Task {
+                await appState.openSqlReviewDocument(in: workspace)
+            }
+            return
+        }
+
+        Task {
+            await appState.loadDocument(path: documentPath(for: action.documentKey, fallback: "handoff.md", in: workspace))
+        }
+    }
+
+    private func run(_ action: WorkspaceMainStageAction, in workspace: WorkspaceSummary) {
+        switch action {
+        case .lifecycle(let transition):
+            appState.requestLifecycleStatusUpdate(transition, in: workspace)
+        case .demandIntake:
+            Task {
+                await appState.loadDocument(path: documentPath(for: "requirement", fallback: "需求/requirement.md", in: workspace))
+            }
+        case .document(let key):
+            if key == "sql" {
+                Task {
+                    await appState.openSqlReviewDocument(in: workspace)
+                }
+                return
+            }
+            Task {
+                await appState.loadDocument(path: documentPath(for: key, fallback: "handoff.md", in: workspace))
+            }
+        case .path(let path):
+            Task {
+                await appState.loadDocument(path: path)
+            }
+        case .task(let id):
+            if let task = workspace.tasks.first(where: { $0.id == id }) {
+                Task {
+                    await appState.openTaskSource(task, in: workspace)
+                }
             } else {
-                LazyVStack(spacing: 12) {
-                    ForEach(appState.filteredWorkspaces) { workspace in
-                        WorkspaceCard(
-                            workspace: workspace,
-                            isSelected: workspace.id == appState.selectedWorkspace?.id,
-                            isPinned: appState.isPinned(workspace)
-                        ) {
-                            appState.togglePinned(workspace)
+                Task {
+                    await appState.loadDocument(path: documentPath(for: "tasks", fallback: "tasks.md", in: workspace))
+                }
+            }
+        case .transferDemandTasks:
+            appState.requestDemandTaskTransfer(in: workspace)
+        case .worktree:
+            appState.presentWorktreeSetup(for: workspace)
+        case .riskPrompt:
+            copyToPasteboard(appState.riskReviewPrompt(for: workspace))
+            Task {
+                await appState.recordRiskReviewHandoffCopied(for: workspace)
+            }
+        case .localCheck:
+            Task {
+                await appState.runLocalAutomationCheck(actor: "Nexus Console")
+            }
+        case .deliveryHandoff:
+            Task {
+                await appState.openDeliveryUpdateInCodex(workspace)
+            }
+        case .validationHandoff:
+            Task {
+                await appState.openValidationPrHandoffInCodex(workspace)
+            }
+        case .codex:
+            Task {
+                await appState.openWorkspaceInCodex(workspace)
+            }
+        }
+    }
+
+    private func documentPath(for key: String, fallback: String, in workspace: WorkspaceSummary) -> String {
+        if let path = workspace.documentLinks[key] {
+            return path
+        }
+
+        switch key {
+        case "workspace":
+            return "\(workspace.path)/workspace.md"
+        case "status":
+            return "\(workspace.path)/STATUS.md"
+        case "services":
+            return "\(workspace.path)/services.md"
+        case "branches":
+            return "\(workspace.path)/branches.md"
+        case "tasks":
+            return "\(workspace.path)/tasks.md"
+        case "requirement":
+            return "\(workspace.path)/需求/requirement.md"
+        case "questions":
+            return "\(workspace.path)/需求/questions.md"
+        case "scope":
+            return "\(workspace.path)/需求/scope.md"
+        case "demandTasks":
+            return "\(workspace.path)/需求/tasks.md"
+        case "delivery":
+            return "\(workspace.path)/交付记录.md"
+        case "handoff":
+            return "\(workspace.path)/handoff.md"
+        case "worktreeScript":
+            return "\(workspace.path)/scripts/worktree-commands.sh"
+        default:
+            return "\(workspace.path)/\(fallback)"
+        }
+    }
+}
+
+private struct WorkspaceConsoleHeader: View {
+    let workspace: WorkspaceSummary
+
+    private var stage: WorkspaceMainStage {
+        workspace.mainStage()
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("控制台 / Console")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(workspace.name)
+                    .font(.title2.weight(.semibold))
+                    .lineLimit(1)
+                Text(workspace.path)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer()
+
+            VStack(alignment: .trailing, spacing: 8) {
+                HStack(spacing: 7) {
+                    Pill(label: workspace.branch, systemImage: "arrow.triangle.branch")
+                    RiskBadge(level: workspace.riskLevel)
+                    if workspace.isArchived {
+                        ArchivedBadge()
+                    }
+                }
+                Label(stage.id.shortLabel, systemImage: stage.id.systemImage)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(stage.status.color)
+            }
+        }
+    }
+}
+
+private struct WorkspaceConsolePrimaryPanel: View {
+    let workspace: WorkspaceSummary
+    let stage: WorkspaceMainStage
+    let action: () -> Void
+    let evidenceAction: (WorkspaceMainStageEvidenceLink) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: stage.id.systemImage)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(stage.status.color)
+                    .frame(width: 24)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("现在该做什么 / Focus")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(stage.primaryActionLabel)
+                        .font(.title3.weight(.semibold))
+                    Text(stage.reason)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer()
+
+                Button(action: action) {
+                    Label(stage.primaryActionLabel, systemImage: stage.primaryActionSystemImage)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+            }
+
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
+                ConsoleFocusRow(label: "当前阶段", value: stage.id.label, systemImage: stage.id.systemImage, tone: stage.status.color)
+                ConsoleFocusRow(label: "为什么卡住", value: stage.blockerSummary, systemImage: stage.status == .blocked ? "xmark.octagon" : "info.circle", tone: stage.status.color)
+                ConsoleFocusRow(label: "下一步", value: stage.primaryActionLabel, systemImage: stage.primaryActionSystemImage, tone: NexusPalette.accent)
+                ConsoleFocusRow(label: "主证据文件", value: stage.answer.primaryEvidenceLink?.label ?? "暂无主证据", systemImage: "doc.text.magnifyingglass", tone: .secondary)
+            }
+
+            if !stage.evidenceLinks.isEmpty {
+                HStack(spacing: 8) {
+                    ForEach(stage.evidenceLinks.prefix(3)) { link in
+                        Button {
+                            evidenceAction(link)
+                        } label: {
+                            Label(link.label, systemImage: link.systemImage)
+                                .font(.system(.caption, design: .monospaced))
+                                .lineLimit(1)
                         }
-                        .onTapGesture {
-                            appState.select(workspace)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(link.action == nil)
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(stage.status.color.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(stage.status.color.opacity(0.18))
+        }
+    }
+
+    private var columns: [GridItem] {
+        [GridItem(.adaptive(minimum: 164), spacing: 8, alignment: .leading)]
+    }
+}
+
+private struct ConsoleFocusRow: View {
+    let label: String
+    let value: String
+    let systemImage: String
+    let tone: Color
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: systemImage)
+                .font(.caption)
+                .foregroundStyle(tone)
+                .frame(width: 15)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                Text(value)
+                    .font(.caption.weight(.medium))
+                    .lineLimit(2)
+            }
+        }
+        .padding(9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(NexusPalette.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct WorkspaceConsoleWorkArea: View {
+    let workspace: WorkspaceSummary
+    let stage: WorkspaceMainStage
+    let openDocument: (String, String) -> Void
+    let openSql: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 12) {
+                WorkspaceConsoleFileDock(
+                    workspace: workspace,
+                    stage: stage,
+                    openDocument: openDocument,
+                    openSql: openSql
+                )
+
+                WorkspaceConsoleSummaryStrip(workspace: workspace)
+            }
+            .frame(width: 380, alignment: .topLeading)
+
+            WorkspaceConsoleDocumentPanel(
+                workspace: workspace,
+                openDocument: openDocument,
+                openSql: openSql
+            )
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+    }
+}
+
+private struct WorkspaceConsoleFileDock: View {
+    let workspace: WorkspaceSummary
+    let stage: WorkspaceMainStage
+    let openDocument: (String, String) -> Void
+    let openSql: () -> Void
+
+    private var groups: [ConsoleFileGroup] {
+        [
+            ConsoleFileGroup(
+                title: "当前阶段 / Current",
+                files: currentStageFiles
+            ),
+            ConsoleFileGroup(
+                title: "常用 / Core",
+                files: [
+                    ConsoleFileLink(key: "status", label: "STATUS.md", fallback: "STATUS.md", systemImage: "gauge.with.dots.needle.67percent"),
+                    ConsoleFileLink(key: "tasks", label: "tasks.md", fallback: "tasks.md", systemImage: "checklist"),
+                    ConsoleFileLink(key: "delivery", label: "交付记录.md", fallback: "交付记录.md", systemImage: "doc.text.magnifyingglass"),
+                    ConsoleFileLink(key: "handoff", label: "handoff.md", fallback: "handoff.md", systemImage: "point.3.connected.trianglepath.dotted")
+                ]
+            ),
+            ConsoleFileGroup(
+                title: "需求 / Demand",
+                files: [
+                    ConsoleFileLink(key: "requirement", label: "requirement.md", fallback: "需求/requirement.md", systemImage: "text.quote"),
+                    ConsoleFileLink(key: "scope", label: "scope.md", fallback: "需求/scope.md", systemImage: "scope"),
+                    ConsoleFileLink(key: "questions", label: "questions.md", fallback: "需求/questions.md", systemImage: "questionmark.circle"),
+                    ConsoleFileLink(key: "demandTasks", label: "需求/tasks.md", fallback: "需求/tasks.md", systemImage: "checklist")
+                ]
+            ),
+            ConsoleFileGroup(
+                title: "SQL / Scripts",
+                files: [
+                    ConsoleFileLink(key: "sql", label: "SQL 复查", fallback: "sql", systemImage: "cylinder.split.1x2", opensSqlReview: true),
+                    ConsoleFileLink(key: "worktreeScript", label: "worktree-commands.sh", fallback: "scripts/worktree-commands.sh", systemImage: "terminal")
+                ]
+            )
+        ]
+    }
+
+    private var currentStageFiles: [ConsoleFileLink] {
+        var links = stage.evidenceLinks.compactMap { ConsoleFileLink(evidence: $0, workspace: workspace) }
+
+        if links.isEmpty {
+            links = [
+                ConsoleFileLink(key: "status", label: "STATUS.md", fallback: "STATUS.md", systemImage: "gauge.with.dots.needle.67percent")
+            ]
+        }
+
+        return Array(Dictionary(grouping: links, by: \.key).compactMap { $0.value.first }.prefix(4))
+    }
+
+    var body: some View {
+        SectionBlock(title: "需要的文件 / Files you need") {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("先看当前阶段文件；常用、需求和 SQL/scripts 永远在这里，不再藏在详情深处。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                ForEach(groups) { group in
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text(group.title)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 136), spacing: 8)], alignment: .leading, spacing: 8) {
+                            ForEach(group.files) { file in
+                                Button {
+                                    if file.opensSqlReview {
+                                        openSql()
+                                    } else {
+                                        openDocument(file.key, file.fallback)
+                                    }
+                                } label: {
+                                    Label(file.label, systemImage: file.systemImage)
+                                        .font(.caption.weight(.medium))
+                                        .lineLimit(1)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
                         }
                     }
                 }
-                .padding(18)
             }
         }
+    }
+}
+
+private struct WorkspaceConsoleDocumentPanel: View {
+    @EnvironmentObject private var appState: AppState
+    @State private var recoveryEntry: ResolvedWorkspaceDocumentEntry?
+    let workspace: WorkspaceSummary
+    let openDocument: (String, String) -> Void
+    let openSql: () -> Void
+
+    private var standardEntries: [ConsoleFileLink] {
+        [
+            ConsoleFileLink(key: "workspace", label: "workspace.md", fallback: "workspace.md", systemImage: "doc.text"),
+            ConsoleFileLink(key: "status", label: "STATUS.md", fallback: "STATUS.md", systemImage: "gauge.with.dots.needle.67percent"),
+            ConsoleFileLink(key: "services", label: "services.md", fallback: "services.md", systemImage: "square.stack.3d.up"),
+            ConsoleFileLink(key: "branches", label: "branches.md", fallback: "branches.md", systemImage: "arrow.triangle.branch"),
+            ConsoleFileLink(key: "requirements", label: "requirements.md", fallback: "requirements.md", systemImage: "text.badge.checkmark"),
+            ConsoleFileLink(key: "acceptance", label: "acceptance.md", fallback: "acceptance.md", systemImage: "checkmark.seal"),
+            ConsoleFileLink(key: "changes", label: "changes.md", fallback: "changes.md", systemImage: "clock.arrow.circlepath"),
+            ConsoleFileLink(key: "tasks", label: "tasks.md", fallback: "tasks.md", systemImage: "checklist"),
+            ConsoleFileLink(key: "delivery", label: "交付记录.md", fallback: "交付记录.md", systemImage: "shippingbox"),
+            ConsoleFileLink(key: "handoff", label: "handoff.md", fallback: "handoff.md", systemImage: "point.3.connected.trianglepath.dotted"),
+            ConsoleFileLink(key: "worktreeScript", label: "worktree-commands.sh", fallback: "scripts/worktree-commands.sh", systemImage: "terminal")
+        ]
+    }
+
+    private var activePreview: DocumentSnapshot? {
+        guard let document = appState.documentPreview, document.path.hasPrefix(workspace.path) else {
+            return nil
+        }
+        return document
+    }
+
+    private var activeDocumentError: DocumentLoadError? {
+        guard let error = appState.documentLoadError, error.path.hasPrefix(workspace.path) else {
+            return nil
+        }
+        return error
+    }
+
+    private var activeLoadingPath: String? {
+        guard let path = appState.documentLoadingPath, path.hasPrefix(workspace.path) else {
+            return nil
+        }
+        return path
+    }
+
+    private var activeDocumentPath: String? {
+        activeLoadingPath ?? activeDocumentError?.path ?? activePreview?.path
+    }
+
+    private var activeFocusHint: DocumentFocusHint? {
+        guard let hint = appState.documentFocusHint,
+              activeDocumentPath == hint.path else {
+            return nil
+        }
+        return hint
+    }
+
+    private var recoverableEntry: ResolvedWorkspaceDocumentEntry? {
+        guard let error = activeDocumentError,
+              error.message.localizedCaseInsensitiveContains("does not exist") else {
+            return nil
+        }
+
+        return standardEntries
+            .map { link in
+                let entry = WorkspaceDocumentEntry(
+                    key: link.key,
+                    label: link.label,
+                    description: "标准工作区文档",
+                    systemImage: link.systemImage,
+                    fallbackRelativePath: link.fallback
+                )
+                return ResolvedWorkspaceDocumentEntry(
+                    entry: entry,
+                    path: workspace.documentLinks[link.key] ?? "\(workspace.path)/\(link.fallback)"
+                )
+            }
+            .first { $0.path == error.path }
+    }
+
+    var body: some View {
+        SectionBlock(title: "文档查看 / Document viewer") {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("常用文档")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text("点击后在下方预览，不离开 Console")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button {
+                        openSql()
+                    } label: {
+                        Label("SQL 复查", systemImage: "cylinder.split.1x2")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 132), spacing: 8)], alignment: .leading, spacing: 8) {
+                    ForEach(standardEntries) { link in
+                        Button {
+                            openDocument(link.key, link.fallback)
+                        } label: {
+                            Label(link.label, systemImage: link.systemImage)
+                                .font(.caption.weight(.medium))
+                                .lineLimit(1)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(activeDocumentPath == documentPath(for: link) ? NexusPalette.accent : nil)
+                        .controlSize(.small)
+                    }
+                }
+
+                if !workspace.sqlFiles.isEmpty || !workspace.sqlDocuments.isEmpty {
+                    DisclosureGroup("SQL 文件 / SQL files") {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8)], alignment: .leading, spacing: 8) {
+                            ForEach(workspace.sqlDocuments, id: \.path) { file in
+                                Button {
+                                    Task {
+                                        await appState.loadDocument(path: file.path)
+                                    }
+                                } label: {
+                                    Label(file.fileName, systemImage: "doc.text")
+                                        .font(.caption.weight(.medium))
+                                        .lineLimit(1)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
+
+                            ForEach(workspace.sqlFiles, id: \.path) { file in
+                                Button {
+                                    Task {
+                                        await appState.loadDocument(path: file.path)
+                                    }
+                                } label: {
+                                    Label(file.fileName, systemImage: file.kind == "rollback" ? "arrow.uturn.backward.circle" : "doc.plaintext")
+                                        .font(.caption.weight(.medium))
+                                        .lineLimit(1)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
+                        }
+                        .padding(.top, 6)
+                    }
+                }
+
+                documentPreviewContent
+            }
+        }
+        .sheet(item: $recoveryEntry) { entry in
+            CreateMissingDocumentSheet(workspace: workspace, entry: entry)
+                .environmentObject(appState)
+        }
+    }
+
+    @ViewBuilder
+    private var documentPreviewContent: some View {
+        if let loadingPath = activeLoadingPath {
+            NativeDocumentLoadingView(path: loadingPath)
+        } else if let error = activeDocumentError {
+            NativeDocumentErrorView(
+                error: error,
+                canCreateDocument: recoverableEntry != nil,
+                isCreatingDocument: appState.isCreatingDocument,
+                retryAction: {
+                    Task {
+                        await appState.loadDocument(path: error.path)
+                    }
+                },
+                copyPathAction: {
+                    copyToPasteboard(error.path)
+                },
+                finderAction: {
+                    Task {
+                        await appState.openWorkspaceInFinder(workspace)
+                    }
+                },
+                createAction: {
+                    recoveryEntry = recoverableEntry
+                }
+            )
+        } else if let document = activePreview {
+            NativeDocumentPreview(
+                document: document,
+                focusHint: activeFocusHint,
+                copyPathAction: {
+                    copyToPasteboard(document.path)
+                },
+                closeAction: {
+                    appState.clearDocumentPreview()
+                }
+            )
+        } else {
+            NativeDocumentEmptyState()
+        }
+    }
+
+    private func documentPath(for link: ConsoleFileLink) -> String {
+        workspace.documentLinks[link.key] ?? "\(workspace.path)/\(link.fallback)"
+    }
+}
+
+private struct ConsoleFileGroup: Identifiable {
+    let title: String
+    let files: [ConsoleFileLink]
+
+    var id: String { title }
+}
+
+private struct ConsoleFileLink: Identifiable, Hashable {
+    let key: String
+    let label: String
+    let fallback: String
+    let systemImage: String
+    let opensSqlReview: Bool
+
+    var id: String { key }
+
+    init(
+        key: String,
+        label: String,
+        fallback: String,
+        systemImage: String,
+        opensSqlReview: Bool = false
+    ) {
+        self.key = key
+        self.label = label
+        self.fallback = fallback
+        self.systemImage = systemImage
+        self.opensSqlReview = opensSqlReview
+    }
+
+    init?(evidence: WorkspaceMainStageEvidenceLink, workspace: WorkspaceSummary) {
+        switch evidence.action {
+        case .document(let key):
+            self.init(
+                key: key,
+                label: evidence.label,
+                fallback: Self.fallback(for: key),
+                systemImage: evidence.systemImage,
+                opensSqlReview: key == "sql"
+            )
+        case .path(let path):
+            let key = workspace.documentLinks.first { $0.value == path }?.key ?? path
+            self.init(
+                key: key,
+                label: URL(fileURLWithPath: path).lastPathComponent,
+                fallback: path.replacingOccurrences(of: "\(workspace.path)/", with: ""),
+                systemImage: evidence.systemImage
+            )
+        default:
+            return nil
+        }
+    }
+
+    private static func fallback(for key: String) -> String {
+        switch key {
+        case "workspace":
+            "workspace.md"
+        case "status":
+            "STATUS.md"
+        case "services":
+            "services.md"
+        case "branches":
+            "branches.md"
+        case "tasks":
+            "tasks.md"
+        case "requirement":
+            "需求/requirement.md"
+        case "scope":
+            "需求/scope.md"
+        case "questions":
+            "需求/questions.md"
+        case "demandTasks":
+            "需求/tasks.md"
+        case "delivery":
+            "交付记录.md"
+        case "worktreeScript":
+            "scripts/worktree-commands.sh"
+        default:
+            "handoff.md"
+        }
+    }
+}
+
+private struct WorkspaceConsoleSummaryStrip: View {
+    let workspace: WorkspaceSummary
+
+    private var activeTaskCount: Int {
+        workspace.tasks.filter(\.isActive).count
+    }
+
+    private var missingWorktreeCount: Int {
+        workspace.services.filter { !$0.worktreeExists }.count
+    }
+
+    private var dirtyServiceCount: Int {
+        workspace.services.filter { service in
+            !service.gitSummary.localizedCaseInsensitiveContains("clean")
+        }.count
+    }
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 126), spacing: 8)], alignment: .leading, spacing: 8) {
+            WorkflowMetric(label: "服务", value: "\(workspace.services.count)", tone: workspace.services.isEmpty ? NexusPalette.warning : NexusPalette.accent)
+            WorkflowMetric(label: "任务", value: "\(activeTaskCount) active", tone: activeTaskCount == 0 ? NexusPalette.success : NexusPalette.accent)
+            WorkflowMetric(label: "Worktree", value: missingWorktreeCount == 0 ? "ready" : "\(missingWorktreeCount) missing", tone: missingWorktreeCount == 0 ? NexusPalette.success : NexusPalette.warning)
+            WorkflowMetric(label: "改动", value: dirtyServiceCount == 0 ? "clean" : "\(dirtyServiceCount) dirty", tone: dirtyServiceCount == 0 ? NexusPalette.success : NexusPalette.warning)
+            WorkflowMetric(label: "风险", value: workspace.riskLevel.label, tone: workspace.risks.isEmpty ? NexusPalette.success : NexusPalette.warning)
+        }
+    }
+}
+
+private struct WorkspaceConsoleEmptyStateView: View {
+    @EnvironmentObject private var appState: AppState
+    @Binding var isCreateWorkspacePresented: Bool
+    @Binding var isSettingsPresented: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label(title, systemImage: appState.workspaces.isEmpty ? "tray" : "rectangle.grid.2x2")
+                .font(.title3.weight(.semibold))
+            Text(detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            WorkspaceSetupActionGrid(
+                isCreateWorkspacePresented: $isCreateWorkspacePresented,
+                isSettingsPresented: $isSettingsPresented,
+                settingsLabel: appState.workspaces.isEmpty ? "配置路径" : "打开设置",
+                showAllAction: appState.workspaces.isEmpty ? nil : {
+                    appState.resetWorkspaceListScope()
+                },
+                minimumColumnWidth: 128
+            )
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(NexusPalette.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var title: String {
+        appState.workspaces.isEmpty ? "还没有工作区 / No workspace" : "从 Board 选择一个项目 / Pick from Board"
+    }
+
+    private var detail: String {
+        if appState.workspaces.isEmpty {
+            return "先配置路径或新建工作区。创建后 Console 会只显示当前项目的下一步和需要的文件。"
+        }
+        return "Console 一次只处理一个项目。去 Board 查看全部项目，点击卡片后这里会变成执行台。"
     }
 }
 
@@ -2482,7 +3311,7 @@ private struct WorkspaceBoardView: View {
     @State private var boardScope: WorkspaceBoardScope = .all
 
     private var workspaces: [WorkspaceSummary] {
-        appState.filteredWorkspaces
+        appState.workspaces
     }
 
     private var visibleWorkspaces: [WorkspaceSummary] {
@@ -2545,7 +3374,7 @@ private struct WorkspaceBoardHeader: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text("面板 / Board")
                     .font(.title3.weight(.semibold))
-                Text("按主流程阶段查看所有工作区；点击卡片回到控制台处理。")
+                Text("全量项目视角，不受 Console 筛选影响；点击卡片进入单项目控制台。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Text("当前显示 \(visibleCount) / \(totalCount)")
@@ -2810,9 +3639,9 @@ private struct WorkspaceBoardEmptyState: View {
 
     private var emptyMessage: String {
         if !hasGlobalWorkspaces {
-            return "清空搜索或左侧筛选后，Board 会按主流程阶段展示工作区。"
+            return "还没有扫描到工作区。先检查 Settings 的 Workspaces root，或新建一个工作区。"
         }
-        return "当前 Board 范围是 \(scope.label) / \(scope.englishLabel)，可以切回全部或调整左侧筛选。"
+        return "当前 Board 范围是 \(scope.label) / \(scope.englishLabel)，可以切回全部查看所有项目。"
     }
 }
 
@@ -7695,7 +8524,7 @@ private struct NativeDocumentPreview: View {
     let focusHint: DocumentFocusHint?
     let copyPathAction: () -> Void
     let closeAction: () -> Void
-    @State private var mode: NativeDocumentMode = .preview
+    @State private var mode: NativeDocumentMode = .source
 
     private var presentation: WorkspaceDocumentPresentation {
         WorkspaceDocumentPresentation.resolve(
@@ -7709,17 +8538,13 @@ private struct NativeDocumentPreview: View {
         presentation.allowsRenderedPreview && mode == .preview
     }
 
-    private var markdownText: AttributedString? {
-        let options = AttributedString.MarkdownParsingOptions(
-            interpretedSyntax: .full,
-            failurePolicy: .returnPartiallyParsedIfPossible
-        )
-        return try? AttributedString(markdown: document.content, options: options)
+    private var preferredMode: NativeDocumentMode {
+        presentation.prefersSource ? .source : .preview
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 10) {
+            HStack(alignment: .center, spacing: 10) {
                 Image(systemName: presentation.systemImage)
                     .foregroundStyle(NexusPalette.accent)
                     .frame(width: 16)
@@ -7733,8 +8558,7 @@ private struct NativeDocumentPreview: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
-
-                Spacer()
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 if presentation.allowsRenderedPreview {
                     Picker("Document mode", selection: $mode) {
@@ -7743,8 +8567,10 @@ private struct NativeDocumentPreview: View {
                         }
                     }
                     .pickerStyle(.segmented)
+                    .labelsHidden()
                     .controlSize(.small)
                     .frame(width: 112)
+                    .fixedSize()
                 }
 
                 Button {
@@ -7805,12 +8631,8 @@ private struct NativeDocumentPreview: View {
             }
 
             ScrollView {
-                if shouldRenderPreview, let markdownText {
-                    Text(markdownText)
-                        .font(.caption)
-                        .lineSpacing(3)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
+                if shouldRenderPreview {
+                    NativeMarkdownPreview(content: document.content)
                 } else {
                     Text(document.content.isEmpty ? "文档为空。" : document.content)
                         .font(.system(.caption, design: .monospaced))
@@ -7832,12 +8654,397 @@ private struct NativeDocumentPreview: View {
         .background(NexusPalette.badge)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .onChange(of: document.path) { _ in
-            mode = presentation.prefersSource ? .source : .preview
+            mode = preferredMode
         }
         .onAppear {
-            mode = presentation.prefersSource ? .source : .preview
+            mode = preferredMode
         }
     }
+}
+
+private struct NativeMarkdownPreview: View {
+    let content: String
+    @State private var parsedContent: String
+    @State private var blocks: [NativeMarkdownBlock]
+
+    init(content: String) {
+        self.content = content
+        _parsedContent = State(initialValue: content)
+        _blocks = State(initialValue: NativeMarkdownBlock.parse(content))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text("文档为空。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(blocks) { block in
+                    NativeMarkdownBlockView(block: block)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .textSelection(.enabled)
+        .onChange(of: content) { newContent in
+            guard newContent != parsedContent else { return }
+            parsedContent = newContent
+            blocks = NativeMarkdownBlock.parse(newContent)
+        }
+    }
+}
+
+private struct NativeMarkdownBlock: Identifiable {
+    enum Kind {
+        case heading(level: Int, text: String)
+        case paragraph([String])
+        case list(items: [String], ordered: Bool)
+        case code(String)
+        case table([[String]])
+        case quote([String])
+        case divider
+    }
+
+    let id = UUID()
+    let kind: Kind
+
+    static func parse(_ content: String) -> [NativeMarkdownBlock] {
+        let lines = content.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
+        var blocks: [NativeMarkdownBlock] = []
+        var index = 0
+
+        while index < lines.count {
+            let line = lines[index]
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            if trimmed.isEmpty {
+                index += 1
+                continue
+            }
+
+            if trimmed.hasPrefix("```") {
+                var codeLines: [String] = []
+                index += 1
+                while index < lines.count {
+                    let candidate = lines[index]
+                    if candidate.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("```") {
+                        index += 1
+                        break
+                    }
+                    codeLines.append(candidate)
+                    index += 1
+                }
+                blocks.append(NativeMarkdownBlock(kind: .code(codeLines.joined(separator: "\n"))))
+                continue
+            }
+
+            if let heading = heading(from: trimmed) {
+                blocks.append(NativeMarkdownBlock(kind: .heading(level: heading.level, text: heading.text)))
+                index += 1
+                continue
+            }
+
+            if isDivider(trimmed) {
+                blocks.append(NativeMarkdownBlock(kind: .divider))
+                index += 1
+                continue
+            }
+
+            if isTableStart(lines: lines, index: index) {
+                var rows: [[String]] = []
+                while index < lines.count {
+                    let candidate = lines[index].trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard candidate.contains("|"), !candidate.isEmpty else { break }
+                    if !isTableSeparator(candidate) {
+                        rows.append(tableCells(from: candidate))
+                    }
+                    index += 1
+                }
+                if !rows.isEmpty {
+                    blocks.append(NativeMarkdownBlock(kind: .table(rows)))
+                }
+                continue
+            }
+
+            if let listInfo = listItem(from: trimmed) {
+                var items = [listInfo.text]
+                let ordered = listInfo.ordered
+                index += 1
+                while index < lines.count, let next = listItem(from: lines[index].trimmingCharacters(in: .whitespacesAndNewlines)), next.ordered == ordered {
+                    items.append(next.text)
+                    index += 1
+                }
+                blocks.append(NativeMarkdownBlock(kind: .list(items: items, ordered: ordered)))
+                continue
+            }
+
+            if trimmed.hasPrefix(">") {
+                var quoteLines: [String] = []
+                while index < lines.count {
+                    let candidate = lines[index].trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard candidate.hasPrefix(">") else { break }
+                    quoteLines.append(candidate.dropFirst().trimmingCharacters(in: .whitespacesAndNewlines))
+                    index += 1
+                }
+                blocks.append(NativeMarkdownBlock(kind: .quote(quoteLines)))
+                continue
+            }
+
+            var paragraphLines = [trimmed]
+            index += 1
+            while index < lines.count {
+                let candidate = lines[index].trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !candidate.isEmpty,
+                      !candidate.hasPrefix("```"),
+                      heading(from: candidate) == nil,
+                      !isDivider(candidate),
+                      !isTableStart(lines: lines, index: index),
+                      listItem(from: candidate) == nil,
+                      !candidate.hasPrefix(">") else {
+                    break
+                }
+                paragraphLines.append(candidate)
+                index += 1
+            }
+            blocks.append(NativeMarkdownBlock(kind: .paragraph(paragraphLines)))
+        }
+
+        return blocks
+    }
+
+    private static func heading(from line: String) -> (level: Int, text: String)? {
+        let markerCount = line.prefix { $0 == "#" }.count
+        guard markerCount > 0, markerCount <= 6 else { return nil }
+        let markerEnd = line.index(line.startIndex, offsetBy: markerCount)
+        guard markerEnd < line.endIndex, line[markerEnd] == " " else { return nil }
+        let text = line[markerEnd...].trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : (markerCount, text)
+    }
+
+    private static func isDivider(_ line: String) -> Bool {
+        let compact = line.replacingOccurrences(of: " ", with: "")
+        return compact == "---" || compact == "***" || compact == "___"
+    }
+
+    private static func isTableStart(lines: [String], index: Int) -> Bool {
+        guard index + 1 < lines.count else { return false }
+        let line = lines[index].trimmingCharacters(in: .whitespacesAndNewlines)
+        let next = lines[index + 1].trimmingCharacters(in: .whitespacesAndNewlines)
+        return line.contains("|") && isTableSeparator(next)
+    }
+
+    private static func isTableSeparator(_ line: String) -> Bool {
+        let cells = tableCells(from: line)
+        guard !cells.isEmpty else { return false }
+        return cells.allSatisfy { cell in
+            let trimmed = cell.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !trimmed.isEmpty && trimmed.allSatisfy { $0 == "-" || $0 == ":" }
+        }
+    }
+
+    private static func tableCells(from line: String) -> [String] {
+        var value = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.hasPrefix("|") {
+            value.removeFirst()
+        }
+        if value.hasSuffix("|") {
+            value.removeLast()
+        }
+        return value.split(separator: "|", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+    }
+
+    private static func listItem(from line: String) -> (text: String, ordered: Bool)? {
+        if line.hasPrefix("- ") || line.hasPrefix("* ") || line.hasPrefix("+ ") {
+            return (String(line.dropFirst(2)).trimmingCharacters(in: .whitespacesAndNewlines), false)
+        }
+
+        var digitCount = 0
+        for character in line {
+            if character.isNumber {
+                digitCount += 1
+            } else {
+                break
+            }
+        }
+        guard digitCount > 0 else { return nil }
+        let markerIndex = line.index(line.startIndex, offsetBy: digitCount)
+        guard markerIndex < line.endIndex, line[markerIndex] == "." || line[markerIndex] == ")" else { return nil }
+        let textStart = line.index(after: markerIndex)
+        guard textStart < line.endIndex, line[textStart] == " " else { return nil }
+        let text = line[textStart...].trimmingCharacters(in: .whitespacesAndNewlines)
+        return (text, true)
+    }
+}
+
+private struct NativeMarkdownBlockView: View {
+    let block: NativeMarkdownBlock
+
+    var body: some View {
+        switch block.kind {
+        case .heading(let level, let text):
+            Text(inlineMarkdown(text))
+                .font(headingFont(level))
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, level == 1 ? 4 : 2)
+
+        case .paragraph(let lines):
+            Text(inlineMarkdown(lines.joined(separator: "\n")))
+                .font(.caption)
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+        case .list(let items, let ordered):
+            VStack(alignment: .leading, spacing: 5) {
+                ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                    HStack(alignment: .top, spacing: 7) {
+                        Text(ordered ? "\(index + 1)." : "•")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: ordered ? 24 : 14, alignment: .trailing)
+                        Text(inlineMarkdown(item))
+                            .font(.caption)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+        case .code(let text):
+            ScrollView(.horizontal) {
+                Text(text.isEmpty ? " " : text)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(9)
+            .background(NexusPalette.preview)
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+
+        case .table(let rows):
+            NativeMarkdownTable(rows: rows)
+
+        case .quote(let lines):
+            HStack(alignment: .top, spacing: 8) {
+                Rectangle()
+                    .fill(NexusPalette.border)
+                    .frame(width: 3)
+                Text(inlineMarkdown(lines.joined(separator: "\n")))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+        case .divider:
+            Divider()
+        }
+    }
+
+    private func headingFont(_ level: Int) -> Font {
+        switch level {
+        case 1:
+            .headline.weight(.semibold)
+        case 2:
+            .subheadline.weight(.semibold)
+        default:
+            .caption.weight(.semibold)
+        }
+    }
+}
+
+private struct NativeMarkdownTable: View {
+    let rows: [[String]]
+
+    private var columnCount: Int {
+        rows.map(\.count).max() ?? 0
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, row in
+                HStack(alignment: .top, spacing: 0) {
+                    ForEach(0..<columnCount, id: \.self) { columnIndex in
+                        tableCell(
+                            text: columnIndex < row.count ? row[columnIndex] : "",
+                            rowIndex: rowIndex,
+                            columnIndex: columnIndex
+                        )
+                    }
+                }
+                .background(rowIndex == 0 ? NexusPalette.badge : Color.clear)
+                .overlay(alignment: .bottom) {
+                    Divider()
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .stroke(NexusPalette.border)
+        }
+    }
+
+    @ViewBuilder
+    private func tableCell(text: String, rowIndex: Int, columnIndex: Int) -> some View {
+        let isHeader = rowIndex == 0
+        Text(inlineMarkdown(softWrapMarkdownTableCell(text)))
+            .font(isHeader ? .caption.weight(.semibold) : .caption)
+            .foregroundStyle(isHeader ? .primary : .secondary)
+            .lineLimit(nil)
+            .lineSpacing(2)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(width: fixedColumnWidth(columnIndex), alignment: .leading)
+            .frame(maxWidth: flexibleColumn(columnIndex) ? .infinity : nil, alignment: .leading)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+            .overlay(alignment: .trailing) {
+                Divider()
+            }
+    }
+
+    private func fixedColumnWidth(_ columnIndex: Int) -> CGFloat? {
+        guard columnCount > 1 else { return nil }
+        if columnCount == 2 {
+            return columnIndex == 0 ? 220 : nil
+        }
+        if columnIndex == 0 {
+            return 320
+        }
+        if columnIndex == 1 {
+            return 96
+        }
+        return nil
+    }
+
+    private func flexibleColumn(_ columnIndex: Int) -> Bool {
+        columnIndex == columnCount - 1 || fixedColumnWidth(columnIndex) == nil
+    }
+}
+
+private func inlineMarkdown(_ text: String) -> AttributedString {
+    let options = AttributedString.MarkdownParsingOptions(
+        interpretedSyntax: .inlineOnlyPreservingWhitespace,
+        failurePolicy: .returnPartiallyParsedIfPossible
+    )
+    return (try? AttributedString(markdown: text, options: options)) ?? AttributedString(text)
+}
+
+private func softWrapMarkdownTableCell(_ text: String) -> String {
+    var result = ""
+    result.reserveCapacity(text.count)
+    for character in text {
+        result.append(character)
+        if "/-_.,;:()[]{}=".contains(character) {
+            result.append("\u{200B}")
+        }
+    }
+    return result
 }
 
 private struct WorkspaceCommandCenterView: View {
@@ -12943,9 +14150,65 @@ private struct ActivityTimelineView: View {
     }
 }
 
+private enum SettingsSection: String, CaseIterable, Identifiable {
+    case paths
+    case team
+    case tools
+    case automation
+    case native
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .paths:
+            "本地路径"
+        case .team:
+            "团队 Profile"
+        case .tools:
+            "工具链接"
+        case .automation:
+            "自动检查"
+        case .native:
+            "Native 状态"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .paths:
+            "工作区、源仓库、交付文档"
+        case .team:
+            "导入/导出共享配置"
+        case .tools:
+            "Codex 与 IDE 跳转"
+        case .automation:
+            "计划检查与通知"
+        case .native:
+            "Core、分发、小组件证据"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .paths:
+            "folder.badge.gearshape"
+        case .team:
+            "person.2"
+        case .tools:
+            "link"
+        case .automation:
+            "checklist.checked"
+        case .native:
+            "macwindow"
+        }
+    }
+}
+
 struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
+    @State private var selectedSection: SettingsSection = .paths
 
     private var nativeCoreEvidence: NativeLocalCoreEvidence {
         appState.nativeLocalCoreEvidence()
@@ -12960,232 +14223,46 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("设置 / Settings")
                     .font(.title3.weight(.semibold))
-                Text("Configure the local roots Nexus uses to scan workspaces, source repositories, and delivery documents.")
+                Text("先确认三条本地路径，再处理团队 Profile、工具链接和自动检查。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            Form {
-                Section("Local Paths") {
-                    PathSettingRow(
-                        title: "Workspaces root",
-                        detail: "需求工作区目录 / Requirement workspaces",
-                        path: $appState.workspaceRoot,
-                        check: pathCheck("workspacesRoot"),
-                        chooseAction: {
-                            chooseDirectory(title: "Choose Workspaces Root") { url in
-                                appState.workspaceRoot = url.path
-                                appState.nativeEnvironmentHealth = nil
-                            }
-                        },
-                        revealAction: {
-                            revealPath(appState.workspaceRoot)
-                        }
-                    )
+            SettingsPriorityPanel(
+                health: appState.nativeEnvironmentHealth,
+                profileStatus: appState.settingsProfileStatus,
+                runCheckAction: {
+                    Task {
+                        await appState.checkNativeEnvironment()
+                    }
+                },
+                importProfileAction: importProfile,
+                exportProfileAction: exportProfile
+            )
 
-                    PathSettingRow(
-                        title: "Source repositories root",
-                        detail: "源仓库目录 / Source repositories",
-                        path: $appState.sourceReposRoot,
-                        check: pathCheck("sourceReposRoot"),
-                        chooseAction: {
-                            chooseDirectory(title: "Choose Source Repositories Root") { url in
-                                appState.sourceReposRoot = url.path
-                                appState.nativeEnvironmentHealth = nil
-                            }
-                        },
-                        revealAction: {
-                            revealPath(appState.sourceReposRoot)
+            HStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(SettingsSection.allCases) { section in
+                        SettingsSectionButton(
+                            section: section,
+                            isSelected: section == selectedSection
+                        ) {
+                            selectedSection = section
                         }
-                    )
-
-                    PathSettingRow(
-                        title: "Delivery documents root",
-                        detail: "交付文档目录 / Delivery documents",
-                        path: $appState.docsRoot,
-                        check: pathCheck("docsRoot"),
-                        chooseAction: {
-                            chooseDirectory(title: "Choose Delivery Documents Root") { url in
-                                appState.docsRoot = url.path
-                                appState.nativeEnvironmentHealth = nil
-                            }
-                        },
-                        revealAction: {
-                            revealPath(appState.docsRoot)
-                        }
-                    )
-
-                    Stepper(
-                        "Profile refresh interval: \(appState.refreshIntervalSeconds) sec",
-                        value: $appState.refreshIntervalSeconds,
-                        in: 3...3600,
-                        step: 1
-                    )
+                    }
+                    Spacer()
                 }
+                .padding(.trailing, 14)
+                .frame(width: 176, alignment: .topLeading)
 
-                Section("Tool Links") {
-                    TextField("Codex URL", text: $appState.codexURL)
-                    TextField("IDE URL template", text: $appState.ideURL)
-                    Text("Use `{path}` for a URL-encoded workspace path. Default: \(AppState.defaultIDEURL)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                Divider()
 
-                Section("Team Profile") {
-                    Text(appState.settingsProfileStatus)
-                    if let path = appState.lastSettingsProfilePath {
-                        Text(path)
-                            .font(.system(.caption, design: .monospaced))
-                            .textSelection(.enabled)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        selectedSettingsContent
                     }
-                    HStack {
-                        Button("Import Profile") {
-                            importProfile()
-                        }
-                        Button("Export Profile") {
-                            exportProfile()
-                        }
-                    }
-                    Text("Profiles are compatible with the Tauri preview app and store workspaces, source repositories, delivery documents, Codex URL, IDE URL template, and refresh interval.")
-                        .foregroundStyle(.secondary)
-                }
-
-                Section("Environment Check") {
-                    HStack {
-                        if let health = appState.nativeEnvironmentHealth {
-                            EnvironmentStatusPill(status: health.ready ? "pass" : "blocker")
-                            Text(health.ready ? "Ready" : "Needs review")
-                        } else {
-                            EnvironmentStatusPill(status: "warning")
-                            Text("Not checked")
-                        }
-
-                        Spacer()
-
-                        Button(appState.isCheckingNativeEnvironment ? "Checking" : "Run Check") {
-                            Task {
-                                await appState.checkNativeEnvironment()
-                            }
-                        }
-                        .disabled(appState.isCheckingNativeEnvironment)
-                    }
-
-                    if let health = appState.nativeEnvironmentHealth {
-                        EnvironmentHealthSummary(health: health)
-                    } else {
-                        Text("Run this after importing a team profile or changing paths.")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Section("Native Shell") {
-                    Text("Bridge mode: \(appState.bridgeMode)")
-                    NativeLocalCoreEvidenceView(evidence: nativeCoreEvidence)
-                    NativeDistributionReadinessEvidenceView(evidence: nativeDistributionEvidence)
-                    Text("Search scope: \(appState.selectedSearchScope.label) / \(appState.selectedSearchScope.subtitle)")
-                    Text("Pinned workspaces: \(appState.pinnedWorkspaceIDs.count)")
-                    Text("Set NEXUS_CORE_LIBRARY to a local libnexus_ffi.dylib to load real workspace data through Rust Core during development.")
-                        .foregroundStyle(.secondary)
-                }
-
-                Section("Widget Snapshot") {
-                    Text("Storage: \(appState.widgetSnapshotStorageStatus)")
-                    if appState.widgetSnapshotStoragePaths.isEmpty {
-                        Text("Refresh Nexus to generate the local widget snapshot.")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(appState.widgetSnapshotStoragePaths, id: \.self) { path in
-                            Text(path)
-                                .font(.system(.caption, design: .monospaced))
-                                .textSelection(.enabled)
-                        }
-                    }
-                    Text("The native app writes Application Support data now and automatically mirrors to group.com.ks.nexus when a signed App Group entitlement is available.")
-                        .foregroundStyle(.secondary)
-                }
-
-                Section("Automation") {
-                    Toggle(
-                        "Enable scheduled local checks",
-                        isOn: Binding(
-                            get: { appState.isAutomationScheduleEnabled },
-                            set: { appState.setAutomationScheduleEnabled($0) }
-                        )
-                    )
-
-                    Picker(
-                        "Check interval",
-                        selection: Binding(
-                            get: { appState.automationIntervalMinutes },
-                            set: { appState.setAutomationIntervalMinutes($0) }
-                        )
-                    ) {
-                        ForEach(AppState.supportedAutomationIntervals, id: \.self) { minutes in
-                            Text("\(minutes) min").tag(minutes)
-                        }
-                    }
-                    .disabled(!appState.isAutomationScheduleEnabled)
-
-                    Text("Last run: \(appState.lastAutomationRunAt ?? "None")")
-                    Text("Scheduled checks scan local workspace and git state, then write a fail-open audit event when the Rust Core bridge is available.")
-                        .foregroundStyle(.secondary)
-
-                    Toggle(
-                        "Notify when checks need review",
-                        isOn: Binding(
-                            get: { appState.areAutomationNotificationsEnabled },
-                            set: { enabled in
-                                Task {
-                                    await appState.setAutomationNotificationsEnabled(enabled)
-                                }
-                            }
-                        )
-                    )
-
-                    Text("Notification status: \(appState.automationNotificationStatus)")
-                    Text("Notifications are local macOS alerts and only fire when an automation result is not clean.")
-                        .foregroundStyle(.secondary)
-
-                    Picker(
-                        "Minimum status",
-                        selection: Binding(
-                            get: { appState.automationNotificationMinimumStatus },
-                            set: { appState.setAutomationNotificationMinimumStatus($0) }
-                        )
-                    ) {
-                        ForEach(AutomationNotificationMinimumStatus.allCases) { status in
-                            Text(status.label).tag(status)
-                        }
-                    }
-                    .disabled(!appState.areAutomationNotificationsEnabled)
-
-                    Picker(
-                        "Notification cooldown",
-                        selection: Binding(
-                            get: { appState.automationNotificationCooldownMinutes },
-                            set: { appState.setAutomationNotificationCooldownMinutes($0) }
-                        )
-                    ) {
-                        ForEach(AppState.supportedNotificationCooldownMinutes, id: \.self) { minutes in
-                            Text("\(minutes) min").tag(minutes)
-                        }
-                    }
-                    .disabled(!appState.areAutomationNotificationsEnabled)
-
-                    Text("Notify for")
-                        .font(.caption.weight(.semibold))
-                    ForEach(AutomationNotificationSignalKind.allCases) { kind in
-                        Toggle(
-                            kind.label,
-                            isOn: Binding(
-                                get: { appState.isAutomationNotificationSignalEnabled(kind) },
-                                set: { appState.setAutomationNotificationSignal(kind, enabled: $0) }
-                            )
-                        )
-                        .disabled(!appState.areAutomationNotificationsEnabled)
-                    }
-
-                    Text("Last notification: \(appState.lastAutomationNotificationAt ?? "None")")
+                    .padding(.leading, 16)
+                    .padding(.vertical, 2)
                 }
             }
 
@@ -13235,7 +14312,300 @@ struct SettingsView: View {
             }
         }
         .padding(20)
-        .frame(width: 660, height: 620)
+        .frame(width: 820, height: 640)
+    }
+
+    @ViewBuilder
+    private var selectedSettingsContent: some View {
+        switch selectedSection {
+        case .paths:
+            localPathsSettings
+            environmentCheckSettings
+        case .team:
+            teamProfileSettings
+        case .tools:
+            toolLinkSettings
+        case .automation:
+            automationSettings
+        case .native:
+            nativeStatusSettings
+            widgetSnapshotSettings
+        }
+    }
+
+    private var localPathsSettings: some View {
+        SectionBlock(title: "本地路径 / Local paths") {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("这三项决定 Nexus 能扫描哪些工作区、源仓库和交付文档。路径不对时，新建工作区、Console 和 Board 都会显得混乱。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                PathSettingRow(
+                    title: "Workspaces root",
+                    detail: "需求工作区目录 / Requirement workspaces",
+                    path: $appState.workspaceRoot,
+                    check: pathCheck("workspacesRoot"),
+                    chooseAction: {
+                        chooseDirectory(title: "Choose Workspaces Root") { url in
+                            appState.workspaceRoot = url.path
+                            appState.nativeEnvironmentHealth = nil
+                        }
+                    },
+                    revealAction: {
+                        revealPath(appState.workspaceRoot)
+                    }
+                )
+
+                PathSettingRow(
+                    title: "Source repositories root",
+                    detail: "源仓库目录 / Source repositories",
+                    path: $appState.sourceReposRoot,
+                    check: pathCheck("sourceReposRoot"),
+                    chooseAction: {
+                        chooseDirectory(title: "Choose Source Repositories Root") { url in
+                            appState.sourceReposRoot = url.path
+                            appState.nativeEnvironmentHealth = nil
+                        }
+                    },
+                    revealAction: {
+                        revealPath(appState.sourceReposRoot)
+                    }
+                )
+
+                PathSettingRow(
+                    title: "Delivery documents root",
+                    detail: "交付文档目录 / Delivery documents",
+                    path: $appState.docsRoot,
+                    check: pathCheck("docsRoot"),
+                    chooseAction: {
+                        chooseDirectory(title: "Choose Delivery Documents Root") { url in
+                            appState.docsRoot = url.path
+                            appState.nativeEnvironmentHealth = nil
+                        }
+                    },
+                    revealAction: {
+                        revealPath(appState.docsRoot)
+                    }
+                )
+
+                Stepper(
+                    "Profile refresh interval: \(appState.refreshIntervalSeconds) sec",
+                    value: $appState.refreshIntervalSeconds,
+                    in: 3...3600,
+                    step: 1
+                )
+            }
+        }
+    }
+
+    private var environmentCheckSettings: some View {
+        SectionBlock(title: "环境检查 / Environment check") {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    if let health = appState.nativeEnvironmentHealth {
+                        EnvironmentStatusPill(status: health.ready ? "pass" : "blocker")
+                        Text(health.ready ? "Ready" : "Needs review")
+                    } else {
+                        EnvironmentStatusPill(status: "warning")
+                        Text("Not checked")
+                    }
+
+                    Spacer()
+
+                    Button(appState.isCheckingNativeEnvironment ? "Checking" : "Run Check") {
+                        Task {
+                            await appState.checkNativeEnvironment()
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(appState.isCheckingNativeEnvironment)
+                }
+
+                if let health = appState.nativeEnvironmentHealth {
+                    EnvironmentHealthSummary(health: health)
+                } else {
+                    Text("Run this after importing a team profile or changing paths.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private var teamProfileSettings: some View {
+        SectionBlock(title: "团队 Profile / Team profile") {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(appState.settingsProfileStatus)
+                    .font(.caption)
+                if let path = appState.lastSettingsProfilePath {
+                    Text(path)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+                HStack {
+                    Button("Import Profile") {
+                        importProfile()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    Button("Export Profile") {
+                        exportProfile()
+                    }
+                    .buttonStyle(.bordered)
+                }
+                Text("Profile 只负责共享路径、Codex/IDE 链接和刷新间隔；导入后回到本地路径页运行检查。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var toolLinkSettings: some View {
+        SectionBlock(title: "工具链接 / Tool links") {
+            VStack(alignment: .leading, spacing: 12) {
+                TextField("Codex URL", text: $appState.codexURL)
+                    .textFieldStyle(.roundedBorder)
+                TextField("IDE URL template", text: $appState.ideURL)
+                    .textFieldStyle(.roundedBorder)
+                Text("Use `{path}` for a URL-encoded workspace path. Default: \(AppState.defaultIDEURL)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var nativeStatusSettings: some View {
+        SectionBlock(title: "Native 状态 / Native shell") {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    SummaryLine(label: "Bridge mode", value: appState.bridgeMode)
+                    SummaryLine(label: "Search scope", value: "\(appState.selectedSearchScope.label) / \(appState.selectedSearchScope.subtitle)")
+                    SummaryLine(label: "Pinned", value: "\(appState.pinnedWorkspaceIDs.count)")
+                }
+                NativeLocalCoreEvidenceView(evidence: nativeCoreEvidence)
+                NativeDistributionReadinessEvidenceView(evidence: nativeDistributionEvidence)
+                Text("Set NEXUS_CORE_LIBRARY to a local libnexus_ffi.dylib to load real workspace data through Rust Core during development.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var widgetSnapshotSettings: some View {
+        SectionBlock(title: "小组件 / Widget snapshot") {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Storage: \(appState.widgetSnapshotStorageStatus)")
+                    .font(.caption.weight(.semibold))
+                if appState.widgetSnapshotStoragePaths.isEmpty {
+                    Text("Refresh Nexus to generate the local widget snapshot.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(appState.widgetSnapshotStoragePaths, id: \.self) { path in
+                        Text(path)
+                            .font(.system(.caption, design: .monospaced))
+                            .textSelection(.enabled)
+                    }
+                }
+                Text("The native app writes Application Support data now and mirrors to group.com.ks.nexus when a signed App Group entitlement is available.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var automationSettings: some View {
+        SectionBlock(title: "自动检查 / Automation") {
+            VStack(alignment: .leading, spacing: 12) {
+                Toggle(
+                    "Enable scheduled local checks",
+                    isOn: Binding(
+                        get: { appState.isAutomationScheduleEnabled },
+                        set: { appState.setAutomationScheduleEnabled($0) }
+                    )
+                )
+
+                Picker(
+                    "Check interval",
+                    selection: Binding(
+                        get: { appState.automationIntervalMinutes },
+                        set: { appState.setAutomationIntervalMinutes($0) }
+                    )
+                ) {
+                    ForEach(AppState.supportedAutomationIntervals, id: \.self) { minutes in
+                        Text("\(minutes) min").tag(minutes)
+                    }
+                }
+                .disabled(!appState.isAutomationScheduleEnabled)
+
+                Text("Last run: \(appState.lastAutomationRunAt ?? "None")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Divider()
+
+                Toggle(
+                    "Notify when checks need review",
+                    isOn: Binding(
+                        get: { appState.areAutomationNotificationsEnabled },
+                        set: { enabled in
+                            Task {
+                                await appState.setAutomationNotificationsEnabled(enabled)
+                            }
+                        }
+                    )
+                )
+
+                Text("Notification status: \(appState.automationNotificationStatus)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Picker(
+                    "Minimum status",
+                    selection: Binding(
+                        get: { appState.automationNotificationMinimumStatus },
+                        set: { appState.setAutomationNotificationMinimumStatus($0) }
+                    )
+                ) {
+                    ForEach(AutomationNotificationMinimumStatus.allCases) { status in
+                        Text(status.label).tag(status)
+                    }
+                }
+                .disabled(!appState.areAutomationNotificationsEnabled)
+
+                Picker(
+                    "Notification cooldown",
+                    selection: Binding(
+                        get: { appState.automationNotificationCooldownMinutes },
+                        set: { appState.setAutomationNotificationCooldownMinutes($0) }
+                    )
+                ) {
+                    ForEach(AppState.supportedNotificationCooldownMinutes, id: \.self) { minutes in
+                        Text("\(minutes) min").tag(minutes)
+                    }
+                }
+                .disabled(!appState.areAutomationNotificationsEnabled)
+
+                DisclosureGroup("通知信号 / Notify for") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(AutomationNotificationSignalKind.allCases) { kind in
+                            Toggle(
+                                kind.label,
+                                isOn: Binding(
+                                    get: { appState.isAutomationNotificationSignalEnabled(kind) },
+                                    set: { appState.setAutomationNotificationSignal(kind, enabled: $0) }
+                                )
+                            )
+                            .disabled(!appState.areAutomationNotificationsEnabled)
+                        }
+                    }
+                    .padding(.top, 6)
+                }
+
+                Text("Last notification: \(appState.lastAutomationNotificationAt ?? "None")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 
     private func importProfile() {
@@ -13287,6 +14657,121 @@ struct SettingsView: View {
         let url = URL(fileURLWithPath: expandedPath)
         if FileManager.default.fileExists(atPath: url.path) {
             NSWorkspace.shared.activateFileViewerSelecting([url])
+        }
+    }
+}
+
+private struct SettingsSectionButton: View {
+    let section: SettingsSection
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 9) {
+                Image(systemName: section.systemImage)
+                    .foregroundStyle(isSelected ? NexusPalette.accent : .secondary)
+                    .frame(width: 16)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(section.label)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text(section.subtitle)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isSelected ? NexusPalette.selected : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct SettingsPriorityPanel: View {
+    let health: NativeEnvironmentHealth?
+    let profileStatus: String
+    let runCheckAction: () -> Void
+    let importProfileAction: () -> Void
+    let exportProfileAction: () -> Void
+
+    private var tone: Color {
+        guard let health else { return NexusPalette.warning }
+        return health.ready ? NexusPalette.success : NexusPalette.danger
+    }
+
+    private var title: String {
+        guard let health else { return "先运行环境检查 / Check paths first" }
+        return health.ready ? "本地路径可用 / Paths ready" : "路径需要复核 / Paths need review"
+    }
+
+    private var detail: String {
+        guard let health else {
+            return "导入团队 Profile 或修改路径后，先运行检查，再回到 Console/Board。"
+        }
+        if health.ready {
+            return "\(health.workspaceCount) 个工作区 · \(health.sourceRepoCount) 个源仓库。可以刷新或新建工作区。"
+        }
+        return "\(health.blockers.count) 个阻塞 · \(health.warnings.count) 个提醒。优先修正 Workspaces root 和 Source repositories root。"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: health?.ready == true ? "checkmark.seal" : "exclamationmark.triangle")
+                    .foregroundStyle(tone)
+                    .frame(width: 18)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(profileStatus)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+            }
+
+            HStack(spacing: 8) {
+                Button("运行检查") {
+                    runCheckAction()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+
+                Button("导入 Profile") {
+                    importProfileAction()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Button("导出 Profile") {
+                    exportProfileAction()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Spacer()
+            }
+        }
+        .padding(12)
+        .background(tone.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(tone.opacity(0.18))
         }
     }
 }
