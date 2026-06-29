@@ -46,7 +46,7 @@ enum NativeLocalCoreDomain: String, CaseIterable, Hashable {
         case .demandIntake:
             return "NexusBridge.readDemandIntakeStatus / initializeDemandIntake"
         case .readiness:
-            return "NexusBridge.localAutomationCheck"
+            return "NativeLocalAutomationCheck / NexusBridge.localAutomationCheck fallback"
         case .gitWorktreeStatus:
             return "NexusBridge.scanWorkspaces / setupWorktrees"
         case .audit:
@@ -196,8 +196,10 @@ private extension NativeLocalCoreDomain {
             ]
         case .readiness:
             [
+                "native/Nexus/Sources/NexusApp/NativeLocalAutomationCheck.swift",
                 "native/Nexus/Sources/NexusApp/MainWorkflowAcceptanceEvidence.swift",
-                "native/Nexus/Sources/NexusApp/NativeDistributionReadinessEvidence.swift"
+                "native/Nexus/Sources/NexusApp/NativeDistributionReadinessEvidence.swift",
+                "native/Nexus/Sources/NexusApp/NativeAuditEventStore.swift"
             ]
         case .gitWorktreeStatus:
             [

@@ -1171,16 +1171,30 @@ final class AppState: ObservableObject {
 
         do {
             let generatedAt = ISO8601DateFormatter().string(from: Date())
-            let response = try await bridge.localAutomationCheck(
-                request: LocalAutomationCheckRequest(
-                    workspacesRoot: workspaceRoot,
-                    sourceReposRoot: sourceReposRoot,
-                    docsRoot: docsRoot,
+            await refreshFromBridge()
+            let response: LocalAutomationCheckResponse
+            if agentStatus.title == "Bridge error", workspaces.isEmpty {
+                response = try await bridge.localAutomationCheck(
+                    request: LocalAutomationCheckRequest(
+                        workspacesRoot: workspaceRoot,
+                        sourceReposRoot: sourceReposRoot,
+                        docsRoot: docsRoot,
+                        auditRoot: auditRootPath,
+                        actor: actor,
+                        generatedAt: generatedAt
+                    )
+                )
+            } else {
+                response = NativeLocalAutomationCheck.appendingAudit(
+                    to: NativeLocalAutomationCheck.response(
+                        workspaces: workspaces,
+                        generatedAt: generatedAt
+                    ),
                     auditRoot: auditRootPath,
                     actor: actor,
-                    generatedAt: generatedAt
+                    target: workspaceRoot
                 )
-            )
+            }
             lastAutomationRunAt = generatedAt
             lastAutomationCheckActor = actor
             defaults.set(generatedAt, forKey: DefaultsKey.lastAutomationRunAt)
@@ -1189,8 +1203,6 @@ final class AppState: ObservableObject {
                 lastError = "Automation audit failed: \(auditError)"
             }
             await sendAutomationNotificationIfNeeded(response)
-            await refreshFromBridge()
-            lastAutomationCheck = response
             return response
         } catch {
             lastError = error.localizedDescription
@@ -1395,7 +1407,7 @@ final class AppState: ObservableObject {
             "- 摘要: \(check.summary)",
             "- 风险: \(check.riskCount)",
             "- 交付问题: \(check.deliveryIssueCount)",
-            "- 分支问题: \(check.branchMismatchCount)",
+            "- 目标分支可用性问题: \(check.branchMismatchCount)",
             "- 活跃任务: \(check.openTaskCount)（高优先级 \(check.highPriorityTaskCount)）",
             "- worktree 问题: 缺失 \(check.missingWorktreeCount)，未提交 \(check.dirtyServiceCount)",
             check.auditError.map { "- 审计写入失败: \($0)" } ?? "- 审计: \(check.auditEventId == nil ? "未写入" : "已写入")"
@@ -2293,8 +2305,6 @@ final class AppState: ObservableObject {
                 .filter { check in
                     check.id == "target-branch"
                         || check.id == "target-branch-availability"
-                        || check.id == "branch-alignment"
-                        || check.action == "branches"
                 }
                 .map { "\($0.label) [\($0.status)]: \($0.detail)" }
                 .joined(separator: " | ")
@@ -4128,10 +4138,8 @@ final class AppState: ObservableObject {
                 || normalized.contains("目标分支缺失")
                 || normalized.contains("target branch unavailable")
                 || normalized.contains("target branch missing")
-                || normalized.contains("分支不一致")
-                || normalized.contains("branch mismatch")
         } || workspace.healthChecks.contains { check in
-            (check.id == "target-branch-availability" || check.id == "branch-alignment")
+            check.id == "target-branch-availability"
                 && !Self.healthStatusIsPassing(check.status)
         }
     }
