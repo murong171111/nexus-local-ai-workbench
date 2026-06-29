@@ -4700,6 +4700,190 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertFalse(prompt.contains("- 当前工作区: Deferred Task Workspace"))
     }
 
+    func testNativeLocalAutomationCheckBuildsSignalsFromWorkspaceSummaries() {
+        let activeWorkspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "native-local-check-active",
+            healthChecks: [
+                WorkspaceHealthCheck(
+                    id: "target-branch-availability",
+                    label: "分支可用",
+                    detail: "order missing target branch",
+                    status: "fail",
+                    action: "branches"
+                )
+            ],
+            risks: [
+                RiskAlert(title: "交付记录待补充", detail: "delivery record needs update"),
+                RiskAlert(title: "目标分支不可用", detail: "order(feature/local-check)")
+            ],
+            services: [
+                ServiceStatus(
+                    name: "order",
+                    branch: "main",
+                    worktree: "missing",
+                    gitSummary: "target branch missing: feature/local-check",
+                    worktreeExists: false,
+                    sourceExists: true
+                ),
+                ServiceStatus(
+                    name: "cashier",
+                    branch: "feature/local-check",
+                    worktree: "ready",
+                    gitSummary: "dirty",
+                    worktreeExists: true,
+                    sourceExists: true
+                )
+            ],
+            tasks: [
+                WorkspaceTask(
+                    id: "task-high",
+                    title: "Fix blocker",
+                    status: "todo",
+                    detail: "priority=high",
+                    priority: "high",
+                    source: "workspace",
+                    sourceEventID: nil,
+                    sourceLine: 12
+                ),
+                WorkspaceTask(
+                    id: "task-deferred",
+                    title: "Later",
+                    status: "延期",
+                    detail: "deferred",
+                    priority: "high",
+                    source: "workspace",
+                    sourceEventID: nil,
+                    sourceLine: 20
+                )
+            ]
+        )
+        let archivedWorkspace = workspaceForWorkflowSummary(
+            stage: "archived",
+            id: "native-local-check-archived",
+            risks: [RiskAlert(title: "归档风险", detail: "archived risk")],
+            services: [
+                ServiceStatus(
+                    name: "archived-service",
+                    branch: "main",
+                    worktree: "missing",
+                    gitSummary: "dirty",
+                    worktreeExists: false,
+                    sourceExists: true
+                )
+            ],
+            tasks: [
+                WorkspaceTask(
+                    id: "archived-task",
+                    title: "Archived task",
+                    status: "todo",
+                    detail: "priority=high",
+                    priority: "high",
+                    source: "workspace",
+                    sourceEventID: nil,
+                    sourceLine: 8
+                )
+            ]
+        )
+
+        let response = NativeLocalAutomationCheck.response(
+            workspaces: [activeWorkspace, archivedWorkspace],
+            generatedAt: "2026-06-29T04:30:00Z"
+        )
+
+        XCTAssertEqual(response.workspaceCount, 2)
+        XCTAssertEqual(response.archivedWorkspaceCount, 1)
+        XCTAssertEqual(response.riskCount, 2)
+        XCTAssertEqual(response.deliveryIssueCount, 1)
+        XCTAssertEqual(response.branchMismatchCount, 1)
+        XCTAssertEqual(response.openTaskCount, 1)
+        XCTAssertEqual(response.highPriorityTaskCount, 1)
+        XCTAssertEqual(response.missingWorktreeCount, 1)
+        XCTAssertEqual(response.dirtyServiceCount, 1)
+        XCTAssertEqual(response.status, "review")
+        XCTAssertEqual(
+            response.signals.map { $0.id },
+            [
+                "refresh.completed",
+                "risk.scan",
+                "delivery.check",
+                "branch.check",
+                "worktree.check",
+                "dirty-service.check",
+                "task.check"
+            ]
+        )
+    }
+
+    func testNativeLocalAutomationCheckIgnoresCurrentBranchWhenTargetBranchExists() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "native-local-check-branch-available",
+            branch: "feature/local-check",
+            healthChecks: [
+                WorkspaceHealthCheck(
+                    id: "branch-alignment",
+                    label: "分支对齐",
+                    detail: "order current branch is main, target is feature/local-check",
+                    status: "fail",
+                    action: "branches"
+                )
+            ],
+            services: [
+                ServiceStatus(
+                    name: "order",
+                    branch: "main",
+                    worktree: "ready",
+                    gitSummary: "source current: main; target branch available: feature/local-check",
+                    worktreeExists: true,
+                    sourceExists: true
+                )
+            ]
+        )
+
+        let response = NativeLocalAutomationCheck.response(
+            workspaces: [workspace],
+            generatedAt: "2026-06-29T04:45:00Z"
+        )
+
+        XCTAssertEqual(response.branchMismatchCount, 0)
+        XCTAssertFalse(response.signals.contains { $0.id == "branch.check" })
+        XCTAssertTrue(response.signals.contains { $0.id == "workspace.clean" })
+    }
+
+    func testNativeLocalAutomationCheckWritesNativeAuditMetadata() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-local-check-audit-\(UUID().uuidString)")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        let response = NativeLocalAutomationCheck.response(
+            workspaces: [
+                workspaceForWorkflowSummary(
+                    stage: "developing",
+                    id: "native-local-check-clean",
+                    services: []
+                )
+            ],
+            generatedAt: "2026-06-29T04:35:00Z"
+        )
+
+        let audited = NativeLocalAutomationCheck.appendingAudit(
+            to: response,
+            auditRoot: root.path,
+            actor: "Nexus Test",
+            target: "/tmp/workspaces"
+        )
+        let events = try NativeAuditEventStore.loadRecent(auditRoot: root.path, limit: 1)
+
+        XCTAssertNotNil(audited.auditEventId)
+        XCTAssertNil(audited.auditError)
+        XCTAssertEqual(events.first?.action, "automation.check.completed")
+        XCTAssertEqual(events.first?.actor, "Nexus Test")
+        XCTAssertEqual(events.first?.metadata["signals"], response.signals.map { $0.id }.joined(separator: ","))
+        XCTAssertEqual(events.first?.metadata["workspaceCount"], "1")
+    }
+
     @MainActor
     func testAutomationBranchHandoffPromptTargetsUnavailableTargetBranchWorkspace() {
         let selectedCleanWorkspace = workspaceForWorkflowSummary(
@@ -5241,8 +5425,8 @@ final class ModelBehaviorTests: XCTestCase {
             id: "branch.check",
             kind: "branch",
             severity: "warning",
-            title: "分支检查 / Branch check",
-            detail: "1 workspaces have branch alignment issues.",
+            title: "目标分支可用性 / Target branch availability",
+            detail: "1 workspaces have missing or unavailable target branches.",
             count: 1,
             action: "review-branches"
         )

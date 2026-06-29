@@ -172,8 +172,10 @@ fn automation_response_from_workspaces(
             id: "branch.check".to_string(),
             kind: "branch".to_string(),
             severity: "warning".to_string(),
-            title: "分支检查 / Branch check".to_string(),
-            detail: format!("{branch_mismatch_count} workspaces have branch alignment issues."),
+            title: "目标分支可用性 / Target branch availability".to_string(),
+            detail: format!(
+                "{branch_mismatch_count} workspaces have missing or unavailable target branches."
+            ),
             count: branch_mismatch_count,
             action: "review-branches".to_string(),
         });
@@ -249,7 +251,7 @@ fn automation_response_from_workspaces(
             "Automation check found {risk_count} risks and {high_priority_task_count} high-priority tasks."
         ),
         "review" => format!(
-            "Automation check found {risk_count} risks, {delivery_issue_count} delivery issues, {branch_mismatch_count} branch issues, {missing_worktree_count} missing worktrees, {dirty_service_count} dirty services, and {open_task_count} open tasks."
+            "Automation check found {risk_count} risks, {delivery_issue_count} delivery issues, {branch_mismatch_count} target-branch availability issues, {missing_worktree_count} missing worktrees, {dirty_service_count} dirty services, and {open_task_count} open tasks."
         ),
         _ => format!("Automation check passed for {active_workspace_count} active workspaces."),
     };
@@ -352,13 +354,9 @@ fn workspace_has_branch_issue(workspace: &WorkspaceData) -> bool {
             || risk.contains("目标分支缺失")
             || normalized.contains("target branch unavailable")
             || normalized.contains("target branch missing")
-            || risk.contains("分支不一致")
-            || normalized.contains("branch mismatch")
     }) || workspace.health_checks.iter().any(|check| {
-        matches!(
-            check.id.as_str(),
-            "target-branch-availability" | "branch-alignment"
-        ) && !matches!(check.status.as_str(), "pass" | "ok")
+        matches!(check.id.as_str(), "target-branch-availability")
+            && !matches!(check.status.as_str(), "pass" | "ok")
     })
 }
 

@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Added
 
+- Native local automation checks now build their response and audit metadata in Swift Native from current workspace summaries, using the Rust bridge only as a fallback when local refresh cannot provide state; branch signals now mean target-branch availability rather than current-checkout alignment.
 - Native root view now opens through a top command bar with Console and Board as the two primary surfaces, making single-workspace execution and all-workspace stage overview explicit instead of keeping sidebar, list, and inspector equally dominant.
 - Native Console now keeps the selected workspace's current stage, blocker reason, next action, evidence files, standard documents, SQL artifacts, and document preview in one focused execution surface.
 - Native create-workspace now uses a three-step sheet for naming/location, service/branch scope, and local preflight before writing standard documents, while worktree setup remains a separate confirmed action.

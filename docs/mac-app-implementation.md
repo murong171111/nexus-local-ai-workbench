@@ -87,7 +87,8 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added persisted native Task Center filters for all, high-priority, agent-sourced, and deferred tasks.
 - Refined task automation and workflow counts so deferred tasks stay visible in Task Center without triggering active task warnings or delivery blockers.
 - Added a native menu bar quick status item with workspace, risk, task, worktree, refresh, settings, recent-workspace, and copy-summary actions.
-- Added Rust Core, FFI, Swift bridge, and native menu bar support for local automation checks covering refresh, risk, delivery, task, worktree, and dirty-service signals with fail-open audit logging.
+- Added Swift Native local automation checks covering refresh, risk, delivery, target-branch availability, task, worktree, and dirty-service signals with Native audit logging; Rust Core/FFI remains as a compatibility fallback when local refresh cannot provide state.
+- Target-branch availability is based on the target branch or remote-tracking ref existing in the service source repository, not on the source repository's current checkout.
 - Added persisted native scheduled automation checks with 5/15/30/60 minute intervals while Nexus is running.
 - Added optional local macOS notifications for automation checks that return review or attention status.
 - Added automation notification preferences for cooldown, minimum status, and signal types.

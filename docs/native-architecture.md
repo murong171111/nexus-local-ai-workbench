@@ -108,7 +108,8 @@ The first native shell scaffold is available at `native/Nexus`. It is a Swift Pa
 - The worktree setup result surface can run a local automation check and display the resulting risk/task/worktree summary in place before the user closes the sheet.
 - Worktree setup result labels are Chinese-first for small-team usage while keeping compact English hints where they help with engineering terminology.
 - The native shell includes a menu bar status item for quick workspace, risk, task, worktree, refresh, settings, recent-workspace, and copy-summary actions without opening the full window first.
-- Rust Core and the Swift/Rust bridge expose a local automation check that emits refresh, risk, delivery, task, worktree, and dirty-service signals for native menu bar and future background hooks.
+- Swift Native owns the local automation check for refresh, risk, delivery, target-branch availability, task, worktree, and dirty-service signals, writes the Native audit event, and keeps the Rust Core bridge as a compatibility fallback when a local refresh cannot provide state.
+- Target-branch availability checks the presence of the specified branch or remote-tracking ref in each service source repository; a different current checkout is context, not a blocker.
 - The native shell can schedule those local automation checks with persisted UserDefaults while the app process is running; this remains separate from LaunchAgents or system notification permissions.
 - Optional UserNotifications alerts are a native-shell concern and are only sent after explicit local authorization when automation status needs review or attention.
 - Automation notification preferences, including cooldown, minimum status, and signal filters, stay in local UserDefaults because they are personal attention settings rather than workspace source-of-truth records.

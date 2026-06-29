@@ -23,7 +23,7 @@ private func localCheckSummaryPayload(
         "- Workspaces: \(check.workspaceCount) total, \(check.archivedWorkspaceCount) archived",
         "- Risks: \(check.riskCount)",
         "- Delivery issues: \(check.deliveryIssueCount)",
-        "- Branch issues: \(check.branchMismatchCount)",
+        "- Target branch availability issues: \(check.branchMismatchCount)",
         "- Active tasks: \(check.openTaskCount) (\(check.highPriorityTaskCount) high priority)",
         "- Worktree issues: \(check.missingWorktreeCount) missing, \(check.dirtyServiceCount) dirty"
     ]
@@ -2350,7 +2350,7 @@ private struct WorktreeSetupFollowUpCheckView: View {
                     help: "活跃任务数量 / Active task count"
                 )
                 WorktreeSetupCheckMetric(
-                    label: "分支",
+                    label: "分支可用",
                     value: check.branchMismatchCount,
                     tone: check.branchMismatchCount > 0 ? NexusPalette.warning : NexusPalette.success,
                     help: "目标分支问题工作区数量 / Target branch issue workspace count"
