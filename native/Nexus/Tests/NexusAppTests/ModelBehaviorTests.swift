@@ -2385,6 +2385,7 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(releaseReadiness?.detail.contains("Release workflow does not publish Native DMG checksums.") == true)
         XCTAssertTrue(releaseReadiness?.detail.contains("Release workflow does not publish Native update manifest metadata.") == true)
         XCTAssertTrue(releaseReadiness?.detail.contains("Release workflow does not sign and notarize Native artifacts.") == true)
+        XCTAssertTrue(releaseReadiness?.detail.contains("Release workflow does not import Apple Developer signing certificates.") == true)
         XCTAssertTrue(releaseReadiness?.detail.contains("Release notes gate is missing or incomplete.") == true)
         XCTAssertTrue(releaseReadiness?.detail.contains("Updater policy gate is missing or incomplete.") == true)
         XCTAssertEqual(evidence.checks.first { $0.requirement == .installTarget }?.status, .blocked)
@@ -2496,6 +2497,7 @@ final class ModelBehaviorTests: XCTestCase {
             "\(root)/native/Nexus/Nexus.xcodeproj/project.pbxproj",
             "\(root)/native/Nexus/Scripts/package-dmg.sh",
             "\(root)/native/Nexus/Scripts/sign-and-notarize.sh",
+            "\(root)/native/Nexus/Scripts/import-apple-certificate.sh",
             "\(root)/native/Nexus/Scripts/generate-release-manifest.sh",
             "\(root)/widget/NexusWidget/NexusWidget.swift",
             "\(root)/native/NexusWidget/Sources/NexusWidget/NexusWidget.swift",
@@ -2526,13 +2528,15 @@ final class ModelBehaviorTests: XCTestCase {
                         || path.hasSuffix("release-process.md")
                 case "native:build":
                     return path.hasSuffix("release.yml")
-                case "package-dmg.sh", ".dmg", "sign-and-notarize.sh", "shasum -a 256", ".dmg.sha256", "*.sha256", "generate-release-manifest.sh":
+                case "package-dmg.sh", ".dmg", "sign-and-notarize.sh", "shasum -a 256", ".dmg.sha256", "*.sha256", "generate-release-manifest.sh", "import-apple-certificate.sh", "APPLE_CERTIFICATE", "APPLE_CERTIFICATE_PASSWORD":
                     return path.hasSuffix("release.yml")
                 case "nexus-native-release-manifest.json":
                     return path.hasSuffix("release.yml")
                         || path.hasSuffix("generate-release-manifest.sh")
                 case "codesign", "notarytool":
                     return path.hasSuffix("sign-and-notarize.sh")
+                case "security import", "security create-keychain", "set-key-partition-list":
+                    return path.hasSuffix("import-apple-certificate.sh")
                 case "manual-github-release", "automaticUpdatesEnabled":
                     return path.hasSuffix("generate-release-manifest.sh")
                 case "com.apple.widgetkit-extension":

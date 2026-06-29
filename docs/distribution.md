@@ -66,14 +66,14 @@ Recommended GitHub Secrets:
 - `APPLE_CERTIFICATE_PASSWORD`
 - `APPLE_SIGNING_IDENTITY`
 
-The release workflow includes secret-gated signing and notarization steps. It only signs when `APPLE_SIGNING_IDENTITY` is present, and only notarizes when `APPLE_ID`, `APPLE_TEAM_ID`, and `APPLE_PASSWORD` are present. The current repository still needs a final certificate import policy and a signed WidgetKit extension target before public distribution is considered complete.
+The release workflow includes secret-gated certificate import, signing, and notarization steps. It imports `APPLE_CERTIFICATE` into a temporary keychain when `APPLE_CERTIFICATE_PASSWORD` is also present, signs when `APPLE_SIGNING_IDENTITY` is present, and only notarizes when `APPLE_ID`, `APPLE_TEAM_ID`, and `APPLE_PASSWORD` are present. The current repository still needs a signed WidgetKit extension target and a successful real-credential notarized release run before public distribution is considered complete.
 
 ## GitHub Actions
 
 Two workflows are expected for M3:
 
 - `CI`: runs Swift tests for `native/Nexus` and any remaining compatibility checks required by touched legacy reference code.
-- `Release`: currently builds the SwiftPM-backed `Nexus.app` bundle from `native/Nexus`, optionally signs it when Apple signing secrets are configured, packages `nexus-native-<architecture>.dmg`, optionally signs/notarizes the DMG, generates a matching `.dmg.sha256` checksum and `nexus-native-release-manifest.json` from the final DMG, uploads those Native artifacts to GitHub Releases, and does not publish legacy preview artifacts.
+- `Release`: currently builds the SwiftPM-backed `Nexus.app` bundle from `native/Nexus`, optionally imports the Apple Developer certificate when certificate secrets are configured, optionally signs the app when Apple signing secrets are configured, packages `nexus-native-<architecture>.dmg`, optionally signs/notarizes the DMG, generates a matching `.dmg.sha256` checksum and `nexus-native-release-manifest.json` from the final DMG, uploads those Native artifacts to GitHub Releases, and does not publish legacy preview artifacts.
 
 The unsigned DMG remains the local fallback when credentials are absent. The public M3 release gate requires a successful signed and notarized run with real Apple Developer credentials.
 

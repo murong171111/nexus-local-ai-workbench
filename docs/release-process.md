@@ -37,7 +37,7 @@ Open the built app and verify:
 - Widget snapshot is written to Application Support.
 - `nexus://workspace/<folder>` opens the app and focuses the target workspace when it exists.
 - M1 main workflow evidence is ready.
-- M2 Native Local Core evidence reports `10/10 Native domains`.
+- M2 Native Local Core evidence reports `11/11 Native domains`.
 - M3 distribution readiness lists only the remaining install target, WidgetKit target, signing, notarization, updater, or legacy deletion blockers.
 
 ## GitHub Release
@@ -49,7 +49,7 @@ git tag v0.1.1
 git push origin main --tags
 ```
 
-The current release workflow builds the SwiftPM-backed `Nexus.app` bundle for Apple Silicon and Intel runners, optionally signs the app when Apple signing secrets are configured, packages `nexus-native-<architecture>.dmg`, optionally signs/notarizes the DMG, writes a matching `.dmg.sha256` checksum sidecar for the final DMG, generates `nexus-native-release-manifest.json` for the manual GitHub release channel, and publishes those Native artifacts to the GitHub Release. This keeps the release channel on the Native path while final certificate import policy, signed WidgetKit embedding, and updater integration are still under M3 development.
+The current release workflow builds the SwiftPM-backed `Nexus.app` bundle for Apple Silicon and Intel runners, optionally imports the Apple Developer certificate into a temporary keychain when certificate secrets are configured, optionally signs the app when Apple signing secrets are configured, packages `nexus-native-<architecture>.dmg`, optionally signs/notarizes the DMG, writes a matching `.dmg.sha256` checksum sidecar for the final DMG, generates `nexus-native-release-manifest.json` for the manual GitHub release channel, and publishes those Native artifacts to the GitHub Release. This keeps the release channel on the Native path while signed WidgetKit embedding, a real-credential notarized release run, and updater integration are still under M3 development.
 
 The final public release workflow should build the Native app target for Apple Silicon and Intel, package `Nexus.app` and `Nexus.dmg`, prove signing/notarization with real Apple credentials, and publish those signed Native artifacts to the GitHub Release.
 
@@ -74,7 +74,7 @@ Recommended GitHub Secrets:
 - `APPLE_CERTIFICATE_PASSWORD`
 - `APPLE_SIGNING_IDENTITY`
 
-Use `native/Nexus/Scripts/sign-and-notarize.sh --dry-run` to validate the local command path without Apple credentials. Public distribution is still blocked until certificate import, signed WidgetKit embedding, and a real notarized release run are verified.
+Use `native/Nexus/Scripts/import-apple-certificate.sh --help` to inspect the secret-gated certificate import path and `native/Nexus/Scripts/sign-and-notarize.sh --dry-run` to validate the local signing command path without Apple credentials. Public distribution is still blocked until signed WidgetKit embedding and a real notarized release run are verified.
 
 ## Universal Build Options
 

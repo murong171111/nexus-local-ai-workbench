@@ -37,6 +37,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     env:
       APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
       APPLE_ID: ${{ secrets.APPLE_ID }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
@@ -50,6 +52,16 @@ jobs:
 
       - name: Build Native app bundle
         run: native/Nexus/Scripts/build-app-bundle.sh --arch ${{ matrix.arch }} --output dist/Nexus.app
+
+      - name: Import Apple signing certificate
+        if: ${{ env.APPLE_CERTIFICATE != '' && env.APPLE_CERTIFICATE_PASSWORD != '' }}
+        shell: bash
+        run: |
+          native/Nexus/Scripts/import-apple-certificate.sh \
+            --certificate-base64 "$APPLE_CERTIFICATE" \
+            --certificate-password "$APPLE_CERTIFICATE_PASSWORD" \
+            --keychain "$RUNNER_TEMP/nexus-signing-${{ matrix.arch }}.keychain-db" \
+            --keychain-password "${{ github.run_id }}-${{ matrix.arch }}"
 
       - name: Sign Native app
         if: ${{ env.APPLE_SIGNING_IDENTITY != '' }}
