@@ -8,7 +8,7 @@ Every public Native release must include release notes with:
 
 - version/tag and release date
 - native artifact names for every published architecture
-- checksums for each DMG
+- checksums for each DMG, matching the published `.dmg.sha256` sidecar assets
 - signing/notarization status for the app, DMG, and WidgetKit extension
 - migration and rollback notes for workspace data
 - known blockers and any intentionally skipped release requirements

@@ -2324,6 +2324,7 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(releaseReadiness?.status, .blocked)
         XCTAssertFalse(releaseReadiness?.detail.contains("Release workflow does not build a Native app artifact.") == true)
         XCTAssertFalse(releaseReadiness?.detail.contains("Release workflow does not package Native DMG artifacts.") == true)
+        XCTAssertTrue(releaseReadiness?.detail.contains("Release workflow does not publish Native DMG checksums.") == true)
         XCTAssertTrue(releaseReadiness?.detail.contains("Release workflow does not sign and notarize Native artifacts.") == true)
         XCTAssertTrue(releaseReadiness?.detail.contains("Release notes gate is missing or incomplete.") == true)
         XCTAssertTrue(releaseReadiness?.detail.contains("Updater policy gate is missing or incomplete.") == true)
@@ -2465,7 +2466,7 @@ final class ModelBehaviorTests: XCTestCase {
                         || path.hasSuffix("release-process.md")
                 case "native:build":
                     return path.hasSuffix("release.yml")
-                case "package-dmg.sh", ".dmg", "sign-and-notarize.sh":
+                case "package-dmg.sh", ".dmg", "sign-and-notarize.sh", "shasum -a 256", ".dmg.sha256", "*.sha256":
                     return path.hasSuffix("release.yml")
                 case "codesign", "notarytool":
                     return path.hasSuffix("sign-and-notarize.sh")
@@ -2475,7 +2476,7 @@ final class ModelBehaviorTests: XCTestCase {
                     return path.hasSuffix("NexusWidget.entitlements")
                 case "Native Deletion Order", "Current Legacy Surfaces":
                     return path.hasSuffix("legacy-retirement-audit.md")
-                case "Release Notes Gate", "version/tag", "signing/notarization status", "known blockers":
+                case "Release Notes Gate", "version/tag", "checksums", "signing/notarization status", "known blockers":
                     return path.hasSuffix("native-release-notes-and-updater.md")
                 case "Updater Gate", "Automatic updates disabled", "updater signing keys", "appcast metadata":
                     return path.hasSuffix("native-release-notes-and-updater.md")

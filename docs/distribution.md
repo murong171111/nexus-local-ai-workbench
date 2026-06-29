@@ -48,6 +48,7 @@ The app bundle must include:
 - Confirm Widget snapshot writing works in Application Support and, when signed, the App Group container.
 - Confirm `nexus://workspace/<folder>` opens Nexus and focuses the target workspace.
 - Confirm release docs and workflows point at the Native app artifact path.
+- Confirm every published Native DMG has a matching `.dmg.sha256` checksum asset.
 - Confirm release notes and updater policy satisfy `docs/native-release-notes-and-updater.md`.
 - Confirm legacy preview artifacts are not published as product release assets.
 
@@ -71,7 +72,7 @@ The release workflow includes secret-gated signing and notarization steps. It on
 Two workflows are expected for M3:
 
 - `CI`: runs Swift tests for `native/Nexus` and any remaining compatibility checks required by touched legacy reference code.
-- `Release`: currently builds the SwiftPM-backed `Nexus.app` bundle from `native/Nexus`, optionally signs it when Apple signing secrets are configured, packages `nexus-native-<architecture>.dmg`, optionally signs/notarizes the DMG, uploads those Native artifacts to GitHub Releases, and does not publish legacy preview artifacts.
+- `Release`: currently builds the SwiftPM-backed `Nexus.app` bundle from `native/Nexus`, optionally signs it when Apple signing secrets are configured, packages `nexus-native-<architecture>.dmg`, generates a matching `.dmg.sha256` checksum, optionally signs/notarizes the DMG, uploads those Native artifacts to GitHub Releases, and does not publish legacy preview artifacts.
 
 The unsigned DMG remains the local fallback when credentials are absent. The public M3 release gate requires a successful signed and notarized run with real Apple Developer credentials.
 

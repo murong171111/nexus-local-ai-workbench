@@ -81,12 +81,20 @@ jobs:
             --apple-id "$APPLE_ID" \
             --password "$APPLE_PASSWORD"
 
+      - name: Generate Native checksum
+        shell: bash
+        run: |
+          cd dist
+          shasum -a 256 "nexus-native-${{ matrix.artifact }}.dmg" > "nexus-native-${{ matrix.artifact }}.dmg.sha256"
+
       - name: Upload Native artifact
         uses: actions/upload-artifact@v4
         with:
           name: nexus-native-${{ matrix.artifact }}
           if-no-files-found: error
-          path: dist/nexus-native-${{ matrix.artifact }}.dmg
+          path: |
+            dist/nexus-native-${{ matrix.artifact }}.dmg
+            dist/nexus-native-${{ matrix.artifact }}.dmg.sha256
 
   publish:
     name: Publish GitHub Release
@@ -128,9 +136,9 @@ jobs:
           fi
 
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" release-assets/*.dmg --clobber
+            gh release upload "$RELEASE_TAG" release-assets/*.dmg release-assets/*.sha256 --clobber
           else
-            gh release create "$RELEASE_TAG" release-assets/*.dmg \
+            gh release create "$RELEASE_TAG" release-assets/*.dmg release-assets/*.sha256 \
               --title "Nexus $RELEASE_TAG" \
               --notes-file CHANGELOG.md \
               "${FLAGS[@]}"

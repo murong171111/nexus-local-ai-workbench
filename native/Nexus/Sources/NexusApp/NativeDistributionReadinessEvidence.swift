@@ -227,6 +227,9 @@ struct NativeDistributionReadinessEvidence: Hashable {
         let hasDmgPackaging = fileExists(dmgScript)
             && fileContains(releaseWorkflow, "package-dmg.sh")
             && fileContains(releaseWorkflow, ".dmg")
+        let hasDmgChecksums = fileContains(releaseWorkflow, "shasum -a 256")
+            && fileContains(releaseWorkflow, ".dmg.sha256")
+            && fileContains(releaseWorkflow, "*.sha256")
         let hasSigningAndNotarization = fileExists(signingScript)
             && fileContains(signingScript, "codesign")
             && fileContains(signingScript, "notarytool")
@@ -240,6 +243,7 @@ struct NativeDistributionReadinessEvidence: Hashable {
         let hasReleaseNotesGate = fileExists(releaseNotesDoc)
             && fileContains(releaseNotesDoc, "Release Notes Gate")
             && fileContains(releaseNotesDoc, "version/tag")
+            && fileContains(releaseNotesDoc, "checksums")
             && fileContains(releaseNotesDoc, "signing/notarization status")
             && fileContains(releaseNotesDoc, "known blockers")
         let hasUpdaterGate = fileExists(releaseNotesDoc)
@@ -260,6 +264,7 @@ struct NativeDistributionReadinessEvidence: Hashable {
             ciMentionsSwift: ciMentionsSwift,
             releaseMentionsNative: releaseMentionsNative,
             hasDmgPackaging: hasDmgPackaging,
+            hasDmgChecksums: hasDmgChecksums,
             hasSigningAndNotarization: hasSigningAndNotarization,
             distributionMentionsNative: distributionMentionsNative,
             releaseDocMentionsNative: releaseDocMentionsNative,
@@ -272,7 +277,7 @@ struct NativeDistributionReadinessEvidence: Hashable {
             requirement: .releaseReadiness,
             status: ready ? .ready : .blocked,
             detail: ready
-                ? "Release docs, CI, signing, notarization, updater policy, release notes, and release workflow point at Swift-native DMG artifacts."
+                ? "Release docs, CI, signing, notarization, updater policy, release notes, checksums, and release workflow point at Swift-native DMG artifacts."
                 : "Release readiness blockers: \(blockers.joined(separator: " "))",
             evidence: [distributionDoc, releaseDoc, releaseNotesDoc, ciWorkflow, releaseWorkflow, dmgScript, signingScript] + blockers
         )
@@ -285,6 +290,7 @@ struct NativeDistributionReadinessEvidence: Hashable {
         ciMentionsSwift: Bool,
         releaseMentionsNative: Bool,
         hasDmgPackaging: Bool,
+        hasDmgChecksums: Bool,
         hasSigningAndNotarization: Bool,
         distributionMentionsNative: Bool,
         releaseDocMentionsNative: Bool,
@@ -310,6 +316,9 @@ struct NativeDistributionReadinessEvidence: Hashable {
         }
         if !hasDmgPackaging {
             blockers.append("Release workflow does not package Native DMG artifacts.")
+        }
+        if !hasDmgChecksums {
+            blockers.append("Release workflow does not publish Native DMG checksums.")
         }
         if !hasSigningAndNotarization {
             blockers.append("Release workflow does not sign and notarize Native artifacts.")
