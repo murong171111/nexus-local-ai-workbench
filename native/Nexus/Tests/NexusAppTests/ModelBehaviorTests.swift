@@ -339,7 +339,7 @@ final class ModelBehaviorTests: XCTestCase {
     func testWorkspaceLifecycleFallsBackToDoneWhenNoOpenTasksOrRisksRemain() {
         let lifecycle = WorkspaceLifecycle(
             snapshot: nil,
-            state: "developing",
+            state: "unknown",
             targetBranch: "feature/native-tests",
             services: [
                 ServiceStatus(
@@ -369,6 +369,41 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(lifecycle.stage, "done")
         XCTAssertEqual(lifecycle.documentKey, "delivery")
         XCTAssertEqual(lifecycle.normalizedProgress, 0.95)
+    }
+
+    func testWorkspaceLifecycleHonorsExplicitRestoreDevelopmentState() {
+        let lifecycle = WorkspaceLifecycle(
+            snapshot: nil,
+            state: "developing",
+            targetBranch: "feature/native-tests",
+            services: [
+                ServiceStatus(
+                    name: "order",
+                    branch: "feature/native-tests",
+                    worktree: "ready",
+                    gitSummary: "clean",
+                    worktreeExists: true,
+                    sourceExists: true
+                )
+            ],
+            risks: [],
+            tasks: [
+                WorkspaceTask(
+                    id: "task-1",
+                    title: "Previously shipped",
+                    status: "done",
+                    detail: "Restored from archive for re-check",
+                    priority: "normal",
+                    source: "workspace",
+                    sourceEventID: nil,
+                    sourceLine: 12
+                )
+            ]
+        )
+
+        XCTAssertEqual(lifecycle.stage, "developing")
+        XCTAssertEqual(lifecycle.documentKey, "tasks")
+        XCTAssertEqual(lifecycle.normalizedProgress, 0.6)
     }
 
     func testLifecycleRestorePostWriteChecksRequireLocalRecheck() {
@@ -4151,6 +4186,31 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(actions.contains("archive_checklist.snapshot_appended"))
         XCTAssertTrue(actions.contains("workspace_lifecycle.updated"))
         XCTAssertTrue(appStateForAutomationTests(workspaces: [archived]).nativeLifecycleProofAvailable())
+
+        _ = try NativeWorkspaceLifecycleStore.update(
+            request: UpdateWorkspaceLifecycleRequest(
+                workspacePath: workspaceURL.path,
+                state: LifecycleTransition.restoreDevelopment.state,
+                focus: LifecycleTransition.restoreDevelopment.focus,
+                nextAction: LifecycleTransition.restoreDevelopment.nextAction,
+                confirmed: true,
+                auditRoot: auditRoot.path,
+                actor: "Nexus Test"
+            )
+        )
+
+        let restored = try scannedWorkspace(folder: folder, workspacesRoot: workspacesRoot, sourceRoot: sourceRoot)
+        let actionsAfterRestore = try NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 30).map(\.action)
+        let restoredSummary = WorkspaceListSummary(workspaces: [restored])
+
+        XCTAssertEqual(restored.state, .developing)
+        XCTAssertEqual(restored.lifecycle.stage, "developing")
+        XCTAssertFalse(restored.isArchived)
+        XCTAssertEqual(restored.lifecycleTransitions, [.delivery, .blocked])
+        XCTAssertEqual(restoredSummary.activeWorkspaceCount, 1)
+        XCTAssertEqual(restoredSummary.archivedWorkspaceCount, 0)
+        XCTAssertEqual(actionsAfterRestore.filter { $0 == "workspace_lifecycle.updated" }.count, 2)
+        XCTAssertFalse(appStateForAutomationTests(workspaces: [restored]).nativeLifecycleProofAvailable())
     }
 
     func testDevelopmentTaskEvidenceRoutesNextActiveTask() {

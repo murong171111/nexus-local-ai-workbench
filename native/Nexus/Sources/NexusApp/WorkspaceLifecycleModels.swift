@@ -87,6 +87,33 @@ extension WorkspaceLifecycle {
                 nextAction: "补齐交付记录、SQL、验证和风险说明。",
                 documentKey: "delivery"
             )
+        } else if ["developing", "development", "dev"].contains(normalizedState) || state.contains("开发") {
+            self.init(
+                stage: "developing",
+                label: "开发中 / Developing",
+                detail: "\(openTasks) 个活跃任务需要继续处理。",
+                progress: 60,
+                nextAction: "继续编码、验证，并保持交付记录同步。",
+                documentKey: "tasks"
+            )
+        } else if ["delivery", "delivering"].contains(normalizedState) || state.contains("交付") {
+            self.init(
+                stage: "delivery",
+                label: "交付整理 / Delivery",
+                detail: "工作区已进入交付整理阶段。",
+                progress: 80,
+                nextAction: "补齐交付记录、SQL、验证和风险说明。",
+                documentKey: "delivery"
+            )
+        } else if ["done", "completed", "complete"].contains(normalizedState) || state.contains("完成") {
+            self.init(
+                stage: "done",
+                label: "待归档 / Done",
+                detail: "生命周期已标记完成，可以归档或保留观察。",
+                progress: 95,
+                nextAction: "确认 PR/发布状态后归档工作区。",
+                documentKey: "delivery"
+            )
         } else if openTasks == 0 && risks.isEmpty {
             self.init(
                 stage: "done",
