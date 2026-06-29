@@ -1310,6 +1310,8 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(preview.domains.map(\.status), Array(repeating: .blocked, count: NativeLocalCoreDomain.allCases.count))
         XCTAssertEqual(preview.confirmedWriteSummary, "0/11 confirmed writes")
         XCTAssertEqual(preview.confirmedWriteCoverage.map(\.status), Array(repeating: .blocked, count: NativeConfirmedWriteCapability.allCases.count))
+        XCTAssertEqual(preview.confirmedWriteAuditSummary.status, .blocked)
+        XCTAssertEqual(preview.confirmedWriteAuditSummary.readyCapabilityCount, 0)
         XCTAssertEqual(partiallyNative.status, .blocked)
         XCTAssertEqual(partiallyNative.migrationSummary, "5/11 Native domains · 1 partial")
         XCTAssertEqual(partiallyNative.domains.filter { $0.status == .ready }.map(\.domain), [.workspaceScanning, .documentInventory, .audit, .widgetSnapshot, .searchIndex])
@@ -1371,6 +1373,13 @@ final class ModelBehaviorTests: XCTestCase {
             ) ?? false
         )
         XCTAssertEqual(fullyNative.confirmedWriteSummary, "11/11 confirmed writes")
+        XCTAssertEqual(fullyNative.confirmedWriteAuditSummary.status, .ready)
+        XCTAssertEqual(fullyNative.confirmedWriteAuditSummary.identitySummary, "11/11 audit identities")
+        XCTAssertEqual(fullyNative.confirmedWriteAuditSummary.uniqueAuditActionCount, 10)
+        XCTAssertEqual(fullyNative.confirmedWriteAuditSummary.uniqueAuditIdentityCount, 11)
+        XCTAssertEqual(fullyNative.confirmedWriteAuditSummary.duplicateAuditActions, ["workspace_lifecycle.updated"])
+        XCTAssertTrue(fullyNative.confirmedWriteAuditSummary.unqualifiedDuplicateAuditActions.isEmpty)
+        XCTAssertTrue(fullyNative.confirmedWriteAuditSummary.detail.contains("metadata-qualified"))
         XCTAssertEqual(fullyNative.confirmedWriteCoverage.map(\.capability), NativeConfirmedWriteCapability.allCases)
         XCTAssertEqual(fullyNative.confirmedWriteCoverage.map(\.status), Array(repeating: .ready, count: NativeConfirmedWriteCapability.allCases.count))
         XCTAssertEqual(
@@ -1406,6 +1415,10 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(
             fullyNative.confirmedWriteCoverage.first { $0.capability == .restoreLifecycle }?.auditLine,
             "workspace_lifecycle.updated · state=developing"
+        )
+        XCTAssertEqual(
+            fullyNative.confirmedWriteCoverage.first { $0.capability == .restoreLifecycle }?.auditIdentity,
+            "workspace_lifecycle.updated#state=developing"
         )
         XCTAssertTrue(
             fullyNative.confirmedWriteCoverage.first { $0.capability == .lifecycleProofExport }?.evidence.contains(
@@ -1453,6 +1466,36 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(fullyNative.migrationSummary, "11/11 Native domains")
         XCTAssertFalse(fullyNative.bridgeIsLegacyDependency)
         XCTAssertTrue(fullyNative.reason.contains("M2 Native Local Core"))
+    }
+
+    func testNativeConfirmedWriteAuditSummaryBlocksUnqualifiedDuplicateActions() {
+        let coverage = [
+            NativeConfirmedWriteEvidence(
+                capability: .archiveLifecycle,
+                status: .ready,
+                confirmation: "Confirmed archive write.",
+                auditAction: "workspace_lifecycle.updated",
+                auditMetadata: nil,
+                evidence: ["archive"]
+            ),
+            NativeConfirmedWriteEvidence(
+                capability: .restoreLifecycle,
+                status: .ready,
+                confirmation: "Confirmed restore write.",
+                auditAction: "workspace_lifecycle.updated",
+                auditMetadata: nil,
+                evidence: ["restore"]
+            )
+        ]
+
+        let summary = NativeConfirmedWriteAuditSummary.resolve(coverage: coverage)
+
+        XCTAssertEqual(summary.status, .blocked)
+        XCTAssertEqual(summary.uniqueAuditActionCount, 1)
+        XCTAssertEqual(summary.uniqueAuditIdentityCount, 1)
+        XCTAssertEqual(summary.duplicateAuditActions, ["workspace_lifecycle.updated"])
+        XCTAssertEqual(summary.unqualifiedDuplicateAuditActions, ["workspace_lifecycle.updated"])
+        XCTAssertTrue(summary.detail.contains("Audit identity collision"))
     }
 
     func testNativeLocalCoreEvidenceReviewsPartialDomainsWithoutBlockers() {

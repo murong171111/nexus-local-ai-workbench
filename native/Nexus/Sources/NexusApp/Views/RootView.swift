@@ -15333,6 +15333,15 @@ private struct NativeLocalCoreEvidenceView: View {
                         .font(.caption.weight(.semibold))
                     Spacer()
                 }
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: systemImage(for: evidence.confirmedWriteAuditSummary.status))
+                        .foregroundStyle(evidence.confirmedWriteAuditSummary.status.color)
+                        .frame(width: 13)
+                    Text(evidence.confirmedWriteAuditSummary.detail)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 LazyVGrid(
                     columns: [GridItem(.adaptive(minimum: 180), spacing: 7)],

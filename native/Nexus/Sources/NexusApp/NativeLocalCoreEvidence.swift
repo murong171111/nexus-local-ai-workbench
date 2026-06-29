@@ -264,6 +264,77 @@ struct NativeConfirmedWriteEvidence: Hashable, Identifiable {
         }
         return auditAction
     }
+
+    var auditIdentity: String {
+        if let auditMetadata {
+            return "\(auditAction)#\(auditMetadata)"
+        }
+        return auditAction
+    }
+}
+
+struct NativeConfirmedWriteAuditSummary: Hashable {
+    let status: WorkflowPathStatus
+    let readyCapabilityCount: Int
+    let totalCapabilityCount: Int
+    let uniqueAuditActionCount: Int
+    let uniqueAuditIdentityCount: Int
+    let duplicateAuditActions: [String]
+    let unqualifiedDuplicateAuditActions: [String]
+
+    var ready: Bool {
+        status == .ready
+    }
+
+    var identitySummary: String {
+        "\(uniqueAuditIdentityCount)/\(totalCapabilityCount) audit identities"
+    }
+
+    var detail: String {
+        if readyCapabilityCount < totalCapabilityCount {
+            return "\(readyCapabilityCount)/\(totalCapabilityCount) confirmed writes are ready; audit identity proof waits for full Native coverage."
+        }
+        if !unqualifiedDuplicateAuditActions.isEmpty {
+            return "Audit identity collision: \(unqualifiedDuplicateAuditActions.joined(separator: ", ")) must be separated with metadata."
+        }
+        if !duplicateAuditActions.isEmpty {
+            return "\(identitySummary); duplicate audit actions are metadata-qualified: \(duplicateAuditActions.joined(separator: ", "))."
+        }
+        return "\(identitySummary); every confirmed write has a distinct audit action."
+    }
+
+    static func resolve(coverage: [NativeConfirmedWriteEvidence]) -> NativeConfirmedWriteAuditSummary {
+        let readyCount = coverage.filter { $0.status == .ready }.count
+        let actions = Set(coverage.map(\.auditAction))
+        let identities = Set(coverage.map(\.auditIdentity))
+        let duplicateGroups = Dictionary(grouping: coverage, by: \.auditAction)
+            .filter { $0.value.count > 1 }
+        let duplicateActions = duplicateGroups.keys.sorted()
+        let unqualifiedDuplicates = duplicateGroups
+            .filter { _, writes in
+                writes.contains { $0.auditMetadata == nil }
+                    || Set(writes.map(\.auditIdentity)).count != writes.count
+            }
+            .map(\.key)
+            .sorted()
+        let status: WorkflowPathStatus
+        if readyCount < coverage.count {
+            status = .blocked
+        } else if identities.count != coverage.count || !unqualifiedDuplicates.isEmpty {
+            status = .blocked
+        } else {
+            status = .ready
+        }
+        return NativeConfirmedWriteAuditSummary(
+            status: status,
+            readyCapabilityCount: readyCount,
+            totalCapabilityCount: coverage.count,
+            uniqueAuditActionCount: actions.count,
+            uniqueAuditIdentityCount: identities.count,
+            duplicateAuditActions: duplicateActions,
+            unqualifiedDuplicateAuditActions: unqualifiedDuplicates
+        )
+    }
 }
 
 struct NativeLocalCoreEvidence: Hashable {
@@ -272,6 +343,7 @@ struct NativeLocalCoreEvidence: Hashable {
     let reason: String
     let domains: [NativeLocalCoreDomainEvidence]
     let confirmedWriteCoverage: [NativeConfirmedWriteEvidence]
+    let confirmedWriteAuditSummary: NativeConfirmedWriteAuditSummary
 
     var ready: Bool {
         status == .ready
@@ -331,13 +403,17 @@ struct NativeLocalCoreEvidence: Hashable {
         } else {
             reason = "M2 Native Local Core 已覆盖工作区扫描、文档、需求、就绪、confirmed writes、git/worktree、审计、设置、Widget 快照、Codex 会话和搜索索引。"
         }
+        let confirmedWriteCoverage = confirmedWriteCoverage(
+            status: domains.first { $0.domain == .confirmedWrites }?.status ?? .blocked
+        )
         return NativeLocalCoreEvidence(
             status: status,
             bridgeMode: bridgeMode,
             reason: reason,
             domains: domains,
-            confirmedWriteCoverage: confirmedWriteCoverage(
-                status: domains.first { $0.domain == .confirmedWrites }?.status ?? .blocked
+            confirmedWriteCoverage: confirmedWriteCoverage,
+            confirmedWriteAuditSummary: NativeConfirmedWriteAuditSummary.resolve(
+                coverage: confirmedWriteCoverage
             )
         )
     }
