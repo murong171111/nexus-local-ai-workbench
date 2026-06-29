@@ -5405,6 +5405,8 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(content.contains("## 人工记录"))
         XCTAssertTrue(content.contains("## Nexus Delivery Gate Snapshot"))
         XCTAssertTrue(content.hasSuffix("\n"))
+        XCTAssertEqual(response.auditEventID, events.first?.id)
+        XCTAssertEqual(response.auditEventPath, auditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path)
         XCTAssertEqual(events.first?.action, "delivery_record.snapshot_appended")
         XCTAssertEqual(events.first?.actor, "Nexus Test")
         XCTAssertEqual(events.first?.metadata["itemCount"], "\(plan.items.count)")
@@ -5588,6 +5590,8 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(response.kind, .archiveChecklist)
         XCTAssertTrue(content.contains("## Nexus Archive Checklist"))
         XCTAssertTrue(content.contains("最终进入 delivery、done、archived 或 restore 仍需通过生命周期确认弹窗"))
+        XCTAssertEqual(response.auditEventID, events.first?.id)
+        XCTAssertEqual(response.auditEventPath, auditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path)
         XCTAssertEqual(events.first?.action, "archive_checklist.snapshot_appended")
         XCTAssertEqual(events.first?.metadata["itemCount"], "\(plan.items.count)")
     }
@@ -5717,6 +5721,8 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(response.kind, .validationPrSnapshot)
         XCTAssertTrue(content.contains("## Nexus Validation / PR Snapshot"))
         XCTAssertTrue(content.contains("不直接调用 GitHub"))
+        XCTAssertEqual(response.auditEventID, events.first?.id)
+        XCTAssertEqual(response.auditEventPath, auditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path)
         XCTAssertEqual(events.first?.action, "validation_pr.snapshot_appended")
         XCTAssertEqual(events.first?.metadata["itemCount"], "\(plan.items.count)")
     }

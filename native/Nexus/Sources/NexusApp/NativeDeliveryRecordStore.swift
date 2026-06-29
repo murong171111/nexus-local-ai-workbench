@@ -35,6 +35,8 @@ struct NativeDeliveryRecordWriteResponse: Hashable {
     let status: WorkflowPathStatus
     let itemCount: Int
     let appended: Bool
+    let auditEventID: String?
+    let auditEventPath: String?
 }
 
 enum NativeDeliveryRecordStore {
@@ -131,16 +133,26 @@ enum NativeDeliveryRecordStore {
             path: deliveryPath,
             status: status,
             itemCount: itemCount,
-            appended: true
+            appended: true,
+            auditEventID: nil,
+            auditEventPath: nil
         )
-        appendAuditEvent(
+        let audit = appendAuditEvent(
             response: response,
             workspaceID: workspaceID,
             workspaceName: workspaceName,
             auditRoot: auditRoot,
             actor: actor
         )
-        return response
+        return NativeDeliveryRecordWriteResponse(
+            kind: response.kind,
+            path: response.path,
+            status: response.status,
+            itemCount: response.itemCount,
+            appended: response.appended,
+            auditEventID: audit?.event.id,
+            auditEventPath: audit?.path
+        )
     }
 
     private static func appendMarkdownBlock(
@@ -165,12 +177,12 @@ enum NativeDeliveryRecordStore {
         workspaceName: String,
         auditRoot: String?,
         actor: String?
-    ) {
+    ) -> AppendAuditEventResponse? {
         guard let auditRoot = auditRoot?.trimmingCharacters(in: .whitespacesAndNewlines),
               !auditRoot.isEmpty else {
-            return
+            return nil
         }
-        _ = try? NativeAuditEventStore.append(
+        return try? NativeAuditEventStore.append(
             auditRoot: auditRoot,
             event: AuditEventInput(
                 actor: actor ?? "Nexus Native",
