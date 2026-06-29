@@ -2523,6 +2523,8 @@ final class ModelBehaviorTests: XCTestCase {
             "\(root)/docs/native-release-notes-and-updater.md",
             "\(root)/native/Nexus/Sources/NexusApp/AppState.swift",
             "\(root)/native/Nexus/Sources/NexusApp/Views/RootView.swift",
+            "\(root)/native/Nexus/Tests/NexusAppTests/ModelBehaviorTests.swift",
+            "\(root)/package.json",
             "\(root)/.github/workflows/ci.yml",
             "\(root)/.github/workflows/release.yml"
         ]
@@ -2550,6 +2552,10 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(evidence.checks.first { $0.requirement == .legacyDeletion }?.status, .blocked)
         XCTAssertEqual(evidence.checks.first { $0.requirement == .releaseReadiness }?.status, .blocked)
         XCTAssertEqual(evidence.readinessSummary, "0/4 Ready checks")
+        XCTAssertEqual(evidence.legacyDeletionConditions.map(\.condition), NativeLegacyDeletionCondition.allCases)
+        XCTAssertEqual(evidence.legacyDeletionConditions.first { $0.condition == .nativeLocalCore }?.status, .blocked)
+        XCTAssertEqual(evidence.legacyDeletionConditions.first { $0.condition == .realLifecycleProof }?.status, .blocked)
+        XCTAssertEqual(evidence.legacyDeletionConditions.first { $0.condition == .releaseDocsNativeOnly }?.status, .blocked)
         XCTAssertTrue(evidence.checks.first { $0.requirement == .legacyDeletion }?.detail.contains("M2 Native Local Core is not ready") == true)
         XCTAssertTrue(evidence.checks.first { $0.requirement == .legacyDeletion }?.detail.contains("No real archived workspace lifecycle proof") == true)
         XCTAssertTrue(evidence.checks.first { $0.requirement == .legacyDeletion }?.detail.contains("Next step: follow the Native deletion order") == true)
@@ -2585,8 +2591,14 @@ final class ModelBehaviorTests: XCTestCase {
             directoryExists: { directories.contains($0) },
             fileContains: { path, needle in
                 switch needle {
-                case "swift test":
+                case "swift test",
+                     "npm run native:build",
+                     "npm run widget:typecheck":
                     return path.hasSuffix("ci.yml")
+                        || path.hasSuffix("package.json")
+                case "testNativeStoresCanProveEndToEndWorkspaceLifecycle",
+                     "testNativeWorkspaceCreationStoreWritesStandardWorkspaceAndAudit":
+                    return path.hasSuffix("ModelBehaviorTests.swift")
                 case "native/Nexus", "NexusNative", "Swift":
                     return path.hasSuffix("release.yml")
                         || path.hasSuffix("distribution.md")
@@ -2811,6 +2823,8 @@ final class ModelBehaviorTests: XCTestCase {
             "\(root)/docs/native-release-notes-and-updater.md",
             "\(root)/native/Nexus/Sources/NexusApp/AppState.swift",
             "\(root)/native/Nexus/Sources/NexusApp/Views/RootView.swift",
+            "\(root)/native/Nexus/Tests/NexusAppTests/ModelBehaviorTests.swift",
+            "\(root)/package.json",
             "\(root)/.github/workflows/ci.yml",
             "\(root)/.github/workflows/release.yml"
         ]
@@ -2883,6 +2897,8 @@ final class ModelBehaviorTests: XCTestCase {
             "\(root)/docs/native-release-notes-and-updater.md",
             "\(root)/native/Nexus/Sources/NexusApp/AppState.swift",
             "\(root)/native/Nexus/Sources/NexusApp/Views/RootView.swift",
+            "\(root)/native/Nexus/Tests/NexusAppTests/ModelBehaviorTests.swift",
+            "\(root)/package.json",
             "\(root)/.github/workflows/ci.yml",
             "\(root)/.github/workflows/release.yml"
         ]
@@ -2896,8 +2912,14 @@ final class ModelBehaviorTests: XCTestCase {
             directoryExists: { directories.contains($0) },
             fileContains: { path, needle in
                 switch needle {
-                case "swift test":
+                case "swift test",
+                     "npm run native:build",
+                     "npm run widget:typecheck":
                     return path.hasSuffix("ci.yml")
+                        || path.hasSuffix("package.json")
+                case "testNativeStoresCanProveEndToEndWorkspaceLifecycle",
+                     "testNativeWorkspaceCreationStoreWritesStandardWorkspaceAndAudit":
+                    return path.hasSuffix("ModelBehaviorTests.swift")
                 case "native/Nexus", "NexusNative", "Swift":
                     return path.hasSuffix("release.yml")
                         || path.hasSuffix("distribution.md")
@@ -3005,6 +3027,8 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(evidence.status, .ready, diagnostic)
         XCTAssertEqual(evidence.readinessSummary, "4/4 Ready checks", diagnostic)
         XCTAssertTrue(evidence.checks.allSatisfy { $0.status == .ready }, diagnostic)
+        XCTAssertEqual(evidence.legacyDeletionConditions.map(\.condition), NativeLegacyDeletionCondition.allCases)
+        XCTAssertTrue(evidence.legacyDeletionConditions.allSatisfy { $0.status == .ready }, diagnostic)
     }
 
     @MainActor

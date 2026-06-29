@@ -15231,6 +15231,45 @@ private struct NativeDistributionReadinessEvidenceView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(spacing: 6) {
+                    Image(systemName: "trash.slash")
+                        .foregroundStyle(NexusPalette.accent)
+                    Text("Legacy deletion conditions")
+                        .font(.caption.weight(.semibold))
+                    Spacer()
+                }
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 180), spacing: 7)],
+                    alignment: .leading,
+                    spacing: 7
+                ) {
+                    ForEach(evidence.legacyDeletionConditions) { condition in
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: systemImage(for: condition.status))
+                                .foregroundStyle(condition.status.color)
+                                .frame(width: 13)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(condition.condition.label)
+                                    .font(.caption2.weight(.semibold))
+                                Text(condition.detail)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                        .padding(7)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(condition.status.color.opacity(0.07))
+                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        .help(condition.evidence.joined(separator: " · "))
+                    }
+                }
+            }
+            .padding(8)
+            .background(NexusPalette.badge)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
             LazyVGrid(
                 columns: [GridItem(.adaptive(minimum: 190), spacing: 8)],
                 alignment: .leading,

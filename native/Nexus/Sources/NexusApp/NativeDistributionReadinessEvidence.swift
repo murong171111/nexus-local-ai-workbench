@@ -29,10 +29,49 @@ struct NativeDistributionCheck: Hashable, Identifiable {
     var id: NativeDistributionRequirement { requirement }
 }
 
+enum NativeLegacyDeletionCondition: String, CaseIterable, Hashable {
+    case nativeMainPath
+    case nativeInstallTarget
+    case nativeLocalCore
+    case swiftReplacements
+    case ciNativeValidation
+    case releaseDocsNativeOnly
+    case realLifecycleProof
+
+    var label: String {
+        switch self {
+        case .nativeMainPath:
+            return "M1 main path"
+        case .nativeInstallTarget:
+            return "Native install"
+        case .nativeLocalCore:
+            return "M2 local core"
+        case .swiftReplacements:
+            return "Swift fixtures"
+        case .ciNativeValidation:
+            return "Native CI"
+        case .releaseDocsNativeOnly:
+            return "Native release docs"
+        case .realLifecycleProof:
+            return "Real lifecycle proof"
+        }
+    }
+}
+
+struct NativeLegacyDeletionConditionEvidence: Hashable, Identifiable {
+    let condition: NativeLegacyDeletionCondition
+    let status: WorkflowPathStatus
+    let detail: String
+    let evidence: [String]
+
+    var id: NativeLegacyDeletionCondition { condition }
+}
+
 struct NativeDistributionReadinessEvidence: Hashable {
     let status: WorkflowPathStatus
     let reason: String
     let checks: [NativeDistributionCheck]
+    let legacyDeletionConditions: [NativeLegacyDeletionConditionEvidence]
 
     var ready: Bool {
         status == .ready
@@ -58,37 +97,52 @@ struct NativeDistributionReadinessEvidence: Hashable {
             return text.contains(needle)
         }
     ) -> NativeDistributionReadinessEvidence {
+        let installTarget = installTargetCheck(repositoryRoot: repositoryRoot, fileExists: fileExists)
+        let widgetExtension = widgetExtensionCheck(
+            repositoryRoot: repositoryRoot,
+            fileExists: fileExists,
+            directoryExists: directoryExists,
+            fileContains: fileContains
+        )
+        let releaseReadiness = releaseReadinessCheck(
+            repositoryRoot: repositoryRoot,
+            m1Ready: m1Ready,
+            m2Ready: m2Ready,
+            fileExists: fileExists,
+            fileContains: fileContains
+        )
+        let legacyDeletionConditions = legacyDeletionConditionEvidence(
+            repositoryRoot: repositoryRoot,
+            m1Ready: m1Ready,
+            m2Ready: m2Ready,
+            realLifecycleProven: realLifecycleProven,
+            installTargetStatus: installTarget.status,
+            fileExists: fileExists,
+            fileContains: fileContains
+        )
         let checks = [
-            installTargetCheck(repositoryRoot: repositoryRoot, fileExists: fileExists),
-            widgetExtensionCheck(
-                repositoryRoot: repositoryRoot,
-                fileExists: fileExists,
-                directoryExists: directoryExists,
-                fileContains: fileContains
-            ),
+            installTarget,
+            widgetExtension,
             legacyDeletionCheck(
                 repositoryRoot: repositoryRoot,
-                m1Ready: m1Ready,
-                m2Ready: m2Ready,
-                realLifecycleProven: realLifecycleProven,
+                conditions: legacyDeletionConditions,
                 directoryExists: directoryExists,
                 fileExists: fileExists,
                 fileContains: fileContains
             ),
-            releaseReadinessCheck(
-                repositoryRoot: repositoryRoot,
-                m1Ready: m1Ready,
-                m2Ready: m2Ready,
-                fileExists: fileExists,
-                fileContains: fileContains
-            )
+            releaseReadiness
         ]
         let blockers = checks.filter { $0.status == .blocked }
         let status: WorkflowPathStatus = blockers.isEmpty ? .ready : .blocked
         let reason = blockers.isEmpty
             ? "M3 Native Distribution 已具备安装目标、Widget Extension、legacy 删除条件和发布证据。"
             : "M3 仍有 \(blockers.count) 个分发条件未满足：\(blockers.map { $0.requirement.label }.joined(separator: ", "))。"
-        return NativeDistributionReadinessEvidence(status: status, reason: reason, checks: checks)
+        return NativeDistributionReadinessEvidence(
+            status: status,
+            reason: reason,
+            checks: checks,
+            legacyDeletionConditions: legacyDeletionConditions
+        )
     }
 
     private static func installTargetCheck(
@@ -153,9 +207,7 @@ struct NativeDistributionReadinessEvidence: Hashable {
 
     private static func legacyDeletionCheck(
         repositoryRoot: String,
-        m1Ready: Bool,
-        m2Ready: Bool,
-        realLifecycleProven: Bool,
+        conditions: [NativeLegacyDeletionConditionEvidence],
         directoryExists: (String) -> Bool,
         fileExists: (String) -> Bool,
         fileContains: (String, String) -> Bool
@@ -167,14 +219,12 @@ struct NativeDistributionReadinessEvidence: Hashable {
             && fileContains(retirementAuditPath, "Native Deletion Order")
             && fileContains(retirementAuditPath, "Current Legacy Surfaces")
         let blockers = legacyDeletionBlockers(
-            m1Ready: m1Ready,
-            m2Ready: m2Ready,
-            realLifecycleProven: realLifecycleProven,
+            conditions: conditions,
             legacyStillPresent: legacyStillPresent,
             hasRetirementAudit: hasRetirementAudit,
             retirementAuditPath: retirementAuditPath
         )
-        let ready = m1Ready && m2Ready && realLifecycleProven && legacyStillPresent.isEmpty
+        let ready = conditions.allSatisfy { $0.status == .ready } && legacyStillPresent.isEmpty
         return NativeDistributionCheck(
             requirement: .legacyDeletion,
             status: ready ? .ready : .blocked,
@@ -186,23 +236,16 @@ struct NativeDistributionReadinessEvidence: Hashable {
     }
 
     private static func legacyDeletionBlockers(
-        m1Ready: Bool,
-        m2Ready: Bool,
-        realLifecycleProven: Bool,
+        conditions: [NativeLegacyDeletionConditionEvidence],
         legacyStillPresent: [String],
         hasRetirementAudit: Bool,
         retirementAuditPath: String
     ) -> [String] {
         var blockers: [String] = []
-        if !m1Ready {
-            blockers.append("M1 main workflow acceptance is not ready.")
-        }
-        if !m2Ready {
-            blockers.append("M2 Native Local Core is not ready.")
-        }
-        if !realLifecycleProven {
-            blockers.append("No real archived workspace lifecycle proof is available.")
-        }
+        blockers.append(contentsOf: conditions
+            .filter { $0.status != .ready }
+            .map { "\($0.condition.label): \($0.detail)" }
+        )
         if !legacyStillPresent.isEmpty {
             blockers.append("Legacy directories still exist: \(legacyStillPresent.joined(separator: ", ")).")
             if hasRetirementAudit {
@@ -213,6 +256,100 @@ struct NativeDistributionReadinessEvidence: Hashable {
             blockers.append("Legacy retirement audit is missing or incomplete: \(retirementAuditPath).")
         }
         return blockers
+    }
+
+    private static func legacyDeletionConditionEvidence(
+        repositoryRoot: String,
+        m1Ready: Bool,
+        m2Ready: Bool,
+        realLifecycleProven: Bool,
+        installTargetStatus: WorkflowPathStatus,
+        fileExists: (String) -> Bool,
+        fileContains: (String, String) -> Bool
+    ) -> [NativeLegacyDeletionConditionEvidence] {
+        let ciWorkflow = "\(repositoryRoot)/.github/workflows/ci.yml"
+        let releaseWorkflow = "\(repositoryRoot)/.github/workflows/release.yml"
+        let releaseDoc = "\(repositoryRoot)/docs/release-process.md"
+        let distributionDoc = "\(repositoryRoot)/docs/distribution.md"
+        let testsPath = "\(repositoryRoot)/native/Nexus/Tests/NexusAppTests/ModelBehaviorTests.swift"
+        let packagePath = "\(repositoryRoot)/package.json"
+        let appBuildValidated = fileContains(ciWorkflow, "npm run native:build")
+            || fileContains(ciWorkflow, "swift test --package-path native/Nexus")
+            || fileContains(ciWorkflow, "swift test")
+        let widgetPathValidated = fileContains(ciWorkflow, "npm run widget:typecheck")
+            || fileContains(packagePath, "widget:typecheck")
+        let swiftReplacementTests = fileExists(testsPath)
+            && fileContains(testsPath, "testNativeStoresCanProveEndToEndWorkspaceLifecycle")
+            && fileContains(testsPath, "testNativeWorkspaceCreationStoreWritesStandardWorkspaceAndAudit")
+        let releaseStillTauri = fileContains(releaseWorkflow, "tauri")
+            || fileContains(releaseWorkflow, "src-tauri")
+            || fileContains(releaseDoc, "Tauri")
+            || fileContains(releaseDoc, "src-tauri")
+            || fileContains(distributionDoc, "Tauri")
+            || fileContains(distributionDoc, "src-tauri")
+
+        return [
+            NativeLegacyDeletionConditionEvidence(
+                condition: .nativeMainPath,
+                status: m1Ready ? .ready : .blocked,
+                detail: m1Ready
+                    ? "M1 main workflow acceptance is ready."
+                    : "M1 main workflow acceptance is not ready.",
+                evidence: ["MainWorkflowAcceptanceEvidence"]
+            ),
+            NativeLegacyDeletionConditionEvidence(
+                condition: .nativeInstallTarget,
+                status: installTargetStatus == .ready ? .ready : .blocked,
+                detail: installTargetStatus == .ready
+                    ? "Native app can be built as an installable app bundle path."
+                    : "Native install target is not ready.",
+                evidence: [
+                    "native/Nexus/Package.swift",
+                    "native/Nexus/Scripts/build-app-bundle.sh",
+                    "native/Nexus/Packaging/Info.plist"
+                ]
+            ),
+            NativeLegacyDeletionConditionEvidence(
+                condition: .nativeLocalCore,
+                status: m2Ready ? .ready : .blocked,
+                detail: m2Ready
+                    ? "M2 Native Local Core is ready."
+                    : "M2 Native Local Core is not ready.",
+                evidence: ["NativeLocalCoreEvidence"]
+            ),
+            NativeLegacyDeletionConditionEvidence(
+                condition: .swiftReplacements,
+                status: swiftReplacementTests ? .ready : .blocked,
+                detail: swiftReplacementTests
+                    ? "Swift-native lifecycle and workspace creation tests replace legacy sample-flow reliance."
+                    : "Swift-native replacements for sample data and lifecycle tests are missing.",
+                evidence: [testsPath]
+            ),
+            NativeLegacyDeletionConditionEvidence(
+                condition: .ciNativeValidation,
+                status: appBuildValidated && widgetPathValidated ? .ready : .blocked,
+                detail: appBuildValidated && widgetPathValidated
+                    ? "CI validates the Native app and WidgetKit path directly."
+                    : "CI must validate both the Native app and WidgetKit path directly.",
+                evidence: [ciWorkflow, packagePath]
+            ),
+            NativeLegacyDeletionConditionEvidence(
+                condition: .releaseDocsNativeOnly,
+                status: releaseStillTauri ? .blocked : .ready,
+                detail: releaseStillTauri
+                    ? "Release docs or workflows still point to Tauri artifacts."
+                    : "Release docs and workflows no longer point users to Tauri artifacts.",
+                evidence: [releaseWorkflow, releaseDoc, distributionDoc]
+            ),
+            NativeLegacyDeletionConditionEvidence(
+                condition: .realLifecycleProof,
+                status: realLifecycleProven ? .ready : .blocked,
+                detail: realLifecycleProven
+                    ? "A real archived workspace lifecycle proof is available."
+                    : "No real archived workspace lifecycle proof is available.",
+                evidence: ["NativeLifecycleProofEvidence", "native-lifecycle-proof.json"]
+            )
+        ]
     }
 
     private static func releaseReadinessCheck(
