@@ -4040,7 +4040,9 @@ final class AppState: ObservableObject {
             path: response.path,
             folder: response.folder,
             generatedFiles: response.generatedFiles,
-            initializationChecks: checks
+            initializationChecks: checks,
+            auditEventID: response.auditEventID,
+            auditEventPath: response.auditEventPath
         )
     }
 

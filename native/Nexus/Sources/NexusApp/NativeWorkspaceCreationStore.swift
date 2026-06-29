@@ -56,13 +56,20 @@ enum NativeWorkspaceCreationStore {
             generatedFiles: generatedFiles,
             initializationChecks: initializationChecks
         )
-        appendAuditEvent(
+        let audit = appendAuditEvent(
             request: request,
             response: response,
             services: services,
             targetBranch: targetBranch
         )
-        return response
+        return CreateWorkspaceResponse(
+            path: response.path,
+            folder: response.folder,
+            generatedFiles: response.generatedFiles,
+            initializationChecks: response.initializationChecks,
+            auditEventID: audit?.event.id,
+            auditEventPath: audit?.path
+        )
     }
 
     private static func expandedURL(for path: String) -> URL {
@@ -217,12 +224,12 @@ enum NativeWorkspaceCreationStore {
         response: CreateWorkspaceResponse,
         services: [String],
         targetBranch: String
-    ) {
+    ) -> AppendAuditEventResponse? {
         guard let auditRoot = request.auditRoot?.trimmingCharacters(in: .whitespacesAndNewlines),
               !auditRoot.isEmpty else {
-            return
+            return nil
         }
-        _ = try? NativeAuditEventStore.append(
+        return try? NativeAuditEventStore.append(
             auditRoot: auditRoot,
             event: AuditEventInput(
                 actor: request.actor ?? "Nexus Native",

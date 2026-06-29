@@ -1578,6 +1578,8 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(deliveryContent.contains("正式 SQL 与回滚 SQL 文件"))
         XCTAssertTrue(agentsContent.contains("交付收尾前必须复核 `acceptance.md`、`交付记录.md` 和 `sql/`"))
         XCTAssertTrue(indexContent.contains("| Demo Feature | analyzing | chen/demo-feature | order, store-cashier | `2026-06-29-demo-feature` |"))
+        XCTAssertEqual(response.auditEventID, events.first?.id)
+        XCTAssertEqual(response.auditEventPath, auditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path)
         XCTAssertEqual(events.first?.action, "workspace.created")
         XCTAssertEqual(events.first?.actor, "Nexus Test")
         XCTAssertEqual(events.first?.metadata["services"], "order,store-cashier")
@@ -1635,7 +1637,9 @@ final class ModelBehaviorTests: XCTestCase {
                     detail: "ok",
                     status: "pass"
                 )
-            ]
+            ],
+            auditEventID: "audit-create-1",
+            auditEventPath: "/tmp/audit/events.jsonl"
         )
         let visibleWorkspace = workspaceForWorkflowSummary(
             stage: "scoping",
@@ -1649,6 +1653,8 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(visibleCheck?.status, "pass")
         XCTAssertTrue(visibleCheck?.detail.contains("已扫描到新工作区") == true)
         XCTAssertEqual(visibleResponse.scanVisibilityCheck?.id, "workspace-scan-visible")
+        XCTAssertEqual(visibleResponse.auditEventID, "audit-create-1")
+        XCTAssertEqual(visibleResponse.auditEventPath, "/tmp/audit/events.jsonl")
         XCTAssertEqual(visibleResponse.isVisibleAfterRefresh, true)
         XCTAssertFalse(visibleResponse.needsVisibilityRecovery)
         XCTAssertTrue(visibleResponse.visibilityRecoveryTitle.contains("已出现在扫描结果"))
@@ -4652,6 +4658,8 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(response.failed.isEmpty)
         XCTAssertTrue(response.command.contains("git -C"))
         XCTAssertTrue(FileManager.default.fileExists(atPath: workspace.appendingPathComponent("repos/order/.git").path))
+        XCTAssertEqual(response.auditEventID, firstEvents.first?.id)
+        XCTAssertEqual(response.auditEventPath, auditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path)
         XCTAssertEqual(firstEvents.first?.action, "worktree_setup.executed")
         XCTAssertEqual(firstEvents.first?.actor, "Nexus Test")
         XCTAssertEqual(firstEvents.first?.metadata["created"], "1")
@@ -4673,6 +4681,8 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(second.created.isEmpty)
         XCTAssertEqual(second.skipped.map(\.service), ["order"])
         XCTAssertTrue(second.failed.isEmpty)
+        XCTAssertEqual(second.auditEventID, secondEvents.first?.id)
+        XCTAssertEqual(second.auditEventPath, auditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path)
         XCTAssertEqual(secondEvents.first?.metadata["created"], "0")
         XCTAssertEqual(secondEvents.first?.metadata["skipped"], "1")
         XCTAssertEqual(secondEvents.first?.metadata["skippedServices"], "order")

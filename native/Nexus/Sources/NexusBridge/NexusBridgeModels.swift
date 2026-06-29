@@ -238,17 +238,23 @@ public struct CreateWorkspaceResponse: Codable, Equatable, Sendable {
     public let folder: String
     public let generatedFiles: [WorkspaceInitializationFile]?
     public let initializationChecks: [WorkspaceInitializationCheck]?
+    public let auditEventID: String?
+    public let auditEventPath: String?
 
     public init(
         path: String,
         folder: String,
         generatedFiles: [WorkspaceInitializationFile]? = nil,
-        initializationChecks: [WorkspaceInitializationCheck]? = nil
+        initializationChecks: [WorkspaceInitializationCheck]? = nil,
+        auditEventID: String? = nil,
+        auditEventPath: String? = nil
     ) {
         self.path = path
         self.folder = folder
         self.generatedFiles = generatedFiles
         self.initializationChecks = initializationChecks
+        self.auditEventID = auditEventID
+        self.auditEventPath = auditEventPath
     }
 }
 
@@ -317,6 +323,8 @@ public struct SetupWorktreesResponse: Codable, Equatable, Sendable {
     public let created: [WorktreeSetupResult]
     public let skipped: [WorktreeSetupResult]
     public let failed: [WorktreeSetupResult]
+    public let auditEventID: String?
+    public let auditEventPath: String?
 
     public init(
         workspacePath: String,
@@ -324,7 +332,9 @@ public struct SetupWorktreesResponse: Codable, Equatable, Sendable {
         command: String,
         created: [WorktreeSetupResult],
         skipped: [WorktreeSetupResult],
-        failed: [WorktreeSetupResult]
+        failed: [WorktreeSetupResult],
+        auditEventID: String? = nil,
+        auditEventPath: String? = nil
     ) {
         self.workspacePath = workspacePath
         self.targetBranch = targetBranch
@@ -332,6 +342,8 @@ public struct SetupWorktreesResponse: Codable, Equatable, Sendable {
         self.created = created
         self.skipped = skipped
         self.failed = failed
+        self.auditEventID = auditEventID
+        self.auditEventPath = auditEventPath
     }
 }
 
