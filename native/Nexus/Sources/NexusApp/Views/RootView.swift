@@ -3383,8 +3383,9 @@ private struct WorkspaceBoardHeader: View {
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("面板 / Board")
+                Text(WorkspaceBoardCopy.title)
                     .font(.title3.weight(.semibold))
+                    .help(WorkspaceBoardCopy.titleHelp)
                 Text("全量项目视角，不受 Console 筛选影响；点击卡片进入单项目控制台。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -3405,7 +3406,8 @@ private struct WorkspaceBoardHeader: View {
 
                 Picker("面板范围 / Board scope", selection: $scope) {
                     ForEach(WorkspaceBoardScope.allCases) { scope in
-                        Text("\(scope.label) / \(scope.englishLabel)")
+                        Text(scope.label)
+                            .help(scope.helpText)
                             .tag(scope)
                     }
                 }
@@ -3429,9 +3431,10 @@ private struct BoardMetric: View {
             Text("\(value)")
                 .font(.system(size: 18, weight: .semibold, design: .monospaced))
                 .foregroundStyle(tone)
-            Text("\(label) / \(english)")
+            Text(label)
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
                 .foregroundStyle(.secondary)
+                .help(english)
         }
         .frame(minWidth: 72, alignment: .trailing)
     }
@@ -3451,9 +3454,10 @@ private struct WorkspaceBoardColumnView: View {
                     Text(column.title)
                         .font(.caption.weight(.semibold))
                         .lineLimit(1)
-                    Text("\(column.count) workspaces")
+                    Text(WorkspaceBoardCopy.workspaceCount(column.count))
                         .font(.system(size: 10, weight: .medium, design: .monospaced))
                         .foregroundStyle(.secondary)
+                        .help(WorkspaceBoardCopy.workspaceCountHelp(column.count))
                 }
                 Spacer()
             }
@@ -3508,13 +3512,11 @@ private struct WorkspaceBoardCard: View {
             !service.gitSummary.localizedCaseInsensitiveContains("clean")
         }.count
 
-        if missingCount > 0 {
-            return "\(missingCount) missing"
-        }
-        if dirtyCount > 0 {
-            return "\(dirtyCount) dirty"
-        }
-        return "\(workspace.services.count) ready"
+        return WorkspaceBoardCopy.worktreeSummary(
+            serviceCount: workspace.services.count,
+            missingCount: missingCount,
+            dirtyCount: dirtyCount
+        )
     }
 
     private var serviceChips: [String] {
@@ -3563,7 +3565,7 @@ private struct WorkspaceBoardCard: View {
                 VStack(alignment: .leading, spacing: 6) {
                     BoardInfoRow(label: "分支", value: workspace.branch, systemImage: "arrow.triangle.branch")
                     BoardInfoRow(label: "下一步", value: stage.primaryActionLabel, systemImage: stage.primaryActionSystemImage)
-                    BoardInfoRow(label: "任务", value: "\(activeTaskCount) active", systemImage: "checklist")
+                    BoardInfoRow(label: "任务", value: WorkspaceBoardCopy.activeTaskCount(activeTaskCount), systemImage: "checklist")
                     BoardInfoRow(label: "Worktree", value: worktreeSummary, systemImage: "externaldrive")
                 }
 
@@ -3590,9 +3592,10 @@ private struct WorkspaceBoardCard: View {
                     }
                 }
 
-                Label("打开控制台 / Open Console", systemImage: "rectangle.and.text.magnifyingglass")
+                Label(WorkspaceBoardCopy.openConsoleLabel, systemImage: "rectangle.and.text.magnifyingglass")
                     .font(.caption.weight(.medium))
                     .foregroundStyle(NexusPalette.accent)
+                    .help(WorkspaceBoardCopy.openConsoleHelp)
             }
             .padding(11)
             .frame(maxWidth: .infinity, alignment: .leading)

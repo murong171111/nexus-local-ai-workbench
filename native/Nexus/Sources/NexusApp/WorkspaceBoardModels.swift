@@ -87,6 +87,10 @@ enum WorkspaceBoardScope: String, CaseIterable, Hashable, Identifiable {
         }
     }
 
+    var helpText: String {
+        englishLabel
+    }
+
     func filter(_ workspaces: [WorkspaceSummary]) -> [WorkspaceSummary] {
         workspaces.filter(matches)
     }
@@ -129,6 +133,35 @@ extension WorkspaceSummary {
                 || service.sourceExists == false
                 || !service.gitSummary.localizedCaseInsensitiveContains("clean")
         }
+    }
+}
+
+struct WorkspaceBoardCopy: Hashable {
+    static let title = "工作区面板"
+    static let titleHelp = "Board"
+    static let openConsoleLabel = "打开控制台"
+    static let openConsoleHelp = "Open Console"
+
+    static func workspaceCount(_ count: Int) -> String {
+        "\(count) 个工作区"
+    }
+
+    static func workspaceCountHelp(_ count: Int) -> String {
+        "\(count) workspaces"
+    }
+
+    static func activeTaskCount(_ count: Int) -> String {
+        "\(count) 个进行中"
+    }
+
+    static func worktreeSummary(serviceCount: Int, missingCount: Int, dirtyCount: Int) -> String {
+        if missingCount > 0 {
+            return "\(missingCount) 缺失"
+        }
+        if dirtyCount > 0 {
+            return "\(dirtyCount) 有改动"
+        }
+        return "\(serviceCount) 就绪"
     }
 }
 

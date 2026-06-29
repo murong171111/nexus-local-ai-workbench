@@ -185,6 +185,34 @@ final class ModelBehaviorTests: XCTestCase {
         )
     }
 
+    func testWorkspaceBoardDefaultCopyKeepsEnglishInHelpText() {
+        XCTAssertEqual(WorkspaceBoardCopy.title, "工作区面板")
+        XCTAssertEqual(WorkspaceBoardCopy.titleHelp, "Board")
+        XCTAssertEqual(WorkspaceBoardCopy.openConsoleLabel, "打开控制台")
+        XCTAssertEqual(WorkspaceBoardCopy.openConsoleHelp, "Open Console")
+        XCTAssertEqual(WorkspaceBoardCopy.workspaceCount(2), "2 个工作区")
+        XCTAssertEqual(WorkspaceBoardCopy.workspaceCountHelp(2), "2 workspaces")
+        XCTAssertEqual(WorkspaceBoardCopy.activeTaskCount(3), "3 个进行中")
+        XCTAssertEqual(
+            WorkspaceBoardCopy.worktreeSummary(serviceCount: 3, missingCount: 1, dirtyCount: 0),
+            "1 缺失"
+        )
+        XCTAssertEqual(
+            WorkspaceBoardCopy.worktreeSummary(serviceCount: 3, missingCount: 0, dirtyCount: 2),
+            "2 有改动"
+        )
+        XCTAssertEqual(
+            WorkspaceBoardCopy.worktreeSummary(serviceCount: 3, missingCount: 0, dirtyCount: 0),
+            "3 就绪"
+        )
+
+        for scope in WorkspaceBoardScope.allCases {
+            XCTAssertFalse(scope.label.contains("/"))
+            XCTAssertEqual(scope.helpText, scope.englishLabel)
+            XCTAssertFalse(scope.helpText.isEmpty)
+        }
+    }
+
     func testNativeStatusDiagnosticsReportsDirectoriesIndexWidgetAndAuditTarget() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-native-diagnostics-\(UUID().uuidString)")
