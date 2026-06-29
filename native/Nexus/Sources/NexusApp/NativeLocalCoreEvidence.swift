@@ -182,6 +182,7 @@ private extension NativeLocalCoreDomain {
         case .workspaceScanning:
             [
                 "native/Nexus/Sources/NexusApp/NativeWorkspaceScanner.swift",
+                "native/Nexus/Sources/NexusApp/NativeWorkspaceCreationStore.swift",
                 "native/Nexus/Sources/NexusApp/AppState.swift"
             ]
         case .documentInventory:

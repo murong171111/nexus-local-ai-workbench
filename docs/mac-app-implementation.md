@@ -111,6 +111,7 @@ See `docs/adr/0001-native-swiftui-rust-core.md` and `docs/native-architecture.md
 - Added configurable native IDE handoff from the Command Center local tool lane, backed by a Settings URL template that defaults to IntelliJ IDEA and is included in exported team profiles.
 - Added workspace-link copy to the Command Center local tool lane, using the registered `nexus://workspace/<folder>` format and a right-inspector feedback card.
 - Added native workspace creation based on the `ks-project-demand-workspace` standard layout.
+- Moved native workspace skeleton creation to Swift Native, including standard Markdown files, SQL/log/repos/scripts directories, initialization receipt, `INDEX.md`, and `workspace.created` audit events.
 - Added create-workspace preflight in the native sheet for workspaces root readiness, folder validity, destination collisions, environment health, and scope review before confirmed local writes.
 - Added native source repository scanning for service selection.
 - Added native environment health checks for configured paths and Git availability.

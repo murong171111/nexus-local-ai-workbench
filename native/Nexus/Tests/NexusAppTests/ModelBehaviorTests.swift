@@ -1022,6 +1022,11 @@ final class ModelBehaviorTests: XCTestCase {
                 "native/Nexus/Sources/NexusApp/NativeDocumentStore.swift"
             ]
         )
+        XCTAssertTrue(
+            fullyNative.domains.first { $0.domain == .workspaceScanning }?.evidence.contains(
+                "native/Nexus/Sources/NexusApp/NativeWorkspaceCreationStore.swift"
+            ) ?? false
+        )
         XCTAssertEqual(
             fullyNative.domains.first { $0.domain == .demandIntake }?.evidence,
             [
@@ -1083,6 +1088,90 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(evidence.migrationSummary, "8/10 Native domains · 2 partial")
         XCTAssertTrue(evidence.reason.contains("已无 blocked 域"))
         XCTAssertEqual(evidence.domains.filter { $0.status == .review }.map(\.domain), [.workspaceScanning, .gitWorktreeStatus])
+    }
+
+    func testNativeWorkspaceCreationStoreWritesStandardWorkspaceAndAudit() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-create-workspace-\(UUID().uuidString)")
+        let auditRoot = root.appendingPathComponent("audit")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let response = try NativeWorkspaceCreationStore.create(
+            request: CreateWorkspaceRequest(
+                name: "Demo Feature",
+                folder: "2026-06-29-demo-feature",
+                workspacesRoot: root.path,
+                sourceReposRoot: "~/source-repos",
+                services: [" order ", "", "store-cashier"],
+                targetBranch: "chen/demo-feature",
+                confirmed: true,
+                auditRoot: auditRoot.path,
+                actor: "Nexus Test"
+            )
+        )
+        let workspaceURL = URL(fileURLWithPath: response.path)
+        let servicesContent = try String(contentsOf: workspaceURL.appendingPathComponent("services.md"), encoding: .utf8)
+        let deliveryContent = try String(contentsOf: workspaceURL.appendingPathComponent("交付记录.md"), encoding: .utf8)
+        let agentsContent = try String(contentsOf: workspaceURL.appendingPathComponent("AGENTS.md"), encoding: .utf8)
+        let indexContent = try String(contentsOf: root.appendingPathComponent("INDEX.md"), encoding: .utf8)
+        let events = try NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 5)
+
+        XCTAssertEqual(response.folder, "2026-06-29-demo-feature")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: workspaceURL.appendingPathComponent("repos").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: workspaceURL.appendingPathComponent("scripts/worktree-commands.sh").path))
+        XCTAssertTrue(response.generatedFiles?.contains { $0.relativePath == "STATUS.md" && $0.exists } ?? false)
+        XCTAssertTrue(response.initializationChecks?.contains { $0.id == "status-initial-state" && $0.status == "pass" } ?? false)
+        XCTAssertTrue(response.initializationChecks?.contains { $0.id == "service-scope" && $0.status == "pass" } ?? false)
+        XCTAssertTrue(servicesContent.contains("| order | `~/source-repos/order` | 初始确认 |"))
+        XCTAssertTrue(servicesContent.contains("| store-cashier | `~/source-repos/store-cashier` | 初始确认 |"))
+        XCTAssertTrue(deliveryContent.contains("- 分支: chen/demo-feature"))
+        XCTAssertTrue(deliveryContent.contains("正式 SQL 与回滚 SQL 文件"))
+        XCTAssertTrue(agentsContent.contains("交付收尾前必须复核 `acceptance.md`、`交付记录.md` 和 `sql/`"))
+        XCTAssertTrue(indexContent.contains("| Demo Feature | analyzing | chen/demo-feature | order, store-cashier | `2026-06-29-demo-feature` |"))
+        XCTAssertEqual(events.first?.action, "workspace.created")
+        XCTAssertEqual(events.first?.actor, "Nexus Test")
+        XCTAssertEqual(events.first?.metadata["services"], "order,store-cashier")
+    }
+
+    func testNativeWorkspaceCreationStoreRequiresConfirmationAndSafeFolder() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-create-workspace-reject-\(UUID().uuidString)")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        XCTAssertThrowsError(
+            try NativeWorkspaceCreationStore.create(
+                request: CreateWorkspaceRequest(
+                    name: "Unsafe",
+                    folder: "2026-06-29-unsafe",
+                    workspacesRoot: root.path,
+                    sourceReposRoot: "~/source-repos",
+                    services: [],
+                    targetBranch: "",
+                    confirmed: false
+                )
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("explicit confirmation"))
+        }
+        XCTAssertThrowsError(
+            try NativeWorkspaceCreationStore.create(
+                request: CreateWorkspaceRequest(
+                    name: "Unsafe",
+                    folder: "../unsafe",
+                    workspacesRoot: root.path,
+                    sourceReposRoot: "~/source-repos",
+                    services: [],
+                    targetBranch: "",
+                    confirmed: true
+                )
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("safe single directory"))
+        }
     }
 
     func testNativeDocumentStoreReadsLocalSnapshots() throws {
