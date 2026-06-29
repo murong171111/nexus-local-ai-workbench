@@ -41,6 +41,8 @@ final class ModelBehaviorTests: XCTestCase {
             "struct WorkspaceStageAnswer",
             "struct WorkspaceListStageBadge",
             "struct WorkspaceListSummary",
+            "struct NativeStatusDiagnostics",
+            "enum WorkspaceBoardEmptyStateReason",
             "struct WorkspaceDetailNavigationItem",
             "func mainStage("
         ]
@@ -69,6 +71,7 @@ final class ModelBehaviorTests: XCTestCase {
             "WorkspaceMainStageEvidence.swift",
             "WorkspaceListStageBadges.swift",
             "WorkspaceListSummary.swift",
+            "NativeStatusDiagnostics.swift",
             "WorkspaceDetailNavigation.swift",
             "DemandIntakeActions.swift",
             "CommandCenterLayout.swift"
@@ -133,6 +136,111 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(blocked.status.environmentStatus, "blocker")
         XCTAssertTrue(blocked.detail.contains("1 blockers"))
         XCTAssertTrue(blocked.detail.contains("Settings"))
+    }
+
+    func testWorkspaceBoardEmptyStateReasonSeparatesSetupDirectoryAndFilterStates() {
+        let unchecked = NativeSetupReadiness(
+            health: nil,
+            workspaceCount: 0,
+            profileImported: false
+        )
+        let readyEmpty = NativeSetupReadiness(
+            health: environmentHealth(ready: true, workspaceCount: 0, sourceRepoCount: 2),
+            workspaceCount: 0,
+            profileImported: true
+        )
+        let workspace = workspaceForWorkflowSummary(stage: "developing", id: "empty-state-filtered")
+        let filteredSummary = WorkspaceListSummary(workspaces: [workspace])
+
+        XCTAssertEqual(
+            WorkspaceBoardEmptyStateReason.resolve(
+                summary: WorkspaceListSummary(workspaces: []),
+                visibleCount: 0,
+                readiness: unchecked
+            ),
+            .unconfigured
+        )
+        XCTAssertEqual(
+            WorkspaceBoardEmptyStateReason.resolve(
+                summary: WorkspaceListSummary(workspaces: []),
+                visibleCount: 0,
+                readiness: readyEmpty
+            ),
+            .configuredNoDirectories
+        )
+        XCTAssertEqual(
+            WorkspaceBoardEmptyStateReason.resolve(
+                summary: filteredSummary,
+                visibleCount: 0,
+                readiness: readyEmpty
+            ),
+            .filteredNoResults
+        )
+        XCTAssertNil(
+            WorkspaceBoardEmptyStateReason.resolve(
+                summary: filteredSummary,
+                visibleCount: 1,
+                readiness: readyEmpty
+            )
+        )
+    }
+
+    func testNativeStatusDiagnosticsReportsDirectoriesIndexWidgetAndAuditTarget() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-diagnostics-\(UUID().uuidString)")
+        let workspacesRoot = root.appendingPathComponent("workspaces")
+        let auditRoot = root.appendingPathComponent("audit")
+        let target = root.appendingPathComponent("target.md")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try FileManager.default.createDirectory(at: workspacesRoot, withIntermediateDirectories: true)
+        try """
+        # Workspaces
+
+        | Workspace | State |
+        | --- | --- |
+        | Demo Feature | developing |
+        """.write(to: workspacesRoot.appendingPathComponent("INDEX.md"), atomically: true, encoding: .utf8)
+        try "target\n".write(to: target, atomically: true, encoding: .utf8)
+        _ = try NativeAuditEventStore.append(
+            auditRoot: auditRoot.path,
+            event: AuditEventInput(
+                actor: "Nexus Native",
+                action: "workspace.created",
+                target: target.path,
+                summary: "Created workspace"
+            )
+        )
+
+        let diagnostics = NativeStatusDiagnostics.resolve(
+            workspaceRoot: workspacesRoot.path,
+            health: environmentHealth(ready: true, workspaceCount: 3, sourceRepoCount: 2),
+            widgetSnapshot: WidgetSnapshot(
+                generatedAt: "2026-06-29T12:00:00Z",
+                workspacesRoot: workspacesRoot.path,
+                activeWorkspace: nil,
+                activeWorkspaceFolder: nil,
+                workspaceCount: 0,
+                riskCount: 0,
+                dirtyServiceCount: 0,
+                missingWorktreeCount: 0,
+                topRisks: [],
+                deepLink: "nexus://"
+            ),
+            auditRoot: auditRoot.path
+        )
+
+        XCTAssertEqual(diagnostics.workspaceDirectoryCount, 3)
+        XCTAssertEqual(diagnostics.indexRecordCount, 1)
+        XCTAssertEqual(diagnostics.widgetUpdatedAt, "2026-06-29T12:00:00Z")
+        XCTAssertEqual(diagnostics.latestAuditAction, "workspace.created")
+        XCTAssertEqual(diagnostics.latestAuditTarget, target.path)
+        XCTAssertEqual(diagnostics.latestAuditTargetExists, true)
+        XCTAssertEqual(diagnostics.directoryValue, "3")
+        XCTAssertEqual(diagnostics.indexValue, "1")
+        XCTAssertEqual(diagnostics.widgetValue, "2026-06-29T12:00:00Z")
+        XCTAssertTrue(diagnostics.auditValue.contains("target exists"))
     }
 
     func testMenuBarStatusSummaryPrioritizesBlockedWorkspaces() {
@@ -2581,6 +2689,7 @@ final class ModelBehaviorTests: XCTestCase {
         ])
         XCTAssertTrue(layout.keepsSecondaryActionsAfterEvidence)
         XCTAssertTrue(layout.secondaryActions.isSecondarySurface)
+        XCTAssertFalse(layout.secondaryActions.usesProminentButtons)
         XCTAssertEqual(layout.secondaryActions.groups, [.handoff, .next, .local])
         XCTAssertEqual(layout.secondaryActions.groups.map(\.title), [
             "交接 / Handoff",

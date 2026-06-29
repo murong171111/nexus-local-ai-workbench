@@ -482,6 +482,15 @@ final class AppState: ObservableObject {
         )
     }
 
+    var nativeStatusDiagnostics: NativeStatusDiagnostics {
+        NativeStatusDiagnostics.resolve(
+            workspaceRoot: workspaceRoot,
+            health: nativeEnvironmentHealth,
+            widgetSnapshot: widgetSnapshot,
+            auditRoot: auditRootPath
+        )
+    }
+
     private var applicationSupportRootPath: String {
         guard let applicationSupport = FileManager.default.urls(
             for: .applicationSupportDirectory,

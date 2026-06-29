@@ -3326,6 +3326,14 @@ private struct WorkspaceBoardView: View {
         WorkspaceListSummary(workspaces: workspaces)
     }
 
+    private var emptyStateReason: WorkspaceBoardEmptyStateReason? {
+        WorkspaceBoardEmptyStateReason.resolve(
+            summary: summary,
+            visibleCount: visibleWorkspaces.count,
+            readiness: appState.setupReadiness
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             WorkspaceBoardHeader(
@@ -3340,7 +3348,10 @@ private struct WorkspaceBoardView: View {
             Divider()
 
             if visibleWorkspaces.isEmpty {
-                WorkspaceBoardEmptyState(scope: boardScope, hasGlobalWorkspaces: !workspaces.isEmpty)
+                WorkspaceBoardEmptyState(
+                    reason: emptyStateReason ?? .filteredNoResults,
+                    diagnostics: appState.nativeStatusDiagnostics
+                )
                     .padding(18)
             } else {
                 ScrollView([.horizontal, .vertical]) {
@@ -3620,28 +3631,46 @@ private struct BoardInfoRow: View {
 }
 
 private struct WorkspaceBoardEmptyState: View {
-    let scope: WorkspaceBoardScope
-    let hasGlobalWorkspaces: Bool
+    let reason: WorkspaceBoardEmptyStateReason
+    let diagnostics: NativeStatusDiagnostics
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("当前筛选下没有工作区 / No board items", systemImage: "rectangle.grid.2x2")
+            Label(reason.title, systemImage: reason.systemImage)
                 .font(.headline)
-            Text(emptyMessage)
+            Text(reason.detail)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            HStack(spacing: 14) {
+                DiagnosticMetric(label: "目录", value: diagnostics.directoryValue)
+                DiagnosticMetric(label: "INDEX", value: diagnostics.indexValue)
+                DiagnosticMetric(label: "Widget", value: diagnostics.widgetValue)
+                DiagnosticMetric(label: "Audit", value: diagnostics.auditValue)
+            }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(NexusPalette.panel)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
+}
 
-    private var emptyMessage: String {
-        if !hasGlobalWorkspaces {
-            return "还没有扫描到工作区。先检查 Settings 的 Workspaces root，或新建一个工作区。"
+private struct DiagnosticMetric: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .lineLimit(1)
+                .truncationMode(.middle)
         }
-        return "当前 Board 范围是 \(scope.label) / \(scope.englishLabel)，可以切回全部查看所有项目。"
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -10124,7 +10153,7 @@ private struct CommandCenterQuickActionsView: View {
                 } label: {
                     Label("交接 Codex", systemImage: "point.3.connected.trianglepath.dotted")
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.bordered)
                 .controlSize(.small)
 
                 Button {

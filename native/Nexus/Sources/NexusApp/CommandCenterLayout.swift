@@ -33,6 +33,10 @@ struct CommandCenterSecondaryActionLayout: Hashable {
     var isSecondarySurface: Bool {
         true
     }
+
+    var usesProminentButtons: Bool {
+        false
+    }
 }
 
 enum CommandCenterLayoutSection: String, CaseIterable, Hashable {
