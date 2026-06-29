@@ -72,6 +72,14 @@ jobs:
             --identity "$APPLE_SIGNING_IDENTITY" \
             --skip-notarization
 
+      - name: Verify Native app signature
+        if: ${{ env.APPLE_SIGNING_IDENTITY != '' }}
+        shell: bash
+        run: |
+          native/Nexus/Scripts/verify-signing-notarization.sh \
+            --app dist/Nexus.app \
+            --require-app-signature
+
       - name: Package Native artifact
         shell: bash
         run: |
@@ -92,6 +100,15 @@ jobs:
             --team-id "$APPLE_TEAM_ID" \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_PASSWORD"
+
+      - name: Verify Native DMG signing and notarization
+        if: ${{ env.APPLE_SIGNING_IDENTITY != '' && env.APPLE_ID != '' && env.APPLE_TEAM_ID != '' && env.APPLE_PASSWORD != '' }}
+        shell: bash
+        run: |
+          native/Nexus/Scripts/verify-signing-notarization.sh \
+            --dmg "dist/nexus-native-${{ matrix.artifact }}.dmg" \
+            --require-dmg-signature \
+            --require-notarization
 
       - name: Generate Native checksum
         shell: bash

@@ -229,6 +229,7 @@ struct NativeDistributionReadinessEvidence: Hashable {
         let releaseWorkflow = "\(repositoryRoot)/.github/workflows/release.yml"
         let dmgScript = "\(repositoryRoot)/native/Nexus/Scripts/package-dmg.sh"
         let signingScript = "\(repositoryRoot)/native/Nexus/Scripts/sign-and-notarize.sh"
+        let signingVerifierScript = "\(repositoryRoot)/native/Nexus/Scripts/verify-signing-notarization.sh"
         let certificateImportScript = "\(repositoryRoot)/native/Nexus/Scripts/import-apple-certificate.sh"
         let releaseManifestScript = "\(repositoryRoot)/native/Nexus/Scripts/generate-release-manifest.sh"
         let releaseBundleVerifierScript = "\(repositoryRoot)/native/Nexus/Scripts/verify-release-bundle.sh"
@@ -260,6 +261,16 @@ struct NativeDistributionReadinessEvidence: Hashable {
             && fileContains(signingScript, "codesign")
             && fileContains(signingScript, "notarytool")
             && fileContains(releaseWorkflow, "sign-and-notarize.sh")
+        let hasSigningVerification = fileExists(signingVerifierScript)
+            && fileContains(signingVerifierScript, "codesign --verify")
+            && fileContains(signingVerifierScript, "spctl --assess")
+            && fileContains(signingVerifierScript, "stapler validate")
+            && fileContains(signingVerifierScript, "--require-app-signature")
+            && fileContains(signingVerifierScript, "--require-dmg-signature")
+            && fileContains(signingVerifierScript, "--require-notarization")
+            && fileContains(releaseWorkflow, "verify-signing-notarization.sh")
+            && fileContains(releaseWorkflow, "--require-app-signature")
+            && fileContains(releaseWorkflow, "--require-notarization")
         let hasCertificateImport = fileExists(certificateImportScript)
             && fileContains(certificateImportScript, "security import")
             && fileContains(certificateImportScript, "security create-keychain")
@@ -295,6 +306,7 @@ struct NativeDistributionReadinessEvidence: Hashable {
             hasReleaseManifest: hasReleaseManifest,
             hasReleaseBundleVerification: hasReleaseBundleVerification,
             hasSigningAndNotarization: hasSigningAndNotarization,
+            hasSigningVerification: hasSigningVerification,
             hasCertificateImport: hasCertificateImport,
             distributionMentionsNative: distributionMentionsNative,
             releaseDocMentionsNative: releaseDocMentionsNative,
@@ -306,9 +318,9 @@ struct NativeDistributionReadinessEvidence: Hashable {
             requirement: .releaseReadiness,
             status: ready ? .ready : .blocked,
             detail: ready
-                ? "Release docs, CI, certificate import, signing, notarization, structured updater policy, release notes, checksums, release manifest, bundle verification, and release workflow point at Swift-native DMG artifacts."
+                ? "Release docs, CI, certificate import, signing, signing verification, notarization verification, structured updater policy, release notes, checksums, release manifest, bundle verification, and release workflow point at Swift-native DMG artifacts."
                 : "Release readiness blockers: \(blockers.joined(separator: " "))",
-            evidence: [distributionDoc, releaseDoc, releaseNotesDoc, ciWorkflow, releaseWorkflow, dmgScript, signingScript, certificateImportScript, releaseManifestScript, releaseBundleVerifierScript]
+            evidence: [distributionDoc, releaseDoc, releaseNotesDoc, ciWorkflow, releaseWorkflow, dmgScript, signingScript, signingVerifierScript, certificateImportScript, releaseManifestScript, releaseBundleVerifierScript]
                 + releasePolicy.checks.flatMap(\.evidence)
                 + blockers
         )
@@ -325,6 +337,7 @@ struct NativeDistributionReadinessEvidence: Hashable {
         hasReleaseManifest: Bool,
         hasReleaseBundleVerification: Bool,
         hasSigningAndNotarization: Bool,
+        hasSigningVerification: Bool,
         hasCertificateImport: Bool,
         distributionMentionsNative: Bool,
         releaseDocMentionsNative: Bool,
@@ -361,6 +374,9 @@ struct NativeDistributionReadinessEvidence: Hashable {
         }
         if !hasSigningAndNotarization {
             blockers.append("Release workflow does not sign and notarize Native artifacts.")
+        }
+        if !hasSigningVerification {
+            blockers.append("Release workflow does not verify Native codesign, Gatekeeper, and stapled notarization evidence.")
         }
         if !hasCertificateImport {
             blockers.append("Release workflow does not import Apple Developer signing certificates.")

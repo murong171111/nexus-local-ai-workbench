@@ -2439,6 +2439,7 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(releaseReadiness?.detail.contains("Release workflow does not publish Native update manifest metadata.") == true)
         XCTAssertTrue(releaseReadiness?.detail.contains("Release workflow does not verify Native app, DMG, checksum, and manifest outputs.") == true)
         XCTAssertTrue(releaseReadiness?.detail.contains("Release workflow does not sign and notarize Native artifacts.") == true)
+        XCTAssertTrue(releaseReadiness?.detail.contains("Release workflow does not verify Native codesign, Gatekeeper, and stapled notarization evidence.") == true)
         XCTAssertTrue(releaseReadiness?.detail.contains("Release workflow does not import Apple Developer signing certificates.") == true)
         XCTAssertTrue(releaseReadiness?.detail.contains("Release notes gate is missing or incomplete") == true)
         XCTAssertTrue(releaseReadiness?.detail.contains("Updater policy gate is missing or incomplete") == true)
@@ -2687,6 +2688,7 @@ final class ModelBehaviorTests: XCTestCase {
             "\(root)/native/Nexus/Scripts/build-app-bundle.sh",
             "\(root)/native/Nexus/Scripts/package-dmg.sh",
             "\(root)/native/Nexus/Scripts/sign-and-notarize.sh",
+            "\(root)/native/Nexus/Scripts/verify-signing-notarization.sh",
             "\(root)/native/Nexus/Scripts/import-apple-certificate.sh",
             "\(root)/native/Nexus/Scripts/generate-release-manifest.sh",
             "\(root)/native/Nexus/Scripts/verify-release-bundle.sh",
@@ -2724,6 +2726,15 @@ final class ModelBehaviorTests: XCTestCase {
                     return path.hasSuffix("release.yml")
                 case "package-dmg.sh", ".dmg", "sign-and-notarize.sh", "shasum -a 256", "*.sha256", "generate-release-manifest.sh", "verify-release-bundle.sh", "--app dist/Nexus.app", "--assets-dir release-assets", "import-apple-certificate.sh", "APPLE_CERTIFICATE", "APPLE_CERTIFICATE_PASSWORD":
                     return path.hasSuffix("release.yml")
+                case "verify-signing-notarization.sh":
+                    return path.hasSuffix("release.yml")
+                case "--require-app-signature", "--require-notarization":
+                    return path.hasSuffix("release.yml")
+                        || path.hasSuffix("verify-signing-notarization.sh")
+                case "--require-dmg-signature":
+                    return path.hasSuffix("verify-signing-notarization.sh")
+                case "codesign --verify", "spctl --assess", "stapler validate":
+                    return path.hasSuffix("verify-signing-notarization.sh")
                 case ".dmg.sha256":
                     return path.hasSuffix("release.yml")
                         || path.hasSuffix("verify-release-notes.sh")
