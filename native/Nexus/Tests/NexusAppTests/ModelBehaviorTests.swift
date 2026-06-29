@@ -1334,6 +1334,40 @@ final class ModelBehaviorTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testWorkspaceCreationResponseRecordsScanVisibilityAfterRefresh() {
+        let response = CreateWorkspaceResponse(
+            path: "/tmp/workspaces/created-visible",
+            folder: "created-visible",
+            generatedFiles: [],
+            initializationChecks: [
+                WorkspaceInitializationCheck(
+                    id: "standard-files",
+                    label: "标准文件 / Standard files",
+                    detail: "ok",
+                    status: "pass"
+                )
+            ]
+        )
+        let visibleWorkspace = workspaceForWorkflowSummary(
+            stage: "scoping",
+            id: "created-visible",
+            folder: "created-visible",
+            path: "/tmp/workspaces/created-visible"
+        )
+
+        let visibleResponse = AppState.workspaceCreationResponse(response, verifiedAgainst: [visibleWorkspace])
+        let visibleCheck = visibleResponse.initializationChecks?.first { $0.id == "workspace-scan-visible" }
+        XCTAssertEqual(visibleCheck?.status, "pass")
+        XCTAssertTrue(visibleCheck?.detail.contains("已扫描到新工作区") == true)
+
+        let missingResponse = AppState.workspaceCreationResponse(response, verifiedAgainst: [])
+        let missingCheck = missingResponse.initializationChecks?.first { $0.id == "workspace-scan-visible" }
+        XCTAssertEqual(missingCheck?.status, "warning")
+        XCTAssertTrue(missingCheck?.detail.contains("创建记录已写入") == true)
+        XCTAssertEqual(missingResponse.initializationChecks?.filter { $0.id == "workspace-scan-visible" }.count, 1)
+    }
+
     func testNativeWorkspaceTaskStoreRequiresConfirmationAndRewritesStatus() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-native-task-status-\(UUID().uuidString)")

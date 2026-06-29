@@ -3830,12 +3830,15 @@ final class AppState: ObservableObject {
                     actor: "Nexus Native"
                 )
             )
-            lastCreatedWorkspace = response
             setWorkspaceFilter(.all)
             selectedWorkspaceID = response.folder
             documentPreview = nil
             documentFocusHint = nil
             await refreshFromBridge()
+            lastCreatedWorkspace = Self.workspaceCreationResponse(
+                response,
+                verifiedAgainst: workspaces
+            )
             selectedWorkspaceID = response.folder
             await loadDocument(
                 path: "\(response.path)/handoff.md",
@@ -3849,6 +3852,37 @@ final class AppState: ObservableObject {
         } catch {
             lastError = error.localizedDescription
         }
+    }
+
+    static func workspaceCreationResponse(
+        _ response: CreateWorkspaceResponse,
+        verifiedAgainst workspaces: [WorkspaceSummary]
+    ) -> CreateWorkspaceResponse {
+        let visible = workspaces.contains { workspace in
+            workspace.folder == response.folder
+                || workspace.id == response.folder
+                || workspace.path == response.path
+        }
+        var checks = (response.initializationChecks ?? [])
+            .filter { $0.id != "workspace-scan-visible" }
+        checks.append(workspaceScanVisibilityCheck(folder: response.folder, visible: visible))
+        return CreateWorkspaceResponse(
+            path: response.path,
+            folder: response.folder,
+            generatedFiles: response.generatedFiles,
+            initializationChecks: checks
+        )
+    }
+
+    private static func workspaceScanVisibilityCheck(folder: String, visible: Bool) -> WorkspaceInitializationCheck {
+        WorkspaceInitializationCheck(
+            id: "workspace-scan-visible",
+            label: "扫描可见性 / Scan visibility",
+            detail: visible
+                ? "刷新后已扫描到新工作区 \(folder)。"
+                : "创建记录已写入，但刷新后目录扫描未返回新工作区。请检查工作区根目录、筛选条件或运行刷新。",
+            status: visible ? "pass" : "warning"
+        )
     }
 
     func dismissCreatedWorkspaceFollowUp() {

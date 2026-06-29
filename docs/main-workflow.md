@@ -59,6 +59,7 @@ Blocked when:
 - workspace path is unreadable
 - required standard docs are missing and cannot be created safely
 - folder collision or invalid workspace root is detected during creation
+- workspace files are written but the refresh-after-create scan does not return the new workspace
 
 Native M1 UI:
 
