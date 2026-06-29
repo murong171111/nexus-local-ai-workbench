@@ -2700,6 +2700,61 @@ final class AppState: ObservableObject {
         }
     }
 
+    func nativeLifecycleProofBundle(
+        for workspace: WorkspaceSummary,
+        auditEvents: [AuditEvent]? = nil
+    ) -> NativeLifecycleProofBundle {
+        NativeLifecycleProofBundle.resolve(
+            workspace: workspace,
+            auditEvents: auditEvents ?? recentNativeAuditEvents(limit: 200)
+        )
+    }
+
+    func exportNativeLifecycleProofBundle(
+        for workspace: WorkspaceSummary,
+        confirmed: Bool,
+        auditEvents: [AuditEvent]? = nil,
+        auditRoot: String? = nil
+    ) async {
+        guard confirmed else {
+            lastError = "需要确认后才会导出生命周期证据包。"
+            return
+        }
+
+        isUpdatingLifecycle = true
+        lastError = nil
+        defer {
+            isUpdatingLifecycle = false
+        }
+
+        do {
+            let response = try NativeLifecycleProofBundleStore.write(
+                workspace: workspace,
+                auditEvents: auditEvents ?? recentNativeAuditEvents(limit: 200),
+                confirmed: confirmed,
+                auditRoot: auditRoot ?? auditRootPath,
+                actor: "Nexus Native"
+            )
+            await refreshFromBridge()
+            focusWorkspace(id: workspace.id)
+            markLocalWriteFeedback(
+                title: "生命周期证据包已导出 / Lifecycle proof exported",
+                detail: "已写入 native-lifecycle-proof.json；该文件可用于发布检查、legacy 删除审计和真实工作区验收。",
+                workspaceID: workspace.id,
+                workspaceName: workspace.name,
+                documentPath: response.path,
+                documentLabel: "打开证据包",
+                systemImage: "checkmark.seal"
+            )
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    private func recentNativeAuditEvents(limit: Int) -> [AuditEvent] {
+        (try? NativeAuditEventStore.loadRecent(auditRoot: auditRootPath, limit: limit)) ?? []
+    }
+
     func deliveryRecordWritePlan(for workspace: WorkspaceSummary) -> DeliveryRecordWritePlan {
         DeliveryRecordWritePlan.resolve(
             workspace: workspace,

@@ -4202,7 +4202,7 @@ final class ModelBehaviorTests: XCTestCase {
     }
 
     @MainActor
-    func testNativeStoresCanProveEndToEndWorkspaceLifecycle() throws {
+    func testNativeStoresCanProveEndToEndWorkspaceLifecycle() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-native-e2e-lifecycle-\(UUID().uuidString)")
         let remote = root.appendingPathComponent("remote-order.git")
@@ -4453,6 +4453,37 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(proofBundle.auditChain.map(\.action).contains("workspace.created"))
         XCTAssertTrue(proofBundle.auditChain.map(\.action).contains("workspace_lifecycle.updated"))
         XCTAssertTrue(actionsAfterProofExport.contains("native_lifecycle_proof.exported"))
+
+        let appState = AppState(
+            workspaces: [archived],
+            agentStatus: AgentStatus(title: "Ready", detail: "Tests", connectedTools: []),
+            bridge: PreviewNexusBridge(),
+            workspaceRoot: workspacesRoot.path,
+            sourceReposRoot: sourceRoot.path,
+            docsRoot: root.appendingPathComponent("docs").path,
+            defaults: UserDefaults(suiteName: "NexusAppTests-\(UUID().uuidString)")!
+        )
+        await appState.exportNativeLifecycleProofBundle(
+            for: archived,
+            confirmed: false,
+            auditEvents: proofEvents,
+            auditRoot: auditRoot.path
+        )
+        XCTAssertEqual(appState.lastError, "需要确认后才会导出生命周期证据包。")
+
+        await appState.exportNativeLifecycleProofBundle(
+            for: archived,
+            confirmed: true,
+            auditEvents: proofEvents,
+            auditRoot: auditRoot.path
+        )
+        let actionsAfterAppStateExport = try NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 60).map(\.action)
+
+        XCTAssertNil(appState.lastError)
+        XCTAssertEqual(appState.localWriteFeedback?.documentPath, proofBundleResponse.path)
+        XCTAssertEqual(appState.localWriteFeedback?.documentLabel, "打开证据包")
+        XCTAssertEqual(appState.selectedWorkspaceID, archived.id)
+        XCTAssertTrue(actionsAfterAppStateExport.contains("native_lifecycle_proof.exported"))
 
         _ = try NativeWorkspaceLifecycleStore.update(
             request: UpdateWorkspaceLifecycleRequest(
