@@ -94,6 +94,7 @@ rm -rf "$OUTPUT_APP"
 mkdir -p "$macos_dir" "$resources_dir"
 install -m 755 "$product_path" "$macos_dir/Nexus"
 install -m 644 "$PACKAGE_ROOT/Packaging/Info.plist" "$contents_dir/Info.plist"
+install -m 644 "$PACKAGE_ROOT/Packaging/icon.icns" "$resources_dir/icon.icns"
 printf 'APPL????' > "$contents_dir/PkgInfo"
 
 echo "Built $OUTPUT_APP"

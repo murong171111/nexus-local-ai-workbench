@@ -8,6 +8,8 @@
 	<string>Nexus</string>
 	<key>CFBundleExecutable</key>
 	<string>Nexus</string>
+	<key>CFBundleIconFile</key>
+	<string>icon.icns</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.ks.nexus</string>
 	<key>CFBundleInfoDictionaryVersion</key>

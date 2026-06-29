@@ -192,6 +192,10 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Manual service input parsing for commas, spaces, new lines, semicolons, and Chinese separators when creating workspaces.
 - Markdown document rendering with a preview/source toggle inside the workspace document viewer.
 
+### Changed
+
+- Native local `.app` bundles now include `icon.icns` and declare `CFBundleIconFile`, so locally installed Nexus builds show the app icon in Finder, Dock, and Launch Services.
+
 ### Fixed
 
 - SQL artifact readiness now scans the full `交付记录.md`, so SQL changes mentioned outside the SQL section or in detailed headings still require formal and rollback SQL files under `sql/`.
