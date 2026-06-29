@@ -174,6 +174,17 @@ struct NativeLifecycleProofBundleWriteResponse: Hashable {
 enum NativeLifecycleProofBundleStore {
     static let fileName = "native-lifecycle-proof.json"
 
+    static func bundlePath(for workspace: WorkspaceSummary) -> String {
+        URL(fileURLWithPath: workspace.path)
+            .appendingPathComponent(fileName)
+            .path
+    }
+
+    static func load(workspace: WorkspaceSummary) throws -> NativeLifecycleProofBundle {
+        let data = try Data(contentsOf: URL(fileURLWithPath: bundlePath(for: workspace)))
+        return try JSONDecoder().decode(NativeLifecycleProofBundle.self, from: data)
+    }
+
     static func write(
         workspace: WorkspaceSummary,
         auditEvents: [AuditEvent],
@@ -197,7 +208,7 @@ enum NativeLifecycleProofBundleStore {
             throw NativeLifecycleProofBundleStoreError.notReady(bundle.proof.detail)
         }
 
-        let outputURL = URL(fileURLWithPath: workspace.path).appendingPathComponent(fileName)
+        let outputURL = URL(fileURLWithPath: bundlePath(for: workspace))
         let payload = try NativeLifecycleProofBundle.jsonData(for: bundle)
         try payload.write(to: outputURL, options: .atomic)
 

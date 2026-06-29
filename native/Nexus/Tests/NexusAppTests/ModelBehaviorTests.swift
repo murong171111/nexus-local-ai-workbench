@@ -2720,6 +2720,7 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertFalse(appStateForAutomationTests(workspaces: [archived]).nativeLifecycleProofAvailable(auditEvents: []))
         XCTAssertTrue(appStateForAutomationTests(workspaces: [archived]).nativeLifecycleProofAvailable(auditEvents: proofEvents))
+        XCTAssertFalse(appStateForAutomationTests(workspaces: [archived]).nativeLifecycleProofBundleAvailable(auditEvents: proofEvents))
         XCTAssertTrue(proof.ready)
         XCTAssertEqual(proof.missingActions, [])
         XCTAssertEqual(proof.orderedActions, NativeLifecycleProofEvidence.requiredAuditActions)
@@ -4422,6 +4423,7 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(actions.contains("workspace_lifecycle.updated"))
         let proofEvents = try NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 40)
         XCTAssertTrue(appStateForAutomationTests(workspaces: [archived]).nativeLifecycleProofAvailable(auditEvents: proofEvents))
+        XCTAssertFalse(appStateForAutomationTests(workspaces: [archived]).nativeLifecycleProofBundleAvailable(auditEvents: proofEvents))
         XCTAssertThrowsError(
             try NativeLifecycleProofBundleStore.write(
                 workspace: archived,
@@ -4453,6 +4455,16 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(proofBundle.auditChain.map(\.action).contains("workspace.created"))
         XCTAssertTrue(proofBundle.auditChain.map(\.action).contains("workspace_lifecycle.updated"))
         XCTAssertTrue(actionsAfterProofExport.contains("native_lifecycle_proof.exported"))
+        let proofAppState = appStateForAutomationTests(workspaces: [archived])
+        XCTAssertTrue(proofAppState.nativeLifecycleProofBundleAvailable(auditEvents: proofEvents))
+        let distributionEvidence = proofAppState.nativeDistributionReadinessEvidence(
+            repositoryRoot: root.path,
+            auditEvents: proofEvents
+        )
+        XCTAssertFalse(
+            distributionEvidence.checks.first { $0.requirement == .legacyDeletion }?.detail
+                .contains("No real archived workspace lifecycle proof") == true
+        )
 
         let appState = AppState(
             workspaces: [archived],

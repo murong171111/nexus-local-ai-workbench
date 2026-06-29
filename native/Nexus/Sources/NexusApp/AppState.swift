@@ -2676,13 +2676,14 @@ final class AppState: ObservableObject {
     }
 
     func nativeDistributionReadinessEvidence(
-        repositoryRoot: String = FileManager.default.currentDirectoryPath
+        repositoryRoot: String = FileManager.default.currentDirectoryPath,
+        auditEvents: [AuditEvent]? = nil
     ) -> NativeDistributionReadinessEvidence {
         NativeDistributionReadinessEvidence.resolve(
             repositoryRoot: repositoryRoot,
             m1Ready: workspaces.first.map { mainWorkflowAcceptanceEvidence(for: $0).ready } ?? false,
             m2Ready: nativeLocalCoreEvidence().ready,
-            realLifecycleProven: nativeLifecycleProofAvailable()
+            realLifecycleProven: nativeLifecycleProofBundleAvailable(auditEvents: auditEvents)
         )
     }
 
@@ -2697,6 +2698,20 @@ final class AppState: ObservableObject {
                 workspace: workspace,
                 auditEvents: auditEvents
             ).ready
+        }
+    }
+
+    func nativeLifecycleProofBundleAvailable(auditEvents: [AuditEvent]? = nil) -> Bool {
+        let events = auditEvents ?? recentNativeAuditEvents(limit: 200)
+        return workspaces.contains { workspace in
+            guard NativeLifecycleProofEvidence.resolve(workspace: workspace, auditEvents: events).ready,
+                  let bundle = try? NativeLifecycleProofBundleStore.load(workspace: workspace) else {
+                return false
+            }
+            return bundle.ready
+                && bundle.workspace.id == workspace.id
+                && bundle.workspace.path == workspace.path
+                && bundle.proof.requiredAuditActions == NativeLifecycleProofEvidence.requiredAuditActions
         }
     }
 
