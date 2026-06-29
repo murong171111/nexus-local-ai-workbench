@@ -13,8 +13,8 @@ Nexus 是一个面向 macOS 的本地 AI 开发工作台，用来管理需求工
 - 原生 SwiftUI 壳现在提供两个主入口：`Console / 控制台` 用于聚焦处理当前工作区，`Board / 面板` 用于按主流程阶段总览当前筛选下的工作区；Board 内可切换全部、需处理、交付和归档范围，卡片会显示 worktree 摘要，点击面板卡片会回到控制台并聚焦该工作区。
 - 支持在应用内创建符合 `ks-project-demand-workspace` 约定的需求工作区，包含源仓库扫描、服务勾选、手动补充、创建前预检、创建确认摘要和创建后的下一步引导。
 - 支持在工作区详情中执行 `需求预检`：检查或初始化固定 `需求/` 目录，生成 `requirement.md`、`questions.md`、`scope.md`、`tasks.md` 和 `delivery.md`，并复制 `$lanhu-demand-intake` Codex 预检提示词。原生壳会读取这些 Markdown，检查需求内容、未解决 P0、scope 状态和真实需求任务，并通过独立的范围冻结门禁检查本次实现、不实现、待确认 P0、冻结标记，以及范围变更是否记录原因和影响，确认后可把真实需求行转入根 `tasks.md`；Nexus 仍不直接解析蓝湖或调用 AI。
-- 原生服务/分支确认门禁会检查 `services.md`、`branches.md`、工作区服务行、源仓库可用性、目标分支可用性和分支策略，确认后才进入 worktree 准备。
-- 原生 worktree 准备证据会检查缺失的 workspace-local worktree、源仓库中的目标分支可用性、源仓库可用性、创建命令可见性，以及服务级 create/skip/blocked 创建计划，确认这些证据后才继续进入开发。
+- 原生服务/分支确认门禁会检查 `services.md`、`branches.md`、工作区服务行、源仓库可用性、目标分支可用性和分支策略；只要源仓库存在目标分支或远端引用，source 当前 checkout 不要求切到目标分支。
+- 原生 worktree 准备证据会检查缺失的 workspace-local worktree、源仓库中的目标分支可用性、源仓库可用性、创建命令可见性，以及服务级 create/skip/blocked 创建计划；source 当前分支只作为上下文展示，不作为阻塞条件。
 - 原生开发任务证据会坚持 root `tasks.md` 是执行任务源，自动选择下一条活跃任务，阻塞未解决的任务 blocker，并展示任务推进计划，把任务归类为处理阻塞、当前推进、排队或已关闭，同时给出写回建议。
 - 原生交付门禁证据会在交付就绪前统一检查任务、风险、服务/worktree、交付记录、SQL 产物、未提交服务和本地检查状态。
 - 支持在应用内预览 Markdown 文档，包括状态、服务范围、分支说明、任务、决策和交付记录。

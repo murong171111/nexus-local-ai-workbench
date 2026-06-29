@@ -94,7 +94,7 @@ struct ServiceWorktreeRowState: Hashable {
                 serviceName: service.name,
                 kind: .missingWorktree,
                 label: "缺 worktree",
-                detail: "尚未创建 workspace-local worktree，需要走确认后的创建流程。",
+                detail: "source repo 已确认目标分支未缺失；尚未创建 workspace-local worktree，需要走确认后的创建流程。",
                 status: .next,
                 systemImage: "wrench.and.screwdriver"
             )
@@ -115,7 +115,7 @@ struct ServiceWorktreeRowState: Hashable {
             serviceName: service.name,
             kind: .clean,
             label: "clean",
-            detail: "source repo 可用、目标分支可用、worktree 存在且 git 状态干净。",
+            detail: "source repo 可用、目标分支未缺失、worktree 存在且 git 状态干净。",
             status: .ready,
             systemImage: "checkmark.circle"
         )
@@ -424,7 +424,7 @@ struct ServiceBranchEvidence: Hashable {
 
     private static func targetBranchAvailableDetail(branchConfirmed: Bool, targetBranch: String) -> String {
         if branchConfirmed {
-            return "已确认服务未报告目标分支缺失：\(targetBranch)。"
+            return "已确认 source repo 未报告目标分支缺失：\(targetBranch)。source 当前检出分支不作为阻塞条件。"
         }
         return "目标分支未确认，分支可用性会在确认后检查。"
     }
@@ -810,7 +810,7 @@ struct WorktreeSetupEvidence: Hashable {
                 id: "target-branch-availability",
                 label: "分支可用 / Availability",
                 detail: branchMismatchServices.isEmpty
-                    ? "已确认服务未报告目标分支缺失；当前 worktree 检出分支不同不会单独阻塞。"
+                    ? "已确认 source repo 未报告目标分支缺失；source 当前检出分支不作为阻塞条件。"
                     : "这些服务缺少目标分支或远端引用不可用：\(branchMismatchServices.joined(separator: ", "))。",
                 status: branchMismatchServices.isEmpty ? .ready : .blocked,
                 systemImage: branchMismatchServices.isEmpty ? "checkmark.circle" : "arrow.triangle.branch",

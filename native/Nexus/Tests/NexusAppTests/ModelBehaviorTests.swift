@@ -1382,7 +1382,13 @@ final class ModelBehaviorTests: XCTestCase {
         }
         try FileManager.default.createDirectory(at: sourceOrder, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: worktreeOrder, withIntermediateDirectories: true)
-        try runGit(["init", "-b", "feature/native-git"], in: sourceOrder)
+        try runGit(["init", "-b", "main"], in: sourceOrder)
+        try runGit(["config", "user.email", "nexus@example.com"], in: sourceOrder)
+        try runGit(["config", "user.name", "Nexus Test"], in: sourceOrder)
+        try "demo\n".write(to: sourceOrder.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+        try runGit(["add", "README.md"], in: sourceOrder)
+        try runGit(["commit", "-m", "init"], in: sourceOrder)
+        try runGit(["branch", "feature/native-git"], in: sourceOrder)
         try runGit(["init", "-b", "feature/native-git"], in: worktreeOrder)
         try """
         # Native Git
@@ -1426,6 +1432,7 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(snapshot.gitRows.first { $0.service == "order" }?.worktree.exists, true)
         XCTAssertEqual(snapshot.gitRows.first { $0.service == "order" }?.worktree.branch, "feature/native-git")
         XCTAssertEqual(snapshot.gitRows.first { $0.service == "order" }?.source.exists, true)
+        XCTAssertEqual(snapshot.gitRows.first { $0.service == "order" }?.source.branch, "main")
         XCTAssertTrue(snapshot.gitRows.first { $0.service == "order" }?.source.summary.contains("target branch available: feature/native-git") ?? false)
         XCTAssertEqual(snapshot.gitRows.first { $0.service == "cashier" }?.worktree.exists, false)
         XCTAssertEqual(snapshot.gitRows.first { $0.service == "cashier" }?.source.exists, false)
@@ -2983,9 +2990,9 @@ final class ModelBehaviorTests: XCTestCase {
             services: [
                 ServiceStatus(
                     name: "order",
-                    branch: "feature/service-branch",
+                    branch: "main",
                     worktree: "missing",
-                    gitSummary: "source clean",
+                    gitSummary: "source current: main; target branch available: feature/service-branch",
                     worktreeExists: false,
                     sourceExists: true
                 )
@@ -3002,6 +3009,9 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertEqual(serviceBranch.status, .ready)
         XCTAssertTrue(serviceBranch.targetBranchMissingServices.isEmpty)
+        XCTAssertTrue(
+            serviceBranch.checks.first { $0.id == "target-branch-availability" }?.detail.contains("source 当前检出分支不作为阻塞条件") ?? false
+        )
         XCTAssertEqual(worktree.status, .next)
         XCTAssertEqual(worktree.missingServices, ["order"])
         XCTAssertEqual(stage.id, .worktreeSetup)
@@ -3153,7 +3163,7 @@ final class ModelBehaviorTests: XCTestCase {
         )
 
         XCTAssertEqual(state.kind, .clean)
-        XCTAssertTrue(state.detail.contains("目标分支可用"))
+        XCTAssertTrue(state.detail.contains("目标分支未缺失"))
     }
 
     func testServiceWorktreeRowStateWaitsForConfirmedTargetBeforeAvailabilityCheck() {
@@ -3295,6 +3305,37 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(worktree.setupPlan.first?.currentBranch, "dev")
         XCTAssertTrue(worktree.setupPlan.first?.reason.contains("目标分支 feature/worktree 可用") ?? false)
         XCTAssertNotEqual(stage.id, .worktreeSetup)
+    }
+
+    func testWorktreeSetupEvidenceCreatesMissingWorktreeWhenSourceCurrentBranchDiffersButTargetExists() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "worktree-source-current-branch-differs",
+            branch: "feature/worktree",
+            services: [
+                ServiceStatus(
+                    name: "order",
+                    branch: "main",
+                    worktree: "missing",
+                    gitSummary: "source current: main; target branch available: feature/worktree",
+                    worktreeExists: false,
+                    sourceExists: true
+                )
+            ]
+        )
+        let worktree = WorktreeSetupEvidence.resolve(workspace: workspace)
+        let stage = workspace.mainStage(
+            demandReadiness: readyDemandReadiness(),
+            scopeFreeze: readyScopeFreeze(),
+            serviceBranch: readyServiceBranch(for: workspace),
+            worktreeSetup: worktree
+        )
+
+        XCTAssertEqual(worktree.status, .next)
+        XCTAssertTrue(worktree.branchMismatchServices.isEmpty)
+        XCTAssertEqual(worktree.setupPlan.map(\.action), [.create])
+        XCTAssertEqual(worktree.setupPlan.first?.currentBranch, "main")
+        XCTAssertEqual(stage.id, .worktreeSetup)
     }
 
     func testWorktreeSetupEvidenceBlocksMissingSourceRepos() {
