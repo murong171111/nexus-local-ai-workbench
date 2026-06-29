@@ -78,6 +78,17 @@ struct ServiceWorktreeRowState: Hashable {
             )
         }
 
+        if ServiceBranchMatcher.targetBranchUnavailable(service, target: targetBranch) {
+            return ServiceWorktreeRowState(
+                serviceName: service.name,
+                kind: .branchMismatch,
+                label: "目标分支缺失",
+                detail: "source repo 未发现目标分支 \(targetBranch)，需先同步或创建指定分支。",
+                status: .blocked,
+                systemImage: "arrow.triangle.branch"
+            )
+        }
+
         if !service.worktreeExists {
             return ServiceWorktreeRowState(
                 serviceName: service.name,
@@ -86,17 +97,6 @@ struct ServiceWorktreeRowState: Hashable {
                 detail: "尚未创建 workspace-local worktree，需要走确认后的创建流程。",
                 status: .next,
                 systemImage: "wrench.and.screwdriver"
-            )
-        }
-
-        if !ServiceBranchMatcher.matches(service.branch, target: targetBranch) {
-            return ServiceWorktreeRowState(
-                serviceName: service.name,
-                kind: .branchMismatch,
-                label: "分支不一致",
-                detail: "当前分支 \(service.branch) 与目标分支 \(targetBranch) 不一致，需先修正分支证据。",
-                status: .blocked,
-                systemImage: "arrow.triangle.branch"
             )
         }
 
@@ -115,7 +115,7 @@ struct ServiceWorktreeRowState: Hashable {
             serviceName: service.name,
             kind: .clean,
             label: "clean",
-            detail: "source repo 可用、worktree 存在、分支一致且 git 状态干净。",
+            detail: "source repo 可用、目标分支可用、worktree 存在且 git 状态干净。",
             status: .ready,
             systemImage: "checkmark.circle"
         )
@@ -165,6 +165,57 @@ enum ServiceBranchMatcher {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
             .replacingOccurrences(of: "origin/", with: "")
+    }
+
+    static func targetBranchUnavailable(_ service: ServiceStatus, target: String) -> Bool {
+        let normalizedTarget = normalize(target)
+        guard targetBranchConfirmed(normalizedTarget) else { return false }
+
+        let fields = [service.branch, service.gitSummary]
+            .map {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            }
+            .filter { !$0.isEmpty }
+        guard !fields.isEmpty else { return false }
+
+        let missingMarkers = [
+            "remote missing",
+            "branch missing",
+            "target missing",
+            "target branch missing",
+            "target branch unavailable",
+            "missing target branch",
+            "missing branch",
+            "not found",
+            "no such ref",
+            "unknown revision",
+            "远端不存在",
+            "远端缺失",
+            "分支不存在",
+            "目标分支不存在",
+            "目标分支缺失",
+            "目标分支不可用",
+            "未找到分支"
+        ]
+        guard let matchingField = fields.first(where: { field in
+            missingMarkers.contains(where: { field.contains($0) })
+        }) else {
+            return false
+        }
+
+        return matchingField.contains(normalizedTarget)
+            || matchingField.contains("target")
+            || matchingField.contains("branch")
+            || matchingField.contains("分支")
+    }
+
+    private static func targetBranchConfirmed(_ branch: String) -> Bool {
+        guard !branch.isEmpty else { return false }
+        return !branch.contains("待确认")
+            && !branch.contains("未确认")
+            && !branch.contains("pending")
+            && !branch.contains("tbd")
+            && !branch.contains("todo")
     }
 }
 
@@ -239,7 +290,7 @@ struct ServiceBranchEvidence: Hashable {
             .map(\.name)
         let targetBranchMissingServices = branchConfirmed
             ? workspace.services
-                .filter { $0.sourceExists && targetBranchUnavailable($0, target: workspace.branch) }
+                .filter { $0.sourceExists && ServiceBranchMatcher.targetBranchUnavailable($0, target: workspace.branch) }
                 .map(\.name)
             : []
         let branchPolicyRecorded = branchConfirmed
@@ -376,43 +427,6 @@ struct ServiceBranchEvidence: Hashable {
             return "已确认服务未报告目标分支缺失：\(targetBranch)。"
         }
         return "目标分支未确认，分支可用性会在确认后检查。"
-    }
-
-    private static func targetBranchUnavailable(_ service: ServiceStatus, target: String) -> Bool {
-        let fields = [service.branch, service.gitSummary]
-            .map {
-                $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            }
-            .filter { !$0.isEmpty }
-        guard !fields.isEmpty else { return false }
-        let missingMarkers = [
-            "remote missing",
-            "branch missing",
-            "target missing",
-            "missing branch",
-            "not found",
-            "no such ref",
-            "unknown revision",
-            "远端不存在",
-            "远端缺失",
-            "分支不存在",
-            "目标分支不存在",
-            "未找到分支"
-        ]
-        guard let matchingField = fields.first(where: { field in
-            missingMarkers.contains(where: { field.contains($0) })
-        }) else {
-            return false
-        }
-
-        let normalizedTarget = target
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-            .replacingOccurrences(of: "origin/", with: "")
-        guard !normalizedTarget.isEmpty else { return true }
-        return matchingField.contains(normalizedTarget)
-            || matchingField.contains("branch")
-            || matchingField.contains("分支")
     }
 
     private static func placeholderOnly(_ line: String) -> Bool {
@@ -567,7 +581,7 @@ struct WorktreeSetupRecoveryAction: Hashable, Identifiable {
                     title: "运行本地检查 / Run local check",
                     detail: response.created.isEmpty
                         ? "没有新增 worktree。运行检查确认分支、任务和风险状态后继续。"
-                        : "已创建 worktree。运行检查确认分支一致、缺失 worktree 和未提交服务状态。",
+                        : "已创建 worktree。运行检查确认目标分支可用性、缺失 worktree 和未提交服务状态。",
                     status: .next,
                     systemImage: "checklist",
                     document: nil
@@ -691,7 +705,7 @@ struct WorktreeSetupEvidence: Hashable {
             return "修正源仓库 / Source repos"
         }
         if !branchMismatchServices.isEmpty {
-            return "修正 worktree 分支 / Branch mismatch"
+            return "修正目标分支 / Target branch"
         }
         if !missingServices.isEmpty {
             return "准备隔离 worktree / Setup worktrees"
@@ -707,7 +721,7 @@ struct WorktreeSetupEvidence: Hashable {
             return "打开服务"
         }
         if !branchMismatchServices.isEmpty {
-            return "打开服务"
+            return "打开分支"
         }
         if !missingServices.isEmpty {
             return "创建 worktree"
@@ -755,10 +769,11 @@ struct WorktreeSetupEvidence: Hashable {
             .map(\.name)
         let branchMismatchServices: [String] = branchConfirmed
             ? workspace.services.compactMap { service in
-                guard service.worktreeExists, !ServiceBranchMatcher.matches(service.branch, target: workspace.branch) else {
+                guard service.sourceExists,
+                      ServiceBranchMatcher.targetBranchUnavailable(service, target: workspace.branch) else {
                     return nil
                 }
-                return "\(service.name)(\(service.branch))"
+                return "\(service.name)(\(workspace.branch))"
             }
             : []
 
@@ -792,11 +807,11 @@ struct WorktreeSetupEvidence: Hashable {
                 path: setupScriptPath
             ),
             WorktreeSetupCheck(
-                id: "branch-alignment",
-                label: "分支一致 / Alignment",
+                id: "target-branch-availability",
+                label: "分支可用 / Availability",
                 detail: branchMismatchServices.isEmpty
-                    ? "已存在的 worktree 与目标分支一致，或尚待创建。"
-                    : "这些 worktree 不在目标分支：\(branchMismatchServices.joined(separator: ", "))。",
+                    ? "已确认服务未报告目标分支缺失；当前 worktree 检出分支不同不会单独阻塞。"
+                    : "这些服务缺少目标分支或远端引用不可用：\(branchMismatchServices.joined(separator: ", "))。",
                 status: branchMismatchServices.isEmpty ? .ready : .blocked,
                 systemImage: branchMismatchServices.isEmpty ? "checkmark.circle" : "arrow.triangle.branch",
                 path: workspace.documentLinks["branches"] ?? "\(workspace.path)/branches.md"
@@ -836,7 +851,7 @@ struct WorktreeSetupEvidence: Hashable {
             reason = reviews.map(\.detail).joined(separator: " ")
         } else {
             resolvedStatus = .ready
-            reason = "确认服务均已有 workspace-local worktree，且已存在 worktree 的分支与目标分支一致。"
+            reason = "确认服务均已有 workspace-local worktree，且目标分支在服务中可用。"
         }
 
         return WorktreeSetupEvidence(
@@ -898,7 +913,7 @@ struct WorktreeSetupEvidence: Hashable {
                 )
             }
 
-            if service.worktreeExists && !ServiceBranchMatcher.matches(service.branch, target: workspace.branch) {
+            if ServiceBranchMatcher.targetBranchUnavailable(service, target: workspace.branch) {
                 return WorktreeSetupPlanItem(
                     id: service.name,
                     serviceName: service.name,
@@ -907,7 +922,7 @@ struct WorktreeSetupEvidence: Hashable {
                     targetPath: targetPath,
                     sourceAvailable: true,
                     currentBranch: service.branch,
-                    reason: "已存在 worktree，但当前分支是 \(service.branch)，需要先修正到目标分支。"
+                    reason: "source repo 未发现目标分支 \(targetBranch)，先同步源仓库或创建指定分支。"
                 )
             }
 
@@ -920,7 +935,7 @@ struct WorktreeSetupEvidence: Hashable {
                     targetPath: targetPath,
                     sourceAvailable: true,
                     currentBranch: service.branch,
-                    reason: "workspace-local worktree 已存在，本次创建会跳过。"
+                    reason: "workspace-local worktree 已存在；目标分支 \(targetBranch) 可用，本次创建会跳过。"
                 )
             }
 

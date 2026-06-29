@@ -1019,7 +1019,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
             ],
             activities: [
                 ActivityEvent(time: "09:42", title: "交付记录待补充", detail: "新增 pay_log 回填逻辑后需要补齐 SQL 与验证说明"),
-                ActivityEvent(time: "09:18", title: "Branch alignment checked", detail: "order and store-cashier are aligned")
+                ActivityEvent(time: "09:18", title: "Target branch availability checked", detail: "order and store-cashier have the target branch")
             ],
             risks: [
                 RiskAlert(title: "worktree 未创建", detail: "commodity 尚未建立需求 worktree"),

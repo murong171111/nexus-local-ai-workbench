@@ -76,6 +76,7 @@ enum NativeWorkspaceScanner {
             ?? "待确认"
         let gitRows = gitRows(
             for: services.confirmed,
+            targetBranch: targetBranch,
             workspaceRoot: root,
             sourceRoot: sourceRoot,
             fileManager: fileManager
@@ -303,6 +304,7 @@ enum NativeWorkspaceScanner {
 
     private static func gitRows(
         for services: [String],
+        targetBranch: String,
         workspaceRoot: URL,
         sourceRoot: String,
         fileManager: FileManager
@@ -313,12 +315,18 @@ enum NativeWorkspaceScanner {
                 .appendingPathComponent(service, isDirectory: true)
             let sourceURL = URL(fileURLWithPath: sourceRoot)
                 .appendingPathComponent(service, isDirectory: true)
+            let sourceStatus = gitStatus(at: sourceURL, fileManager: fileManager)
             return GitRowSnapshot(
                 service: service,
                 worktreePath: worktreeURL.path,
                 sourcePath: sourceURL.path,
                 worktree: gitStatus(at: worktreeURL, fileManager: fileManager),
-                source: gitStatus(at: sourceURL, fileManager: fileManager)
+                source: sourceStatusWithTargetBranchAvailability(
+                    sourceStatus,
+                    sourceURL: sourceURL,
+                    targetBranch: targetBranch,
+                    fileManager: fileManager
+                )
             )
         }
     }
@@ -361,6 +369,102 @@ enum NativeWorkspaceScanner {
         return GitStatusSnapshot(exists: true, branch: "检查失败", dirty: true, summary: errorOutput)
     }
 
+    private static func sourceStatusWithTargetBranchAvailability(
+        _ status: GitStatusSnapshot,
+        sourceURL: URL,
+        targetBranch: String,
+        fileManager: FileManager
+    ) -> GitStatusSnapshot {
+        guard targetBranchConfirmed(targetBranch),
+              status.exists,
+              fileManager.fileExists(atPath: sourceURL.appendingPathComponent(".git").path) else {
+            return status
+        }
+
+        let normalizedTarget = normalizedBranchForComparison(targetBranch)
+        if normalizedBranchForComparison(status.branch) == normalizedTarget {
+            return appendingGitSummary(status, "target branch available: \(normalizedTarget)")
+        }
+
+        switch targetBranchAvailability(in: sourceURL, targetBranch: normalizedTarget) {
+        case .available:
+            return appendingGitSummary(status, "target branch available: \(normalizedTarget)")
+        case .missing:
+            return appendingGitSummary(status, "target branch missing: \(normalizedTarget)")
+        case .failed(let detail):
+            return appendingGitSummary(status, "target branch unavailable: \(normalizedTarget); check failed: \(detail)")
+        }
+    }
+
+    private enum TargetBranchAvailability {
+        case available
+        case missing
+        case failed(String)
+    }
+
+    private static func targetBranchAvailability(
+        in sourceURL: URL,
+        targetBranch: String
+    ) -> TargetBranchAvailability {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-C", sourceURL.path, "show-ref"]
+        let stdout = Pipe()
+        let stderr = Pipe()
+        process.standardOutput = stdout
+        process.standardError = stderr
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+
+        let output = String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let refs = output
+            .split(separator: "\n")
+            .compactMap { line -> String? in
+                line.split(separator: " ").last.map(String.init)
+            }
+        if refs.contains(where: { branchRef($0, matches: targetBranch) }) {
+            return .available
+        }
+
+        let errorOutput = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if process.terminationStatus == 0
+            || (output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && errorOutput.isEmpty) {
+            return .missing
+        }
+
+        return .failed(errorOutput.isEmpty ? "git show-ref exited \(process.terminationStatus)" : errorOutput)
+    }
+
+    private static func branchRef(_ ref: String, matches targetBranch: String) -> Bool {
+        if ref == "refs/heads/\(targetBranch)" {
+            return true
+        }
+        let remotePrefix = "refs/remotes/"
+        guard ref.hasPrefix(remotePrefix) else { return false }
+        let remoteAndBranch = String(ref.dropFirst(remotePrefix.count))
+        guard let slash = remoteAndBranch.firstIndex(of: "/") else { return false }
+        let branch = String(remoteAndBranch[remoteAndBranch.index(after: slash)...])
+        return branch == targetBranch
+    }
+
+    private static func appendingGitSummary(
+        _ status: GitStatusSnapshot,
+        _ detail: String
+    ) -> GitStatusSnapshot {
+        let summary = status.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        return GitStatusSnapshot(
+            exists: status.exists,
+            branch: status.branch,
+            dirty: status.dirty,
+            summary: summary.isEmpty ? detail : "\(summary); \(detail)"
+        )
+    }
+
     private static func normalizedGitBranch(_ statusLine: String) -> String {
         let branch = statusLine.replacingOccurrences(of: "## ", with: "")
         let emptyRepositoryPrefix = "No commits yet on "
@@ -392,17 +496,32 @@ enum NativeWorkspaceScanner {
         if !dirtyServices.isEmpty {
             risks.append("存在未提交改动: \(dirtyServices.joined(separator: ", "))")
         }
-        let branchMismatches = gitRows
+        let targetBranchIssues = gitRows
             .filter { row in
-                row.worktree.exists
-                    && !targetBranch.contains("待确认")
-                    && normalizedBranchForComparison(row.worktree.branch) != normalizedBranchForComparison(targetBranch)
+                row.source.exists
+                    && targetBranchConfirmed(targetBranch)
+                    && sourceReportsMissingTargetBranch(row.source.summary, targetBranch: targetBranch)
             }
-            .map { "\($0.service)(\($0.worktree.branch))" }
-        if !branchMismatches.isEmpty {
-            risks.append("worktree 分支不一致: \(branchMismatches.joined(separator: ", "))")
+            .map { "\($0.service)(\(normalizedBranchForComparison(targetBranch)))" }
+        if !targetBranchIssues.isEmpty {
+            risks.append("目标分支不可用: \(targetBranchIssues.joined(separator: ", "))")
         }
         return risks
+    }
+
+    private static func sourceReportsMissingTargetBranch(
+        _ summary: String,
+        targetBranch: String
+    ) -> Bool {
+        let normalized = summary.lowercased()
+        let target = normalizedBranchForComparison(targetBranch)
+        guard normalized.contains("target branch missing")
+                || normalized.contains("target branch unavailable")
+                || normalized.contains("目标分支缺失")
+                || normalized.contains("目标分支不可用") else {
+            return false
+        }
+        return target.isEmpty || normalized.contains(target)
     }
 
     private static func normalizedBranchForComparison(_ value: String) -> String {
@@ -411,6 +530,16 @@ enum NativeWorkspaceScanner {
             .replacingOccurrences(of: "origin/", with: "")
             .lowercased()
             ?? ""
+    }
+
+    private static func targetBranchConfirmed(_ branch: String) -> Bool {
+        let normalized = normalizedBranchForComparison(branch)
+        guard !normalized.isEmpty else { return false }
+        return !normalized.contains("待确认")
+            && !normalized.contains("未确认")
+            && !normalized.contains("pending")
+            && !normalized.contains("tbd")
+            && !normalized.contains("todo")
     }
 
     private static func documentLinks(at root: URL, fileManager: FileManager) -> [String: String] {

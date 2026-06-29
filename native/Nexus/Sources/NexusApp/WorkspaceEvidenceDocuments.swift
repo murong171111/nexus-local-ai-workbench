@@ -109,7 +109,7 @@ struct WorkspaceDocumentRole: Hashable {
         "branches": WorkspaceDocumentRole(
             key: "branches",
             purpose: "记录目标分支、分支策略和例外说明。",
-            updateTiming: "目标分支确认、分支策略变化或 branch mismatch 处理时更新。",
+            updateTiming: "目标分支确认、分支策略变化或目标分支可用性处理时更新。",
             gate: "service_branch_confirm, worktree_setup",
             createPolicy: "缺失时可在确认后创建标准骨架。",
             participatesInGate: true

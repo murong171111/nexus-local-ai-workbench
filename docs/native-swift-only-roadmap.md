@@ -112,12 +112,12 @@ Native M1 must include:
 
 5. Git and worktree status
    - Reads source repository status and workspace-local `repos/<service>` status.
-   - Distinguishes missing source repo, missing worktree, branch mismatch, dirty service, and clean service.
+   - Distinguishes missing source repo, missing worktree, missing target branch, dirty service, and clean service.
    - Generates reviewable worktree actions.
    - Executes local writes only after explicit confirmation.
 
 6. Delivery readiness
-   - Blocks delivery when active tasks, blocker risks, missing worktree, branch mismatch, dirty services, or missing delivery evidence remain.
+   - Blocks delivery when active tasks, blocker risks, missing worktree, missing target branch, dirty services, or missing delivery evidence remain.
    - Treats `交付记录.md` as the SQL declaration source.
    - Requires both formal SQL and rollback SQL in `sql/` when a real SQL change is declared.
 

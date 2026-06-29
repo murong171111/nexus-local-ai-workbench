@@ -1,6 +1,7 @@
 use crate::{
-    expand_user_path, git_status, normalize_git_branch, read_audit_events, target_branch_confirmed,
-    read_demand_intake_status, AgentEventTaskDraftResponse, AuditEvent, GitStatus,
+    expand_user_path, git_status, normalize_git_branch, read_audit_events,
+    read_demand_intake_status, target_branch_confirmed, target_branch_exists,
+    AgentEventTaskDraftResponse, AuditEvent, GitStatus,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -1166,24 +1167,20 @@ fn collect_workspace(
             dirty_worktrees.join(", ")
         ));
     }
-    let branch_mismatches = git_rows
+    let missing_target_branches = git_rows
         .iter()
         .filter(|row| {
             target_branch_confirmed(&target_branch)
-                && row.worktree.exists
-                && normalize_git_branch(&row.worktree.branch)
-                    != normalize_git_branch(&target_branch)
+                && row.source.exists
+                && !target_branch_exists(&row.source_path, &target_branch).unwrap_or(false)
         })
-        .map(|row| {
-            format!(
-                "{}({})",
-                row.service,
-                normalize_git_branch(&row.worktree.branch)
-            )
-        })
+        .map(|row| format!("{}({})", row.service, normalize_git_branch(&target_branch)))
         .collect::<Vec<_>>();
-    if !branch_mismatches.is_empty() {
-        risks.push(format!("分支不一致: {}", branch_mismatches.join(", ")));
+    if !missing_target_branches.is_empty() {
+        risks.push(format!(
+            "目标分支不可用: {}",
+            missing_target_branches.join(", ")
+        ));
     }
     let delivery_path = path.join("交付记录.md");
     let delivery_exists = delivery_path.exists();
@@ -1352,7 +1349,7 @@ fn collect_workspace(
         &confirmed_services,
         &missing_worktrees,
         &dirty_worktrees,
-        &branch_mismatches,
+        &missing_target_branches,
         delivery_exists,
         delivery_stale,
         &demand_intake,
@@ -1365,7 +1362,7 @@ fn collect_workspace(
         &confirmed_services,
         &missing_worktrees,
         &dirty_worktrees,
-        &branch_mismatches,
+        &missing_target_branches,
         delivery_exists,
         delivery_stale,
         &demand_intake,
@@ -1379,7 +1376,7 @@ fn collect_workspace(
         &confirmed_services,
         &missing_worktrees,
         &dirty_worktrees,
-        &branch_mismatches,
+        &missing_target_branches,
         delivery_exists,
         delivery_stale,
         &sql_artifacts,
@@ -1419,7 +1416,7 @@ fn workspace_lifecycle(
     confirmed_services: &[String],
     missing_worktrees: &[String],
     dirty_worktrees: &[String],
-    branch_mismatches: &[String],
+    missing_target_branches: &[String],
     delivery_exists: bool,
     delivery_stale: bool,
     sql_artifacts: &SqlArtifactStatus,
@@ -1443,10 +1440,13 @@ fn workspace_lifecycle(
     if normalized_state.contains("blocked")
         || normalized_state.contains("阻塞")
         || task_counts.blocked > 0
-        || !branch_mismatches.is_empty()
+        || !missing_target_branches.is_empty()
     {
-        let detail = if !branch_mismatches.is_empty() {
-            format!("分支不一致阻塞继续开发: {}", branch_mismatches.join(", "))
+        let detail = if !missing_target_branches.is_empty() {
+            format!(
+                "目标分支不可用阻塞继续开发: {}",
+                missing_target_branches.join(", ")
+            )
         } else if task_counts.blocked > 0 {
             format!("存在 {} 个阻塞任务，需要先解除。", task_counts.blocked)
         } else {
@@ -1458,7 +1458,7 @@ fn workspace_lifecycle(
             detail,
             25,
             "先处理阻塞项，再继续编码或交付。",
-            if !branch_mismatches.is_empty() {
+            if !missing_target_branches.is_empty() {
                 "branches"
             } else {
                 "tasks"
@@ -1625,7 +1625,7 @@ fn workspace_health_checks(
     confirmed_services: &[String],
     missing_worktrees: &[String],
     dirty_worktrees: &[String],
-    branch_mismatches: &[String],
+    missing_target_branches: &[String],
     delivery_exists: bool,
     delivery_stale: bool,
     demand_intake: &DemandIntakeReadiness,
@@ -1681,14 +1681,14 @@ fn workspace_health_checks(
             "worktreeScript",
         ),
         health_check(
-            "branch-alignment",
-            "分支一致 / Branch alignment",
-            if branch_mismatches.is_empty() {
-                "worktree 分支与目标分支一致".to_string()
+            "target-branch-availability",
+            "分支可用 / Branch availability",
+            if missing_target_branches.is_empty() {
+                "已确认服务未报告目标分支缺失".to_string()
             } else {
-                format!("不一致: {}", branch_mismatches.join(", "))
+                format!("缺少目标分支: {}", missing_target_branches.join(", "))
             },
-            if branch_mismatches.is_empty() {
+            if missing_target_branches.is_empty() {
                 "pass"
             } else {
                 "fail"
@@ -1806,7 +1806,7 @@ fn workspace_session_actions(
     confirmed_services: &[String],
     missing_worktrees: &[String],
     dirty_worktrees: &[String],
-    branch_mismatches: &[String],
+    missing_target_branches: &[String],
     delivery_exists: bool,
     delivery_stale: bool,
     demand_intake: &DemandIntakeReadiness,
@@ -1865,11 +1865,11 @@ fn workspace_session_actions(
         ));
     }
 
-    if !branch_mismatches.is_empty() {
+    if !missing_target_branches.is_empty() {
         actions.push(session_action(
-            "align-branches",
-            "修正分支不一致 / Align branches",
-            format!("分支不一致: {}", branch_mismatches.join(", ")),
+            "fix-target-branch-availability",
+            "修正目标分支不可用 / Fix target branch",
+            format!("目标分支不可用: {}", missing_target_branches.join(", ")),
             "high",
             "blocked",
             "git",

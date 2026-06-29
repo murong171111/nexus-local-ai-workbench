@@ -94,7 +94,7 @@ const stateLabels: Record<string, string> = {
 const filterLabels: Record<string, { title: string; desc: string }> = {
   all: { title: "全部", desc: "All" },
   risk: { title: "有风险", desc: "Risk" },
-  branch: { title: "分支不一致", desc: "Branch" },
+  branch: { title: "目标分支缺失", desc: "Branch" },
   dirty: { title: "有改动", desc: "Dirty" },
   missing: { title: "缺 worktree", desc: "Missing" },
   archived: { title: "已归档", desc: "Archive" }
@@ -104,7 +104,7 @@ const statLabels: Record<string, { title: string; desc: string }> = {
   workspaces: { title: "工作区", desc: "Workspaces" },
   services: { title: "服务", desc: "Services" },
   risks: { title: "风险项", desc: "Risks" },
-  branch: { title: "分支不一致", desc: "Branch mismatch" },
+  branch: { title: "目标分支问题", desc: "Target branch" },
   missing: { title: "缺失 Worktree", desc: "Missing worktree" }
 };
 
@@ -402,10 +402,10 @@ ${codexSessionPromptBlock(sessions)}
 function riskInstruction(workspace: Workspace, risk: string, sessions: CodexSessionLink[] = []) {
   const sessionBlock = `\n\n已绑定 Codex 会话：\n${codexSessionPromptBlock(sessions)}`;
   if (risk.includes("分支不一致")) {
-    return `工作区 ${workspace.folder} 存在风险：${risk}\n请读取 branches.md 并检查每个 repos/<service> worktree 的实际分支是否等于目标分支 ${workspace.targetBranch}。请列出不一致服务、当前分支、建议切换或重建 worktree 的命令，并提醒不要直接切换源仓库分支。${sessionBlock}`;
+    return `工作区 ${workspace.folder} 存在历史分支风险：${risk}\n请读取 branches.md，并优先检查对应服务 source repo 是否存在目标分支 ${workspace.targetBranch} 或远端跟踪引用。不要只因为 workspace-local worktree 当前检出分支不同就判定阻塞。${sessionBlock}`;
   }
   if (risk.includes("目标分支")) {
-    return `工作区 ${workspace.folder} 存在风险：${risk}\n请读取 branches.md 和 workspace.md，确认目标分支命名，并给出是否需要创建 worktree 的建议。${sessionBlock}`;
+    return `工作区 ${workspace.folder} 存在风险：${risk}\n请读取 branches.md 和 workspace.md，确认目标分支命名，并检查相关 source repo 是否存在该分支或远端跟踪引用；如果缺失，再给出同步、创建或修正分支记录的建议。${sessionBlock}`;
   }
   if (risk.includes("worktree")) {
     return `工作区 ${workspace.folder} 存在风险：${risk}\n请基于 services.md 中已确认服务，检查 repos/<service> 是否存在，并给出创建 worktree 的命令。${sessionBlock}`;
@@ -946,13 +946,13 @@ function WorkspaceCard({
           <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
             <div className="flex items-center gap-2 text-xs font-medium text-amber-900">
               <GitBranch className="h-3.5 w-3.5" />
-              分支一致性 / Branch alignment
+              目标分支可用性 / Target branch
             </div>
             <div className="mt-2 grid gap-1">
               {branchMismatches.slice(0, 3).map((row) => (
                 <div key={row.service} className="mono flex min-w-0 items-center justify-between gap-2 text-[11px] text-amber-800">
                   <span className="truncate">{row.service}</span>
-                  <span className="truncate">{`${row.actualBranch} -> ${row.expectedBranch}`}</span>
+                  <span className="truncate">{`${row.sourceBranch || "source"} / ${row.expectedBranch}`}</span>
                 </div>
               ))}
             </div>
@@ -1232,8 +1232,8 @@ function CommandPalette({
     },
     {
       id: "branch",
-      label: "只看分支不一致",
-      hint: "Show branch mismatches",
+      label: "只看目标分支缺失",
+      hint: "Show target branch issues",
       icon: GitBranch,
       run: () => {
         setFilter("branch");
@@ -1347,7 +1347,7 @@ function RightRail({ current, visible }: { current?: Workspace; visible: Workspa
           {current ? (
             <>
               当前焦点是 <span className="text-neutral-950">{current.name}</span>。
-              {branchMismatches ? `有 ${branchMismatches} 个服务 worktree 分支与目标分支不一致，应先校准分支。` : "优先处理分支确认、worktree 缺失和交付文档完整性。"}
+              {branchMismatches ? `有 ${branchMismatches} 个服务缺少目标分支引用，应先同步源仓库或修正分支记录。` : "优先处理分支确认、worktree 缺失和交付文档完整性。"}
             </>
           ) : (
             "选择一个 workspace 查看分析上下文。"
@@ -1547,21 +1547,21 @@ function WorkspaceDrawer({
             <Stat label={{ title: "确认服务", desc: "Services" }} value={workspace.confirmedServices.length} icon={Boxes} />
             <Stat label={{ title: "缺 worktree", desc: "Missing" }} value={missing} icon={Terminal} />
             <Stat label={{ title: "未提交改动", desc: "Dirty" }} value={dirty} icon={GitCommit} />
-            <Stat label={{ title: "分支不一致", desc: "Branch" }} value={branchMismatches.length} icon={GitBranch} />
+            <Stat label={{ title: "目标分支缺失", desc: "Branch" }} value={branchMismatches.length} icon={GitBranch} />
           </section>
 
           {branchMismatches.length > 0 && (
             <section className="rounded-lg border border-amber-200 bg-amber-50 p-3">
               <div className="mb-2 flex items-center gap-2 text-sm font-medium text-amber-900">
                 <GitBranch className="h-4 w-4" />
-                分支一致性 / Branch alignment
+                目标分支可用性 / Target branch
               </div>
               <div className="grid gap-2">
                 {branchMismatches.map((row) => (
                   <div key={row.service} className="rounded-md bg-white px-3 py-2 text-xs">
                     <div className="font-medium text-neutral-950">{row.service}</div>
-                    <div className="mono mt-1 text-amber-800">worktree: {row.actualBranch}</div>
-                    <div className="mono mt-1 text-neutral-500">target: {row.expectedBranch} / source: {row.sourceBranch || "unknown"}</div>
+                    <div className="mono mt-1 text-amber-800">target: {row.expectedBranch}</div>
+                    <div className="mono mt-1 text-neutral-500">source: {row.sourceBranch || "unknown"} / worktree: {row.actualBranch || "unknown"}</div>
                   </div>
                 ))}
               </div>
@@ -1991,7 +1991,7 @@ function WorkspaceDrawer({
                   <div key={row.service} className="rounded-md border border-neutral-200 p-3 text-sm">
                     <div className="flex items-center gap-2 font-medium text-neutral-950">
                       {row.service}
-                      {branchMismatches.some((item) => item.service === row.service) && <Badge tone="amber">branch mismatch</Badge>}
+                      {branchMismatches.some((item) => item.service === row.service) && <Badge tone="amber">target missing</Badge>}
                     </div>
                     <div className="mt-2 grid gap-2 text-xs text-neutral-600">
                       <div>

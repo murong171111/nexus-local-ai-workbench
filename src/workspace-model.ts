@@ -23,7 +23,7 @@ export type BranchAlignmentRow = {
   sourceBranch: string;
 };
 
-export type WorktreeStatusKind = "missing" | "branch-mismatch" | "dirty" | "source-dirty" | "clean";
+export type WorktreeStatusKind = "missing" | "target-branch-missing" | "dirty" | "source-dirty" | "clean";
 
 export type WorktreeStatusSignal = {
   service: string;
@@ -248,8 +248,10 @@ export function buildWorktreeCommand(workspacePath: string, sourceRoot: string, 
 }
 
 export function normalizeGitBranch(value: string) {
-  return value
+  const branch = value
     .replace(/^##\s*/, "")
+    .replace(/^No commits yet on\s+/, "");
+  return branch
     .split("...")[0]
     .split(" ")[0]
     .trim();
@@ -265,14 +267,23 @@ export function branchAlignmentRows(workspace: Workspace): BranchAlignmentRow[] 
 
   const expectedBranch = normalizeGitBranch(workspace.targetBranch);
   return workspace.gitRows
-    .filter((row) => row.worktree.exists)
+    .filter((row) => row.source.exists && sourceReportsMissingTargetBranch(row.source.summary, expectedBranch))
     .map((row) => ({
       service: row.service,
       expectedBranch,
       actualBranch: normalizeGitBranch(row.worktree.branch),
       sourceBranch: normalizeGitBranch(row.source.branch)
-    }))
-    .filter((row) => row.actualBranch && row.actualBranch !== expectedBranch);
+    }));
+}
+
+function sourceReportsMissingTargetBranch(summary: string, expectedBranch: string) {
+  const normalized = summary.toLowerCase();
+  const hasMarker =
+    normalized.includes("target branch missing") ||
+    normalized.includes("target branch unavailable") ||
+    normalized.includes("目标分支缺失") ||
+    normalized.includes("目标分支不可用");
+  return hasMarker && (!expectedBranch || normalized.includes(expectedBranch));
 }
 
 function gitRowHasDirtyService(row: GitRow) {
@@ -294,13 +305,13 @@ export function worktreeStatusSignal(row: GitRow, targetBranch: string): Worktre
     };
   }
 
-  if (hasConfirmedTargetBranch(targetBranch) && actualBranch && actualBranch !== expectedBranch) {
+  if (hasConfirmedTargetBranch(targetBranch) && row.source.exists && sourceReportsMissingTargetBranch(row.source.summary, expectedBranch)) {
     return {
       service: row.service,
-      kind: "branch-mismatch",
+      kind: "target-branch-missing",
       priority: "high",
-      label: "分支不一致 / Branch mismatch",
-      detail: `${row.service} worktree is on ${actualBranch}; expected ${expectedBranch}.`
+      label: "目标分支不可用 / Target branch",
+      detail: `${row.service} source repo does not report target branch ${expectedBranch}; current worktree branch is ${actualBranch || "unknown"}.`
     };
   }
 
@@ -385,7 +396,7 @@ export function filterWorkspaces(workspaces: Workspace[], options: WorkspaceFilt
 export function workspaceScore(workspace: Workspace) {
   const signals = workspaceWorktreeSignals(workspace);
   const missing = signals.filter((signal) => signal.kind === "missing").length;
-  const mismatches = signals.filter((signal) => signal.kind === "branch-mismatch").length;
+  const mismatches = signals.filter((signal) => signal.kind === "target-branch-missing").length;
   const dirty = signals.filter((signal) => signal.kind === "dirty" || signal.kind === "source-dirty").length;
   return workspace.riskCount * 10 + missing * 6 + mismatches * 5 + dirty * 3;
 }
@@ -418,7 +429,7 @@ export function workspaceSessionActions(workspace: Workspace): WorkspaceSessionA
   const actions: WorkspaceSessionAction[] = [];
   const missingWorktrees = workspace.gitRows.filter((row) => !row.worktree.exists).map((row) => row.service);
   const dirtyServices = workspace.gitRows.filter(gitRowHasDirtyService).map((row) => row.service);
-  const mismatches = branchAlignmentRows(workspace).map((row) => `${row.service}(${row.actualBranch})`);
+  const mismatches = branchAlignmentRows(workspace).map((row) => `${row.service}(${row.expectedBranch})`);
   const deliveryRisk = workspace.risks.find((risk) => risk.includes("交付") || risk.toLowerCase().includes("delivery"));
   const activeTasks = workspace.taskCounts.doing + workspace.taskCounts.todo;
   const demandIntakeCheck = (workspace.healthChecks ?? []).find((check) =>
@@ -453,7 +464,7 @@ export function workspaceSessionActions(workspace: Workspace): WorkspaceSessionA
   }
 
   if (mismatches.length) {
-    actions.push(sessionAction("align-branches", "修正分支不一致 / Align branches", `分支不一致: ${mismatches.join(", ")}`, "high", "blocked", "git", "branches"));
+    actions.push(sessionAction("fix-target-branch-availability", "修正目标分支不可用 / Fix target branch", `目标分支不可用: ${mismatches.join(", ")}`, "high", "blocked", "git", "branches"));
   }
 
   if (dirtyServices.length) {

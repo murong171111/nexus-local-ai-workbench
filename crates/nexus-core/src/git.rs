@@ -124,16 +124,79 @@ pub fn git_status(path: impl AsRef<Path>) -> GitStatus {
 
 pub fn normalize_git_branch(value: &str) -> String {
     let trimmed = value.trim();
-    trimmed
-        .trim_start_matches("## ")
+    let status_branch = trimmed.trim_start_matches("## ");
+    let branch = status_branch
+        .strip_prefix("No commits yet on ")
+        .unwrap_or(status_branch);
+    branch
         .split("...")
         .next()
-        .unwrap_or(trimmed)
+        .unwrap_or(branch)
         .split(' ')
         .next()
-        .unwrap_or(trimmed)
+        .unwrap_or(branch)
         .trim()
         .to_string()
+}
+
+pub fn target_branch_exists(path: impl AsRef<Path>, target_branch: &str) -> Result<bool, String> {
+    let path = path.as_ref();
+    if !path.exists() || !path.join(".git").exists() {
+        return Ok(false);
+    }
+
+    let target = normalize_branch_ref_target(target_branch);
+    if !target_branch_confirmed(&target) {
+        return Ok(true);
+    }
+
+    let status = git_status(path);
+    if normalize_branch_ref_target(&status.branch) == target {
+        return Ok(true);
+    }
+
+    let output = Command::new("git")
+        .args(["-C", &path.to_string_lossy(), "show-ref"])
+        .output()
+        .map_err(|error| error.to_string())?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if stdout
+        .lines()
+        .filter_map(|line| line.split_whitespace().last())
+        .any(|refname| branch_ref_matches_target(refname, &target))
+    {
+        return Ok(true);
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if output.status.success() || (stdout.trim().is_empty() && stderr.is_empty()) {
+        return Ok(false);
+    }
+
+    Err(if stderr.is_empty() {
+        format!("git show-ref exited with {}", output.status)
+    } else {
+        stderr
+    })
+}
+
+fn normalize_branch_ref_target(value: &str) -> String {
+    normalize_git_branch(value)
+        .trim_start_matches("origin/")
+        .to_string()
+}
+
+fn branch_ref_matches_target(refname: &str, target_branch: &str) -> bool {
+    if refname == format!("refs/heads/{target_branch}") {
+        return true;
+    }
+    let Some(remote_ref) = refname.strip_prefix("refs/remotes/") else {
+        return false;
+    };
+    let Some((_, branch)) = remote_ref.split_once('/') else {
+        return false;
+    };
+    branch == target_branch
 }
 
 pub fn target_branch_confirmed(value: &str) -> bool {
@@ -165,6 +228,10 @@ mod tests {
             normalize_git_branch("## chen/demo...origin/chen/demo [ahead 1]"),
             "chen/demo"
         );
+        assert_eq!(
+            normalize_git_branch("## No commits yet on chen/demo"),
+            "chen/demo"
+        );
         assert_eq!(normalize_git_branch("main...origin/main"), "main");
         assert_eq!(normalize_git_branch(" feature/demo "), "feature/demo");
     }
@@ -175,6 +242,26 @@ mod tests {
         assert!(!target_branch_confirmed("待确认"));
         assert!(!target_branch_confirmed("<target-branch>"));
         assert!(!target_branch_confirmed(""));
+    }
+
+    #[test]
+    fn branch_ref_matches_local_and_remote_targets() {
+        assert!(branch_ref_matches_target(
+            "refs/heads/chen/demo",
+            "chen/demo"
+        ));
+        assert!(branch_ref_matches_target(
+            "refs/remotes/origin/chen/demo",
+            "chen/demo"
+        ));
+        assert!(branch_ref_matches_target(
+            "refs/remotes/upstream/feature/pricing",
+            "feature/pricing"
+        ));
+        assert!(!branch_ref_matches_target(
+            "refs/heads/feature/other",
+            "feature/pricing"
+        ));
     }
 
     #[test]
