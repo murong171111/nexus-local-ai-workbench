@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import NexusBridge
 
 struct NativeLifecycleProofBundle: Codable, Hashable {
@@ -9,9 +10,10 @@ struct NativeLifecycleProofBundle: Codable, Hashable {
     let evidenceFiles: [NativeLifecycleProofFileSnapshot]
     let auditChain: [NativeLifecycleProofAuditSnapshot]
     let missingEvidenceFiles: [String]
+    let unverifiedEvidenceFiles: [String]?
 
     var ready: Bool {
-        proof.ready && missingEvidenceFiles.isEmpty
+        proof.ready && missingEvidenceFiles.isEmpty && (unverifiedEvidenceFiles ?? []).isEmpty
     }
 
     static func resolve(
@@ -23,14 +25,23 @@ struct NativeLifecycleProofBundle: Codable, Hashable {
         let proof = NativeLifecycleProofEvidence.resolve(workspace: workspace, auditEvents: auditEvents)
         let files = requiredEvidenceFiles(for: workspace).map { relativePath in
             let path = URL(fileURLWithPath: workspace.path).appendingPathComponent(relativePath).path
+            let fileURL = URL(fileURLWithPath: path)
+            let exists = fileManager.fileExists(atPath: path)
+            let data = exists ? try? Data(contentsOf: fileURL) : nil
+            let size = fileSize(path: path, fileManager: fileManager)
             return NativeLifecycleProofFileSnapshot(
                 relativePath: relativePath,
                 path: path,
-                exists: fileManager.fileExists(atPath: path)
+                exists: exists,
+                sizeBytes: size,
+                sha256: data.map(sha256Hex)
             )
         }
         let missingFiles = files
             .filter { !$0.exists }
+            .map(\.relativePath)
+        let unverifiedFiles = files
+            .filter { $0.exists && ($0.sizeBytes == nil || $0.sha256 == nil) }
             .map(\.relativePath)
         let chain = chronologicalRelevantEvents(for: workspace, auditEvents: auditEvents)
             .filter { NativeLifecycleProofEvidence.requiredAuditActions.contains($0.action) }
@@ -40,10 +51,15 @@ struct NativeLifecycleProofBundle: Codable, Hashable {
             schemaVersion: 1,
             generatedAt: ISO8601DateFormatter().string(from: generatedAt),
             workspace: NativeLifecycleProofWorkspaceSnapshot(workspace: workspace),
-            proof: NativeLifecycleProofSnapshot(evidence: proof, missingEvidenceFiles: missingFiles),
+            proof: NativeLifecycleProofSnapshot(
+                evidence: proof,
+                missingEvidenceFiles: missingFiles,
+                unverifiedEvidenceFiles: unverifiedFiles
+            ),
             evidenceFiles: files,
             auditChain: chain,
-            missingEvidenceFiles: missingFiles
+            missingEvidenceFiles: missingFiles,
+            unverifiedEvidenceFiles: unverifiedFiles
         )
     }
 
@@ -89,6 +105,19 @@ struct NativeLifecycleProofBundle: Codable, Hashable {
                 || value.contains(workspace.folder)
         }
     }
+
+    private static func fileSize(path: String, fileManager: FileManager) -> Int? {
+        guard let size = try? fileManager.attributesOfItem(atPath: path)[.size] as? NSNumber else {
+            return nil
+        }
+        return size.intValue
+    }
+
+    static func sha256Hex(data: Data) -> String {
+        SHA256.hash(data: data)
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
 }
 
 struct NativeLifecycleProofWorkspaceSnapshot: Codable, Hashable {
@@ -125,17 +154,25 @@ struct NativeLifecycleProofSnapshot: Codable, Hashable {
     let requiredAuditActions: [String]
     let missingActions: [String]
     let missingEvidenceFiles: [String]
+    let unverifiedEvidenceFiles: [String]?
 
-    init(evidence: NativeLifecycleProofEvidence, missingEvidenceFiles: [String]) {
-        ready = evidence.ready && missingEvidenceFiles.isEmpty
+    init(
+        evidence: NativeLifecycleProofEvidence,
+        missingEvidenceFiles: [String],
+        unverifiedEvidenceFiles: [String]
+    ) {
+        ready = evidence.ready && missingEvidenceFiles.isEmpty && unverifiedEvidenceFiles.isEmpty
         status = ready ? WorkflowPathStatus.ready.rawValue : WorkflowPathStatus.blocked.rawValue
-        detail = missingEvidenceFiles.isEmpty
-            ? evidence.detail
-            : "\(evidence.detail) Missing evidence files: \(missingEvidenceFiles.joined(separator: ", "))."
+        let fileBlockers = [
+            missingEvidenceFiles.isEmpty ? nil : "Missing evidence files: \(missingEvidenceFiles.joined(separator: ", ")).",
+            unverifiedEvidenceFiles.isEmpty ? nil : "Unverified evidence files: \(unverifiedEvidenceFiles.joined(separator: ", "))."
+        ].compactMap { $0 }
+        detail = fileBlockers.isEmpty ? evidence.detail : "\(evidence.detail) \(fileBlockers.joined(separator: " "))"
         orderedActions = evidence.orderedActions
         requiredAuditActions = NativeLifecycleProofEvidence.requiredAuditActions
         missingActions = evidence.missingActions
         self.missingEvidenceFiles = missingEvidenceFiles
+        self.unverifiedEvidenceFiles = unverifiedEvidenceFiles
     }
 }
 
@@ -143,6 +180,8 @@ struct NativeLifecycleProofFileSnapshot: Codable, Hashable {
     let relativePath: String
     let path: String
     let exists: Bool
+    let sizeBytes: Int?
+    let sha256: String?
 }
 
 struct NativeLifecycleProofAuditSnapshot: Codable, Hashable {
@@ -189,7 +228,7 @@ struct NativeLifecycleProofBundleExportPlan: Identifiable {
 
     var summary: String {
         if bundle.ready {
-            return "Ready to export native-lifecycle-proof.json with \(bundle.auditChain.count) audit events and \(bundle.evidenceFiles.count) evidence files."
+            return "Ready to export native-lifecycle-proof.json with \(bundle.auditChain.count) audit events and \(bundle.evidenceFiles.count) hashed evidence files."
         }
         return bundle.proof.detail
     }
@@ -234,12 +273,14 @@ enum NativeLifecycleProofBundleStore {
 
         let outputURL = URL(fileURLWithPath: bundlePath(for: workspace))
         let payload = try NativeLifecycleProofBundle.jsonData(for: bundle)
+        let bundleSHA256 = NativeLifecycleProofBundle.sha256Hex(data: payload)
         try payload.write(to: outputURL, options: .atomic)
 
         let auditEventPath = appendAuditEvent(
             workspace: workspace,
             outputPath: outputURL.path,
             bundle: bundle,
+            bundleSHA256: bundleSHA256,
             auditRoot: auditRoot,
             actor: actor
         )
@@ -254,6 +295,7 @@ enum NativeLifecycleProofBundleStore {
         workspace: WorkspaceSummary,
         outputPath: String,
         bundle: NativeLifecycleProofBundle,
+        bundleSHA256: String,
         auditRoot: String?,
         actor: String?
     ) -> String? {
@@ -275,7 +317,9 @@ enum NativeLifecycleProofBundleStore {
                     "bundlePath": outputPath,
                     "ready": "\(bundle.ready)",
                     "auditActionCount": "\(bundle.auditChain.count)",
-                    "evidenceFileCount": "\(bundle.evidenceFiles.count)"
+                    "evidenceFileCount": "\(bundle.evidenceFiles.count)",
+                    "unverifiedEvidenceFileCount": "\((bundle.unverifiedEvidenceFiles ?? []).count)",
+                    "bundleSHA256": bundleSHA256
                 ]
             )
         )

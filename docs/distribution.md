@@ -44,7 +44,7 @@ The app bundle must include:
 - Verify `NativeDistributionReadinessEvidence` reports the current M3 blockers clearly in Settings.
 - Confirm M1 main workflow evidence is ready.
 - Confirm M2 Native Local Core evidence reports `11/11 Native domains`.
-- Confirm at least one real archived workspace provides `native-lifecycle-proof.json`: archived stage, delivery evidence, ready services, no active tasks, no open risks, required evidence files, and ordered Native audit actions.
+- Confirm at least one real archived workspace provides `native-lifecycle-proof.json`: archived stage, delivery evidence, ready services, no active tasks, no open risks, required evidence files with size/SHA-256 snapshots, ordered Native audit actions, and a proof export audit event with the bundle SHA-256.
 - Confirm Widget snapshot writing works in Application Support and, when signed, the App Group container.
 - Confirm the built WidgetKit `.appex` is embedded with `build-app-bundle.sh --widget-extension` and verified with `verify-release-bundle.sh --require-widget` before public distribution.
 - Confirm `nexus://workspace/<folder>` opens Nexus and focuses the target workspace.

@@ -4518,18 +4518,25 @@ final class ModelBehaviorTests: XCTestCase {
         )
         let proofBundleData = try Data(contentsOf: URL(fileURLWithPath: proofBundleResponse.path))
         let proofBundle = try JSONDecoder().decode(NativeLifecycleProofBundle.self, from: proofBundleData)
-        let actionsAfterProofExport = try NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 50).map(\.action)
+        let eventsAfterProofExport = try NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 50)
+        let actionsAfterProofExport = eventsAfterProofExport.map(\.action)
+        let proofExportEvent = eventsAfterProofExport.first { $0.action == "native_lifecycle_proof.exported" }
 
         XCTAssertTrue(proofBundleResponse.ready)
         XCTAssertTrue(proofBundle.ready)
         XCTAssertEqual(proofBundle.workspace.lifecycleStage, "archived")
         XCTAssertEqual(proofBundle.proof.status, WorkflowPathStatus.ready.rawValue)
         XCTAssertTrue(proofBundle.evidenceFiles.allSatisfy(\.exists))
+        XCTAssertTrue(proofBundle.evidenceFiles.allSatisfy { ($0.sizeBytes ?? 0) > 0 })
+        XCTAssertTrue(proofBundle.evidenceFiles.allSatisfy { $0.sha256?.count == 64 })
         XCTAssertTrue(proofBundle.missingEvidenceFiles.isEmpty)
+        XCTAssertTrue(proofBundle.unverifiedEvidenceFiles?.isEmpty == true)
         XCTAssertEqual(proofBundle.proof.requiredAuditActions, NativeLifecycleProofEvidence.requiredAuditActions)
         XCTAssertTrue(proofBundle.auditChain.map(\.action).contains("workspace.created"))
         XCTAssertTrue(proofBundle.auditChain.map(\.action).contains("workspace_lifecycle.updated"))
         XCTAssertTrue(actionsAfterProofExport.contains("native_lifecycle_proof.exported"))
+        XCTAssertEqual(proofExportEvent?.metadata["bundleSHA256"], NativeLifecycleProofBundle.sha256Hex(data: proofBundleData))
+        XCTAssertEqual(proofExportEvent?.metadata["unverifiedEvidenceFileCount"], "0")
         let proofAppState = appStateForAutomationTests(workspaces: [archived])
         XCTAssertTrue(proofAppState.nativeLifecycleProofBundleAvailable(auditEvents: proofEvents))
         let distributionEvidence = proofAppState.nativeDistributionReadinessEvidence(
@@ -4591,6 +4598,52 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(restoredSummary.archivedWorkspaceCount, 0)
         XCTAssertEqual(actionsAfterRestore.filter { $0 == "workspace_lifecycle.updated" }.count, 2)
         XCTAssertFalse(appStateForAutomationTests(workspaces: [restored]).nativeLifecycleProofAvailable())
+    }
+
+    func testNativeLifecycleProofBundleDecodesLegacyEvidenceFileShape() throws {
+        let json = """
+        {
+          "schemaVersion" : 1,
+          "generatedAt" : "2026-06-30T00:00:00Z",
+          "workspace" : {
+            "id" : "legacy-proof",
+            "name" : "Legacy Proof",
+            "folder" : "legacy-proof",
+            "path" : "/tmp/legacy-proof",
+            "state" : "archived",
+            "lifecycleStage" : "archived",
+            "targetBranch" : "main",
+            "serviceCount" : 1,
+            "activeTaskCount" : 0,
+            "riskCount" : 0
+          },
+          "proof" : {
+            "ready" : true,
+            "status" : "ready",
+            "detail" : "ready",
+            "orderedActions" : ["workspace.created"],
+            "requiredAuditActions" : ["workspace.created"],
+            "missingActions" : [],
+            "missingEvidenceFiles" : []
+          },
+          "evidenceFiles" : [
+            {
+              "relativePath" : "workspace.md",
+              "path" : "/tmp/legacy-proof/workspace.md",
+              "exists" : true
+            }
+          ],
+          "auditChain" : [],
+          "missingEvidenceFiles" : []
+        }
+        """
+        let bundle = try JSONDecoder().decode(NativeLifecycleProofBundle.self, from: Data(json.utf8))
+
+        XCTAssertTrue(bundle.ready)
+        XCTAssertNil(bundle.unverifiedEvidenceFiles)
+        XCTAssertEqual(bundle.evidenceFiles.first?.relativePath, "workspace.md")
+        XCTAssertNil(bundle.evidenceFiles.first?.sizeBytes)
+        XCTAssertNil(bundle.evidenceFiles.first?.sha256)
     }
 
     func testDevelopmentTaskEvidenceRoutesNextActiveTask() {
