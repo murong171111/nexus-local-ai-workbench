@@ -505,6 +505,14 @@ final class AppState: ObservableObject {
         )
     }
 
+    var nativeOnboardingPath: NativeOnboardingPath {
+        NativeOnboardingPath.resolve(
+            readiness: setupReadiness,
+            workspaceCount: workspaces.count,
+            profileImported: lastSettingsProfilePath != nil
+        )
+    }
+
     var nativeStatusDiagnostics: NativeStatusDiagnostics {
         NativeStatusDiagnostics.resolve(
             workspaceRoot: workspaceRoot,

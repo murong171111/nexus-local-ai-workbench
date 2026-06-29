@@ -74,6 +74,7 @@ final class ModelBehaviorTests: XCTestCase {
             "WorkspaceListStageBadges.swift",
             "WorkspaceListSummary.swift",
             "NativeStatusDiagnostics.swift",
+            "NativeOnboardingPath.swift",
             "WorkspaceDetailNavigation.swift",
             "NativeLifecycleProofEvidence.swift",
             "DemandIntakeActions.swift",
@@ -139,6 +140,85 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(blocked.status.environmentStatus, "blocker")
         XCTAssertTrue(blocked.detail.contains("1 blockers"))
         XCTAssertTrue(blocked.detail.contains("Settings"))
+    }
+
+    func testNativeOnboardingPathRoutesFirstRunToOneCurrentStep() {
+        let noProfile = NativeOnboardingPath.resolve(
+            readiness: NativeSetupReadiness(
+                health: nil,
+                workspaceCount: 0,
+                profileImported: false
+            ),
+            workspaceCount: 0,
+            profileImported: false
+        )
+        XCTAssertEqual(noProfile.currentStep?.id, .teamProfile)
+        XCTAssertEqual(noProfile.currentActionLabel, "打开团队配置")
+        XCTAssertEqual(noProfile.steps.filter(\.isCurrent).count, 1)
+        XCTAssertEqual(noProfile.steps.map(\.id), NativeOnboardingStepID.allCases)
+        XCTAssertEqual(noProfile.steps.first { $0.id == .environmentCheck }?.status, .review)
+
+        let importedUnchecked = NativeOnboardingPath.resolve(
+            readiness: NativeSetupReadiness(
+                health: nil,
+                workspaceCount: 0,
+                profileImported: true
+            ),
+            workspaceCount: 0,
+            profileImported: true
+        )
+        XCTAssertEqual(importedUnchecked.currentStep?.id, .environmentCheck)
+        XCTAssertEqual(importedUnchecked.currentActionLabel, "运行环境检查")
+    }
+
+    func testNativeOnboardingPathRoutesReadyEnvironmentToWorkspaceOrMainPath() {
+        let readyEmpty = NativeOnboardingPath.resolve(
+            readiness: NativeSetupReadiness(
+                health: environmentHealth(ready: true, workspaceCount: 0, sourceRepoCount: 2),
+                workspaceCount: 0,
+                profileImported: true
+            ),
+            workspaceCount: 0,
+            profileImported: true
+        )
+        XCTAssertEqual(readyEmpty.currentStep?.id, .workspaceCreation)
+        XCTAssertEqual(readyEmpty.currentStep?.status, .next)
+        XCTAssertEqual(readyEmpty.currentActionLabel, "新建工作区")
+        XCTAssertEqual(readyEmpty.steps.first { $0.id == .mainPath }?.status, .pending)
+
+        let readyWithWorkspace = NativeOnboardingPath.resolve(
+            readiness: NativeSetupReadiness(
+                health: environmentHealth(ready: true, workspaceCount: 2, sourceRepoCount: 3),
+                workspaceCount: 2,
+                profileImported: true
+            ),
+            workspaceCount: 2,
+            profileImported: true
+        )
+        XCTAssertEqual(readyWithWorkspace.currentStep?.id, .mainPath)
+        XCTAssertEqual(readyWithWorkspace.steps.first { $0.id == .workspaceCreation }?.status, .ready)
+        XCTAssertEqual(readyWithWorkspace.steps.first { $0.id == .mainPath }?.status, .ready)
+    }
+
+    func testNativeOnboardingPathKeepsBlockedEnvironmentCurrent() {
+        let blocked = NativeOnboardingPath.resolve(
+            readiness: NativeSetupReadiness(
+                health: environmentHealth(
+                    ready: false,
+                    workspaceCount: 0,
+                    sourceRepoCount: 0,
+                    blockers: ["工作区目录不存在"]
+                ),
+                workspaceCount: 0,
+                profileImported: false
+            ),
+            workspaceCount: 0,
+            profileImported: false
+        )
+        XCTAssertEqual(blocked.currentStep?.id, .environmentCheck)
+        XCTAssertEqual(blocked.currentStep?.status, .blocked)
+        XCTAssertTrue(blocked.currentStep?.detail.contains("blockers") == true)
+        XCTAssertEqual(blocked.steps.first { $0.id == .workspaceCreation }?.status, .pending)
     }
 
     func testWorkspaceBoardEmptyStateReasonSeparatesSetupDirectoryAndFilterStates() {
