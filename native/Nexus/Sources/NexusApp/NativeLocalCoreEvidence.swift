@@ -77,11 +77,169 @@ struct NativeLocalCoreDomainEvidence: Hashable, Identifiable {
     var id: NativeLocalCoreDomain { domain }
 }
 
+enum NativeConfirmedWriteCapability: String, CaseIterable, Hashable {
+    case demandInitialization
+    case scopeFreeze
+    case demandTaskTransfer
+    case taskStatusWriteback
+    case worktreeSetup
+    case deliveryEvidence
+    case validationPrSnapshot
+    case archiveChecklist
+    case archiveRestoreLifecycle
+    case lifecycleProofExport
+
+    var label: String {
+        switch self {
+        case .demandInitialization:
+            "需求初始化"
+        case .scopeFreeze:
+            "范围冻结"
+        case .demandTaskTransfer:
+            "任务迁移"
+        case .taskStatusWriteback:
+            "任务状态写回"
+        case .worktreeSetup:
+            "Worktree 创建"
+        case .deliveryEvidence:
+            "交付证据"
+        case .validationPrSnapshot:
+            "验证/PR 快照"
+        case .archiveChecklist:
+            "归档检查单"
+        case .archiveRestoreLifecycle:
+            "归档/恢复生命周期"
+        case .lifecycleProofExport:
+            "生命周期证明导出"
+        }
+    }
+
+    var auditAction: String {
+        switch self {
+        case .demandInitialization:
+            "demand_intake.initialized"
+        case .scopeFreeze:
+            "scope.freeze_confirmed"
+        case .demandTaskTransfer:
+            "demand_tasks.transferred"
+        case .taskStatusWriteback:
+            "workspace_task.updated"
+        case .worktreeSetup:
+            "worktree_setup.executed"
+        case .deliveryEvidence:
+            "delivery_record.snapshot_appended"
+        case .validationPrSnapshot:
+            "validation_pr.snapshot_appended"
+        case .archiveChecklist:
+            "archive_checklist.snapshot_appended"
+        case .archiveRestoreLifecycle:
+            "workspace_lifecycle.updated"
+        case .lifecycleProofExport:
+            "native_lifecycle_proof.exported"
+        }
+    }
+
+    var confirmation: String {
+        switch self {
+        case .demandInitialization:
+            "创建 需求/ 标准文件前要求 explicit confirmation。"
+        case .scopeFreeze:
+            "向 需求/scope.md 追加冻结确认块前要求 explicit confirmation。"
+        case .demandTaskTransfer:
+            "把 需求/tasks.md 迁入根 tasks.md 前要求 explicit confirmation。"
+        case .taskStatusWriteback:
+            "完成/延期任务行写回前要求 confirmation sheet。"
+        case .worktreeSetup:
+            "创建 workspace-local worktree 前要求 explicit confirmation。"
+        case .deliveryEvidence:
+            "追加 Delivery Gate 快照前要求 explicit confirmation。"
+        case .validationPrSnapshot:
+            "追加验证、PR、CI 与 release review 快照前要求 explicit confirmation。"
+        case .archiveChecklist:
+            "追加归档确认检查单前要求 explicit confirmation。"
+        case .archiveRestoreLifecycle:
+            "写回 workspace.md 与 STATUS.md 生命周期前要求 confirmation sheet。"
+        case .lifecycleProofExport:
+            "写出 native-lifecycle-proof.json 前要求 explicit confirmation。"
+        }
+    }
+
+    var evidence: [String] {
+        switch self {
+        case .demandInitialization:
+            [
+                "native/Nexus/Sources/NexusApp/NativeDemandIntakeStore.swift",
+                "native/Nexus/Sources/NexusApp/AppState.swift"
+            ]
+        case .scopeFreeze:
+            [
+                "native/Nexus/Sources/NexusApp/NativeScopeFreezeStore.swift",
+                "native/Nexus/Sources/NexusApp/DemandScopeEvidence.swift"
+            ]
+        case .demandTaskTransfer:
+            [
+                "native/Nexus/Sources/NexusApp/NativeDemandTaskTransferStore.swift",
+                "native/Nexus/Sources/NexusApp/DemandScopeEvidence.swift"
+            ]
+        case .taskStatusWriteback:
+            [
+                "native/Nexus/Sources/NexusApp/NativeWorkspaceTaskStore.swift",
+                "native/Nexus/Sources/NexusApp/AppState.swift"
+            ]
+        case .worktreeSetup:
+            [
+                "native/Nexus/Sources/NexusApp/NativeWorktreeSetupStore.swift",
+                "native/Nexus/Sources/NexusApp/ServiceWorktreeEvidence.swift"
+            ]
+        case .deliveryEvidence:
+            [
+                "native/Nexus/Sources/NexusApp/NativeDeliveryRecordStore.swift",
+                "native/Nexus/Sources/NexusApp/DeliveryLifecycleEvidence.swift"
+            ]
+        case .validationPrSnapshot:
+            [
+                "native/Nexus/Sources/NexusApp/NativeDeliveryRecordStore.swift",
+                "native/Nexus/Sources/NexusApp/DeliveryLifecycleEvidence.swift"
+            ]
+        case .archiveChecklist:
+            [
+                "native/Nexus/Sources/NexusApp/NativeDeliveryRecordStore.swift",
+                "native/Nexus/Sources/NexusApp/DeliveryLifecycleEvidence.swift"
+            ]
+        case .archiveRestoreLifecycle:
+            [
+                "native/Nexus/Sources/NexusApp/NativeWorkspaceLifecycleStore.swift",
+                "native/Nexus/Sources/NexusApp/DeliveryLifecycleEvidence.swift"
+            ]
+        case .lifecycleProofExport:
+            [
+                "native/Nexus/Sources/NexusApp/NativeLifecycleProofBundle.swift",
+                "native/Nexus/Sources/NexusApp/NativeLifecycleProofEvidence.swift"
+            ]
+        }
+    }
+}
+
+struct NativeConfirmedWriteEvidence: Hashable, Identifiable {
+    let capability: NativeConfirmedWriteCapability
+    let status: WorkflowPathStatus
+    let confirmation: String
+    let auditAction: String
+    let evidence: [String]
+
+    var id: NativeConfirmedWriteCapability { capability }
+
+    var detail: String {
+        "\(confirmation) Audit action: \(auditAction)。"
+    }
+}
+
 struct NativeLocalCoreEvidence: Hashable {
     let status: WorkflowPathStatus
     let bridgeMode: String
     let reason: String
     let domains: [NativeLocalCoreDomainEvidence]
+    let confirmedWriteCoverage: [NativeConfirmedWriteEvidence]
 
     var ready: Bool {
         status == .ready
@@ -103,6 +261,11 @@ struct NativeLocalCoreEvidence: Hashable {
             return "\(readyCount)/\(domains.count) Native domains · \(partialCount) partial"
         }
         return "\(readyCount)/\(domains.count) Native domains"
+    }
+
+    var confirmedWriteSummary: String {
+        let readyCount = confirmedWriteCoverage.filter { $0.status == .ready }.count
+        return "\(readyCount)/\(confirmedWriteCoverage.count) confirmed writes"
     }
 
     static func resolve(
@@ -140,7 +303,10 @@ struct NativeLocalCoreEvidence: Hashable {
             status: status,
             bridgeMode: bridgeMode,
             reason: reason,
-            domains: domains
+            domains: domains,
+            confirmedWriteCoverage: confirmedWriteCoverage(
+                status: domains.first { $0.domain == .confirmedWrites }?.status ?? .blocked
+            )
         )
     }
 
@@ -178,6 +344,18 @@ struct NativeLocalCoreEvidence: Hashable {
     private static func partialDetail(_ partials: [NativeLocalCoreDomainEvidence]) -> String {
         guard !partials.isEmpty else { return "" }
         return " 另有 \(partials.count) 个域已部分 Swift 化：\(partials.map { $0.domain.label }.joined(separator: ", "))。"
+    }
+
+    private static func confirmedWriteCoverage(status: WorkflowPathStatus) -> [NativeConfirmedWriteEvidence] {
+        NativeConfirmedWriteCapability.allCases.map { capability in
+            NativeConfirmedWriteEvidence(
+                capability: capability,
+                status: status,
+                confirmation: capability.confirmation,
+                auditAction: capability.auditAction,
+                evidence: capability.evidence
+            )
+        }
     }
 }
 

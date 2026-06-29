@@ -1953,7 +1953,7 @@ private struct LifecycleStatusUpdateSheet: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("更新生命周期 / Update lifecycle")
                     .font(.title3.weight(.semibold))
-                Text("Nexus will update workspace.md and STATUS.md after confirmation, then append an audit event when the Rust Core bridge is available.")
+                Text("Nexus will update workspace.md and STATUS.md after confirmation, then append a Native audit event.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -15315,6 +15315,46 @@ private struct NativeLocalCoreEvidenceView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(spacing: 6) {
+                    Image(systemName: "checklist.checked")
+                        .foregroundStyle(NexusPalette.accent)
+                    Text("Confirmed writes: \(evidence.confirmedWriteSummary)")
+                        .font(.caption.weight(.semibold))
+                    Spacer()
+                }
+
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 180), spacing: 7)],
+                    alignment: .leading,
+                    spacing: 7
+                ) {
+                    ForEach(evidence.confirmedWriteCoverage) { item in
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 5) {
+                                Image(systemName: systemImage(for: item.status))
+                                    .foregroundStyle(item.status.color)
+                                Text(item.capability.label)
+                                    .font(.caption2.weight(.semibold))
+                                    .lineLimit(1)
+                            }
+                            Text(item.auditAction)
+                                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        .padding(7)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(item.status.color.opacity(0.07))
+                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        .help(item.detail)
+                    }
+                }
+            }
+            .padding(8)
+            .background(NexusPalette.badge)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
             LazyVGrid(
                 columns: [GridItem(.adaptive(minimum: 190), spacing: 8)],

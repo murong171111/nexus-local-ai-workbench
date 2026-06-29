@@ -1195,6 +1195,8 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(preview.bridgeIsLegacyDependency)
         XCTAssertEqual(preview.migrationSummary, "0/11 Native domains")
         XCTAssertEqual(preview.domains.map(\.status), Array(repeating: .blocked, count: NativeLocalCoreDomain.allCases.count))
+        XCTAssertEqual(preview.confirmedWriteSummary, "0/10 confirmed writes")
+        XCTAssertEqual(preview.confirmedWriteCoverage.map(\.status), Array(repeating: .blocked, count: NativeConfirmedWriteCapability.allCases.count))
         XCTAssertEqual(partiallyNative.status, .blocked)
         XCTAssertEqual(partiallyNative.migrationSummary, "5/11 Native domains · 1 partial")
         XCTAssertEqual(partiallyNative.domains.filter { $0.status == .ready }.map(\.domain), [.workspaceScanning, .documentInventory, .audit, .widgetSnapshot, .searchIndex])
@@ -1253,6 +1255,34 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(
             fullyNative.domains.first { $0.domain == .confirmedWrites }?.evidence.contains(
                 "native/Nexus/Sources/NexusApp/NativeWorkspaceLifecycleStore.swift"
+            ) ?? false
+        )
+        XCTAssertEqual(fullyNative.confirmedWriteSummary, "10/10 confirmed writes")
+        XCTAssertEqual(fullyNative.confirmedWriteCoverage.map(\.capability), NativeConfirmedWriteCapability.allCases)
+        XCTAssertEqual(fullyNative.confirmedWriteCoverage.map(\.status), Array(repeating: .ready, count: NativeConfirmedWriteCapability.allCases.count))
+        XCTAssertEqual(
+            fullyNative.confirmedWriteCoverage.map(\.auditAction),
+            [
+                "demand_intake.initialized",
+                "scope.freeze_confirmed",
+                "demand_tasks.transferred",
+                "workspace_task.updated",
+                "worktree_setup.executed",
+                "delivery_record.snapshot_appended",
+                "validation_pr.snapshot_appended",
+                "archive_checklist.snapshot_appended",
+                "workspace_lifecycle.updated",
+                "native_lifecycle_proof.exported"
+            ]
+        )
+        XCTAssertTrue(
+            fullyNative.confirmedWriteCoverage.first { $0.capability == .archiveRestoreLifecycle }?.confirmation.contains(
+                "confirmation sheet"
+            ) ?? false
+        )
+        XCTAssertTrue(
+            fullyNative.confirmedWriteCoverage.first { $0.capability == .lifecycleProofExport }?.evidence.contains(
+                "native/Nexus/Sources/NexusApp/NativeLifecycleProofBundle.swift"
             ) ?? false
         )
         XCTAssertEqual(
