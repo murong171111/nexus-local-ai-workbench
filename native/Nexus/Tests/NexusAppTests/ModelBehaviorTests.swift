@@ -2737,6 +2737,9 @@ final class ModelBehaviorTests: XCTestCase {
             .localCheckReceipt
         ])
         XCTAssertTrue(layout.keepsSecondaryActionsAfterEvidence)
+        XCTAssertTrue(layout.exposesSingleProminentPrimaryAction)
+        XCTAssertEqual(layout.prominentPrimaryActionLimit, 1)
+        XCTAssertEqual(layout.pathActionPlacement, .menu)
         XCTAssertTrue(layout.secondaryActions.isSecondarySurface)
         XCTAssertFalse(layout.secondaryActions.usesProminentButtons)
         XCTAssertEqual(layout.secondaryActions.groups, [.handoff, .next, .local])

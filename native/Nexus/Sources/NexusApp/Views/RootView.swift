@@ -10051,6 +10051,7 @@ private struct CommandCenterPathItem: Identifiable {
 }
 
 private struct CommandCenterSessionPathView: View {
+    private let layout = CommandCenterLayoutPolicy()
     let items: [CommandCenterPathItem]
     let action: (CommandCenterPrimaryAction) -> Void
 
@@ -10073,48 +10074,66 @@ private struct CommandCenterSessionPathView: View {
 
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 118), spacing: 8)], alignment: .leading, spacing: 8) {
                 ForEach(items) { item in
-                    Button {
-                        action(item.action)
-                    } label: {
-                        VStack(alignment: .leading, spacing: 5) {
-                            HStack(spacing: 6) {
-                                Image(systemName: item.systemImage)
-                                    .font(.caption)
-                                    .foregroundStyle(item.status.color)
-                                    .frame(width: 14)
+                    VStack(alignment: .leading, spacing: 7) {
+                        HStack(spacing: 6) {
+                            Image(systemName: item.systemImage)
+                                .font(.caption)
+                                .foregroundStyle(item.status.color)
+                                .frame(width: 14)
 
-                                Text(item.title)
-                                    .font(.caption.weight(.semibold))
-                                    .lineLimit(1)
-                            }
-
-                            Text(item.detail)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                            Text(item.title)
+                                .font(.caption.weight(.semibold))
                                 .lineLimit(1)
 
-                            if !item.actionLabel.isEmpty {
-                                Text(item.actionLabel)
-                                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                                    .foregroundStyle(NexusPalette.accent)
-                                    .lineLimit(1)
-                            }
+                            Spacer(minLength: 4)
 
                             Text(item.status.displayLabel)
                                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                                 .foregroundStyle(item.status.color)
                                 .lineLimit(1)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(9)
-                        .background(NexusPalette.panel)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .stroke(item.status.color.opacity(0.16))
+
+                        Text(item.detail)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+
+                        HStack(spacing: 6) {
+                            if !item.actionLabel.isEmpty {
+                                Text(item.actionLabel)
+                                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+
+                            Spacer(minLength: 4)
+
+                            if layout.pathActionPlacement == .menu {
+                                Menu {
+                                    Button {
+                                        action(item.action)
+                                    } label: {
+                                        Label(item.actionLabel.isEmpty ? "打开" : item.actionLabel, systemImage: item.systemImage)
+                                    }
+                                } label: {
+                                    Image(systemName: "ellipsis.circle")
+                                        .font(.caption)
+                                        .foregroundStyle(NexusPalette.accent)
+                                        .frame(width: 22, height: 22)
+                                }
+                                .menuStyle(.borderlessButton)
+                                .help(item.actionLabel.isEmpty ? item.detail : "\(item.detail) · \(item.actionLabel)")
+                            }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .buttonStyle(.plain)
+                    .padding(9)
+                    .background(NexusPalette.panel)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(item.status.color.opacity(0.16))
+                    }
                     .help(item.actionLabel.isEmpty ? item.detail : "\(item.detail) · \(item.actionLabel)")
                 }
             }

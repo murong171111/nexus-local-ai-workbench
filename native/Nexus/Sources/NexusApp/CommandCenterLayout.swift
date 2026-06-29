@@ -39,6 +39,10 @@ struct CommandCenterSecondaryActionLayout: Hashable {
     }
 }
 
+enum CommandCenterPathActionPlacement: String, Hashable {
+    case menu
+}
+
 enum CommandCenterLayoutSection: String, CaseIterable, Hashable {
     case primaryStageAction
     case workflowPathEvidence
@@ -50,13 +54,19 @@ enum CommandCenterLayoutSection: String, CaseIterable, Hashable {
 struct CommandCenterLayoutPolicy: Hashable {
     let sections: [CommandCenterLayoutSection]
     let secondaryActions: CommandCenterSecondaryActionLayout
+    let pathActionPlacement: CommandCenterPathActionPlacement
+    let prominentPrimaryActionLimit: Int
 
     init(
         sections: [CommandCenterLayoutSection] = CommandCenterLayoutSection.allCases,
-        secondaryActions: CommandCenterSecondaryActionLayout = CommandCenterSecondaryActionLayout()
+        secondaryActions: CommandCenterSecondaryActionLayout = CommandCenterSecondaryActionLayout(),
+        pathActionPlacement: CommandCenterPathActionPlacement = .menu,
+        prominentPrimaryActionLimit: Int = 1
     ) {
         self.sections = sections
         self.secondaryActions = secondaryActions
+        self.pathActionPlacement = pathActionPlacement
+        self.prominentPrimaryActionLimit = prominentPrimaryActionLimit
     }
 
     var keepsSecondaryActionsAfterEvidence: Bool {
@@ -65,5 +75,11 @@ struct CommandCenterLayoutPolicy: Hashable {
             return false
         }
         return evidenceIndex < secondaryIndex && secondaryActions.isSecondarySurface
+    }
+
+    var exposesSingleProminentPrimaryAction: Bool {
+        prominentPrimaryActionLimit == 1
+            && pathActionPlacement == .menu
+            && !secondaryActions.usesProminentButtons
     }
 }
