@@ -52,6 +52,7 @@ The app bundle must include:
 - Confirm every published Native DMG has a matching `.dmg.sha256` checksum asset.
 - Confirm `nexus-native-release-manifest.json` is generated from the same final DMG and checksum assets.
 - Confirm `native/Nexus/Scripts/verify-release-bundle.sh` passes for the app bundle, DMGs, checksum sidecars, and release manifest.
+- Confirm `native/Nexus/Scripts/verify-release-notes.sh` passes for the tagged `CHANGELOG.md` release notes before publishing GitHub Release assets.
 - Confirm `NativeReleasePolicyEvidence` reports release notes, updater default, release manifest metadata, and public-release blocker policy as ready.
 - Confirm legacy preview artifacts are not published as product release assets.
 

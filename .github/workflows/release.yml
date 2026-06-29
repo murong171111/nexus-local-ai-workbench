@@ -158,6 +158,15 @@ jobs:
             --assets-dir release-assets \
             --manifest release-assets/nexus-native-release-manifest.json
 
+      - name: Verify Native release notes
+        shell: bash
+        run: |
+          native/Nexus/Scripts/verify-release-notes.sh \
+            --notes CHANGELOG.md \
+            --tag "${{ steps.release.outputs.tag }}" \
+            --assets-dir release-assets \
+            --manifest release-assets/nexus-native-release-manifest.json
+
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}

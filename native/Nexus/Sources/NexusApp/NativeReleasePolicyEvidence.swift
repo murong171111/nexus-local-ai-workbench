@@ -59,12 +59,16 @@ struct NativeReleasePolicyEvidence: Hashable {
         let releaseProcessDoc = "\(repositoryRoot)/docs/release-process.md"
         let distributionDoc = "\(repositoryRoot)/docs/distribution.md"
         let releaseManifestScript = "\(repositoryRoot)/native/Nexus/Scripts/generate-release-manifest.sh"
+        let releaseNotesVerifierScript = "\(repositoryRoot)/native/Nexus/Scripts/verify-release-notes.sh"
+        let releaseWorkflow = "\(repositoryRoot)/.github/workflows/release.yml"
         let appStateSource = "\(repositoryRoot)/native/Nexus/Sources/NexusApp/AppState.swift"
         let rootViewSource = "\(repositoryRoot)/native/Nexus/Sources/NexusApp/Views/RootView.swift"
 
         let checks = [
             releaseNotesCheck(
                 releaseNotesDoc: releaseNotesDoc,
+                releaseNotesVerifierScript: releaseNotesVerifierScript,
+                releaseWorkflow: releaseWorkflow,
                 fileExists: fileExists,
                 fileContains: fileContains
             ),
@@ -104,6 +108,8 @@ struct NativeReleasePolicyEvidence: Hashable {
 
     private static func releaseNotesCheck(
         releaseNotesDoc: String,
+        releaseNotesVerifierScript: String,
+        releaseWorkflow: String,
         fileExists: (String) -> Bool,
         fileContains: (String, String) -> Bool
     ) -> NativeReleasePolicyCheck {
@@ -118,15 +124,39 @@ struct NativeReleasePolicyEvidence: Hashable {
             "validation summary",
             "release manifest metadata"
         ]
-        let missing = missingNeedles(requiredNeedles, path: releaseNotesDoc, fileContains: fileContains)
-        let ready = fileExists(releaseNotesDoc) && missing.isEmpty
+        var missing = missingNeedles(requiredNeedles, path: releaseNotesDoc, fileContains: fileContains)
+        let verifierNeedles = [
+            "--notes",
+            "--tag",
+            "--assets-dir",
+            "--manifest",
+            "signing/notarization",
+            "known blocker",
+            "validation summary",
+            "migration",
+            "rollback",
+            "nexus-native-*.dmg",
+            ".dmg.sha256",
+            "nexus-native-release-manifest.json"
+        ]
+        missing.append(contentsOf: verifierNeedles
+            .filter { !fileContains(releaseNotesVerifierScript, $0) }
+            .map { "verify-release-notes.sh: \($0)" }
+        )
+        if !fileContains(releaseWorkflow, "verify-release-notes.sh") {
+            missing.append("release.yml: verify-release-notes.sh")
+        }
+        let ready = fileExists(releaseNotesDoc)
+            && fileExists(releaseNotesVerifierScript)
+            && fileExists(releaseWorkflow)
+            && missing.isEmpty
         return NativeReleasePolicyCheck(
             requirement: .releaseNotes,
             status: ready ? .ready : .blocked,
             detail: ready
-                ? "Release notes gate lists version, artifacts, checksums, signing status, blockers, validation, manifest, migration, and rollback requirements."
+                ? "Release notes gate lists and verifies version, artifacts, checksums, signing status, blockers, validation, manifest, migration, and rollback requirements."
                 : "Release notes gate is missing or incomplete: \(missing.joined(separator: ", ")).",
-            evidence: [releaseNotesDoc] + missing
+            evidence: [releaseNotesDoc, releaseNotesVerifierScript, releaseWorkflow] + missing
         )
     }
 

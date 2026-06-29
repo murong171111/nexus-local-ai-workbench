@@ -2407,7 +2407,9 @@ final class ModelBehaviorTests: XCTestCase {
             "\(root)/docs/native-release-notes-and-updater.md",
             "\(root)/docs/release-process.md",
             "\(root)/docs/distribution.md",
-            "\(root)/native/Nexus/Scripts/generate-release-manifest.sh"
+            "\(root)/native/Nexus/Scripts/generate-release-manifest.sh",
+            "\(root)/native/Nexus/Scripts/verify-release-notes.sh",
+            "\(root)/.github/workflows/release.yml"
         ]
         let incomplete = NativeReleasePolicyEvidence.resolve(
             repositoryRoot: root,
@@ -2440,7 +2442,6 @@ final class ModelBehaviorTests: XCTestCase {
                      "signing/notarization status",
                      "migration and rollback notes",
                      "known blockers",
-                     "validation summary",
                      "release manifest metadata",
                      "Updater Gate",
                      "Automatic updates disabled",
@@ -2448,6 +2449,28 @@ final class ModelBehaviorTests: XCTestCase {
                      "Settings exposes a user-visible update channel",
                      "must not silently check for, download, or install updates":
                     return path.hasSuffix("native-release-notes-and-updater.md")
+                case "validation summary":
+                    return path.hasSuffix("native-release-notes-and-updater.md")
+                        || path.hasSuffix("verify-release-notes.sh")
+                case "nexus-native-release-manifest.json":
+                    return path.hasSuffix("generate-release-manifest.sh")
+                        || path.hasSuffix("AppState.swift")
+                        || path.hasSuffix("verify-release-notes.sh")
+                case "--notes",
+                     "--tag",
+                     "--assets-dir",
+                     "--manifest",
+                     "nexus-native-*.dmg",
+                     ".dmg.sha256":
+                    return path.hasSuffix("verify-release-notes.sh")
+                case "signing/notarization",
+                     "known blocker",
+                     "migration",
+                     "rollback":
+                    return path.hasSuffix("verify-release-notes.sh")
+                        || path.hasSuffix("native-release-notes-and-updater.md")
+                case "verify-release-notes.sh":
+                    return path.hasSuffix("release.yml")
                 case "struct NativeUpdateChannelStatus",
                      "automaticUpdatesEnabled: false",
                      "Manual download",
@@ -2459,8 +2482,7 @@ final class ModelBehaviorTests: XCTestCase {
                      "status.manifestFilename",
                      "manual-github-release keeps automaticUpdatesEnabled=false":
                     return path.hasSuffix("RootView.swift")
-                case "nexus-native-release-manifest.json",
-                     "manual-github-release",
+                case "manual-github-release",
                      "automaticUpdatesEnabled",
                      "\"automaticUpdatesEnabled\": False",
                      "\"updateChannel\": \"manual-github-release\"",
@@ -2620,6 +2642,7 @@ final class ModelBehaviorTests: XCTestCase {
             "\(root)/native/Nexus/Scripts/import-apple-certificate.sh",
             "\(root)/native/Nexus/Scripts/generate-release-manifest.sh",
             "\(root)/native/Nexus/Scripts/verify-release-bundle.sh",
+            "\(root)/native/Nexus/Scripts/verify-release-notes.sh",
             "\(root)/widget/NexusWidget/NexusWidget.swift",
             "\(root)/native/NexusWidget/Sources/NexusWidget/NexusWidget.swift",
             "\(root)/native/NexusWidget/Info.plist",
@@ -2651,13 +2674,34 @@ final class ModelBehaviorTests: XCTestCase {
                         || path.hasSuffix("release-process.md")
                 case "native:build":
                     return path.hasSuffix("release.yml")
-                case "package-dmg.sh", ".dmg", "sign-and-notarize.sh", "shasum -a 256", ".dmg.sha256", "*.sha256", "generate-release-manifest.sh", "verify-release-bundle.sh", "--app dist/Nexus.app", "--assets-dir release-assets", "import-apple-certificate.sh", "APPLE_CERTIFICATE", "APPLE_CERTIFICATE_PASSWORD":
+                case "package-dmg.sh", ".dmg", "sign-and-notarize.sh", "shasum -a 256", "*.sha256", "generate-release-manifest.sh", "verify-release-bundle.sh", "--app dist/Nexus.app", "--assets-dir release-assets", "import-apple-certificate.sh", "APPLE_CERTIFICATE", "APPLE_CERTIFICATE_PASSWORD":
                     return path.hasSuffix("release.yml")
+                case ".dmg.sha256":
+                    return path.hasSuffix("release.yml")
+                        || path.hasSuffix("verify-release-notes.sh")
+                case "verify-release-notes.sh":
+                    return path.hasSuffix("release.yml")
+                case "--notes",
+                     "--tag",
+                     "--assets-dir",
+                     "--manifest",
+                     "nexus-native-*.dmg":
+                    return path.hasSuffix("verify-release-notes.sh")
+                case "signing/notarization",
+                     "known blocker",
+                     "migration",
+                     "rollback":
+                    return path.hasSuffix("verify-release-notes.sh")
+                        || path.hasSuffix("native-release-notes-and-updater.md")
                 case "nexus-native-release-manifest.json":
                     return path.hasSuffix("release.yml")
                         || path.hasSuffix("generate-release-manifest.sh")
                         || path.hasSuffix("verify-release-bundle.sh")
                         || path.hasSuffix("AppState.swift")
+                        || path.hasSuffix("verify-release-notes.sh")
+                case "validation summary":
+                    return path.hasSuffix("native-release-notes-and-updater.md")
+                        || path.hasSuffix("verify-release-notes.sh")
                 case "Contents/Info.plist":
                     return path.hasSuffix("verify-release-bundle.sh")
                 case "--widget-extension", "Contents/PlugIns", "NexusWidget.appex":
@@ -2694,7 +2738,7 @@ final class ModelBehaviorTests: XCTestCase {
                     return path.hasSuffix("NexusWidget.entitlements")
                 case "Native Deletion Order", "Current Legacy Surfaces":
                     return path.hasSuffix("legacy-retirement-audit.md")
-                case "Release Notes Gate", "version/tag", "native artifact names", "checksums", "signing/notarization status", "migration and rollback notes", "known blockers", "validation summary", "release manifest metadata":
+                case "Release Notes Gate", "version/tag", "native artifact names", "checksums", "signing/notarization status", "migration and rollback notes", "known blockers", "release manifest metadata":
                     return path.hasSuffix("native-release-notes-and-updater.md")
                 case "Updater Gate", "Automatic updates disabled", "Do not enable automatic updates", "Settings exposes a user-visible update channel", "must not silently check for, download, or install updates":
                     return path.hasSuffix("native-release-notes-and-updater.md")

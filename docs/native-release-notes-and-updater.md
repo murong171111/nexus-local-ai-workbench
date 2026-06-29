@@ -17,6 +17,8 @@ Every public Native release must include release notes with:
 
 The release notes must be linked from the GitHub Release before the release is marked public. If signing, notarization, WidgetKit embedding, updater metadata, or lifecycle proof is missing, the notes must call that out as a blocker rather than presenting the artifact as production ready.
 
+The release workflow verifies `CHANGELOG.md` with `native/Nexus/Scripts/verify-release-notes.sh` before publishing. For tagged releases, the matching changelog section must name every Native DMG, every `.dmg.sha256` sidecar, `nexus-native-release-manifest.json`, signing/notarization status, known blockers, validation summary, and migration/rollback notes.
+
 ## Updater Gate
 
 Automatic updates disabled is the default public-release posture until the updater gate is satisfied.
