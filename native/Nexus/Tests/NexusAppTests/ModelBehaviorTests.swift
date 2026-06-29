@@ -1032,6 +1032,7 @@ final class ModelBehaviorTests: XCTestCase {
             [
                 "native/Nexus/Sources/NexusApp/DemandScopeEvidence.swift",
                 "native/Nexus/Sources/NexusApp/NativeDemandIntakeStore.swift",
+                "native/Nexus/Sources/NexusApp/NativeScopeFreezeStore.swift",
                 "native/Nexus/Sources/NexusApp/NativeDemandTaskTransferStore.swift"
             ]
         )
@@ -3060,6 +3061,33 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(plan.appendedMarkdown.contains("范围已冻结"))
         XCTAssertTrue(plan.appendedMarkdown.contains("Nexus Native confirmed write"))
         XCTAssertFalse(plan.appendedMarkdown.contains("保存订单时记录交易快照"))
+
+        XCTAssertThrowsError(
+            try NativeScopeFreezeStore.write(plan: plan, confirmed: false)
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("explicit confirmation"))
+        }
+
+        let auditRoot = root.appendingPathComponent("audit")
+        let response = try NativeScopeFreezeStore.write(
+            plan: plan,
+            confirmed: true,
+            auditRoot: auditRoot.path,
+            actor: "Nexus Test"
+        )
+        let scopeContent = try String(contentsOf: demandDir.appendingPathComponent("scope.md"), encoding: .utf8)
+        let events = try NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 5)
+
+        XCTAssertTrue(response.appended)
+        XCTAssertEqual(response.path, demandDir.appendingPathComponent("scope.md").path)
+        XCTAssertTrue(scopeContent.contains("保存订单时记录交易快照"))
+        XCTAssertTrue(scopeContent.contains("## 范围冻结确认 / Scope Freeze Confirmation"))
+        XCTAssertTrue(scopeContent.contains("- [x] 范围已冻结：本次开发只按上方 In scope / Out of scope 推进。"))
+        XCTAssertTrue(scopeContent.hasSuffix("\n"))
+        XCTAssertEqual(events.first?.action, "scope.freeze_confirmed")
+        XCTAssertEqual(events.first?.actor, "Nexus Test")
+        XCTAssertEqual(events.first?.metadata["scopePath"], response.path)
+        XCTAssertEqual(events.first?.metadata["status"], "next")
     }
 
     func testScopeFreezeEvidenceAllowsAuditedScopeChanges() throws {

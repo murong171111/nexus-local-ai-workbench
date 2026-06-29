@@ -2925,18 +2925,13 @@ final class AppState: ObservableObject {
         }
 
         do {
-            try appendMarkdownBlock(plan.appendedMarkdown, toFile: plan.scopePath, fallbackHeader: "")
-            pendingScopeFreezeWrite = nil
-            await recordWorkspaceAction(
-                action: "scope.freeze_confirmed",
-                target: plan.scopePath,
-                summary: "Appended scope freeze confirmation to scope.md",
-                metadata: [
-                    "scopePath": plan.scopePath,
-                    "status": plan.status.rawValue
-                ],
-                workspaceOverride: workspaces.first { $0.id == plan.workspaceID }
+            let response = try NativeScopeFreezeStore.write(
+                plan: plan,
+                confirmed: confirmed,
+                auditRoot: auditRootPath,
+                actor: "Nexus Native"
             )
+            pendingScopeFreezeWrite = nil
             await refreshFromBridge()
             focusWorkspace(id: plan.workspaceID)
             markLocalWriteFeedback(
@@ -2944,7 +2939,7 @@ final class AppState: ObservableObject {
                 detail: "已向 需求/scope.md 追加冻结确认；后续范围变更需要记录原因和影响。",
                 workspaceID: plan.workspaceID,
                 workspaceName: plan.workspaceName,
-                documentPath: plan.scopePath,
+                documentPath: response.path,
                 documentLabel: "打开 scope.md",
                 systemImage: "scope"
             )

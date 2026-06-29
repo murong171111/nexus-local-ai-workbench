@@ -194,6 +194,7 @@ private extension NativeLocalCoreDomain {
             [
                 "native/Nexus/Sources/NexusApp/DemandScopeEvidence.swift",
                 "native/Nexus/Sources/NexusApp/NativeDemandIntakeStore.swift",
+                "native/Nexus/Sources/NexusApp/NativeScopeFreezeStore.swift",
                 "native/Nexus/Sources/NexusApp/NativeDemandTaskTransferStore.swift"
             ]
         case .readiness:
