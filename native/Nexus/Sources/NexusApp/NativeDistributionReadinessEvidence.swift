@@ -249,23 +249,17 @@ struct NativeDistributionReadinessEvidence: Hashable {
             && fileContains(releaseWorkflow, "import-apple-certificate.sh")
             && fileContains(releaseWorkflow, "APPLE_CERTIFICATE")
             && fileContains(releaseWorkflow, "APPLE_CERTIFICATE_PASSWORD")
+        let releasePolicy = NativeReleasePolicyEvidence.resolve(
+            repositoryRoot: repositoryRoot,
+            fileExists: fileExists,
+            fileContains: fileContains
+        )
         let distributionMentionsNative = fileContains(distributionDoc, "native/Nexus")
             || fileContains(distributionDoc, "NexusNative")
             || fileContains(distributionDoc, "Swift")
         let releaseDocMentionsNative = fileContains(releaseDoc, "native/Nexus")
             || fileContains(releaseDoc, "NexusNative")
             || fileContains(releaseDoc, "Swift")
-        let hasReleaseNotesGate = fileExists(releaseNotesDoc)
-            && fileContains(releaseNotesDoc, "Release Notes Gate")
-            && fileContains(releaseNotesDoc, "version/tag")
-            && fileContains(releaseNotesDoc, "checksums")
-            && fileContains(releaseNotesDoc, "signing/notarization status")
-            && fileContains(releaseNotesDoc, "known blockers")
-        let hasUpdaterGate = fileExists(releaseNotesDoc)
-            && fileContains(releaseNotesDoc, "Updater Gate")
-            && fileContains(releaseNotesDoc, "Automatic updates disabled")
-            && fileContains(releaseNotesDoc, "updater signing keys")
-            && fileContains(releaseNotesDoc, "appcast metadata")
         let releaseStillTauri = fileContains(releaseWorkflow, "tauri")
             || fileContains(releaseWorkflow, "src-tauri")
             || fileContains(releaseDoc, "Tauri")
@@ -285,8 +279,7 @@ struct NativeDistributionReadinessEvidence: Hashable {
             hasCertificateImport: hasCertificateImport,
             distributionMentionsNative: distributionMentionsNative,
             releaseDocMentionsNative: releaseDocMentionsNative,
-            hasReleaseNotesGate: hasReleaseNotesGate,
-            hasUpdaterGate: hasUpdaterGate,
+            releasePolicy: releasePolicy,
             releaseStillTauri: releaseStillTauri
         )
         let ready = blockers.isEmpty
@@ -294,9 +287,11 @@ struct NativeDistributionReadinessEvidence: Hashable {
             requirement: .releaseReadiness,
             status: ready ? .ready : .blocked,
             detail: ready
-                ? "Release docs, CI, certificate import, signing, notarization, updater policy, release notes, checksums, release manifest, and release workflow point at Swift-native DMG artifacts."
+                ? "Release docs, CI, certificate import, signing, notarization, structured updater policy, release notes, checksums, release manifest, and release workflow point at Swift-native DMG artifacts."
                 : "Release readiness blockers: \(blockers.joined(separator: " "))",
-            evidence: [distributionDoc, releaseDoc, releaseNotesDoc, ciWorkflow, releaseWorkflow, dmgScript, signingScript, certificateImportScript, releaseManifestScript] + blockers
+            evidence: [distributionDoc, releaseDoc, releaseNotesDoc, ciWorkflow, releaseWorkflow, dmgScript, signingScript, certificateImportScript, releaseManifestScript]
+                + releasePolicy.checks.flatMap(\.evidence)
+                + blockers
         )
     }
 
@@ -313,8 +308,7 @@ struct NativeDistributionReadinessEvidence: Hashable {
         hasCertificateImport: Bool,
         distributionMentionsNative: Bool,
         releaseDocMentionsNative: Bool,
-        hasReleaseNotesGate: Bool,
-        hasUpdaterGate: Bool,
+        releasePolicy: NativeReleasePolicyEvidence,
         releaseStillTauri: Bool
     ) -> [String] {
         var blockers: [String] = []
@@ -354,11 +348,8 @@ struct NativeDistributionReadinessEvidence: Hashable {
         if !releaseDocMentionsNative {
             blockers.append("Release process docs do not describe the Native app path.")
         }
-        if !hasReleaseNotesGate {
-            blockers.append("Release notes gate is missing or incomplete.")
-        }
-        if !hasUpdaterGate {
-            blockers.append("Updater policy gate is missing or incomplete.")
+        if !releasePolicy.ready {
+            blockers.append(contentsOf: releasePolicy.blockerDetails)
         }
         if releaseStillTauri {
             blockers.append("Release docs or workflows still point to Tauri artifacts.")

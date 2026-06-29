@@ -43,14 +43,14 @@ The app bundle must include:
 - Build the Native app target once it exists.
 - Verify `NativeDistributionReadinessEvidence` reports the current M3 blockers clearly in Settings.
 - Confirm M1 main workflow evidence is ready.
-- Confirm M2 Native Local Core evidence reports `10/10 Native domains`.
+- Confirm M2 Native Local Core evidence reports `11/11 Native domains`.
 - Confirm at least one real archived workspace provides lifecycle proof: archived stage, delivery evidence, ready services, no active tasks, and no open risks.
 - Confirm Widget snapshot writing works in Application Support and, when signed, the App Group container.
 - Confirm `nexus://workspace/<folder>` opens Nexus and focuses the target workspace.
 - Confirm release docs and workflows point at the Native app artifact path.
 - Confirm every published Native DMG has a matching `.dmg.sha256` checksum asset.
 - Confirm `nexus-native-release-manifest.json` is generated from the same final DMG and checksum assets.
-- Confirm release notes and updater policy satisfy `docs/native-release-notes-and-updater.md`.
+- Confirm `NativeReleasePolicyEvidence` reports release notes, updater default, release manifest metadata, and public-release blocker policy as ready.
 - Confirm legacy preview artifacts are not published as product release assets.
 
 ## Signing And Notarization

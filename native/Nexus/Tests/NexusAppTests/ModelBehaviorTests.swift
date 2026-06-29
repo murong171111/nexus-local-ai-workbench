@@ -2336,6 +2336,7 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(evidence.checks.first { $0.requirement == .releaseReadiness }?.detail.contains("Release workflow does not build a Native app artifact") == true)
         XCTAssertTrue(evidence.checks.first { $0.requirement == .releaseReadiness }?.detail.contains("Release notes gate is missing or incomplete") == true)
         XCTAssertTrue(evidence.checks.first { $0.requirement == .releaseReadiness }?.detail.contains("Updater policy gate is missing or incomplete") == true)
+        XCTAssertTrue(evidence.checks.first { $0.requirement == .releaseReadiness }?.detail.contains("Release manifest metadata is missing or incomplete") == true)
         XCTAssertTrue(evidence.checks.first { $0.requirement == .releaseReadiness }?.detail.contains("Release docs or workflows still point to Tauri artifacts") == true)
         XCTAssertTrue(evidence.reason.contains("M3"))
     }
@@ -2386,12 +2387,80 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(releaseReadiness?.detail.contains("Release workflow does not publish Native update manifest metadata.") == true)
         XCTAssertTrue(releaseReadiness?.detail.contains("Release workflow does not sign and notarize Native artifacts.") == true)
         XCTAssertTrue(releaseReadiness?.detail.contains("Release workflow does not import Apple Developer signing certificates.") == true)
-        XCTAssertTrue(releaseReadiness?.detail.contains("Release notes gate is missing or incomplete.") == true)
-        XCTAssertTrue(releaseReadiness?.detail.contains("Updater policy gate is missing or incomplete.") == true)
+        XCTAssertTrue(releaseReadiness?.detail.contains("Release notes gate is missing or incomplete") == true)
+        XCTAssertTrue(releaseReadiness?.detail.contains("Updater policy gate is missing or incomplete") == true)
+        XCTAssertTrue(releaseReadiness?.detail.contains("Release manifest metadata is missing or incomplete") == true)
         XCTAssertEqual(evidence.checks.first { $0.requirement == .installTarget }?.status, .blocked)
         XCTAssertEqual(evidence.checks.first { $0.requirement == .widgetExtension }?.status, .blocked)
         XCTAssertEqual(evidence.checks.first { $0.requirement == .legacyDeletion }?.status, .blocked)
         XCTAssertEqual(evidence.readinessSummary, "0/4 Ready checks")
+    }
+
+    func testNativeReleasePolicyEvidenceRequiresReleaseNotesUpdaterAndManifestPolicy() {
+        let root = "/repo"
+        let files: Set<String> = [
+            "\(root)/docs/native-release-notes-and-updater.md",
+            "\(root)/docs/release-process.md",
+            "\(root)/docs/distribution.md",
+            "\(root)/native/Nexus/Scripts/generate-release-manifest.sh"
+        ]
+        let incomplete = NativeReleasePolicyEvidence.resolve(
+            repositoryRoot: root,
+            fileExists: { files.contains($0) },
+            fileContains: { path, needle in
+                path.hasSuffix("native-release-notes-and-updater.md") && needle == "Release Notes Gate"
+            }
+        )
+
+        XCTAssertEqual(incomplete.status, .blocked)
+        XCTAssertEqual(incomplete.checks.map(\.requirement), NativeReleasePolicyRequirement.allCases)
+        XCTAssertTrue(incomplete.blockerDetails.contains { $0.contains("Updater policy gate is missing or incomplete") })
+        XCTAssertTrue(incomplete.blockerDetails.contains { $0.contains("Release manifest metadata is missing or incomplete") })
+        XCTAssertTrue(incomplete.blockerDetails.contains { $0.contains("Public-release blocker policy is missing or incomplete") })
+
+        let ready = NativeReleasePolicyEvidence.resolve(
+            repositoryRoot: root,
+            fileExists: { files.contains($0) },
+            fileContains: { path, needle in
+                switch needle {
+                case "Release Notes Gate",
+                     "version/tag",
+                     "native artifact names",
+                     "checksums",
+                     "signing/notarization status",
+                     "migration and rollback notes",
+                     "known blockers",
+                     "validation summary",
+                     "release manifest metadata",
+                     "Updater Gate",
+                     "Automatic updates disabled",
+                     "Do not enable automatic updates",
+                     "Settings exposes a user-visible update channel",
+                     "must not silently check for, download, or install updates":
+                    return path.hasSuffix("native-release-notes-and-updater.md")
+                case "nexus-native-release-manifest.json",
+                     "manual-github-release",
+                     "automaticUpdatesEnabled",
+                     "\"automaticUpdatesEnabled\": False",
+                     "\"updateChannel\": \"manual-github-release\"",
+                     "does not enable automatic updates":
+                    return path.hasSuffix("generate-release-manifest.sh")
+                case "signed WidgetKit",
+                     "real-credential notarized release run",
+                     "updater signing keys",
+                     "appcast metadata",
+                     "rollback instructions":
+                    return path.hasSuffix("native-release-notes-and-updater.md")
+                        || path.hasSuffix("release-process.md")
+                        || path.hasSuffix("distribution.md")
+                default:
+                    return false
+                }
+            }
+        )
+
+        XCTAssertTrue(ready.ready, ready.reason)
+        XCTAssertTrue(ready.checks.allSatisfy { $0.status == .ready })
     }
 
     func testNativeDistributionReadinessAcceptsSwiftPMAppBundleEvidence() {
@@ -2537,7 +2606,11 @@ final class ModelBehaviorTests: XCTestCase {
                     return path.hasSuffix("sign-and-notarize.sh")
                 case "security import", "security create-keychain", "set-key-partition-list":
                     return path.hasSuffix("import-apple-certificate.sh")
-                case "manual-github-release", "automaticUpdatesEnabled":
+                case "manual-github-release",
+                     "automaticUpdatesEnabled",
+                     "\"automaticUpdatesEnabled\": False",
+                     "\"updateChannel\": \"manual-github-release\"",
+                     "does not enable automatic updates":
                     return path.hasSuffix("generate-release-manifest.sh")
                 case "com.apple.widgetkit-extension":
                     return path.hasSuffix("Info.plist")
@@ -2545,10 +2618,14 @@ final class ModelBehaviorTests: XCTestCase {
                     return path.hasSuffix("NexusWidget.entitlements")
                 case "Native Deletion Order", "Current Legacy Surfaces":
                     return path.hasSuffix("legacy-retirement-audit.md")
-                case "Release Notes Gate", "version/tag", "checksums", "signing/notarization status", "known blockers":
+                case "Release Notes Gate", "version/tag", "native artifact names", "checksums", "signing/notarization status", "migration and rollback notes", "known blockers", "validation summary", "release manifest metadata":
                     return path.hasSuffix("native-release-notes-and-updater.md")
-                case "Updater Gate", "Automatic updates disabled", "updater signing keys", "appcast metadata":
+                case "Updater Gate", "Automatic updates disabled", "Do not enable automatic updates", "Settings exposes a user-visible update channel", "must not silently check for, download, or install updates":
                     return path.hasSuffix("native-release-notes-and-updater.md")
+                case "signed WidgetKit", "real-credential notarized release run", "updater signing keys", "appcast metadata", "rollback instructions":
+                    return path.hasSuffix("native-release-notes-and-updater.md")
+                        || path.hasSuffix("release-process.md")
+                        || path.hasSuffix("distribution.md")
                 default:
                     return false
                 }
