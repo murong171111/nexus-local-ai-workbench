@@ -207,6 +207,7 @@ struct NativeLifecycleProofAuditSnapshot: Codable, Hashable {
 struct NativeLifecycleProofBundleWriteResponse: Hashable {
     let path: String
     let ready: Bool
+    let auditEventID: String?
     let auditEventPath: String?
 }
 
@@ -276,7 +277,7 @@ enum NativeLifecycleProofBundleStore {
         let bundleSHA256 = NativeLifecycleProofBundle.sha256Hex(data: payload)
         try payload.write(to: outputURL, options: .atomic)
 
-        let auditEventPath = appendAuditEvent(
+        let audit = appendAuditEvent(
             workspace: workspace,
             outputPath: outputURL.path,
             bundle: bundle,
@@ -287,7 +288,8 @@ enum NativeLifecycleProofBundleStore {
         return NativeLifecycleProofBundleWriteResponse(
             path: outputURL.path,
             ready: bundle.ready,
-            auditEventPath: auditEventPath
+            auditEventID: audit?.event.id,
+            auditEventPath: audit?.path
         )
     }
 
@@ -298,12 +300,12 @@ enum NativeLifecycleProofBundleStore {
         bundleSHA256: String,
         auditRoot: String?,
         actor: String?
-    ) -> String? {
+    ) -> AppendAuditEventResponse? {
         guard let auditRoot = auditRoot?.trimmingCharacters(in: .whitespacesAndNewlines),
               !auditRoot.isEmpty else {
             return nil
         }
-        let response = try? NativeAuditEventStore.append(
+        return try? NativeAuditEventStore.append(
             auditRoot: auditRoot,
             event: AuditEventInput(
                 actor: actor ?? "Nexus Native",
@@ -323,7 +325,6 @@ enum NativeLifecycleProofBundleStore {
                 ]
             )
         )
-        return response?.path
     }
 }
 

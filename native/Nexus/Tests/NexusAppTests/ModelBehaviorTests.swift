@@ -4957,6 +4957,8 @@ final class ModelBehaviorTests: XCTestCase {
         let proofExportEvent = eventsAfterProofExport.first { $0.action == "native_lifecycle_proof.exported" }
 
         XCTAssertTrue(proofBundleResponse.ready)
+        XCTAssertEqual(proofBundleResponse.auditEventID, proofExportEvent?.id)
+        XCTAssertEqual(proofBundleResponse.auditEventPath, auditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path)
         XCTAssertTrue(proofBundle.ready)
         XCTAssertEqual(proofBundle.workspace.lifecycleStage, "archived")
         XCTAssertEqual(proofBundle.proof.status, WorkflowPathStatus.ready.rawValue)

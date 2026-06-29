@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Added
 
+- Native lifecycle proof bundle exports now return audit event IDs alongside audit-log paths after confirmed Swift writes.
 - Native workspace creation and worktree setup responses now preserve audit event IDs and audit-log paths after confirmed Swift writes.
 - Native demand initialization, scope freeze, demand-task transfer, task-status, and lifecycle writebacks now return audit event IDs and audit-log paths after confirmed Swift writes.
 - Native task-status writebacks now update root `tasks.md` and append `workspace_task.updated` audit events through Swift Native instead of the Swift/Rust bridge.
