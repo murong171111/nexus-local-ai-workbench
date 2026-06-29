@@ -37,6 +37,7 @@ final class ModelBehaviorTests: XCTestCase {
             "struct TaskStatusUpdate",
             "struct TaskStatusMutationPolicy",
             "struct CommandCenterLayoutPolicy",
+            "struct CommandCenterLayoutAuditSummary",
             "struct ServiceWorktreeRowState",
             "struct WorkspaceMainStageEvidenceLink",
             "struct WorkspaceStageAnswer",
@@ -3172,6 +3173,21 @@ final class ModelBehaviorTests: XCTestCase {
             "下一步 / Next",
             "本地打开 / Local"
         ])
+        XCTAssertEqual(layout.auditSummary.status, .ready)
+        XCTAssertEqual(layout.auditSummary.title, "主动作优先 / Primary action first")
+        XCTAssertTrue(layout.auditSummary.detail.contains("只暴露 1 个 prominent 主动作"))
+        XCTAssertTrue(layout.auditSummary.detail.contains("菜单 / Menu"))
+        XCTAssertEqual(layout.auditSummary.evidence, [
+            "prominentPrimaryActionCount=1",
+            "workflowPathPlacement=menu",
+            "secondaryActionGroups=3",
+            "secondaryAfterEvidence=true"
+        ])
+
+        let crowded = CommandCenterLayoutPolicy(prominentPrimaryActionLimit: 2)
+        XCTAssertFalse(crowded.exposesSingleProminentPrimaryAction)
+        XCTAssertEqual(crowded.auditSummary.status, .blocked)
+        XCTAssertTrue(crowded.auditSummary.detail.contains("主动作层级未收敛"))
     }
 
     func testWorkspaceListStageBadgesComeFromMainStage() {

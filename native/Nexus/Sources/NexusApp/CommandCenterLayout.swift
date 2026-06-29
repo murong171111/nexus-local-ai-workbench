@@ -41,6 +41,13 @@ struct CommandCenterSecondaryActionLayout: Hashable {
 
 enum CommandCenterPathActionPlacement: String, Hashable {
     case menu
+
+    var label: String {
+        switch self {
+        case .menu:
+            "菜单 / Menu"
+        }
+    }
 }
 
 enum CommandCenterLayoutSection: String, CaseIterable, Hashable {
@@ -81,5 +88,47 @@ struct CommandCenterLayoutPolicy: Hashable {
         prominentPrimaryActionLimit == 1
             && pathActionPlacement == .menu
             && !secondaryActions.usesProminentButtons
+    }
+
+    var auditSummary: CommandCenterLayoutAuditSummary {
+        CommandCenterLayoutAuditSummary(
+            prominentPrimaryActionCount: prominentPrimaryActionLimit,
+            workflowPathPlacement: pathActionPlacement,
+            secondaryActionGroupCount: secondaryActions.groups.count,
+            keepsSecondaryActionsAfterEvidence: keepsSecondaryActionsAfterEvidence,
+            exposesSingleProminentPrimaryAction: exposesSingleProminentPrimaryAction
+        )
+    }
+}
+
+struct CommandCenterLayoutAuditSummary: Hashable {
+    let prominentPrimaryActionCount: Int
+    let workflowPathPlacement: CommandCenterPathActionPlacement
+    let secondaryActionGroupCount: Int
+    let keepsSecondaryActionsAfterEvidence: Bool
+    let exposesSingleProminentPrimaryAction: Bool
+
+    var status: WorkflowPathStatus {
+        exposesSingleProminentPrimaryAction && keepsSecondaryActionsAfterEvidence ? .ready : .blocked
+    }
+
+    var title: String {
+        "主动作优先 / Primary action first"
+    }
+
+    var detail: String {
+        if status == .ready {
+            return "Command Center 只暴露 \(prominentPrimaryActionCount) 个 prominent 主动作；工作流路径动作进入\(workflowPathPlacement.label)，\(secondaryActionGroupCount) 组快捷动作位于证据之后。"
+        }
+        return "Command Center 主动作层级未收敛；需要保留 1 个 prominent 主动作，并把路径与快捷动作降级。"
+    }
+
+    var evidence: [String] {
+        [
+            "prominentPrimaryActionCount=\(prominentPrimaryActionCount)",
+            "workflowPathPlacement=\(workflowPathPlacement.rawValue)",
+            "secondaryActionGroups=\(secondaryActionGroupCount)",
+            "secondaryAfterEvidence=\(keepsSecondaryActionsAfterEvidence)"
+        ]
     }
 }
