@@ -59,6 +59,7 @@ struct NativeReleasePolicyEvidence: Hashable {
         let releaseProcessDoc = "\(repositoryRoot)/docs/release-process.md"
         let distributionDoc = "\(repositoryRoot)/docs/distribution.md"
         let releaseManifestScript = "\(repositoryRoot)/native/Nexus/Scripts/generate-release-manifest.sh"
+        let releaseBundleVerifierScript = "\(repositoryRoot)/native/Nexus/Scripts/verify-release-bundle.sh"
         let releaseNotesVerifierScript = "\(repositoryRoot)/native/Nexus/Scripts/verify-release-notes.sh"
         let releaseWorkflow = "\(repositoryRoot)/.github/workflows/release.yml"
         let appStateSource = "\(repositoryRoot)/native/Nexus/Sources/NexusApp/AppState.swift"
@@ -86,6 +87,7 @@ struct NativeReleasePolicyEvidence: Hashable {
             ),
             manifestMetadataCheck(
                 releaseManifestScript: releaseManifestScript,
+                releaseBundleVerifierScript: releaseBundleVerifierScript,
                 fileExists: fileExists,
                 fileContains: fileContains
             ),
@@ -186,10 +188,11 @@ struct NativeReleasePolicyEvidence: Hashable {
 
     private static func manifestMetadataCheck(
         releaseManifestScript: String,
+        releaseBundleVerifierScript: String,
         fileExists: (String) -> Bool,
         fileContains: (String, String) -> Bool
     ) -> NativeReleasePolicyCheck {
-        let requiredNeedles = [
+        let generatorNeedles = [
             "nexus-native-release-manifest.json",
             "manual-github-release",
             "automaticUpdatesEnabled",
@@ -197,15 +200,27 @@ struct NativeReleasePolicyEvidence: Hashable {
             "\"updateChannel\": \"manual-github-release\"",
             "does not enable automatic updates"
         ]
-        let missing = missingNeedles(requiredNeedles, path: releaseManifestScript, fileContains: fileContains)
-        let ready = fileExists(releaseManifestScript) && missing.isEmpty
+        let verifierNeedles = [
+            "Release manifest sha256 must match checksum sidecar",
+            "sidecar_checksums",
+            "updateChannel",
+            "automaticUpdatesEnabled"
+        ]
+        var missing = missingNeedles(generatorNeedles, path: releaseManifestScript, fileContains: fileContains)
+        missing.append(contentsOf: verifierNeedles
+            .filter { !fileContains(releaseBundleVerifierScript, $0) }
+            .map { "verify-release-bundle.sh: \($0)" }
+        )
+        let ready = fileExists(releaseManifestScript)
+            && fileExists(releaseBundleVerifierScript)
+            && missing.isEmpty
         return NativeReleasePolicyCheck(
             requirement: .manifestMetadata,
             status: ready ? .ready : .blocked,
             detail: ready
-                ? "Release manifest generation records the manual GitHub channel and automaticUpdatesEnabled=false."
+                ? "Release manifest generation records the manual GitHub channel and automaticUpdatesEnabled=false, and verification matches manifest SHA-256 values to checksum sidecars."
                 : "Release manifest metadata is missing or incomplete: \(missing.joined(separator: ", ")).",
-            evidence: [releaseManifestScript] + missing
+            evidence: [releaseManifestScript, releaseBundleVerifierScript] + missing
         )
     }
 

@@ -179,6 +179,11 @@ manifest_path = Path(sys.argv[1])
 dmg_paths = [Path(path) for path in sys.argv[2:]]
 dmgs = {path.name for path in dmg_paths}
 sidecars = {f"{path.name}.sha256" for path in dmg_paths}
+sidecar_checksums = {}
+for path in dmg_paths:
+    sidecar_path = path.with_name(f"{path.name}.sha256")
+    checksum = sidecar_path.read_text(encoding="utf-8").split()[0].strip()
+    sidecar_checksums[sidecar_path.name] = checksum
 
 data = json.loads(manifest_path.read_text(encoding="utf-8"))
 if data.get("updateChannel") != "manual-github-release":
@@ -202,6 +207,8 @@ for artifact in artifacts:
     manifest_dmgs.add(dmg)
     if checksum_file not in sidecars:
         raise SystemExit(f"Release manifest references missing checksum sidecar: {checksum_file}")
+    if sha256 != sidecar_checksums.get(checksum_file):
+        raise SystemExit(f"Release manifest sha256 must match checksum sidecar: {dmg}")
 
 missing = dmgs - manifest_dmgs
 extra = manifest_dmgs - dmgs

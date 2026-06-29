@@ -2504,6 +2504,7 @@ final class ModelBehaviorTests: XCTestCase {
             "\(root)/docs/release-process.md",
             "\(root)/docs/distribution.md",
             "\(root)/native/Nexus/Scripts/generate-release-manifest.sh",
+            "\(root)/native/Nexus/Scripts/verify-release-bundle.sh",
             "\(root)/native/Nexus/Scripts/verify-release-notes.sh",
             "\(root)/.github/workflows/release.yml"
         ]
@@ -2584,7 +2585,12 @@ final class ModelBehaviorTests: XCTestCase {
                      "\"updateChannel\": \"manual-github-release\"",
                      "does not enable automatic updates":
                     return path.hasSuffix("generate-release-manifest.sh")
+                        || path.hasSuffix("verify-release-bundle.sh")
                         || path.hasSuffix("AppState.swift")
+                case "Release manifest sha256 must match checksum sidecar",
+                     "sidecar_checksums",
+                     "updateChannel":
+                    return path.hasSuffix("verify-release-bundle.sh")
                 case "signed WidgetKit",
                      "real-credential notarized release run",
                      "updater signing keys",
@@ -2826,6 +2832,10 @@ final class ModelBehaviorTests: XCTestCase {
                     return path.hasSuffix("generate-release-manifest.sh")
                         || path.hasSuffix("verify-release-bundle.sh")
                         || path.hasSuffix("AppState.swift")
+                case "Release manifest sha256 must match checksum sidecar",
+                     "sidecar_checksums",
+                     "updateChannel":
+                    return path.hasSuffix("verify-release-bundle.sh")
                 case "struct NativeUpdateChannelStatus",
                      "automaticUpdatesEnabled: false",
                      "Manual download",

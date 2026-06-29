@@ -254,6 +254,7 @@ struct NativeDistributionReadinessEvidence: Hashable {
             && fileContains(releaseBundleVerifierScript, "Contents/Info.plist")
             && fileContains(releaseBundleVerifierScript, "nexus-native-release-manifest.json")
             && fileContains(releaseBundleVerifierScript, "automaticUpdatesEnabled")
+            && fileContains(releaseBundleVerifierScript, "Release manifest sha256 must match checksum sidecar")
             && fileContains(releaseWorkflow, "verify-release-bundle.sh")
             && fileContains(releaseWorkflow, "--app dist/Nexus.app")
             && fileContains(releaseWorkflow, "--assets-dir release-assets")

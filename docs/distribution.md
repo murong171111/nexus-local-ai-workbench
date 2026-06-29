@@ -50,7 +50,7 @@ The app bundle must include:
 - Confirm `nexus://workspace/<folder>` opens Nexus and focuses the target workspace.
 - Confirm release docs and workflows point at the Native app artifact path.
 - Confirm every published Native DMG has a matching `.dmg.sha256` checksum asset.
-- Confirm `nexus-native-release-manifest.json` is generated from the same final DMG and checksum assets.
+- Confirm `nexus-native-release-manifest.json` is generated from the same final DMG and checksum assets, and that every manifest SHA-256 matches its `.dmg.sha256` sidecar.
 - Confirm `native/Nexus/Scripts/verify-signing-notarization.sh` passes for signed app/DMG artifacts when Apple Developer credentials are configured.
 - Confirm `native/Nexus/Scripts/verify-release-bundle.sh` passes for the app bundle, DMGs, checksum sidecars, and release manifest.
 - Confirm `native/Nexus/Scripts/verify-release-notes.sh` passes for the tagged `CHANGELOG.md` release notes before publishing GitHub Release assets.
