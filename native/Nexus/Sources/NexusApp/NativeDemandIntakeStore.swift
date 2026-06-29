@@ -22,6 +22,8 @@ enum NativeDemandIntakeStore {
         lanhuLink: String,
         notes: String,
         confirmed: Bool,
+        auditRoot: String? = nil,
+        actor: String? = nil,
         fileManager: FileManager = .default
     ) throws -> InitializeDemandIntakeResponse {
         guard confirmed else {
@@ -64,9 +66,48 @@ enum NativeDemandIntakeStore {
             createdFiles.append(file.filename)
         }
 
-        return InitializeDemandIntakeResponse(
+        let response = InitializeDemandIntakeResponse(
             status: status(for: workspaceURL, fileManager: fileManager),
             createdFiles: createdFiles
+        )
+        appendAuditEvent(
+            workspacePath: workspaceURL.path,
+            demandName: normalizedDemandName,
+            lanhuLink: normalizedLanhuLink,
+            response: response,
+            auditRoot: auditRoot,
+            actor: actor
+        )
+        return response
+    }
+
+    private static func appendAuditEvent(
+        workspacePath: String,
+        demandName: String,
+        lanhuLink: String,
+        response: InitializeDemandIntakeResponse,
+        auditRoot: String?,
+        actor: String?
+    ) {
+        guard let auditRoot = auditRoot?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !auditRoot.isEmpty else {
+            return
+        }
+        _ = try? NativeAuditEventStore.append(
+            auditRoot: auditRoot,
+            event: AuditEventInput(
+                actor: actor ?? "Nexus Native",
+                action: "demand_intake.initialized",
+                target: response.status.directoryPath,
+                summary: "Initialized demand intake files for \(demandName)",
+                metadata: [
+                    "workspacePath": workspacePath,
+                    "demandName": demandName,
+                    "lanhuLink": lanhuLink,
+                    "createdFiles": response.createdFiles.joined(separator: ","),
+                    "missingCount": "\(response.status.missingCount)"
+                ]
+            )
         )
     }
 

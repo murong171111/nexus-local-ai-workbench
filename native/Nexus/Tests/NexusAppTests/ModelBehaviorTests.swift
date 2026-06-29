@@ -31,6 +31,7 @@ final class ModelBehaviorTests: XCTestCase {
             "struct MainWorkflowLegacyBoundary",
             "struct NativeLocalCoreEvidence",
             "struct NativeDistributionReadinessEvidence",
+            "struct NativeLifecycleProofEvidence",
             "struct DemandIntakeReadinessEvidence",
             "struct DemandIntakeM1ActionPolicy",
             "struct TaskStatusUpdate",
@@ -73,6 +74,7 @@ final class ModelBehaviorTests: XCTestCase {
             "WorkspaceListSummary.swift",
             "NativeStatusDiagnostics.swift",
             "WorkspaceDetailNavigation.swift",
+            "NativeLifecycleProofEvidence.swift",
             "DemandIntakeActions.swift",
             "CommandCenterLayout.swift"
         ]
@@ -1218,9 +1220,11 @@ final class ModelBehaviorTests: XCTestCase {
                 "native/Nexus/Sources/NexusApp/NativeDemandIntakeStore.swift",
                 "native/Nexus/Sources/NexusApp/NativeScopeFreezeStore.swift",
                 "native/Nexus/Sources/NexusApp/NativeDemandTaskTransferStore.swift",
+                "native/Nexus/Sources/NexusApp/NativeWorktreeSetupStore.swift",
                 "native/Nexus/Sources/NexusApp/NativeDeliveryRecordStore.swift",
                 "native/Nexus/Sources/NexusApp/NativeWorkspaceTaskStore.swift",
                 "native/Nexus/Sources/NexusApp/NativeWorkspaceLifecycleStore.swift",
+                "native/Nexus/Sources/NexusApp/NativeLifecycleProofEvidence.swift",
                 "native/Nexus/Sources/NexusApp/DeliveryLifecycleEvidence.swift",
                 "native/Nexus/Sources/NexusApp/AppState.swift"
             ]
@@ -1682,6 +1686,7 @@ final class ModelBehaviorTests: XCTestCase {
         let workspaceURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-native-demand-init-\(UUID().uuidString)")
         let demandURL = workspaceURL.appendingPathComponent("需求")
+        let auditRoot = workspaceURL.appendingPathComponent("audit")
         defer {
             try? FileManager.default.removeItem(at: workspaceURL)
         }
@@ -1693,8 +1698,11 @@ final class ModelBehaviorTests: XCTestCase {
             demandName: "会员权益页",
             lanhuLink: "https://lanhu.example/design",
             notes: "先确认首屏",
-            confirmed: true
+            confirmed: true,
+            auditRoot: auditRoot.path,
+            actor: "Nexus Test"
         )
+        let events = try NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 5)
 
         XCTAssertEqual(response.status.ready, true)
         XCTAssertEqual(response.status.missingCount, 0)
@@ -1702,6 +1710,10 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(try String(contentsOf: demandURL.appendingPathComponent("requirement.md"), encoding: .utf8).contains("会员权益页"))
         XCTAssertTrue(try String(contentsOf: demandURL.appendingPathComponent("requirement.md"), encoding: .utf8).contains("https://lanhu.example/design"))
         XCTAssertEqual(try String(contentsOf: demandURL.appendingPathComponent("questions.md"), encoding: .utf8), "# Existing questions\n")
+        XCTAssertEqual(events.first?.action, "demand_intake.initialized")
+        XCTAssertEqual(events.first?.actor, "Nexus Test")
+        XCTAssertEqual(events.first?.metadata["workspacePath"], workspaceURL.path)
+        XCTAssertEqual(events.first?.metadata["createdFiles"], "requirement.md,scope.md,tasks.md,delivery.md")
     }
 
     func testNativeDemandIntakeStoreRequiresConfirmationAndFileEntries() throws {
@@ -2621,9 +2633,21 @@ final class ModelBehaviorTests: XCTestCase {
             risks: [RiskAlert(title: "Risk", detail: "Open risk")]
         )
 
-        XCTAssertTrue(appStateForAutomationTests(workspaces: [archived]).nativeLifecycleProofAvailable())
+        let proofEvents = lifecycleProofAuditEvents(for: archived)
+        let proof = NativeLifecycleProofEvidence.resolve(workspace: archived, auditEvents: proofEvents)
+
+        XCTAssertFalse(appStateForAutomationTests(workspaces: [archived]).nativeLifecycleProofAvailable(auditEvents: []))
+        XCTAssertTrue(appStateForAutomationTests(workspaces: [archived]).nativeLifecycleProofAvailable(auditEvents: proofEvents))
+        XCTAssertTrue(proof.ready)
+        XCTAssertEqual(proof.missingActions, [])
+        XCTAssertEqual(proof.orderedActions, NativeLifecycleProofEvidence.requiredAuditActions)
         XCTAssertFalse(appStateForAutomationTests(workspaces: [blocked]).nativeLifecycleProofAvailable())
         XCTAssertFalse(appStateForAutomationTests(workspaces: []).nativeLifecycleProofAvailable())
+
+        let missingDemand = proofEvents.filter { $0.action != "demand_intake.initialized" }
+        let incomplete = NativeLifecycleProofEvidence.resolve(workspace: archived, auditEvents: missingDemand)
+        XCTAssertFalse(incomplete.ready)
+        XCTAssertTrue(incomplete.missingActions.contains("demand_intake.initialized"))
     }
 
     func testWidgetSnapshotCarriesMainStageAnswerCompatibly() throws {
@@ -4011,6 +4035,7 @@ final class ModelBehaviorTests: XCTestCase {
         let sourceRoot = root.appendingPathComponent("source-repos")
         let source = sourceRoot.appendingPathComponent("order")
         let workspace = root.appendingPathComponent("workspace")
+        let auditRoot = root.appendingPathComponent("audit")
         defer {
             try? FileManager.default.removeItem(at: root)
         }
@@ -4033,15 +4058,22 @@ final class ModelBehaviorTests: XCTestCase {
                 sourceReposRoot: sourceRoot.path,
                 services: ["order"],
                 targetBranch: "feature/native-setup",
-                confirmed: true
+                confirmed: true,
+                auditRoot: auditRoot.path,
+                actor: "Nexus Test"
             )
         )
+        let firstEvents = try NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 5)
 
         XCTAssertEqual(response.created.map(\.service), ["order"])
         XCTAssertTrue(response.skipped.isEmpty)
         XCTAssertTrue(response.failed.isEmpty)
         XCTAssertTrue(response.command.contains("git -C"))
         XCTAssertTrue(FileManager.default.fileExists(atPath: workspace.appendingPathComponent("repos/order/.git").path))
+        XCTAssertEqual(firstEvents.first?.action, "worktree_setup.executed")
+        XCTAssertEqual(firstEvents.first?.actor, "Nexus Test")
+        XCTAssertEqual(firstEvents.first?.metadata["created"], "1")
+        XCTAssertEqual(firstEvents.first?.metadata["createdServices"], "order")
 
         let second = try NativeWorktreeSetupStore.setup(
             request: SetupWorktreesRequest(
@@ -4049,13 +4081,19 @@ final class ModelBehaviorTests: XCTestCase {
                 sourceReposRoot: sourceRoot.path,
                 services: ["order"],
                 targetBranch: "feature/native-setup",
-                confirmed: true
+                confirmed: true,
+                auditRoot: auditRoot.path,
+                actor: "Nexus Test"
             )
         )
+        let secondEvents = try NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 5)
 
         XCTAssertTrue(second.created.isEmpty)
         XCTAssertEqual(second.skipped.map(\.service), ["order"])
         XCTAssertTrue(second.failed.isEmpty)
+        XCTAssertEqual(secondEvents.first?.metadata["created"], "0")
+        XCTAssertEqual(secondEvents.first?.metadata["skipped"], "1")
+        XCTAssertEqual(secondEvents.first?.metadata["skippedServices"], "order")
     }
 
     func testNativeWorktreeSetupStoreRequiresConfirmation() throws {
@@ -4125,24 +4163,27 @@ final class ModelBehaviorTests: XCTestCase {
         let workspaceURL = URL(fileURLWithPath: created.path)
         let demandURL = workspaceURL.appendingPathComponent("需求")
 
+        _ = try NativeDemandIntakeStore.initialize(
+            workspacePath: workspaceURL.path,
+            demandName: "Native E2E Lifecycle",
+            lanhuLink: "https://lanhu.example/native-e2e",
+            notes: "Build one real lifecycle proof from native stores.",
+            confirmed: true,
+            auditRoot: auditRoot.path,
+            actor: "Nexus Test"
+        )
         let worktree = try NativeWorktreeSetupStore.setup(
             request: SetupWorktreesRequest(
                 workspacePath: workspaceURL.path,
                 sourceReposRoot: sourceRoot.path,
                 services: ["order"],
                 targetBranch: branch,
-                confirmed: true
+                confirmed: true,
+                auditRoot: auditRoot.path,
+                actor: "Nexus Test"
             )
         )
         XCTAssertEqual(worktree.created.map(\.service), ["order"])
-
-        _ = try NativeDemandIntakeStore.initialize(
-            workspacePath: workspaceURL.path,
-            demandName: "Native E2E Lifecycle",
-            lanhuLink: "https://lanhu.example/native-e2e",
-            notes: "Build one real lifecycle proof from native stores.",
-            confirmed: true
-        )
         try """
         # 需求确认卡
 
@@ -4290,12 +4331,15 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(actions.contains("workspace.created"))
         XCTAssertTrue(actions.contains("scope.freeze_confirmed"))
         XCTAssertTrue(actions.contains("demand_tasks.transferred"))
+        XCTAssertTrue(actions.contains("demand_intake.initialized"))
+        XCTAssertTrue(actions.contains("worktree_setup.executed"))
         XCTAssertTrue(actions.contains("workspace_task.updated"))
         XCTAssertTrue(actions.contains("delivery_record.snapshot_appended"))
         XCTAssertTrue(actions.contains("validation_pr.snapshot_appended"))
         XCTAssertTrue(actions.contains("archive_checklist.snapshot_appended"))
         XCTAssertTrue(actions.contains("workspace_lifecycle.updated"))
-        XCTAssertTrue(appStateForAutomationTests(workspaces: [archived]).nativeLifecycleProofAvailable())
+        let proofEvents = try NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 40)
+        XCTAssertTrue(appStateForAutomationTests(workspaces: [archived]).nativeLifecycleProofAvailable(auditEvents: proofEvents))
 
         _ = try NativeWorkspaceLifecycleStore.update(
             request: UpdateWorkspaceLifecycleRequest(
@@ -6263,6 +6307,22 @@ final class ModelBehaviorTests: XCTestCase {
             docsRoot: "/tmp/docs",
             defaults: defaults
         )
+    }
+
+    private func lifecycleProofAuditEvents(for workspace: WorkspaceSummary) -> [AuditEvent] {
+        Array(NativeLifecycleProofEvidence.requiredAuditActions.enumerated().map { offset, action in
+            AuditEvent(
+                id: "proof-\(offset)",
+                timestamp: String(format: "2026-06-30T00:%02d:00Z", offset),
+                actor: "Nexus Test",
+                action: action,
+                target: workspace.path,
+                summary: "Lifecycle proof \(action) for \(workspace.folder)",
+                metadata: action == "workspace_lifecycle.updated"
+                    ? ["workspace": workspace.path, "state": "archived"]
+                    : ["workspace": workspace.path]
+            )
+        }.reversed())
     }
 
     private func scannedWorkspace(

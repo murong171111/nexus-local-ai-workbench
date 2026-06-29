@@ -78,13 +78,44 @@ enum NativeWorktreeSetupStore {
             }
         }
 
-        return SetupWorktreesResponse(
+        let response = SetupWorktreesResponse(
             workspacePath: workspaceURL.path,
             targetBranch: targetBranch,
             command: command(workspaceURL: workspaceURL, sourceReposRoot: request.sourceReposRoot, services: services, targetBranch: targetBranch),
             created: created,
             skipped: skipped,
             failed: failed
+        )
+        appendAuditEvent(request: request, response: response)
+        return response
+    }
+
+    private static func appendAuditEvent(
+        request: SetupWorktreesRequest,
+        response: SetupWorktreesResponse
+    ) {
+        guard let auditRoot = request.auditRoot?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !auditRoot.isEmpty else {
+            return
+        }
+        _ = try? NativeAuditEventStore.append(
+            auditRoot: auditRoot,
+            event: AuditEventInput(
+                actor: request.actor ?? "Nexus Native",
+                action: "worktree_setup.executed",
+                target: response.workspacePath,
+                summary: "Created \(response.created.count), skipped \(response.skipped.count), failed \(response.failed.count) workspace-local worktrees",
+                metadata: [
+                    "workspace": response.workspacePath,
+                    "targetBranch": response.targetBranch,
+                    "created": "\(response.created.count)",
+                    "skipped": "\(response.skipped.count)",
+                    "failed": "\(response.failed.count)",
+                    "createdServices": response.created.map(\.service).joined(separator: ","),
+                    "skippedServices": response.skipped.map(\.service).joined(separator: ","),
+                    "failedServices": response.failed.map(\.service).joined(separator: ",")
+                ]
+            )
         )
     }
 

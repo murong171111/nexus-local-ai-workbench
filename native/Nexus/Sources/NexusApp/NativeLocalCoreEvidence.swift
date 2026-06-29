@@ -214,9 +214,11 @@ private extension NativeLocalCoreDomain {
                 "native/Nexus/Sources/NexusApp/NativeDemandIntakeStore.swift",
                 "native/Nexus/Sources/NexusApp/NativeScopeFreezeStore.swift",
                 "native/Nexus/Sources/NexusApp/NativeDemandTaskTransferStore.swift",
+                "native/Nexus/Sources/NexusApp/NativeWorktreeSetupStore.swift",
                 "native/Nexus/Sources/NexusApp/NativeDeliveryRecordStore.swift",
                 "native/Nexus/Sources/NexusApp/NativeWorkspaceTaskStore.swift",
                 "native/Nexus/Sources/NexusApp/NativeWorkspaceLifecycleStore.swift",
+                "native/Nexus/Sources/NexusApp/NativeLifecycleProofEvidence.swift",
                 "native/Nexus/Sources/NexusApp/DeliveryLifecycleEvidence.swift",
                 "native/Nexus/Sources/NexusApp/AppState.swift"
             ]

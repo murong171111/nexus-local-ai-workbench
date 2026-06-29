@@ -2687,16 +2687,16 @@ final class AppState: ObservableObject {
     }
 
     func nativeLifecycleProofAvailable() -> Bool {
+        let auditEvents = (try? NativeAuditEventStore.loadRecent(auditRoot: auditRootPath, limit: 200)) ?? []
+        return nativeLifecycleProofAvailable(auditEvents: auditEvents)
+    }
+
+    func nativeLifecycleProofAvailable(auditEvents: [AuditEvent]) -> Bool {
         workspaces.contains { workspace in
-            let lifecycleStage = workspace.lifecycle.stage.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            let archived = workspace.state == .archived || lifecycleStage == "archived"
-            let hasDeliveryEvidence = workspace.documentLinks["delivery-cn"]?.isEmpty == false
-                || workspace.documentLinks["delivery"]?.isEmpty == false
-            let servicesReady = !workspace.services.isEmpty && workspace.services.allSatisfy { service in
-                service.sourceExists && service.worktreeExists
-            }
-            let noActiveTasks = workspace.tasks.allSatisfy { !$0.isActive }
-            return archived && hasDeliveryEvidence && servicesReady && noActiveTasks && workspace.risks.isEmpty
+            NativeLifecycleProofEvidence.resolve(
+                workspace: workspace,
+                auditEvents: auditEvents
+            ).ready
         }
     }
 
@@ -3036,19 +3036,9 @@ final class AppState: ObservableObject {
                     demandName: demandName,
                     lanhuLink: lanhuLink,
                     notes: notes,
-                    confirmed: confirmed
-                )
-                await recordWorkspaceAction(
-                    action: "demand_intake.initialized",
-                    target: response.status.directoryPath,
-                    summary: "Initialized demand intake files for \(demandName)",
-                    metadata: [
-                        "workspacePath": workspace.path,
-                        "demandName": demandName,
-                        "lanhuLink": lanhuLink,
-                        "createdFiles": response.createdFiles.joined(separator: ","),
-                        "missingCount": "\(response.status.missingCount)"
-                    ]
+                    confirmed: confirmed,
+                    auditRoot: auditRootPath,
+                    actor: "Nexus Native"
                 )
             } catch {
                 response = try await bridge.initializeDemandIntake(
@@ -3958,19 +3948,6 @@ final class AppState: ObservableObject {
                 )
             )
             lastWorktreeSetupResponse = response
-            await recordNativeAuditEvent(
-                AuditEventInput(
-                    actor: "Nexus Native",
-                    action: "worktree_setup.executed",
-                    target: workspace.path,
-                    summary: "Created \(response.created.count), skipped \(response.skipped.count), failed \(response.failed.count) workspace-local worktrees",
-                    metadata: [
-                        "created": "\(response.created.count)",
-                        "skipped": "\(response.skipped.count)",
-                        "failed": "\(response.failed.count)"
-                    ]
-                )
-            )
             await refreshFromBridge()
         } catch {
             lastError = error.localizedDescription
