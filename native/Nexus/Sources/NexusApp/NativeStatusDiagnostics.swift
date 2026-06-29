@@ -108,6 +108,36 @@ struct NativeStatusDiagnosticSummary: Hashable {
     let status: WorkflowPathStatus
 }
 
+struct WorkspaceStatusDiagnosticCard: Hashable {
+    let title: String
+    let helpText: String
+    let summary: NativeStatusDiagnosticSummary
+    let items: [NativeStatusDiagnosticItem]
+
+    init(diagnostics: NativeStatusDiagnostics) {
+        title = "状态诊断"
+        helpText = "Status diagnostics"
+        summary = diagnostics.summary
+        items = diagnostics.diagnosticItems
+    }
+
+    var status: WorkflowPathStatus {
+        summary.status
+    }
+
+    var primaryActionLabel: String {
+        summary.actionLabel
+    }
+
+    var attentionCount: Int {
+        items.filter(\.isAttention).count
+    }
+
+    var isReady: Bool {
+        status == .ready && attentionCount == 0
+    }
+}
+
 struct NativeStatusDiagnostics: Hashable {
     let workspaceDirectoryCount: Int?
     let indexRecordCount: Int
@@ -237,6 +267,10 @@ struct NativeStatusDiagnostics: Hashable {
                 isAttention: latestAuditTargetExists == false
             )
         ]
+    }
+
+    var workspaceDetailCard: WorkspaceStatusDiagnosticCard {
+        WorkspaceStatusDiagnosticCard(diagnostics: self)
     }
 
     static func resolve(

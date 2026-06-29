@@ -396,6 +396,28 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(indexMissing.summary.status, .review)
     }
 
+    func testWorkspaceStatusDiagnosticCardSurfacesOneDetailAction() {
+        let diagnostics = NativeStatusDiagnostics(
+            workspaceDirectoryCount: 0,
+            indexRecordCount: 2,
+            widgetUpdatedAt: nil,
+            latestAuditAction: "workspace.created",
+            latestAuditTarget: "/tmp/missing-workspace",
+            latestAuditTargetExists: false
+        )
+
+        let card = diagnostics.workspaceDetailCard
+
+        XCTAssertEqual(card.title, "状态诊断")
+        XCTAssertEqual(card.helpText, "Status diagnostics")
+        XCTAssertEqual(card.summary.title, "索引有记录但真实目录为 0")
+        XCTAssertEqual(card.primaryActionLabel, "检查路径设置")
+        XCTAssertEqual(card.status, .blocked)
+        XCTAssertEqual(card.items.map(\.id), ["directories", "index", "widget", "audit"])
+        XCTAssertEqual(card.attentionCount, 3)
+        XCTAssertFalse(card.isReady)
+    }
+
     func testMenuBarStatusSummaryPrioritizesBlockedWorkspaces() {
         let summary = MenuBarStatusSummary(
             workspaceCount: 4,

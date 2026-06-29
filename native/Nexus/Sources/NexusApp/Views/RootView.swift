@@ -5177,6 +5177,10 @@ private struct WorkspaceDetailView: View {
                 }
             )
 
+            WorkspaceStatusDiagnosticCardView(card: appState.nativeStatusDiagnostics.workspaceDetailCard) {
+                runStatusDiagnosticAction()
+            }
+
             WorkspaceDetailMapView(workspace: workspace) { section in
                 scrollToSection(section)
             }
@@ -5418,6 +5422,77 @@ private struct WorkspaceDetailView: View {
         workspace.healthChecks.filter { check in
             check.id != "delivery-record" && check.action != "delivery"
         }
+    }
+
+    private func runStatusDiagnosticAction() {
+        let status = appState.nativeStatusDiagnostics.summary.status
+        if status == .ready {
+            scrollToSection(.command)
+            return
+        }
+
+        Task {
+            await appState.runLocalAutomationCheck(actor: "Nexus Status Diagnostics")
+        }
+    }
+}
+
+private struct WorkspaceStatusDiagnosticCardView: View {
+    let card: WorkspaceStatusDiagnosticCard
+    let action: () -> Void
+
+    var body: some View {
+        SectionBlock(title: card.title) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: card.summary.systemImage)
+                        .foregroundStyle(card.status.color)
+                        .frame(width: 16)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 7) {
+                            Text(card.summary.title)
+                                .font(.subheadline.weight(.semibold))
+                            Text(card.status.displayLabel)
+                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(card.status.color)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 2)
+                                .background(card.status.color.opacity(0.1))
+                                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        }
+
+                        Text(card.summary.detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer(minLength: 12)
+
+                    Button(action: action) {
+                        Label(card.primaryActionLabel, systemImage: card.isReady ? "arrow.down.right.circle" : "arrow.clockwise")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help(card.summary.detail)
+                }
+
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
+                    ForEach(card.items) { item in
+                        DiagnosticMetric(item: item)
+                            .padding(8)
+                            .background(NexusPalette.badge)
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    }
+                }
+            }
+        }
+        .help(card.helpText)
+    }
+
+    private var columns: [GridItem] {
+        [GridItem(.adaptive(minimum: 118), spacing: 8, alignment: .leading)]
     }
 }
 
