@@ -3863,7 +3863,7 @@ final class AppState: ObservableObject {
         }
 
         do {
-            let response = try await bridge.createWorkspace(
+            let response = try NativeWorkspaceCreationStore.create(
                 request: CreateWorkspaceRequest(
                     name: draft.name,
                     folder: draft.folder,

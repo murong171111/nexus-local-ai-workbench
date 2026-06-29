@@ -250,6 +250,13 @@ public struct WorkspaceInitializationFile: Codable, Equatable, Sendable, Identif
     public let relativePath: String
     public let kind: String
     public let exists: Bool
+
+    public init(label: String, relativePath: String, kind: String, exists: Bool) {
+        self.label = label
+        self.relativePath = relativePath
+        self.kind = kind
+        self.exists = exists
+    }
 }
 
 public struct WorkspaceInitializationCheck: Codable, Equatable, Sendable, Identifiable {
@@ -257,6 +264,13 @@ public struct WorkspaceInitializationCheck: Codable, Equatable, Sendable, Identi
     public let label: String
     public let detail: String
     public let status: String
+
+    public init(id: String, label: String, detail: String, status: String) {
+        self.id = id
+        self.label = label
+        self.detail = detail
+        self.status = status
+    }
 }
 
 public struct SetupWorktreesRequest: Codable, Equatable, Sendable {
