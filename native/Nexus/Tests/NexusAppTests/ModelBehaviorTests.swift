@@ -1031,7 +1031,8 @@ final class ModelBehaviorTests: XCTestCase {
             fullyNative.domains.first { $0.domain == .demandIntake }?.evidence,
             [
                 "native/Nexus/Sources/NexusApp/DemandScopeEvidence.swift",
-                "native/Nexus/Sources/NexusApp/NativeDemandIntakeStore.swift"
+                "native/Nexus/Sources/NexusApp/NativeDemandIntakeStore.swift",
+                "native/Nexus/Sources/NexusApp/NativeDemandTaskTransferStore.swift"
             ]
         )
         XCTAssertTrue(
@@ -4533,6 +4534,32 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(plan.transferableItems[0].markdownRow.contains("priority=high"))
         XCTAssertEqual(stage.id, .development)
         XCTAssertEqual(stage.primaryAction, .transferDemandTasks)
+
+        XCTAssertThrowsError(
+            try NativeDemandTaskTransferStore.transfer(plan: plan, confirmed: false)
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("explicit confirmation"))
+        }
+
+        let auditRoot = root.appendingPathComponent("audit")
+        let response = try NativeDemandTaskTransferStore.transfer(
+            plan: plan,
+            confirmed: true,
+            auditRoot: auditRoot.path,
+            actor: "Nexus Test"
+        )
+        let executionTasks = try String(contentsOf: root.appendingPathComponent("tasks.md"), encoding: .utf8)
+        let events = try NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 5)
+
+        XCTAssertTrue(response.transferred)
+        XCTAssertEqual(response.transferredCount, 1)
+        XCTAssertEqual(response.duplicateCount, 1)
+        XCTAssertTrue(executionTasks.contains("## Requirement Tasks"))
+        XCTAssertTrue(executionTasks.contains("| 新增交易快照写入 | 待办 | priority=high; source=需求/tasks.md; L6; 来源: 蓝湖; 保存订单时记录快照; 预检状态: 待办 |"))
+        XCTAssertEqual(events.first?.action, "demand_tasks.transferred")
+        XCTAssertEqual(events.first?.actor, "Nexus Test")
+        XCTAssertEqual(events.first?.metadata["transferredCount"], "1")
+        XCTAssertEqual(events.first?.metadata["duplicateCount"], "1")
     }
 
     func testWorkflowPathStatusLabelsStayChineseFirst() {

@@ -805,16 +805,6 @@ final class AppState: ObservableObject {
         selectTaskCenterItem(item)
     }
 
-    private func readOrCreateExecutionTasksDocument(at path: String) throws -> String {
-        let fileURL = URL(fileURLWithPath: path)
-        let parentURL = fileURL.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: parentURL, withIntermediateDirectories: true)
-        if FileManager.default.fileExists(atPath: path) {
-            return try String(contentsOfFile: path, encoding: .utf8)
-        }
-        return "# Tasks\n\n| 任务 | 状态 | 说明 |\n| --- | --- | --- |\n"
-    }
-
     func persistLocalPaths() {
         defaults.set(
             workspaceRoot.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -2988,35 +2978,13 @@ final class AppState: ObservableObject {
         }
 
         do {
-            var content = try readOrCreateExecutionTasksDocument(at: plan.executionTasksPath)
-            if !content.contains("## Requirement Tasks") {
-                if !content.hasSuffix("\n") {
-                    content.append("\n")
-                }
-                content.append("\n## Requirement Tasks\n\n| 任务 | 状态 | 说明 |\n| --- | --- | --- |\n")
-            } else if !content.hasSuffix("\n") {
-                content.append("\n")
-            }
-
-            for item in plan.transferableItems {
-                content.append(item.markdownRow)
-                content.append("\n")
-            }
-
-            try content.write(toFile: plan.executionTasksPath, atomically: true, encoding: .utf8)
-            pendingDemandTaskTransfer = nil
-            await recordWorkspaceAction(
-                action: "demand_tasks.transferred",
-                target: plan.executionTasksPath,
-                summary: "Transferred \(plan.transferableItems.count) demand tasks into root tasks.md",
-                metadata: [
-                    "intakeTasksPath": plan.intakeTasksPath,
-                    "executionTasksPath": plan.executionTasksPath,
-                    "transferredCount": "\(plan.transferableItems.count)",
-                    "duplicateCount": "\(plan.duplicateCount)"
-                ],
-                workspaceOverride: workspaces.first { $0.id == plan.workspaceID }
+            let response = try NativeDemandTaskTransferStore.transfer(
+                plan: plan,
+                confirmed: confirmed,
+                auditRoot: auditRootPath,
+                actor: "Nexus Native"
             )
+            pendingDemandTaskTransfer = nil
             await refreshFromBridge()
             setTaskCenterFilter(.all)
             focusWorkspace(id: plan.workspaceID)
@@ -3026,7 +2994,7 @@ final class AppState: ObservableObject {
                 detail: "\(plan.transferableItems.count) 个需求点已追加到 root tasks.md，开发任务以 root tasks.md 为准。",
                 workspaceID: plan.workspaceID,
                 workspaceName: plan.workspaceName,
-                documentPath: plan.executionTasksPath,
+                documentPath: response.path,
                 documentLabel: "打开 tasks.md",
                 systemImage: "checklist"
             )
