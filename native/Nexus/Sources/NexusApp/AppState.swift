@@ -5077,6 +5077,48 @@ final class AppState: ObservableObject {
     }
 }
 
+struct WorkspaceCreationVisibilityFeedback: Hashable {
+    let title: String
+    let detail: String
+    let actionLabel: String
+    let systemImage: String
+    let status: WorkflowPathStatus
+    let isVisibleAfterRefresh: Bool?
+
+    init(receipt: CreateWorkspaceResponse) {
+        let isVisibleAfterRefresh = receipt.isVisibleAfterRefresh
+        self.isVisibleAfterRefresh = isVisibleAfterRefresh
+
+        switch isVisibleAfterRefresh {
+        case true:
+            title = "新工作区已出现在扫描结果中"
+            detail = receipt.scanVisibilityCheck?.detail
+                ?? "刷新后已确认新目录进入 Native 工作区列表。"
+            actionLabel = "继续下一步"
+            systemImage = "checkmark.seal"
+            status = .ready
+        case false:
+            title = "创建记录已写入，但扫描未命中新工作区"
+            detail = receipt.scanVisibilityCheck?.detail
+                ?? "目录和初始化文件已经写入；刷新后仍未出现在 Native 扫描结果里，请检查工作区根目录、筛选条件或重新扫描。"
+            actionLabel = "重新扫描"
+            systemImage = "exclamationmark.triangle"
+            status = .review
+        case nil:
+            title = "新工作区已创建，等待刷新确认"
+            detail = receipt.scanVisibilityCheck?.detail
+                ?? "刷新工作区列表后确认新目录是否进入 Native 扫描结果。"
+            actionLabel = "刷新确认"
+            systemImage = "questionmark.circle"
+            status = .pending
+        }
+    }
+
+    var needsRecovery: Bool {
+        isVisibleAfterRefresh == false
+    }
+}
+
 extension CreateWorkspaceResponse {
     var scanVisibilityCheck: WorkspaceInitializationCheck? {
         initializationChecks?.first { $0.id == "workspace-scan-visible" }
@@ -5096,22 +5138,19 @@ extension CreateWorkspaceResponse {
     }
 
     var needsVisibilityRecovery: Bool {
-        isVisibleAfterRefresh == false
+        visibilityFeedback.needsRecovery
+    }
+
+    var visibilityFeedback: WorkspaceCreationVisibilityFeedback {
+        WorkspaceCreationVisibilityFeedback(receipt: self)
     }
 
     var visibilityRecoveryTitle: String {
-        if needsVisibilityRecovery {
-            return "创建记录已写入，但扫描还没返回新工作区"
-        }
-        if isVisibleAfterRefresh == true {
-            return "新工作区已出现在扫描结果中"
-        }
-        return "新工作区已创建，等待刷新确认"
+        visibilityFeedback.title
     }
 
     var visibilityRecoveryDetail: String {
-        scanVisibilityCheck?.detail
-            ?? "刷新工作区列表后确认新目录是否进入 Native 扫描结果。"
+        visibilityFeedback.detail
     }
 }
 

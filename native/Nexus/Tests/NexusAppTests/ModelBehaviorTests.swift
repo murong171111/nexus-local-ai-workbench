@@ -1647,6 +1647,9 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(visibleResponse.isVisibleAfterRefresh, true)
         XCTAssertFalse(visibleResponse.needsVisibilityRecovery)
         XCTAssertTrue(visibleResponse.visibilityRecoveryTitle.contains("已出现在扫描结果"))
+        XCTAssertEqual(visibleResponse.visibilityFeedback.status, .ready)
+        XCTAssertEqual(visibleResponse.visibilityFeedback.actionLabel, "继续下一步")
+        XCTAssertEqual(visibleResponse.visibilityFeedback.systemImage, "checkmark.seal")
 
         let missingResponse = AppState.workspaceCreationResponse(response, verifiedAgainst: [])
         let missingCheck = missingResponse.initializationChecks?.first { $0.id == "workspace-scan-visible" }
@@ -1655,8 +1658,11 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(missingResponse.initializationChecks?.filter { $0.id == "workspace-scan-visible" }.count, 1)
         XCTAssertEqual(missingResponse.isVisibleAfterRefresh, false)
         XCTAssertTrue(missingResponse.needsVisibilityRecovery)
-        XCTAssertTrue(missingResponse.visibilityRecoveryTitle.contains("扫描还没返回新工作区"))
+        XCTAssertTrue(missingResponse.visibilityRecoveryTitle.contains("扫描未命中新工作区"))
         XCTAssertTrue(missingResponse.visibilityRecoveryDetail.contains("目录扫描未返回"))
+        XCTAssertEqual(missingResponse.visibilityFeedback.status, .review)
+        XCTAssertEqual(missingResponse.visibilityFeedback.actionLabel, "重新扫描")
+        XCTAssertEqual(missingResponse.visibilityFeedback.systemImage, "exclamationmark.triangle")
     }
 
     func testNativeWorkspaceTaskStoreRequiresConfirmationAndRewritesStatus() throws {

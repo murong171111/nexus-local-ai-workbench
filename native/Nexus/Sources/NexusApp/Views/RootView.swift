@@ -3691,17 +3691,30 @@ private struct CreatedWorkspaceVisibilityRecoveryView: View {
     let receipt: CreateWorkspaceResponse
     @Binding var isSettingsPresented: Bool
 
+    private var feedback: WorkspaceCreationVisibilityFeedback {
+        receipt.visibilityFeedback
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "exclamationmark.triangle")
-                    .foregroundStyle(NexusPalette.warning)
+                Image(systemName: feedback.systemImage)
+                    .foregroundStyle(feedback.status.color)
                     .frame(width: 16)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(receipt.visibilityRecoveryTitle)
-                        .font(.headline)
-                    Text(receipt.visibilityRecoveryDetail)
+                    HStack(spacing: 7) {
+                        Text(feedback.title)
+                            .font(.headline)
+                        Text(feedback.status.displayLabel)
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(feedback.status.color)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2)
+                            .background(feedback.status.color.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    }
+                    Text(feedback.detail)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -3731,7 +3744,7 @@ private struct CreatedWorkspaceVisibilityRecoveryView: View {
                         await appState.refreshFromBridge()
                     }
                 } label: {
-                    Label("重新扫描", systemImage: "arrow.clockwise")
+                    Label(feedback.actionLabel, systemImage: "arrow.clockwise")
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
@@ -3759,7 +3772,7 @@ private struct CreatedWorkspaceVisibilityRecoveryView: View {
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(NexusPalette.warning.opacity(0.24), lineWidth: 1)
+                .stroke(feedback.status.color.opacity(0.24), lineWidth: 1)
         }
     }
 
@@ -10852,6 +10865,10 @@ private struct WorkspaceCreationNextStepsView: View {
         return appState.lastCreatedWorkspace
     }
 
+    private var visibilityFeedback: WorkspaceCreationVisibilityFeedback? {
+        creationReceipt?.visibilityFeedback
+    }
+
     private var worktreeHint: String {
         if workspace.services.isEmpty {
             return "先补齐服务范围，之后才能生成准确的 worktree。"
@@ -11020,20 +11037,44 @@ private struct WorkspaceCreationNextStepsView: View {
         SectionBlock(title: "创建后下一步 / Next steps") {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "checkmark.circle")
-                        .foregroundStyle(NexusPalette.success)
+                    Image(systemName: visibilityFeedback?.systemImage ?? "checkmark.circle")
+                        .foregroundStyle(visibilityFeedback?.status.color ?? NexusPalette.success)
                         .frame(width: 16)
 
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Workspace created")
-                            .font(.subheadline.weight(.semibold))
-                        Text("Nexus 已选中新工作区。先看 handoff，再按服务和分支状态决定是否创建 worktree。")
+                        HStack(spacing: 7) {
+                            Text(visibilityFeedback?.title ?? "新工作区已创建")
+                                .font(.subheadline.weight(.semibold))
+                            if let visibilityFeedback {
+                                Text(visibilityFeedback.status.displayLabel)
+                                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(visibilityFeedback.status.color)
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 2)
+                                    .background(visibilityFeedback.status.color.opacity(0.1))
+                                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            }
+                        }
+                        Text(
+                            visibilityFeedback?.detail
+                                ?? "Nexus 已选中新工作区。先看 handoff，再按服务和分支状态决定是否创建 worktree。"
+                        )
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
                     Spacer()
+
+                    if let visibilityFeedback {
+                        Button {
+                            performVisibilityAction(visibilityFeedback)
+                        } label: {
+                            Label(visibilityFeedback.actionLabel, systemImage: visibilityFeedback.needsRecovery ? "arrow.clockwise" : "arrow.down.right.circle")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
 
                     Button {
                         appState.dismissCreatedWorkspaceFollowUp()
@@ -11133,6 +11174,19 @@ private struct WorkspaceCreationNextStepsView: View {
         case .runLocalCheck:
             Task {
                 await appState.runLocalAutomationCheck()
+            }
+        }
+    }
+
+    private func performVisibilityAction(_ feedback: WorkspaceCreationVisibilityFeedback) {
+        switch feedback.isVisibleAfterRefresh {
+        case true:
+            Task {
+                await appState.loadHandoffForSelectedWorkspace()
+            }
+        case false, nil:
+            Task {
+                await appState.refreshFromBridge()
             }
         }
     }
