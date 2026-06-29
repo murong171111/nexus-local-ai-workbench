@@ -5249,6 +5249,11 @@ private struct WorkspaceMainStageSummaryView: View {
     let acceptance: MainWorkflowAcceptanceEvidence
     let action: () -> Void
     let evidenceAction: (WorkspaceMainStageEvidenceLink) -> Void
+    @State private var evidenceExpanded = false
+
+    private var answer: WorkspaceStageAnswer {
+        stage.answer
+    }
 
     var body: some View {
         SectionBlock(title: "主流程状态 / Main workflow") {
@@ -5297,31 +5302,66 @@ private struct WorkspaceMainStageSummaryView: View {
 
                 if !stage.evidence.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("证据 / Evidence")
+                        Text("主证据 / Primary evidence")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
-                        ForEach(stage.evidenceLinks.prefix(4)) { link in
-                            if link.action != nil {
-                                Button {
-                                    evidenceAction(link)
-                                } label: {
-                                    Label(link.label, systemImage: link.systemImage)
-                                        .font(.system(.caption, design: .monospaced))
-                                        .lineLimit(1)
+
+                        ForEach(answer.visibleEvidenceLinks) { link in
+                            WorkspaceMainStageEvidenceRow(
+                                link: link,
+                                tone: stage.status.color,
+                                action: evidenceAction
+                            )
+                        }
+
+                        if answer.evidenceDetailsCollapsedByDefault {
+                            DisclosureGroup(isExpanded: $evidenceExpanded) {
+                                VStack(alignment: .leading, spacing: 5) {
+                                    ForEach(answer.collapsedEvidenceLinks) { link in
+                                        WorkspaceMainStageEvidenceRow(
+                                            link: link,
+                                            tone: stage.status.color,
+                                            action: evidenceAction
+                                        )
+                                    }
                                 }
-                                .buttonStyle(.plain)
-                                .foregroundStyle(stage.status.color)
-                                .help("打开证据 / Open evidence")
-                            } else {
-                                Label(link.label, systemImage: link.systemImage)
-                                    .font(.system(.caption, design: .monospaced))
+                                .padding(.top, 3)
+                            } label: {
+                                Label(answer.evidenceDetailLabel, systemImage: "list.bullet.rectangle")
+                                    .font(.caption.weight(.semibold))
                                     .foregroundStyle(.secondary)
-                                    .lineLimit(1)
                             }
+                            .font(.caption)
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+private struct WorkspaceMainStageEvidenceRow: View {
+    let link: WorkspaceMainStageEvidenceLink
+    let tone: Color
+    let action: (WorkspaceMainStageEvidenceLink) -> Void
+
+    var body: some View {
+        if link.action != nil {
+            Button {
+                action(link)
+            } label: {
+                Label(link.label, systemImage: link.systemImage)
+                    .font(.system(.caption, design: .monospaced))
+                    .lineLimit(1)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(tone)
+            .help("打开证据 / Open evidence")
+        } else {
+            Label(link.label, systemImage: link.systemImage)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
     }
 }

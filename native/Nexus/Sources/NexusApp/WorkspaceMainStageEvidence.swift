@@ -25,6 +25,26 @@ struct WorkspaceStageAnswer: Hashable {
         routedEvidenceLinks.first
     }
 
+    var visibleEvidenceLinks: [WorkspaceMainStageEvidenceLink] {
+        if let primaryEvidenceLink {
+            return [primaryEvidenceLink]
+        }
+        return evidenceLinks.prefix(1).map { $0 }
+    }
+
+    var collapsedEvidenceLinks: [WorkspaceMainStageEvidenceLink] {
+        let visibleIDs = Set(visibleEvidenceLinks.map(\.id))
+        return evidenceLinks.filter { !visibleIDs.contains($0.id) }
+    }
+
+    var evidenceDetailsCollapsedByDefault: Bool {
+        !collapsedEvidenceLinks.isEmpty
+    }
+
+    var evidenceDetailLabel: String {
+        "证据详情 / Evidence details (\(collapsedEvidenceLinks.count))"
+    }
+
     var canAnswerCurrentState: Bool {
         !stageLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

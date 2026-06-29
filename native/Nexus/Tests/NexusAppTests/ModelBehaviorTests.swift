@@ -2658,6 +2658,10 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(answer.evidenceLinks.map(\.label), stage.evidence)
         XCTAssertEqual(answer.routedEvidenceLinks.map(\.label), ["sql/release.sql", "交付记录.md"])
         XCTAssertEqual(answer.primaryEvidenceLink?.label, "sql/release.sql")
+        XCTAssertEqual(answer.visibleEvidenceLinks.map(\.label), ["sql/release.sql"])
+        XCTAssertEqual(answer.collapsedEvidenceLinks.map(\.label), ["交付记录.md", "manual note"])
+        XCTAssertTrue(answer.evidenceDetailsCollapsedByDefault)
+        XCTAssertEqual(answer.evidenceDetailLabel, "证据详情 / Evidence details (2)")
         XCTAssertTrue(answer.canAnswerCurrentState)
     }
 
