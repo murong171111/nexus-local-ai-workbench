@@ -44,7 +44,7 @@ struct NativeLifecycleProofBundle: Codable, Hashable {
             .filter { $0.exists && ($0.sizeBytes == nil || $0.sha256 == nil) }
             .map(\.relativePath)
         let chain = chronologicalRelevantEvents(for: workspace, auditEvents: auditEvents)
-            .filter { NativeLifecycleProofEvidence.requiredAuditActions.contains($0.action) }
+            .filter(NativeLifecycleProofEvidence.isRequiredAuditEvent)
             .map(NativeLifecycleProofAuditSnapshot.init(event:))
 
         return NativeLifecycleProofBundle(

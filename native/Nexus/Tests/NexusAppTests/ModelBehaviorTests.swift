@@ -3120,6 +3120,23 @@ final class ModelBehaviorTests: XCTestCase {
         let incomplete = NativeLifecycleProofEvidence.resolve(workspace: archived, auditEvents: missingDemand)
         XCTAssertFalse(incomplete.ready)
         XCTAssertTrue(incomplete.missingActions.contains("demand_intake.initialized"))
+
+        let developingLifecycle = proofEvents.map { event in
+            guard event.action == "workspace_lifecycle.updated" else { return event }
+            return AuditEvent(
+                id: event.id,
+                timestamp: event.timestamp,
+                actor: event.actor,
+                action: event.action,
+                target: event.target,
+                summary: event.summary,
+                metadata: ["workspace": archived.path, "state": "developing"]
+            )
+        }
+        let invalidArchiveProof = NativeLifecycleProofEvidence.resolve(workspace: archived, auditEvents: developingLifecycle)
+        XCTAssertFalse(invalidArchiveProof.ready)
+        XCTAssertFalse(invalidArchiveProof.orderedActions.contains("workspace_lifecycle.updated"))
+        XCTAssertTrue(invalidArchiveProof.missingActions.contains("workspace_lifecycle.updated:archived"))
     }
 
     func testWidgetSnapshotCarriesMainStageAnswerCompatibly() throws {

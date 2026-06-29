@@ -25,6 +25,13 @@ struct NativeLifecycleProofEvidence: Hashable {
         "workspace_lifecycle.updated"
     ]
 
+    static func isRequiredAuditEvent(_ event: AuditEvent) -> Bool {
+        if event.action == "workspace_lifecycle.updated" {
+            return isArchivedLifecycleEvent(event)
+        }
+        return requiredAuditActions.contains(event.action)
+    }
+
     static func resolve(
         workspace: WorkspaceSummary,
         auditEvents: [AuditEvent]
@@ -32,11 +39,18 @@ struct NativeLifecycleProofEvidence: Hashable {
         let finalBlockers = finalStateBlockers(for: workspace)
         let relevantEvents = chronologicalRelevantEvents(for: workspace, auditEvents: auditEvents)
         let sequence = orderedSequence(in: relevantEvents)
-        var missing = requiredAuditActions.filter { !sequence.contains($0) }
-        if !hasArchivedLifecycleEvent(relevantEvents) {
+        let hasArchivedLifecycle = hasArchivedLifecycleEvent(relevantEvents)
+        var missing = requiredAuditActions.filter { action in
+            if action == "workspace_lifecycle.updated" {
+                return !hasArchivedLifecycle
+            }
+            return !sequence.contains(action)
+        }
+        if !hasArchivedLifecycle {
+            missing.removeAll { $0 == "workspace_lifecycle.updated" }
             missing.append("workspace_lifecycle.updated:archived")
         }
-        let ordered = containsRequiredOrder(sequence) && hasArchivedLifecycleEvent(relevantEvents)
+        let ordered = containsRequiredOrder(sequence) && hasArchivedLifecycle
         let ready = finalBlockers.isEmpty && missing.isEmpty && ordered
         let detail: String
         if ready {
@@ -104,7 +118,11 @@ struct NativeLifecycleProofEvidence: Hashable {
     }
 
     private static func orderedSequence(in events: [AuditEvent]) -> [String] {
-        events.map(\.action).reduce(into: []) { sequence, action in
+        events.reduce(into: []) { sequence, event in
+            let action = event.action
+            if action == "workspace_lifecycle.updated" && !isArchivedLifecycleEvent(event) {
+                return
+            }
             guard requiredAuditActions.contains(action) else { return }
             if sequence.last != action {
                 sequence.append(action)
@@ -124,9 +142,11 @@ struct NativeLifecycleProofEvidence: Hashable {
     }
 
     private static func hasArchivedLifecycleEvent(_ events: [AuditEvent]) -> Bool {
-        events.contains { event in
-            event.action == "workspace_lifecycle.updated"
-                && event.metadata["state"]?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "archived"
-        }
+        events.contains(where: isArchivedLifecycleEvent)
+    }
+
+    private static func isArchivedLifecycleEvent(_ event: AuditEvent) -> Bool {
+        event.action == "workspace_lifecycle.updated"
+            && event.metadata["state"]?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "archived"
     }
 }
