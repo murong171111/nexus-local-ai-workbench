@@ -2722,19 +2722,13 @@ final class AppState: ObservableObject {
         }
 
         do {
-            try appendMarkdownBlock(plan.appendedMarkdown, toFile: plan.deliveryPath, fallbackHeader: "# 交付记录\n")
-            pendingDeliveryRecordWrite = nil
-            await recordWorkspaceAction(
-                action: "delivery_record.snapshot_appended",
-                target: plan.deliveryPath,
-                summary: "Appended Delivery Gate snapshot to delivery record",
-                metadata: [
-                    "deliveryPath": plan.deliveryPath,
-                    "status": plan.status.rawValue,
-                    "checkCount": "\(plan.items.count)"
-                ],
-                workspaceOverride: workspaces.first { $0.id == plan.workspaceID }
+            let response = try NativeDeliveryRecordStore.appendDeliverySnapshot(
+                plan: plan,
+                confirmed: confirmed,
+                auditRoot: auditRootPath,
+                actor: "Nexus Native"
             )
+            pendingDeliveryRecordWrite = nil
             await refreshFromBridge()
             focusWorkspace(id: plan.workspaceID)
             markLocalWriteFeedback(
@@ -2742,7 +2736,7 @@ final class AppState: ObservableObject {
                 detail: "已追加当前 Delivery Gate 快照；SQL、PR/CI、发布或遗留风险结论可继续补在交付记录中。",
                 workspaceID: plan.workspaceID,
                 workspaceName: plan.workspaceName,
-                documentPath: plan.deliveryPath,
+                documentPath: response.path,
                 documentLabel: "打开交付记录",
                 systemImage: "shippingbox"
             )
@@ -2795,19 +2789,13 @@ final class AppState: ObservableObject {
         }
 
         do {
-            try appendMarkdownBlock(plan.appendedMarkdown, toFile: plan.deliveryPath, fallbackHeader: "# 交付记录\n")
-            pendingArchiveChecklistWrite = nil
-            await recordWorkspaceAction(
-                action: "archive_checklist.snapshot_appended",
-                target: plan.deliveryPath,
-                summary: "Appended archive checklist to delivery record",
-                metadata: [
-                    "deliveryPath": plan.deliveryPath,
-                    "status": plan.status.rawValue,
-                    "itemCount": "\(plan.items.count)"
-                ],
-                workspaceOverride: workspaces.first { $0.id == plan.workspaceID }
+            let response = try NativeDeliveryRecordStore.appendArchiveChecklist(
+                plan: plan,
+                confirmed: confirmed,
+                auditRoot: auditRootPath,
+                actor: "Nexus Native"
             )
+            pendingArchiveChecklistWrite = nil
             await refreshFromBridge()
             focusWorkspace(id: plan.workspaceID)
             markLocalWriteFeedback(
@@ -2815,7 +2803,7 @@ final class AppState: ObservableObject {
                 detail: "已追加当前归档确认清单；最终生命周期变更仍需通过确认弹窗写回。",
                 workspaceID: plan.workspaceID,
                 workspaceName: plan.workspaceName,
-                documentPath: plan.deliveryPath,
+                documentPath: response.path,
                 documentLabel: "打开交付记录",
                 systemImage: "archivebox"
             )
@@ -2857,19 +2845,13 @@ final class AppState: ObservableObject {
         }
 
         do {
-            try appendMarkdownBlock(plan.appendedMarkdown, toFile: plan.deliveryPath, fallbackHeader: "# 交付记录\n")
-            pendingValidationPrWrite = nil
-            await recordWorkspaceAction(
-                action: "validation_pr.snapshot_appended",
-                target: plan.deliveryPath,
-                summary: "Appended validation and PR snapshot to delivery record",
-                metadata: [
-                    "deliveryPath": plan.deliveryPath,
-                    "status": plan.status.rawValue,
-                    "checkCount": "\(plan.items.count)"
-                ],
-                workspaceOverride: workspaces.first { $0.id == plan.workspaceID }
+            let response = try NativeDeliveryRecordStore.appendValidationPrSnapshot(
+                plan: plan,
+                confirmed: confirmed,
+                auditRoot: auditRootPath,
+                actor: "Nexus Native"
             )
+            pendingValidationPrWrite = nil
             await refreshFromBridge()
             focusWorkspace(id: plan.workspaceID)
             markLocalWriteFeedback(
@@ -2877,7 +2859,7 @@ final class AppState: ObservableObject {
                 detail: "已追加当前验证、PR、CI 和发布复核快照；外部 PR/CI 链接仍以人工记录为准。",
                 workspaceID: plan.workspaceID,
                 workspaceName: plan.workspaceName,
-                documentPath: plan.deliveryPath,
+                documentPath: response.path,
                 documentLabel: "打开交付记录",
                 systemImage: "point.3.connected.trianglepath.dotted"
             )

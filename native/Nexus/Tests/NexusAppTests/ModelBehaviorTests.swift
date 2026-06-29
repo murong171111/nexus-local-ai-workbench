@@ -1038,6 +1038,11 @@ final class ModelBehaviorTests: XCTestCase {
         )
         XCTAssertTrue(
             fullyNative.domains.first { $0.domain == .readiness }?.evidence.contains(
+                "native/Nexus/Sources/NexusApp/NativeDeliveryRecordStore.swift"
+            ) ?? false
+        )
+        XCTAssertTrue(
+            fullyNative.domains.first { $0.domain == .readiness }?.evidence.contains(
                 "native/Nexus/Sources/NexusApp/NativeWorkspaceTaskStore.swift"
             ) ?? false
         )
@@ -4112,11 +4117,20 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertFalse(stage.nextStageAllowed)
     }
 
-    func testDeliveryRecordWritePlanAppendsCurrentGateSnapshot() {
+    func testDeliveryRecordWritePlanAppendsCurrentGateSnapshot() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-delivery-record-write-\(UUID().uuidString)")
+        let auditRoot = root.appendingPathComponent("audit")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try "# 交付记录\n\n## 人工记录\n\n保留。\n".write(to: root.appendingPathComponent("交付记录.md"), atomically: true, encoding: .utf8)
         let workspace = workspaceForWorkflowSummary(
             stage: "developing",
             id: "delivery-record-write",
             name: "Delivery Record Write",
+            path: root.path,
             healthChecks: [
                 WorkspaceHealthCheck(id: "delivery-record", label: "交付记录", detail: "交付记录可用", status: "pass", action: "delivery"),
                 WorkspaceHealthCheck(id: "sql-directory", label: "SQL", detail: "未声明 SQL 变更。", status: "pass", action: "sql")
@@ -4133,6 +4147,31 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(plan.appendedMarkdown.contains("| 检查项 | 状态 | 证据 | 说明 |"))
         XCTAssertTrue(plan.appendedMarkdown.contains("Nexus Native confirmed write"))
         XCTAssertFalse(plan.appendedMarkdown.contains("## 完整交付结论"))
+
+        XCTAssertThrowsError(
+            try NativeDeliveryRecordStore.appendDeliverySnapshot(plan: plan, confirmed: false)
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("explicit confirmation"))
+        }
+
+        let response = try NativeDeliveryRecordStore.appendDeliverySnapshot(
+            plan: plan,
+            confirmed: true,
+            auditRoot: auditRoot.path,
+            actor: "Nexus Test"
+        )
+        let content = try String(contentsOf: root.appendingPathComponent("交付记录.md"), encoding: .utf8)
+        let events = try NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 5)
+
+        XCTAssertTrue(response.appended)
+        XCTAssertEqual(response.kind, .deliverySnapshot)
+        XCTAssertEqual(response.path, root.appendingPathComponent("交付记录.md").path)
+        XCTAssertTrue(content.contains("## 人工记录"))
+        XCTAssertTrue(content.contains("## Nexus Delivery Gate Snapshot"))
+        XCTAssertTrue(content.hasSuffix("\n"))
+        XCTAssertEqual(events.first?.action, "delivery_record.snapshot_appended")
+        XCTAssertEqual(events.first?.actor, "Nexus Test")
+        XCTAssertEqual(events.first?.metadata["itemCount"], "\(plan.items.count)")
     }
 
     func testDeliveryRecordWritePlanKeepsArchivedWorkspaceReadOnly() {
@@ -4270,10 +4309,19 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(stage.nextStageAllowed)
     }
 
-    func testArchiveChecklistWritePlanAppendsFinalChecklistWithoutLifecycleWriteback() {
+    func testArchiveChecklistWritePlanAppendsFinalChecklistWithoutLifecycleWriteback() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-archive-checklist-write-\(UUID().uuidString)")
+        let auditRoot = root.appendingPathComponent("audit")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try "# 交付记录\n".write(to: root.appendingPathComponent("交付记录.md"), atomically: true, encoding: .utf8)
         let workspace = workspaceForWorkflowSummary(
             stage: "done",
             id: "archive-checklist-write",
+            path: root.path,
             healthChecks: [
                 WorkspaceHealthCheck(id: "delivery-record", label: "交付记录", detail: "交付记录可用", status: "pass", action: "delivery"),
                 WorkspaceHealthCheck(id: "sql-directory", label: "SQL", detail: "未声明 SQL 变更。", status: "pass", action: "sql")
@@ -4290,6 +4338,22 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(plan.appendedMarkdown.contains("归档状态：就绪 / ready"))
         XCTAssertTrue(plan.appendedMarkdown.contains("Nexus Native confirmed write"))
         XCTAssertTrue(plan.appendedMarkdown.contains("最终进入 delivery、done、archived 或 restore 仍需通过生命周期确认弹窗"))
+
+        let response = try NativeDeliveryRecordStore.appendArchiveChecklist(
+            plan: plan,
+            confirmed: true,
+            auditRoot: auditRoot.path,
+            actor: "Nexus Test"
+        )
+        let content = try String(contentsOf: root.appendingPathComponent("交付记录.md"), encoding: .utf8)
+        let events = try NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 5)
+
+        XCTAssertTrue(response.appended)
+        XCTAssertEqual(response.kind, .archiveChecklist)
+        XCTAssertTrue(content.contains("## Nexus Archive Checklist"))
+        XCTAssertTrue(content.contains("最终进入 delivery、done、archived 或 restore 仍需通过生命周期确认弹窗"))
+        XCTAssertEqual(events.first?.action, "archive_checklist.snapshot_appended")
+        XCTAssertEqual(events.first?.metadata["itemCount"], "\(plan.items.count)")
     }
 
     func testArchiveChecklistWritePlanKeepsArchivedWorkspaceReadOnly() {
@@ -4372,10 +4436,19 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(validation.reason.contains("PR"))
     }
 
-    func testValidationPrWritePlanAppendsReviewSnapshotWithoutCallingGithub() {
+    func testValidationPrWritePlanAppendsReviewSnapshotWithoutCallingGithub() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-validation-pr-write-\(UUID().uuidString)")
+        let auditRoot = root.appendingPathComponent("audit")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try "# 交付记录\n".write(to: root.appendingPathComponent("交付记录.md"), atomically: true, encoding: .utf8)
         let workspace = workspaceForWorkflowSummary(
             stage: "done",
             id: "validation-pr-write",
+            path: root.path,
             healthChecks: [
                 WorkspaceHealthCheck(id: "delivery-record", label: "交付记录", detail: "交付记录可用", status: "pass", action: "delivery"),
                 WorkspaceHealthCheck(id: "sql-directory", label: "SQL", detail: "未声明 SQL 变更。", status: "pass", action: "sql")
@@ -4394,6 +4467,22 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(plan.appendedMarkdown.contains("验证状态：复核 / review"))
         XCTAssertTrue(plan.appendedMarkdown.contains("不直接调用 GitHub"))
         XCTAssertTrue(plan.appendedMarkdown.contains("Nexus Native confirmed write"))
+
+        let response = try NativeDeliveryRecordStore.appendValidationPrSnapshot(
+            plan: plan,
+            confirmed: true,
+            auditRoot: auditRoot.path,
+            actor: "Nexus Test"
+        )
+        let content = try String(contentsOf: root.appendingPathComponent("交付记录.md"), encoding: .utf8)
+        let events = try NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 5)
+
+        XCTAssertTrue(response.appended)
+        XCTAssertEqual(response.kind, .validationPrSnapshot)
+        XCTAssertTrue(content.contains("## Nexus Validation / PR Snapshot"))
+        XCTAssertTrue(content.contains("不直接调用 GitHub"))
+        XCTAssertEqual(events.first?.action, "validation_pr.snapshot_appended")
+        XCTAssertEqual(events.first?.metadata["itemCount"], "\(plan.items.count)")
     }
 
     func testValidationPrWritePlanKeepsArchivedWorkspaceReadOnly() {
