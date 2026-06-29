@@ -3382,13 +3382,21 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(layout.secondaryActions.isSecondarySurface)
         XCTAssertFalse(layout.secondaryActions.usesProminentButtons)
         XCTAssertEqual(layout.secondaryActions.groups, [.handoff, .next, .local])
+        XCTAssertEqual(layout.secondaryActions.title, "快捷动作")
+        XCTAssertEqual(layout.secondaryActions.helpText, "Quick actions")
         XCTAssertEqual(layout.secondaryActions.groups.map(\.title), [
-            "交接 / Handoff",
-            "下一步 / Next",
-            "本地打开 / Local"
+            "交接",
+            "下一步",
+            "本地打开"
+        ])
+        XCTAssertEqual(layout.secondaryActions.groups.map(\.helpText), [
+            "Handoff",
+            "Next",
+            "Local"
         ])
         XCTAssertEqual(layout.auditSummary.status, .ready)
-        XCTAssertEqual(layout.auditSummary.title, "主动作优先 / Primary action first")
+        XCTAssertEqual(layout.auditSummary.title, "主动作优先")
+        XCTAssertEqual(layout.auditSummary.helpText, "Primary action first")
         XCTAssertTrue(layout.auditSummary.detail.contains("只暴露 1 个 prominent 主动作"))
         XCTAssertTrue(layout.auditSummary.detail.contains("菜单 / Menu"))
         XCTAssertEqual(layout.auditSummary.evidence, [

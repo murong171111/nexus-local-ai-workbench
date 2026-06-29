@@ -10389,8 +10389,9 @@ private struct CommandCenterSessionPathView: View {
             HStack(spacing: 7) {
                 Image(systemName: "point.3.connected.trianglepath.dotted")
                     .foregroundStyle(NexusPalette.accent)
-                Text("工作流路径 / Workflow path")
+                Text("工作流路径")
                     .font(.caption.weight(.semibold))
+                    .help("Workflow path")
                 Spacer()
                 Text("\(readyCount)/\(items.count) ready")
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
@@ -10490,8 +10491,9 @@ private struct CommandCenterQuickActionsView: View {
             Text(layout.title)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
+                .help(layout.helpText)
 
-            CommandCenterActionGroup(title: CommandCenterSecondaryActionGroupKind.handoff.title) {
+            CommandCenterActionGroup(kind: .handoff) {
                 Button {
                     codexAction()
                 } label: {
@@ -10509,7 +10511,7 @@ private struct CommandCenterQuickActionsView: View {
                 .controlSize(.small)
             }
 
-            CommandCenterActionGroup(title: CommandCenterSecondaryActionGroupKind.next.title) {
+            CommandCenterActionGroup(kind: .next) {
                 Button {
                     lifecycleAction()
                 } label: {
@@ -10528,7 +10530,7 @@ private struct CommandCenterQuickActionsView: View {
                 .disabled(isChecking)
             }
 
-            CommandCenterActionGroup(title: CommandCenterSecondaryActionGroupKind.local.title) {
+            CommandCenterActionGroup(kind: .local) {
                 Button {
                     finderAction()
                 } label: {
@@ -10566,14 +10568,15 @@ private struct CommandCenterQuickActionsView: View {
 }
 
 private struct CommandCenterActionGroup<Content: View>: View {
-    let title: String
+    let kind: CommandCenterSecondaryActionGroupKind
     @ViewBuilder let content: Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title)
+            Text(kind.title)
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .foregroundStyle(.secondary)
+                .help(kind.helpText)
 
             LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
                 content
@@ -11141,18 +11144,20 @@ private struct WorkspaceCreationNextStepsView: View {
                             await appState.openWorkspaceInCodex(workspace)
                         }
                     } label: {
-                        Label("交接 Codex / Open Codex", systemImage: "point.3.connected.trianglepath.dotted")
+                        Label("交接 Codex", systemImage: "point.3.connected.trianglepath.dotted")
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+                    .help("Open Codex")
 
                     Button {
                         appState.dismissCreatedWorkspaceFollowUp()
                     } label: {
-                        Label("稍后处理 / Later", systemImage: "clock")
+                        Label("稍后处理", systemImage: "clock")
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+                    .help("Later")
                 }
             }
         }

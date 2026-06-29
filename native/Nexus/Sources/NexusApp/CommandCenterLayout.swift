@@ -10,11 +10,22 @@ enum CommandCenterSecondaryActionGroupKind: String, CaseIterable, Identifiable, 
     var title: String {
         switch self {
         case .handoff:
-            "交接 / Handoff"
+            "交接"
         case .next:
-            "下一步 / Next"
+            "下一步"
         case .local:
-            "本地打开 / Local"
+            "本地打开"
+        }
+    }
+
+    var helpText: String {
+        switch self {
+        case .handoff:
+            "Handoff"
+        case .next:
+            "Next"
+        case .local:
+            "Local"
         }
     }
 }
@@ -27,7 +38,11 @@ struct CommandCenterSecondaryActionLayout: Hashable {
     }
 
     var title: String {
-        "快捷动作 / Quick actions"
+        "快捷动作"
+    }
+
+    var helpText: String {
+        "Quick actions"
     }
 
     var isSecondarySurface: Bool {
@@ -113,7 +128,11 @@ struct CommandCenterLayoutAuditSummary: Hashable {
     }
 
     var title: String {
-        "主动作优先 / Primary action first"
+        "主动作优先"
+    }
+
+    var helpText: String {
+        "Primary action first"
     }
 
     var detail: String {
