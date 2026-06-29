@@ -1421,12 +1421,20 @@ final class ModelBehaviorTests: XCTestCase {
         let visibleCheck = visibleResponse.initializationChecks?.first { $0.id == "workspace-scan-visible" }
         XCTAssertEqual(visibleCheck?.status, "pass")
         XCTAssertTrue(visibleCheck?.detail.contains("已扫描到新工作区") == true)
+        XCTAssertEqual(visibleResponse.scanVisibilityCheck?.id, "workspace-scan-visible")
+        XCTAssertEqual(visibleResponse.isVisibleAfterRefresh, true)
+        XCTAssertFalse(visibleResponse.needsVisibilityRecovery)
+        XCTAssertTrue(visibleResponse.visibilityRecoveryTitle.contains("已出现在扫描结果"))
 
         let missingResponse = AppState.workspaceCreationResponse(response, verifiedAgainst: [])
         let missingCheck = missingResponse.initializationChecks?.first { $0.id == "workspace-scan-visible" }
         XCTAssertEqual(missingCheck?.status, "warning")
         XCTAssertTrue(missingCheck?.detail.contains("创建记录已写入") == true)
         XCTAssertEqual(missingResponse.initializationChecks?.filter { $0.id == "workspace-scan-visible" }.count, 1)
+        XCTAssertEqual(missingResponse.isVisibleAfterRefresh, false)
+        XCTAssertTrue(missingResponse.needsVisibilityRecovery)
+        XCTAssertTrue(missingResponse.visibilityRecoveryTitle.contains("扫描还没返回新工作区"))
+        XCTAssertTrue(missingResponse.visibilityRecoveryDetail.contains("目录扫描未返回"))
     }
 
     func testNativeWorkspaceTaskStoreRequiresConfirmationAndRewritesStatus() throws {

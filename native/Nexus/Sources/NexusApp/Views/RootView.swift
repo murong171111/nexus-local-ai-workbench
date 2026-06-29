@@ -3275,14 +3275,30 @@ private struct WorkspaceConsoleEmptyStateView: View {
     @Binding var isCreateWorkspacePresented: Bool
     @Binding var isSettingsPresented: Bool
 
+    private var recoveryReceipt: CreateWorkspaceResponse? {
+        guard appState.lastCreatedWorkspace?.needsVisibilityRecovery == true else {
+            return nil
+        }
+        return appState.lastCreatedWorkspace
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Label(title, systemImage: appState.workspaces.isEmpty ? "tray" : "rectangle.grid.2x2")
-                .font(.title3.weight(.semibold))
-            Text(detail)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            if let recoveryReceipt {
+                CreatedWorkspaceVisibilityRecoveryView(
+                    receipt: recoveryReceipt,
+                    isSettingsPresented: $isSettingsPresented
+                )
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Label(title, systemImage: appState.workspaces.isEmpty ? "tray" : "rectangle.grid.2x2")
+                    .font(.title3.weight(.semibold))
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             WorkspaceSetupActionGrid(
                 isCreateWorkspacePresented: $isCreateWorkspacePresented,
@@ -3343,6 +3359,13 @@ private struct WorkspaceBoardView: View {
         )
     }
 
+    private var recoveryReceipt: CreateWorkspaceResponse? {
+        guard appState.lastCreatedWorkspace?.needsVisibilityRecovery == true else {
+            return nil
+        }
+        return appState.lastCreatedWorkspace
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             WorkspaceBoardHeader(
@@ -3357,12 +3380,21 @@ private struct WorkspaceBoardView: View {
             Divider()
 
             if visibleWorkspaces.isEmpty {
-                WorkspaceBoardEmptyState(
-                    reason: emptyStateReason ?? .filteredNoResults,
-                    diagnostics: appState.nativeStatusDiagnostics,
-                    runPrimaryAction: runEmptyStatePrimaryAction
-                )
-                    .padding(18)
+                VStack(alignment: .leading, spacing: 14) {
+                    if let recoveryReceipt {
+                        CreatedWorkspaceVisibilityRecoveryView(
+                            receipt: recoveryReceipt,
+                            isSettingsPresented: $isSettingsPresented
+                        )
+                    }
+
+                    WorkspaceBoardEmptyState(
+                        reason: emptyStateReason ?? .filteredNoResults,
+                        diagnostics: appState.nativeStatusDiagnostics,
+                        runPrimaryAction: runEmptyStatePrimaryAction
+                    )
+                }
+                .padding(18)
             } else {
                 ScrollView([.horizontal, .vertical]) {
                     HStack(alignment: .top, spacing: 12) {
@@ -3650,6 +3682,95 @@ private struct BoardInfoRow: View {
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 .truncationMode(.middle)
+        }
+    }
+}
+
+private struct CreatedWorkspaceVisibilityRecoveryView: View {
+    @EnvironmentObject private var appState: AppState
+    let receipt: CreateWorkspaceResponse
+    @Binding var isSettingsPresented: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "exclamationmark.triangle")
+                    .foregroundStyle(NexusPalette.warning)
+                    .frame(width: 16)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(receipt.visibilityRecoveryTitle)
+                        .font(.headline)
+                    Text(receipt.visibilityRecoveryDetail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 12)
+
+                Button {
+                    appState.dismissCreatedWorkspaceFollowUp()
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.borderless)
+                .help("关闭创建回执")
+            }
+
+            VStack(alignment: .leading, spacing: 5) {
+                SummaryLine(label: "目录", value: receipt.folder)
+                SummaryLine(label: "路径", value: receipt.path)
+            }
+
+            InitializationReceiptView(receipt: receipt)
+
+            HStack(spacing: 8) {
+                Button {
+                    Task {
+                        await appState.refreshFromBridge()
+                    }
+                } label: {
+                    Label("重新扫描", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+
+                Button {
+                    revealReceiptPath()
+                } label: {
+                    Label("在 Finder 中定位", systemImage: "folder")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Button {
+                    isSettingsPresented = true
+                } label: {
+                    Label("检查路径设置", systemImage: "gearshape")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(NexusPalette.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(NexusPalette.warning.opacity(0.24), lineWidth: 1)
+        }
+    }
+
+    private func revealReceiptPath() {
+        let expandedPath = NSString(string: receipt.path.trimmingCharacters(in: .whitespacesAndNewlines)).expandingTildeInPath
+        guard !expandedPath.isEmpty else { return }
+        let url = URL(fileURLWithPath: expandedPath)
+        if FileManager.default.fileExists(atPath: url.path) {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        } else {
+            NSWorkspace.shared.activateFileViewerSelecting([url.deletingLastPathComponent()])
         }
     }
 }

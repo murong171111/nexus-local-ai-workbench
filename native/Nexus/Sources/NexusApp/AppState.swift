@@ -5069,6 +5069,44 @@ final class AppState: ObservableObject {
     }
 }
 
+extension CreateWorkspaceResponse {
+    var scanVisibilityCheck: WorkspaceInitializationCheck? {
+        initializationChecks?.first { $0.id == "workspace-scan-visible" }
+    }
+
+    var isVisibleAfterRefresh: Bool? {
+        guard let status = scanVisibilityCheck?.status.lowercased() else {
+            return nil
+        }
+        if status == "pass" || status == "ready" {
+            return true
+        }
+        if status == "warning" || status == "review" || status == "fail" || status == "blocker" {
+            return false
+        }
+        return nil
+    }
+
+    var needsVisibilityRecovery: Bool {
+        isVisibleAfterRefresh == false
+    }
+
+    var visibilityRecoveryTitle: String {
+        if needsVisibilityRecovery {
+            return "创建记录已写入，但扫描还没返回新工作区"
+        }
+        if isVisibleAfterRefresh == true {
+            return "新工作区已出现在扫描结果中"
+        }
+        return "新工作区已创建，等待刷新确认"
+    }
+
+    var visibilityRecoveryDetail: String {
+        scanVisibilityCheck?.detail
+            ?? "刷新工作区列表后确认新目录是否进入 Native 扫描结果。"
+    }
+}
+
 struct CreateWorkspaceDraft: Equatable {
     var name: String
     var folder: String
