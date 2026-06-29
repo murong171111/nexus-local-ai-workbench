@@ -38,6 +38,7 @@ final class ModelBehaviorTests: XCTestCase {
             "struct TaskStatusMutationPolicy",
             "struct CommandCenterLayoutPolicy",
             "struct CommandCenterLayoutAuditSummary",
+            "struct WorkspaceDetailActionHierarchyPolicy",
             "struct ServiceWorktreeRowState",
             "struct WorkspaceMainStageEvidenceLink",
             "struct WorkspaceStageAnswer",
@@ -3397,6 +3398,33 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertFalse(crowded.exposesSingleProminentPrimaryAction)
         XCTAssertEqual(crowded.auditSummary.status, .blocked)
         XCTAssertTrue(crowded.auditSummary.detail.contains("主动作层级未收敛"))
+    }
+
+    func testWorkspaceDetailActionHierarchyKeepsOneTopPrimaryAction() {
+        let policy = WorkspaceDetailActionHierarchyPolicy()
+
+        XCTAssertEqual(policy.topLevelProminentAreas, [.mainWorkflow])
+        XCTAssertEqual(policy.secondaryAreas, [.statusDiagnostics, .detailNavigation, .creationFollowUp])
+        XCTAssertEqual(policy.scopedProminentAreas, [.commandCenter])
+        XCTAssertEqual(policy.topLevelProminentActionCount, 1)
+        XCTAssertTrue(policy.keepsDiagnosticsSecondary)
+        XCTAssertTrue(policy.keepsCreationFollowUpSecondary)
+        XCTAssertTrue(policy.isolatesCommandCenterProminentAction)
+        XCTAssertEqual(policy.status, .ready)
+        XCTAssertEqual(policy.evidence, [
+            "topLevelProminent=mainWorkflow",
+            "secondary=statusDiagnostics,detailNavigation,creationFollowUp",
+            "scopedProminent=commandCenter"
+        ])
+
+        let crowded = WorkspaceDetailActionHierarchyPolicy(
+            topLevelProminentAreas: [.mainWorkflow, .creationFollowUp],
+            secondaryAreas: [.statusDiagnostics, .detailNavigation],
+            scopedProminentAreas: [.commandCenter]
+        )
+        XCTAssertEqual(crowded.topLevelProminentActionCount, 2)
+        XCTAssertFalse(crowded.keepsCreationFollowUpSecondary)
+        XCTAssertEqual(crowded.status, .blocked)
     }
 
     func testWorkspaceListStageBadgesComeFromMainStage() {

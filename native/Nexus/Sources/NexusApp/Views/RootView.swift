@@ -11123,7 +11123,7 @@ private struct WorkspaceCreationNextStepsView: View {
                     } label: {
                         Label("交接 Codex / Open Codex", systemImage: "point.3.connected.trianglepath.dotted")
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.bordered)
                     .controlSize(.small)
 
                     Button {

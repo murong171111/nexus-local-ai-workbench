@@ -132,3 +132,81 @@ struct CommandCenterLayoutAuditSummary: Hashable {
         ]
     }
 }
+
+enum WorkspaceDetailActionArea: String, CaseIterable, Identifiable, Hashable {
+    case mainWorkflow
+    case statusDiagnostics
+    case detailNavigation
+    case creationFollowUp
+    case commandCenter
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .mainWorkflow:
+            "主流程"
+        case .statusDiagnostics:
+            "状态诊断"
+        case .detailNavigation:
+            "详情导航"
+        case .creationFollowUp:
+            "创建后提示"
+        case .commandCenter:
+            "工作台"
+        }
+    }
+}
+
+struct WorkspaceDetailActionHierarchyPolicy: Hashable {
+    let topLevelProminentAreas: [WorkspaceDetailActionArea]
+    let secondaryAreas: [WorkspaceDetailActionArea]
+    let scopedProminentAreas: [WorkspaceDetailActionArea]
+
+    init(
+        topLevelProminentAreas: [WorkspaceDetailActionArea] = [.mainWorkflow],
+        secondaryAreas: [WorkspaceDetailActionArea] = [.statusDiagnostics, .detailNavigation, .creationFollowUp],
+        scopedProminentAreas: [WorkspaceDetailActionArea] = [.commandCenter]
+    ) {
+        self.topLevelProminentAreas = topLevelProminentAreas
+        self.secondaryAreas = secondaryAreas
+        self.scopedProminentAreas = scopedProminentAreas
+    }
+
+    var topLevelProminentActionCount: Int {
+        topLevelProminentAreas.count
+    }
+
+    var keepsCreationFollowUpSecondary: Bool {
+        secondaryAreas.contains(.creationFollowUp)
+            && !topLevelProminentAreas.contains(.creationFollowUp)
+    }
+
+    var keepsDiagnosticsSecondary: Bool {
+        secondaryAreas.contains(.statusDiagnostics)
+            && !topLevelProminentAreas.contains(.statusDiagnostics)
+    }
+
+    var isolatesCommandCenterProminentAction: Bool {
+        scopedProminentAreas == [.commandCenter]
+            && !topLevelProminentAreas.contains(.commandCenter)
+    }
+
+    var status: WorkflowPathStatus {
+        topLevelProminentActionCount == 1
+            && topLevelProminentAreas == [.mainWorkflow]
+            && keepsCreationFollowUpSecondary
+            && keepsDiagnosticsSecondary
+            && isolatesCommandCenterProminentAction
+            ? .ready
+            : .blocked
+    }
+
+    var evidence: [String] {
+        [
+            "topLevelProminent=\(topLevelProminentAreas.map(\.rawValue).joined(separator: ","))",
+            "secondary=\(secondaryAreas.map(\.rawValue).joined(separator: ","))",
+            "scopedProminent=\(scopedProminentAreas.map(\.rawValue).joined(separator: ","))"
+        ]
+    }
+}
