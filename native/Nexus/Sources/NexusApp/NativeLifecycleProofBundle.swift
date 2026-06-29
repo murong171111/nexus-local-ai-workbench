@@ -171,6 +171,30 @@ struct NativeLifecycleProofBundleWriteResponse: Hashable {
     let auditEventPath: String?
 }
 
+struct NativeLifecycleProofBundleExportPlan: Identifiable {
+    let workspace: WorkspaceSummary
+    let bundle: NativeLifecycleProofBundle
+    let auditEvents: [AuditEvent]
+    let path: String
+
+    var id: WorkspaceSummary.ID { workspace.id }
+
+    var canWrite: Bool {
+        bundle.ready
+    }
+
+    var status: WorkflowPathStatus {
+        bundle.ready ? .ready : .blocked
+    }
+
+    var summary: String {
+        if bundle.ready {
+            return "Ready to export native-lifecycle-proof.json with \(bundle.auditChain.count) audit events and \(bundle.evidenceFiles.count) evidence files."
+        }
+        return bundle.proof.detail
+    }
+}
+
 enum NativeLifecycleProofBundleStore {
     static let fileName = "native-lifecycle-proof.json"
 

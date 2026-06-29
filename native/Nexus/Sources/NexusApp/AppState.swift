@@ -192,6 +192,7 @@ final class AppState: ObservableObject {
     @Published var pendingDeliveryRecordWrite: DeliveryRecordWritePlan?
     @Published var pendingArchiveChecklistWrite: ArchiveChecklistWritePlan?
     @Published var pendingValidationPrWrite: ValidationPrWritePlan?
+    @Published var pendingLifecycleProofBundleExport: NativeLifecycleProofBundleExportPlan?
     @Published var pendingLifecycleStatusUpdate: LifecycleStatusUpdate?
     @Published var lastCreatedWorkspace: CreateWorkspaceResponse?
     @Published var pendingWorktreeSetupWorkspace: WorkspaceSummary?
@@ -2703,16 +2704,22 @@ final class AppState: ObservableObject {
 
     func nativeLifecycleProofBundleAvailable(auditEvents: [AuditEvent]? = nil) -> Bool {
         let events = auditEvents ?? recentNativeAuditEvents(limit: 200)
-        return workspaces.contains { workspace in
-            guard NativeLifecycleProofEvidence.resolve(workspace: workspace, auditEvents: events).ready,
-                  let bundle = try? NativeLifecycleProofBundleStore.load(workspace: workspace) else {
-                return false
-            }
-            return bundle.ready
-                && bundle.workspace.id == workspace.id
-                && bundle.workspace.path == workspace.path
-                && bundle.proof.requiredAuditActions == NativeLifecycleProofEvidence.requiredAuditActions
+        return workspaces.contains { nativeLifecycleProofBundleAvailable(for: $0, auditEvents: events) }
+    }
+
+    func nativeLifecycleProofBundleAvailable(
+        for workspace: WorkspaceSummary,
+        auditEvents: [AuditEvent]? = nil
+    ) -> Bool {
+        let events = auditEvents ?? recentNativeAuditEvents(limit: 200)
+        guard NativeLifecycleProofEvidence.resolve(workspace: workspace, auditEvents: events).ready,
+              let bundle = try? NativeLifecycleProofBundleStore.load(workspace: workspace) else {
+            return false
         }
+        return bundle.ready
+            && bundle.workspace.id == workspace.id
+            && bundle.workspace.path == workspace.path
+            && bundle.proof.requiredAuditActions == NativeLifecycleProofEvidence.requiredAuditActions
     }
 
     func nativeLifecycleProofBundle(
@@ -2723,6 +2730,74 @@ final class AppState: ObservableObject {
             workspace: workspace,
             auditEvents: auditEvents ?? recentNativeAuditEvents(limit: 200)
         )
+    }
+
+    func lifecycleProofBundleExportPlan(
+        for workspace: WorkspaceSummary,
+        auditEvents: [AuditEvent]? = nil
+    ) -> NativeLifecycleProofBundleExportPlan {
+        let auditEvents = auditEvents ?? recentNativeAuditEvents(limit: 200)
+        return NativeLifecycleProofBundleExportPlan(
+            workspace: workspace,
+            bundle: nativeLifecycleProofBundle(for: workspace, auditEvents: auditEvents),
+            auditEvents: auditEvents,
+            path: NativeLifecycleProofBundleStore.bundlePath(for: workspace)
+        )
+    }
+
+    func requestNativeLifecycleProofBundleExport(
+        in workspace: WorkspaceSummary,
+        auditEvents: [AuditEvent]? = nil
+    ) {
+        pendingLifecycleProofBundleExport = lifecycleProofBundleExportPlan(for: workspace, auditEvents: auditEvents)
+        lastError = nil
+    }
+
+    func confirmPendingNativeLifecycleProofBundleExport(
+        confirmed: Bool,
+        auditRoot: String? = nil
+    ) async {
+        guard let plan = pendingLifecycleProofBundleExport else {
+            return
+        }
+        guard confirmed else {
+            lastError = "需要确认后才会导出生命周期证据包。"
+            return
+        }
+        guard plan.canWrite else {
+            lastError = plan.summary
+            return
+        }
+
+        isUpdatingLifecycle = true
+        lastError = nil
+        defer {
+            isUpdatingLifecycle = false
+        }
+
+        do {
+            let response = try NativeLifecycleProofBundleStore.write(
+                workspace: plan.workspace,
+                auditEvents: plan.auditEvents,
+                confirmed: confirmed,
+                auditRoot: auditRoot ?? auditRootPath,
+                actor: "Nexus Native"
+            )
+            pendingLifecycleProofBundleExport = nil
+            await refreshFromBridge()
+            focusWorkspace(id: plan.workspace.id)
+            markLocalWriteFeedback(
+                title: "生命周期证据包已导出 / Lifecycle proof exported",
+                detail: "已写入 native-lifecycle-proof.json；该文件可用于发布检查、legacy 删除审计和真实工作区验收。",
+                workspaceID: plan.workspace.id,
+                workspaceName: plan.workspace.name,
+                documentPath: response.path,
+                documentLabel: "打开证据包",
+                systemImage: "checkmark.seal"
+            )
+        } catch {
+            lastError = error.localizedDescription
+        }
     }
 
     func exportNativeLifecycleProofBundle(

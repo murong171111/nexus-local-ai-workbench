@@ -4475,23 +4475,18 @@ final class ModelBehaviorTests: XCTestCase {
             docsRoot: root.appendingPathComponent("docs").path,
             defaults: UserDefaults(suiteName: "NexusAppTests-\(UUID().uuidString)")!
         )
-        await appState.exportNativeLifecycleProofBundle(
-            for: archived,
-            confirmed: false,
-            auditEvents: proofEvents,
-            auditRoot: auditRoot.path
-        )
+        appState.requestNativeLifecycleProofBundleExport(in: archived, auditEvents: proofEvents)
+        XCTAssertEqual(appState.pendingLifecycleProofBundleExport?.path, proofBundleResponse.path)
+        XCTAssertTrue(appState.pendingLifecycleProofBundleExport?.canWrite == true)
+
+        await appState.confirmPendingNativeLifecycleProofBundleExport(confirmed: false, auditRoot: auditRoot.path)
         XCTAssertEqual(appState.lastError, "需要确认后才会导出生命周期证据包。")
 
-        await appState.exportNativeLifecycleProofBundle(
-            for: archived,
-            confirmed: true,
-            auditEvents: proofEvents,
-            auditRoot: auditRoot.path
-        )
+        await appState.confirmPendingNativeLifecycleProofBundleExport(confirmed: true, auditRoot: auditRoot.path)
         let actionsAfterAppStateExport = try NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 60).map(\.action)
 
         XCTAssertNil(appState.lastError)
+        XCTAssertNil(appState.pendingLifecycleProofBundleExport)
         XCTAssertEqual(appState.localWriteFeedback?.documentPath, proofBundleResponse.path)
         XCTAssertEqual(appState.localWriteFeedback?.documentLabel, "打开证据包")
         XCTAssertEqual(appState.selectedWorkspaceID, archived.id)

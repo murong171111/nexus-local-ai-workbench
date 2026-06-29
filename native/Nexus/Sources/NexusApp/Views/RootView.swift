@@ -108,6 +108,10 @@ struct RootView: View {
             ValidationPrWriteSheet(plan: plan)
                 .environmentObject(appState)
         }
+        .sheet(item: $appState.pendingLifecycleProofBundleExport) { plan in
+            LifecycleProofBundleExportSheet(plan: plan)
+                .environmentObject(appState)
+        }
         .sheet(item: $appState.pendingLifecycleStatusUpdate) { update in
             LifecycleStatusUpdateSheet(update: update)
                 .environmentObject(appState)
@@ -11899,6 +11903,14 @@ private struct WorkflowStatusView: View {
                     }
                 )
 
+                LifecycleProofBundleCardView(
+                    workspace: workspace,
+                    bundle: appState.nativeLifecycleProofBundle(for: workspace),
+                    bundleAvailable: appState.nativeLifecycleProofBundleAvailable(for: workspace)
+                ) {
+                    appState.requestNativeLifecycleProofBundleExport(in: workspace)
+                }
+
                 DeliveryFocusCardView(step: deliveryFocusStep) {
                     runDeliveryFocusAction(deliveryFocusStep.action)
                 }
@@ -13864,6 +13876,96 @@ private struct ValidationPrWriteSheet: View {
     }
 }
 
+private struct LifecycleProofBundleExportSheet: View {
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmed = false
+    let plan: NativeLifecycleProofBundleExportPlan
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("导出生命周期证据包 / Export lifecycle proof")
+                    .font(.title3.weight(.semibold))
+                Text("Nexus will write native-lifecycle-proof.json after confirmation.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            SectionBlock(title: "导出摘要 / Summary") {
+                VStack(alignment: .leading, spacing: 8) {
+                    TaskStatusMetaRow(label: "Workspace", value: plan.workspace.name)
+                    TaskStatusMetaRow(label: "File", value: plan.path)
+                    TaskStatusMetaRow(label: "Status", value: plan.status.displayLabel)
+                    TaskStatusMetaRow(label: "Audit", value: "\(plan.bundle.auditChain.count)")
+                    TaskStatusMetaRow(label: "Evidence files", value: "\(plan.bundle.evidenceFiles.count)")
+                    Text(plan.summary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            SectionBlock(title: plan.canWrite ? "将写入的证据 / Proof manifest" : "不可写入 / Read-only") {
+                if plan.canWrite {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(plan.bundle.proof.orderedActions.joined(separator: " -> "))
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                        Text("Files: \(plan.bundle.evidenceFiles.map(\.relativePath).prefix(8).joined(separator: " · "))")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(NexusPalette.badge)
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                } else {
+                    Text(plan.summary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Toggle("确认写入证据包 / Confirm local write", isOn: $confirmed)
+                .disabled(!plan.canWrite)
+
+            HStack {
+                Button("Cancel") {
+                    appState.pendingLifecycleProofBundleExport = nil
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Spacer()
+
+                Button(appState.isUpdatingLifecycle ? "Writing" : "Export") {
+                    Task {
+                        await appState.confirmPendingNativeLifecycleProofBundleExport(confirmed: confirmed)
+                        if appState.lastError == nil {
+                            dismiss()
+                        }
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!confirmed || !plan.canWrite || appState.isUpdatingLifecycle)
+            }
+
+            if let error = appState.lastError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(NexusPalette.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(22)
+        .frame(width: 620)
+    }
+}
+
 private struct DeliveryResolutionPlanRow: View {
     let item: DeliveryResolutionPlanItem
     let action: () -> Void
@@ -14075,6 +14177,80 @@ private struct ArchiveGateEvidenceCardView: View {
             return NexusPalette.warning
         }
         return NexusPalette.success
+    }
+}
+
+private struct LifecycleProofBundleCardView: View {
+    let workspace: WorkspaceSummary
+    let bundle: NativeLifecycleProofBundle
+    let bundleAvailable: Bool
+    let exportAction: () -> Void
+
+    private var status: WorkflowPathStatus {
+        bundleAvailable ? .ready : bundle.proof.status == WorkflowPathStatus.ready.rawValue ? .next : .blocked
+    }
+
+    private var title: String {
+        bundleAvailable ? "生命周期证据已导出 / Proof exported" : "生命周期证据包 / Lifecycle proof"
+    }
+
+    private var detail: String {
+        if bundleAvailable {
+            return "native-lifecycle-proof.json 已可用于 M3 发布检查和 legacy 删除审计。"
+        }
+        return bundle.proof.detail
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 9) {
+                Image(systemName: bundleAvailable ? "checkmark.seal" : "doc.badge.gearshape")
+                    .foregroundStyle(status.color)
+                    .frame(width: 16)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 8)
+
+                Button {
+                    exportAction()
+                } label: {
+                    Label(bundleAvailable ? "重新导出" : "导出证据", systemImage: "square.and.arrow.down")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(!bundle.ready)
+            }
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], alignment: .leading, spacing: 8) {
+                WorkflowMetric(label: "Proof", value: status == .ready ? "ready" : status == .next ? "next" : "blocked", tone: status.color)
+                WorkflowMetric(label: "Audit", value: "\(bundle.auditChain.count)", tone: bundle.proof.missingActions.isEmpty ? NexusPalette.success : NexusPalette.danger)
+                WorkflowMetric(label: "Files", value: "\(bundle.evidenceFiles.count)", tone: bundle.missingEvidenceFiles.isEmpty ? NexusPalette.success : NexusPalette.danger)
+                WorkflowMetric(label: "Missing", value: "\(bundle.missingEvidenceFiles.count)", tone: bundle.missingEvidenceFiles.isEmpty ? NexusPalette.success : NexusPalette.danger)
+            }
+
+            if !bundle.missingEvidenceFiles.isEmpty {
+                Text(bundle.missingEvidenceFiles.prefix(4).joined(separator: " · "))
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(NexusPalette.danger)
+                    .lineLimit(2)
+            }
+        }
+        .padding(10)
+        .background(status.color.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(status.color.opacity(0.14))
+        }
+        .help("\(workspace.name) · \(NativeLifecycleProofBundleStore.fileName)")
     }
 }
 
