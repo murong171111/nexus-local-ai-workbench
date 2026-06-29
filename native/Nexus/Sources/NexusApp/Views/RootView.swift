@@ -15379,10 +15379,11 @@ private struct NativeLocalCoreEvidenceView: View {
                                     .font(.caption2.weight(.semibold))
                                     .lineLimit(1)
                             }
-                            Text(item.auditAction)
+                            Text(item.auditLine)
                                 .font(.system(size: 9, weight: .medium, design: .monospaced))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
+                                .truncationMode(.middle)
                         }
                         .padding(7)
                         .frame(maxWidth: .infinity, alignment: .leading)

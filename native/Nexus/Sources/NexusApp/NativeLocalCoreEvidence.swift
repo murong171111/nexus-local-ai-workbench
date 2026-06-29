@@ -86,7 +86,8 @@ enum NativeConfirmedWriteCapability: String, CaseIterable, Hashable {
     case deliveryEvidence
     case validationPrSnapshot
     case archiveChecklist
-    case archiveRestoreLifecycle
+    case archiveLifecycle
+    case restoreLifecycle
     case lifecycleProofExport
 
     var label: String {
@@ -107,8 +108,10 @@ enum NativeConfirmedWriteCapability: String, CaseIterable, Hashable {
             "验证/PR 快照"
         case .archiveChecklist:
             "归档检查单"
-        case .archiveRestoreLifecycle:
-            "归档/恢复生命周期"
+        case .archiveLifecycle:
+            "归档生命周期"
+        case .restoreLifecycle:
+            "恢复生命周期"
         case .lifecycleProofExport:
             "生命周期证明导出"
         }
@@ -132,10 +135,21 @@ enum NativeConfirmedWriteCapability: String, CaseIterable, Hashable {
             "validation_pr.snapshot_appended"
         case .archiveChecklist:
             "archive_checklist.snapshot_appended"
-        case .archiveRestoreLifecycle:
+        case .archiveLifecycle, .restoreLifecycle:
             "workspace_lifecycle.updated"
         case .lifecycleProofExport:
             "native_lifecycle_proof.exported"
+        }
+    }
+
+    var auditMetadata: String? {
+        switch self {
+        case .archiveLifecycle:
+            "state=archived"
+        case .restoreLifecycle:
+            "state=developing"
+        default:
+            nil
         }
     }
 
@@ -157,8 +171,10 @@ enum NativeConfirmedWriteCapability: String, CaseIterable, Hashable {
             "追加验证、PR、CI 与 release review 快照前要求 explicit confirmation。"
         case .archiveChecklist:
             "追加归档确认检查单前要求 explicit confirmation。"
-        case .archiveRestoreLifecycle:
-            "写回 workspace.md 与 STATUS.md 生命周期前要求 confirmation sheet。"
+        case .archiveLifecycle:
+            "写回 workspace.md 与 STATUS.md 的 archived 状态前要求 confirmation sheet。"
+        case .restoreLifecycle:
+            "从 archived 恢复到 developing 状态前要求 confirmation sheet。"
         case .lifecycleProofExport:
             "写出 native-lifecycle-proof.json 前要求 explicit confirmation。"
         }
@@ -206,7 +222,12 @@ enum NativeConfirmedWriteCapability: String, CaseIterable, Hashable {
                 "native/Nexus/Sources/NexusApp/NativeDeliveryRecordStore.swift",
                 "native/Nexus/Sources/NexusApp/DeliveryLifecycleEvidence.swift"
             ]
-        case .archiveRestoreLifecycle:
+        case .archiveLifecycle:
+            [
+                "native/Nexus/Sources/NexusApp/NativeWorkspaceLifecycleStore.swift",
+                "native/Nexus/Sources/NexusApp/DeliveryLifecycleEvidence.swift"
+            ]
+        case .restoreLifecycle:
             [
                 "native/Nexus/Sources/NexusApp/NativeWorkspaceLifecycleStore.swift",
                 "native/Nexus/Sources/NexusApp/DeliveryLifecycleEvidence.swift"
@@ -225,12 +246,23 @@ struct NativeConfirmedWriteEvidence: Hashable, Identifiable {
     let status: WorkflowPathStatus
     let confirmation: String
     let auditAction: String
+    let auditMetadata: String?
     let evidence: [String]
 
     var id: NativeConfirmedWriteCapability { capability }
 
     var detail: String {
-        "\(confirmation) Audit action: \(auditAction)。"
+        if let auditMetadata {
+            return "\(confirmation) Audit action: \(auditAction)，metadata: \(auditMetadata)。"
+        }
+        return "\(confirmation) Audit action: \(auditAction)。"
+    }
+
+    var auditLine: String {
+        if let auditMetadata {
+            return "\(auditAction) · \(auditMetadata)"
+        }
+        return auditAction
     }
 }
 
@@ -353,6 +385,7 @@ struct NativeLocalCoreEvidence: Hashable {
                 status: status,
                 confirmation: capability.confirmation,
                 auditAction: capability.auditAction,
+                auditMetadata: capability.auditMetadata,
                 evidence: capability.evidence
             )
         }
