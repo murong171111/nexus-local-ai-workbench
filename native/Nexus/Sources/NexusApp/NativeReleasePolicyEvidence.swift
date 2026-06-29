@@ -145,7 +145,10 @@ struct NativeReleasePolicyEvidence: Hashable {
             "manifest SHA-256",
             "checksum sidecar",
             "Release manifest sha256 must match checksum sidecar",
-            "metadata requested remotely"
+            "metadata requested remotely",
+            "Release manifest releaseTag must match --tag",
+            "Release manifest updateChannel must be manual-github-release",
+            "Release manifest automaticUpdatesEnabled must be false"
         ]
         missing.append(contentsOf: verifierNeedles
             .filter { !fileContains(releaseNotesVerifierScript, $0) }

@@ -18,7 +18,8 @@ and migration/rollback notes.
 When --assets-dir is provided, every nexus-native-*.dmg, matching .dmg.sha256 sidecar,
 and the manifest filename must be named in the notes.
 When --manifest is provided, every manifest SHA-256 value must appear in the notes
-and match the matching .dmg.sha256 checksum sidecar.
+and match the matching .dmg.sha256 checksum sidecar. The manifest releaseTag must match
+--tag, updateChannel must be manual-github-release, and automaticUpdatesEnabled must be false.
 USAGE
 }
 
@@ -149,6 +150,12 @@ if manifest_path:
         raise SystemExit(f"Release manifest does not exist: {manifest_path}")
     asset_names.append(manifest_path.name)
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if data.get("releaseTag") != release_tag:
+        raise SystemExit("Release manifest releaseTag must match --tag")
+    if data.get("updateChannel") != "manual-github-release":
+        raise SystemExit("Release manifest updateChannel must be manual-github-release")
+    if data.get("automaticUpdatesEnabled") is not False:
+        raise SystemExit("Release manifest automaticUpdatesEnabled must be false")
     artifacts = data.get("artifacts")
     if not isinstance(artifacts, list) or not artifacts:
         raise SystemExit("Release manifest must include artifacts")

@@ -2746,7 +2746,10 @@ final class ModelBehaviorTests: XCTestCase {
                      "manifest SHA-256",
                      "checksum sidecar",
                      "Release manifest sha256 must match checksum sidecar",
-                     "metadata requested remotely":
+                     "metadata requested remotely",
+                     "Release manifest releaseTag must match --tag",
+                     "Release manifest updateChannel must be manual-github-release",
+                     "Release manifest automaticUpdatesEnabled must be false":
                     return path.hasSuffix("verify-release-notes.sh")
                         || path.hasSuffix("verify-release-bundle.sh")
                 case "signing/notarization",
@@ -2999,7 +3002,10 @@ final class ModelBehaviorTests: XCTestCase {
                      "manifest SHA-256",
                      "checksum sidecar",
                      "Release manifest sha256 must match checksum sidecar",
-                     "metadata requested remotely":
+                     "metadata requested remotely",
+                     "Release manifest releaseTag must match --tag",
+                     "Release manifest updateChannel must be manual-github-release",
+                     "Release manifest automaticUpdatesEnabled must be false":
                     return path.hasSuffix("verify-release-notes.sh")
                         || path.hasSuffix("verify-release-bundle.sh")
                 case "signing/notarization",
