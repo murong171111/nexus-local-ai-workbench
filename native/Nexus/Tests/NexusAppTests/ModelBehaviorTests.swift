@@ -2303,6 +2303,8 @@ final class ModelBehaviorTests: XCTestCase {
             "\(root)/docs/distribution.md",
             "\(root)/docs/release-process.md",
             "\(root)/docs/native-release-notes-and-updater.md",
+            "\(root)/native/Nexus/Sources/NexusApp/AppState.swift",
+            "\(root)/native/Nexus/Sources/NexusApp/Views/RootView.swift",
             "\(root)/.github/workflows/ci.yml",
             "\(root)/.github/workflows/release.yml"
         ]
@@ -2418,12 +2420,17 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(incomplete.status, .blocked)
         XCTAssertEqual(incomplete.checks.map(\.requirement), NativeReleasePolicyRequirement.allCases)
         XCTAssertTrue(incomplete.blockerDetails.contains { $0.contains("Updater policy gate is missing or incomplete") })
+        XCTAssertTrue(incomplete.blockerDetails.contains { $0.contains("Settings update channel gate is missing or incomplete") })
         XCTAssertTrue(incomplete.blockerDetails.contains { $0.contains("Release manifest metadata is missing or incomplete") })
         XCTAssertTrue(incomplete.blockerDetails.contains { $0.contains("Public-release blocker policy is missing or incomplete") })
 
         let ready = NativeReleasePolicyEvidence.resolve(
             repositoryRoot: root,
-            fileExists: { files.contains($0) },
+            fileExists: {
+                files.contains($0)
+                    || $0 == "\(root)/native/Nexus/Sources/NexusApp/AppState.swift"
+                    || $0 == "\(root)/native/Nexus/Sources/NexusApp/Views/RootView.swift"
+            },
             fileContains: { path, needle in
                 switch needle {
                 case "Release Notes Gate",
@@ -2441,6 +2448,17 @@ final class ModelBehaviorTests: XCTestCase {
                      "Settings exposes a user-visible update channel",
                      "must not silently check for, download, or install updates":
                     return path.hasSuffix("native-release-notes-and-updater.md")
+                case "struct NativeUpdateChannelStatus",
+                     "automaticUpdatesEnabled: false",
+                     "Manual download",
+                     "No silent update checks, downloads, or installs":
+                    return path.hasSuffix("AppState.swift")
+                case "NativeUpdateChannelStatusView",
+                     "status.checkMode",
+                     "status.automaticUpdatesLabel",
+                     "status.manifestFilename",
+                     "manual-github-release keeps automaticUpdatesEnabled=false":
+                    return path.hasSuffix("RootView.swift")
                 case "nexus-native-release-manifest.json",
                      "manual-github-release",
                      "automaticUpdatesEnabled",
@@ -2448,6 +2466,7 @@ final class ModelBehaviorTests: XCTestCase {
                      "\"updateChannel\": \"manual-github-release\"",
                      "does not enable automatic updates":
                     return path.hasSuffix("generate-release-manifest.sh")
+                        || path.hasSuffix("AppState.swift")
                 case "signed WidgetKit",
                      "real-credential notarized release run",
                      "updater signing keys",
@@ -2464,6 +2483,20 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertTrue(ready.ready, ready.reason)
         XCTAssertTrue(ready.checks.allSatisfy { $0.status == .ready })
+    }
+
+    @MainActor
+    func testNativeUpdateChannelStatusKeepsManualManifestAndNoSilentUpdates() {
+        let appState = appStateForAutomationTests(workspaces: [])
+        let status = appState.nativeUpdateChannelStatus()
+
+        XCTAssertEqual(status.channelID, "manual-github-release")
+        XCTAssertEqual(status.channelLabel, "Manual GitHub Release")
+        XCTAssertFalse(status.automaticUpdatesEnabled)
+        XCTAssertEqual(status.automaticUpdatesLabel, "Automatic updates disabled")
+        XCTAssertEqual(status.manifestFilename, "nexus-native-release-manifest.json")
+        XCTAssertEqual(status.checkMode, "Manual download")
+        XCTAssertTrue(status.remoteMetadataPolicy.contains("No silent update checks"))
     }
 
     func testNativeDistributionReadinessAcceptsSwiftPMAppBundleEvidence() {
@@ -2525,6 +2558,8 @@ final class ModelBehaviorTests: XCTestCase {
             "\(root)/docs/distribution.md",
             "\(root)/docs/release-process.md",
             "\(root)/docs/native-release-notes-and-updater.md",
+            "\(root)/native/Nexus/Sources/NexusApp/AppState.swift",
+            "\(root)/native/Nexus/Sources/NexusApp/Views/RootView.swift",
             "\(root)/.github/workflows/ci.yml",
             "\(root)/.github/workflows/release.yml"
         ]
@@ -2593,6 +2628,8 @@ final class ModelBehaviorTests: XCTestCase {
             "\(root)/docs/distribution.md",
             "\(root)/docs/release-process.md",
             "\(root)/docs/native-release-notes-and-updater.md",
+            "\(root)/native/Nexus/Sources/NexusApp/AppState.swift",
+            "\(root)/native/Nexus/Sources/NexusApp/Views/RootView.swift",
             "\(root)/.github/workflows/ci.yml",
             "\(root)/.github/workflows/release.yml"
         ]
@@ -2620,6 +2657,7 @@ final class ModelBehaviorTests: XCTestCase {
                     return path.hasSuffix("release.yml")
                         || path.hasSuffix("generate-release-manifest.sh")
                         || path.hasSuffix("verify-release-bundle.sh")
+                        || path.hasSuffix("AppState.swift")
                 case "Contents/Info.plist":
                     return path.hasSuffix("verify-release-bundle.sh")
                 case "--widget-extension", "Contents/PlugIns", "NexusWidget.appex":
@@ -2637,6 +2675,18 @@ final class ModelBehaviorTests: XCTestCase {
                      "does not enable automatic updates":
                     return path.hasSuffix("generate-release-manifest.sh")
                         || path.hasSuffix("verify-release-bundle.sh")
+                        || path.hasSuffix("AppState.swift")
+                case "struct NativeUpdateChannelStatus",
+                     "automaticUpdatesEnabled: false",
+                     "Manual download",
+                     "No silent update checks, downloads, or installs":
+                    return path.hasSuffix("AppState.swift")
+                case "NativeUpdateChannelStatusView",
+                     "status.checkMode",
+                     "status.automaticUpdatesLabel",
+                     "status.manifestFilename",
+                     "manual-github-release keeps automaticUpdatesEnabled=false":
+                    return path.hasSuffix("RootView.swift")
                 case "com.apple.widgetkit-extension":
                     return path.hasSuffix("Info.plist")
                         || path.hasSuffix("verify-release-bundle.sh")

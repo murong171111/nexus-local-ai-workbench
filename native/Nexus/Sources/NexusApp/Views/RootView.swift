@@ -14750,6 +14750,7 @@ struct SettingsView: View {
                 }
                 NativeLocalCoreEvidenceView(evidence: nativeCoreEvidence)
                 NativeDistributionReadinessEvidenceView(evidence: nativeDistributionEvidence)
+                NativeUpdateChannelStatusView(status: appState.nativeUpdateChannelStatus())
                 Text("Set NEXUS_CORE_LIBRARY to a local libnexus_ffi.dylib to load real workspace data through Rust Core during development.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -15104,6 +15105,36 @@ private struct NativeDistributionReadinessEvidenceView: View {
         case .archived:
             return "archivebox"
         }
+    }
+}
+
+private struct NativeUpdateChannelStatusView: View {
+    let status: NativeUpdateChannelStatus
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                EnvironmentStatusPill(status: status.automaticUpdatesEnabled ? "warning" : "pass")
+                Text("Update channel: \(status.channelLabel)")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+            }
+
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 190), spacing: 8)],
+                alignment: .leading,
+                spacing: 8
+            ) {
+                SummaryLine(label: "Mode", value: status.checkMode)
+                SummaryLine(label: "Automatic updates", value: status.automaticUpdatesLabel)
+                SummaryLine(label: "Manifest", value: status.manifestFilename)
+                SummaryLine(label: "Network", value: status.remoteMetadataPolicy)
+            }
+        }
+        .padding(8)
+        .background(NexusPalette.success.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .help("manual-github-release keeps automaticUpdatesEnabled=false until signing, notarization, updater keys, and rollback gates pass.")
     }
 }
 

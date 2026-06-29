@@ -3,6 +3,7 @@ import Foundation
 enum NativeReleasePolicyRequirement: String, CaseIterable, Hashable {
     case releaseNotes
     case updaterDefault
+    case settingsUpdateChannel
     case manifestMetadata
     case publicReleaseBlockers
 
@@ -12,6 +13,8 @@ enum NativeReleasePolicyRequirement: String, CaseIterable, Hashable {
             return "Release notes"
         case .updaterDefault:
             return "Updater default"
+        case .settingsUpdateChannel:
+            return "Settings update channel"
         case .manifestMetadata:
             return "Manifest metadata"
         case .publicReleaseBlockers:
@@ -56,6 +59,8 @@ struct NativeReleasePolicyEvidence: Hashable {
         let releaseProcessDoc = "\(repositoryRoot)/docs/release-process.md"
         let distributionDoc = "\(repositoryRoot)/docs/distribution.md"
         let releaseManifestScript = "\(repositoryRoot)/native/Nexus/Scripts/generate-release-manifest.sh"
+        let appStateSource = "\(repositoryRoot)/native/Nexus/Sources/NexusApp/AppState.swift"
+        let rootViewSource = "\(repositoryRoot)/native/Nexus/Sources/NexusApp/Views/RootView.swift"
 
         let checks = [
             releaseNotesCheck(
@@ -65,6 +70,13 @@ struct NativeReleasePolicyEvidence: Hashable {
             ),
             updaterDefaultCheck(
                 releaseNotesDoc: releaseNotesDoc,
+                fileExists: fileExists,
+                fileContains: fileContains
+            ),
+            settingsUpdateChannelCheck(
+                releaseNotesDoc: releaseNotesDoc,
+                appStateSource: appStateSource,
+                rootViewSource: rootViewSource,
                 fileExists: fileExists,
                 fileContains: fileContains
             ),
@@ -164,6 +176,44 @@ struct NativeReleasePolicyEvidence: Hashable {
                 ? "Release manifest generation records the manual GitHub channel and automaticUpdatesEnabled=false."
                 : "Release manifest metadata is missing or incomplete: \(missing.joined(separator: ", ")).",
             evidence: [releaseManifestScript] + missing
+        )
+    }
+
+    private static func settingsUpdateChannelCheck(
+        releaseNotesDoc: String,
+        appStateSource: String,
+        rootViewSource: String,
+        fileExists: (String) -> Bool,
+        fileContains: (String, String) -> Bool
+    ) -> NativeReleasePolicyCheck {
+        let requiredSourceNeedles = [
+            (appStateSource, "struct NativeUpdateChannelStatus"),
+            (appStateSource, "manual-github-release"),
+            (appStateSource, "automaticUpdatesEnabled: false"),
+            (appStateSource, "nexus-native-release-manifest.json"),
+            (appStateSource, "Manual download"),
+            (appStateSource, "No silent update checks, downloads, or installs"),
+            (rootViewSource, "NativeUpdateChannelStatusView"),
+            (rootViewSource, "status.checkMode"),
+            (rootViewSource, "status.automaticUpdatesLabel"),
+            (rootViewSource, "status.manifestFilename"),
+            (rootViewSource, "manual-github-release keeps automaticUpdatesEnabled=false"),
+            (releaseNotesDoc, "Settings exposes a user-visible update channel")
+        ]
+        let missing = requiredSourceNeedles.compactMap { path, needle in
+            fileContains(path, needle) ? nil : "\(path): \(needle)"
+        }
+        let ready = fileExists(releaseNotesDoc)
+            && fileExists(appStateSource)
+            && fileExists(rootViewSource)
+            && missing.isEmpty
+        return NativeReleasePolicyCheck(
+            requirement: .settingsUpdateChannel,
+            status: ready ? .ready : .blocked,
+            detail: ready
+                ? "Settings exposes the manual GitHub release channel, automaticUpdatesEnabled=false, manifest name, and no-silent-update policy."
+                : "Settings update channel gate is missing or incomplete: \(missing.joined(separator: ", ")).",
+            evidence: [releaseNotesDoc, appStateSource, rootViewSource] + missing
         )
     }
 

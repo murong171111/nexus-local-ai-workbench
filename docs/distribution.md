@@ -85,7 +85,7 @@ Pushing workflow files requires a GitHub token with the `workflow` scope.
 
 Release notes and updater readiness are tracked in `docs/native-release-notes-and-updater.md`.
 
-Do not enable automatic updates until signing, notarization, updater signing keys, appcast metadata, update metadata policy, and user-visible update settings are ready. The default public-release posture remains automatic updates disabled until that gate is satisfied.
+Do not enable automatic updates until signing, notarization, updater signing keys, appcast metadata, update metadata policy, and user-visible update settings are ready. The default public-release posture remains automatic updates disabled until that gate is satisfied. Native Settings now exposes the current manual GitHub release channel, `automaticUpdatesEnabled=false`, and `nexus-native-release-manifest.json` as the release manifest name.
 
 ## WidgetKit Packaging
 

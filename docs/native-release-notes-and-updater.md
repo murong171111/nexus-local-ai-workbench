@@ -27,8 +27,8 @@ Do not enable automatic updates until all of the following are true:
 - the WidgetKit extension is embedded, signed, and covered by the same release validation
 - updater signing keys are generated, stored outside the repository, and rotated by documented policy
 - appcast metadata or an equivalent update manifest is generated from the same signed artifacts published on GitHub; the current manual channel uses `nexus-native-release-manifest.json`
-- Settings exposes a user-visible update channel and update-check control
+- Settings exposes a user-visible update channel and update-check control; the current Native Settings status shows `Manual GitHub Release`, `Automatic updates disabled`, and `nexus-native-release-manifest.json`
 - release notes document what metadata is requested remotely during update checks
 - rollback instructions are tested against the previous public Native release
 
-Until this gate passes, GitHub Releases may publish manually downloadable Native DMGs, but the app must not silently check for, download, or install updates.
+Until this gate passes, GitHub Releases may publish manually downloadable Native DMGs, but the app must not silently check for, download, or install updates. The Swift-side `NativeUpdateChannelStatus` keeps the current channel on `manual-github-release` with `automaticUpdatesEnabled=false`.

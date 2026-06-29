@@ -91,6 +91,28 @@ struct NativeEnvironmentHealth: Hashable {
     let warnings: [String]
 }
 
+struct NativeUpdateChannelStatus: Hashable {
+    let channelID: String
+    let channelLabel: String
+    let automaticUpdatesEnabled: Bool
+    let manifestFilename: String
+    let checkMode: String
+    let remoteMetadataPolicy: String
+
+    static let manualGitHubRelease = NativeUpdateChannelStatus(
+        channelID: "manual-github-release",
+        channelLabel: "Manual GitHub Release",
+        automaticUpdatesEnabled: false,
+        manifestFilename: "nexus-native-release-manifest.json",
+        checkMode: "Manual download",
+        remoteMetadataPolicy: "No silent update checks, downloads, or installs"
+    )
+
+    var automaticUpdatesLabel: String {
+        automaticUpdatesEnabled ? "Automatic updates enabled" : "Automatic updates disabled"
+    }
+}
+
 enum NativeSetupReadinessStatus: String, Hashable {
     case unchecked
     case ready
@@ -2686,6 +2708,10 @@ final class AppState: ObservableObject {
             m2Ready: nativeLocalCoreEvidence().ready,
             realLifecycleProven: nativeLifecycleProofBundleAvailable(auditEvents: auditEvents)
         )
+    }
+
+    func nativeUpdateChannelStatus() -> NativeUpdateChannelStatus {
+        .manualGitHubRelease
     }
 
     func nativeLifecycleProofAvailable() -> Bool {
