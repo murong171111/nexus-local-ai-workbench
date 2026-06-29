@@ -3822,7 +3822,7 @@ final class AppState: ObservableObject {
         }
 
         do {
-            let response = try await bridge.updateWorkspaceLifecycle(
+            let response = try NativeWorkspaceLifecycleStore.update(
                 request: UpdateWorkspaceLifecycleRequest(
                     workspacePath: update.workspacePath,
                     state: update.nextState,

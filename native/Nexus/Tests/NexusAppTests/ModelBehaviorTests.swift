@@ -1039,6 +1039,11 @@ final class ModelBehaviorTests: XCTestCase {
                 "native/Nexus/Sources/NexusApp/NativeWorkspaceTaskStore.swift"
             ) ?? false
         )
+        XCTAssertTrue(
+            fullyNative.domains.first { $0.domain == .readiness }?.evidence.contains(
+                "native/Nexus/Sources/NexusApp/NativeWorkspaceLifecycleStore.swift"
+            ) ?? false
+        )
         XCTAssertEqual(
             partiallyNative.domains.filter { $0.status == .review }.map(\.domain),
             [.gitWorktreeStatus]
@@ -1252,6 +1257,77 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(events.first?.actor, "Nexus Test")
         XCTAssertEqual(events.first?.metadata["taskId"], "2026-05-28-task-status:agent-1")
         XCTAssertEqual(events.first?.metadata["status"], "延期")
+    }
+
+    func testNativeWorkspaceLifecycleStoreRequiresConfirmationAndRewritesStatusDocuments() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-lifecycle-\(UUID().uuidString)")
+        let workspaceURL = root.appendingPathComponent("2026-05-28-lifecycle")
+        let auditRoot = root.appendingPathComponent("audit")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        let workspaceMarkdown = """
+        # Lifecycle
+
+        - 需求名称: Lifecycle Demo
+        - 当前状态: developing
+        - 目标分支: chen/lifecycle
+        """ + "\n"
+        let statusMarkdown = """
+        # STATUS
+
+        - 状态: developing
+        - 当前焦点: 编码
+        - 下一步: 继续验证
+        - 更新时间: old
+        """ + "\n"
+        try workspaceMarkdown.write(to: workspaceURL.appendingPathComponent("workspace.md"), atomically: true, encoding: .utf8)
+        try statusMarkdown.write(to: workspaceURL.appendingPathComponent("STATUS.md"), atomically: true, encoding: .utf8)
+
+        XCTAssertThrowsError(
+            try NativeWorkspaceLifecycleStore.update(
+                request: UpdateWorkspaceLifecycleRequest(
+                    workspacePath: workspaceURL.path,
+                    state: "archived",
+                    confirmed: false
+                )
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("explicit confirmation"))
+        }
+
+        let response = try NativeWorkspaceLifecycleStore.update(
+            request: UpdateWorkspaceLifecycleRequest(
+                workspacePath: workspaceURL.path,
+                state: "archived",
+                focus: "保留历史上下文",
+                nextAction: "需要再次开发时从 handoff 恢复上下文",
+                confirmed: true,
+                auditRoot: auditRoot.path,
+                actor: "Nexus Test"
+            )
+        )
+        let workspaceContent = try String(contentsOf: workspaceURL.appendingPathComponent("workspace.md"), encoding: .utf8)
+        let statusContent = try String(contentsOf: workspaceURL.appendingPathComponent("STATUS.md"), encoding: .utf8)
+        let events = try NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 5)
+
+        XCTAssertTrue(response.updated)
+        XCTAssertEqual(response.previousState, "developing")
+        XCTAssertEqual(response.state, "archived")
+        XCTAssertEqual(response.workspaceDocumentPath, workspaceURL.appendingPathComponent("workspace.md").path)
+        XCTAssertEqual(response.statusDocumentPath, workspaceURL.appendingPathComponent("STATUS.md").path)
+        XCTAssertTrue(workspaceContent.contains("- 当前状态: archived"))
+        XCTAssertTrue(statusContent.contains("- 状态: archived"))
+        XCTAssertTrue(statusContent.contains("- 当前焦点: 保留历史上下文"))
+        XCTAssertTrue(statusContent.contains("- 下一步: 需要再次开发时从 handoff 恢复上下文"))
+        XCTAssertTrue(statusContent.contains("- 更新时间: "))
+        XCTAssertTrue(statusContent.hasSuffix("\n"))
+        XCTAssertEqual(events.first?.action, "workspace_lifecycle.updated")
+        XCTAssertEqual(events.first?.actor, "Nexus Test")
+        XCTAssertEqual(events.first?.metadata["previousState"], "developing")
+        XCTAssertEqual(events.first?.metadata["state"], "archived")
     }
 
     func testNativeDocumentStoreReadsLocalSnapshots() throws {
