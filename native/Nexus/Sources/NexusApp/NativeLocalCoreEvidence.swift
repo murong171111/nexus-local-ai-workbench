@@ -220,6 +220,7 @@ private extension NativeLocalCoreDomain {
                 "native/Nexus/Sources/NexusApp/NativeWorkspaceTaskStore.swift",
                 "native/Nexus/Sources/NexusApp/NativeWorkspaceLifecycleStore.swift",
                 "native/Nexus/Sources/NexusApp/NativeLifecycleProofEvidence.swift",
+                "native/Nexus/Sources/NexusApp/NativeLifecycleProofBundle.swift",
                 "native/Nexus/Sources/NexusApp/DeliveryLifecycleEvidence.swift",
                 "native/Nexus/Sources/NexusApp/AppState.swift"
             ]

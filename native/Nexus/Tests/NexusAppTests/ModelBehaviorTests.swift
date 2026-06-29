@@ -1225,6 +1225,7 @@ final class ModelBehaviorTests: XCTestCase {
                 "native/Nexus/Sources/NexusApp/NativeWorkspaceTaskStore.swift",
                 "native/Nexus/Sources/NexusApp/NativeWorkspaceLifecycleStore.swift",
                 "native/Nexus/Sources/NexusApp/NativeLifecycleProofEvidence.swift",
+                "native/Nexus/Sources/NexusApp/NativeLifecycleProofBundle.swift",
                 "native/Nexus/Sources/NexusApp/DeliveryLifecycleEvidence.swift",
                 "native/Nexus/Sources/NexusApp/AppState.swift"
             ]
@@ -4421,6 +4422,37 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(actions.contains("workspace_lifecycle.updated"))
         let proofEvents = try NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 40)
         XCTAssertTrue(appStateForAutomationTests(workspaces: [archived]).nativeLifecycleProofAvailable(auditEvents: proofEvents))
+        XCTAssertThrowsError(
+            try NativeLifecycleProofBundleStore.write(
+                workspace: archived,
+                auditEvents: proofEvents,
+                confirmed: false,
+                auditRoot: auditRoot.path,
+                actor: "Nexus Test"
+            )
+        )
+
+        let proofBundleResponse = try NativeLifecycleProofBundleStore.write(
+            workspace: archived,
+            auditEvents: proofEvents,
+            confirmed: true,
+            auditRoot: auditRoot.path,
+            actor: "Nexus Test"
+        )
+        let proofBundleData = try Data(contentsOf: URL(fileURLWithPath: proofBundleResponse.path))
+        let proofBundle = try JSONDecoder().decode(NativeLifecycleProofBundle.self, from: proofBundleData)
+        let actionsAfterProofExport = try NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 50).map(\.action)
+
+        XCTAssertTrue(proofBundleResponse.ready)
+        XCTAssertTrue(proofBundle.ready)
+        XCTAssertEqual(proofBundle.workspace.lifecycleStage, "archived")
+        XCTAssertEqual(proofBundle.proof.status, WorkflowPathStatus.ready.rawValue)
+        XCTAssertTrue(proofBundle.evidenceFiles.allSatisfy(\.exists))
+        XCTAssertTrue(proofBundle.missingEvidenceFiles.isEmpty)
+        XCTAssertEqual(proofBundle.proof.requiredAuditActions, NativeLifecycleProofEvidence.requiredAuditActions)
+        XCTAssertTrue(proofBundle.auditChain.map(\.action).contains("workspace.created"))
+        XCTAssertTrue(proofBundle.auditChain.map(\.action).contains("workspace_lifecycle.updated"))
+        XCTAssertTrue(actionsAfterProofExport.contains("native_lifecycle_proof.exported"))
 
         _ = try NativeWorkspaceLifecycleStore.update(
             request: UpdateWorkspaceLifecycleRequest(
