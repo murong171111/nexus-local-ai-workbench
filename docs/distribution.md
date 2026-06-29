@@ -18,7 +18,7 @@ swift test --package-path native/Nexus
 swift build --package-path native/Nexus
 ```
 
-The package produces the `NexusNative` executable and verifies the Swift local-core, workflow evidence, Widget snapshot, and distribution readiness models. `native/Nexus/Scripts/build-app-bundle.sh` wraps that executable into a local `Nexus.app` bundle for installation checks. `native/Nexus/Scripts/package-dmg.sh` packages the app into `Nexus.dmg` for release dry runs. `native/Nexus/Scripts/sign-and-notarize.sh` signs the app or DMG and submits DMGs to Apple notarization when Developer ID credentials are available. `native/Nexus/Scripts/verify-release-bundle.sh` verifies the final app bundle, DMG checksum sidecars, and `nexus-native-release-manifest.json` before publication. WidgetKit embedding remains M3 follow-up work.
+The package produces the `NexusNative` executable and verifies the Swift local-core, workflow evidence, Widget snapshot, and distribution readiness models. `native/Nexus/Scripts/build-app-bundle.sh` wraps that executable into a local `Nexus.app` bundle for installation checks and can embed an already-built `NexusWidget.appex` with `--widget-extension`. `native/Nexus/Scripts/package-dmg.sh` packages the app into `Nexus.dmg` for release dry runs. `native/Nexus/Scripts/sign-and-notarize.sh` signs the app or DMG and submits DMGs to Apple notarization when Developer ID credentials are available. `native/Nexus/Scripts/verify-release-bundle.sh` verifies the final app bundle, DMG checksum sidecars, and `nexus-native-release-manifest.json` before publication, with `--require-widget` for the signed WidgetKit bundle gate.
 
 ## Installable App Target
 
@@ -46,6 +46,7 @@ The app bundle must include:
 - Confirm M2 Native Local Core evidence reports `11/11 Native domains`.
 - Confirm at least one real archived workspace provides `native-lifecycle-proof.json`: archived stage, delivery evidence, ready services, no active tasks, no open risks, required evidence files, and ordered Native audit actions.
 - Confirm Widget snapshot writing works in Application Support and, when signed, the App Group container.
+- Confirm the built WidgetKit `.appex` is embedded with `build-app-bundle.sh --widget-extension` and verified with `verify-release-bundle.sh --require-widget` before public distribution.
 - Confirm `nexus://workspace/<folder>` opens Nexus and focuses the target workspace.
 - Confirm release docs and workflows point at the Native app artifact path.
 - Confirm every published Native DMG has a matching `.dmg.sha256` checksum asset.
@@ -88,7 +89,19 @@ Do not enable automatic updates until signing, notarization, updater signing key
 
 ## WidgetKit Packaging
 
-WidgetKit requires an Xcode Widget Extension target. The canonical Native source and metadata now live under `native/NexusWidget`, but a distributable widget bundle still requires:
+WidgetKit requires an Xcode Widget Extension target. The canonical Native source and metadata now live under `native/NexusWidget`, and the SwiftPM app bundle script now has a fixed embedding contract for an already-built extension:
+
+```bash
+native/Nexus/Scripts/build-app-bundle.sh \
+  --output native/Nexus/build/Release/Nexus.app \
+  --widget-extension path/to/NexusWidget.appex
+
+native/Nexus/Scripts/verify-release-bundle.sh \
+  --app native/Nexus/build/Release/Nexus.app \
+  --require-widget
+```
+
+A distributable widget bundle still requires:
 
 - Full Xcode
 - App Group, recommended: `group.com.ks.nexus`

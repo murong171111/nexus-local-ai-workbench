@@ -109,6 +109,13 @@ if [[ -n "$APP_PATH" ]]; then
       echo "Widget extension Info.plist is missing: $widget_path/Contents/Info.plist" >&2
       exit 1
     fi
+    if command -v /usr/libexec/PlistBuddy >/dev/null 2>&1; then
+      widget_extension_point="$(/usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionPointIdentifier' "$widget_path/Contents/Info.plist" 2>/dev/null || true)"
+      if [[ "$widget_extension_point" != "com.apple.widgetkit-extension" ]]; then
+        echo "Widget extension point must be com.apple.widgetkit-extension: $widget_path/Contents/Info.plist" >&2
+        exit 1
+      fi
+    fi
   fi
 fi
 

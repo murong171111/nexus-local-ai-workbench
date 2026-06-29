@@ -123,6 +123,8 @@ struct NativeDistributionReadinessEvidence: Hashable {
         let nativeWidgetSource = "\(repositoryRoot)/native/NexusWidget/Sources/NexusWidget/NexusWidget.swift"
         let nativeWidgetInfo = "\(repositoryRoot)/native/NexusWidget/Info.plist"
         let nativeWidgetEntitlements = "\(repositoryRoot)/native/NexusWidget/NexusWidget.entitlements"
+        let bundleScriptPath = "\(repositoryRoot)/native/Nexus/Scripts/build-app-bundle.sh"
+        let releaseBundleVerifierScript = "\(repositoryRoot)/native/Nexus/Scripts/verify-release-bundle.sh"
         let hasWidgetSource = fileExists(legacyWidgetSource) || fileExists(nativeWidgetSource)
         let hasNativeWidgetTarget = directoryExists("\(repositoryRoot)/native/NexusWidget")
             && fileExists(nativeWidgetSource)
@@ -130,14 +132,22 @@ struct NativeDistributionReadinessEvidence: Hashable {
             && fileExists(nativeWidgetEntitlements)
             && fileContains(nativeWidgetInfo, "com.apple.widgetkit-extension")
             && fileContains(nativeWidgetEntitlements, "group.com.ks.nexus")
-        let ready = hasWidgetSource && hasNativeWidgetTarget
+        let hasWidgetEmbeddingContract = fileExists(bundleScriptPath)
+            && fileExists(releaseBundleVerifierScript)
+            && fileContains(bundleScriptPath, "--widget-extension")
+            && fileContains(bundleScriptPath, "Contents/PlugIns")
+            && fileContains(bundleScriptPath, "NexusWidget.appex")
+            && fileContains(releaseBundleVerifierScript, "--require-widget")
+            && fileContains(releaseBundleVerifierScript, "Contents/PlugIns/NexusWidget.appex")
+            && fileContains(releaseBundleVerifierScript, "com.apple.widgetkit-extension")
+        let ready = hasWidgetSource && hasNativeWidgetTarget && hasWidgetEmbeddingContract
         return NativeDistributionCheck(
             requirement: .widgetExtension,
             status: ready ? .ready : .blocked,
             detail: ready
-                ? "WidgetKit source, extension plist, and App Group entitlements are attached to the Native target path."
-                : "WidgetKit Swift source exists only as a standalone source file; add a native Widget Extension target before M3 can pass.",
-            evidence: [legacyWidgetSource, nativeWidgetSource, nativeWidgetInfo, nativeWidgetEntitlements]
+                ? "WidgetKit source, extension plist, App Group entitlements, app-bundle embedding, and release verification are attached to the Native target path."
+                : "WidgetKit packaging blockers: add Native Widget source/plist/entitlements and a verified Nexus.app/Contents/PlugIns embedding path before M3 can pass.",
+            evidence: [legacyWidgetSource, nativeWidgetSource, nativeWidgetInfo, nativeWidgetEntitlements, bundleScriptPath, releaseBundleVerifierScript]
         )
     }
 

@@ -2519,6 +2519,8 @@ final class ModelBehaviorTests: XCTestCase {
             "\(root)/native/NexusWidget/Sources/NexusWidget/NexusWidget.swift",
             "\(root)/native/NexusWidget/Info.plist",
             "\(root)/native/NexusWidget/NexusWidget.entitlements",
+            "\(root)/native/Nexus/Scripts/build-app-bundle.sh",
+            "\(root)/native/Nexus/Scripts/verify-release-bundle.sh",
             "\(root)/docs/legacy-retirement-audit.md",
             "\(root)/docs/distribution.md",
             "\(root)/docs/release-process.md",
@@ -2527,6 +2529,10 @@ final class ModelBehaviorTests: XCTestCase {
             "\(root)/.github/workflows/release.yml"
         ]
         let missingEntitlements = readyFiles.subtracting(["\(root)/native/NexusWidget/NexusWidget.entitlements"])
+        let missingEmbeddingContract = readyFiles.subtracting([
+            "\(root)/native/Nexus/Scripts/build-app-bundle.sh",
+            "\(root)/native/Nexus/Scripts/verify-release-bundle.sh"
+        ])
         func evidence(files: Set<String>) -> NativeDistributionReadinessEvidence {
             NativeDistributionReadinessEvidence.resolve(
                 repositoryRoot: root,
@@ -2539,6 +2545,7 @@ final class ModelBehaviorTests: XCTestCase {
                     switch needle {
                     case "com.apple.widgetkit-extension":
                         return path.hasSuffix("Info.plist")
+                            || path.hasSuffix("verify-release-bundle.sh")
                     case "group.com.ks.nexus":
                         return path.hasSuffix("NexusWidget.entitlements")
                     case "Native Deletion Order", "Current Legacy Surfaces":
@@ -2549,6 +2556,10 @@ final class ModelBehaviorTests: XCTestCase {
                         return path.hasSuffix("release.yml")
                             || path.hasSuffix("distribution.md")
                             || path.hasSuffix("release-process.md")
+                    case "--widget-extension", "Contents/PlugIns", "NexusWidget.appex":
+                        return path.hasSuffix("build-app-bundle.sh")
+                    case "--require-widget", "Contents/PlugIns/NexusWidget.appex":
+                        return path.hasSuffix("verify-release-bundle.sh")
                     default:
                         return false
                     }
@@ -2557,9 +2568,10 @@ final class ModelBehaviorTests: XCTestCase {
         }
 
         XCTAssertEqual(evidence(files: missingEntitlements).checks.first { $0.requirement == .widgetExtension }?.status, .blocked)
+        XCTAssertEqual(evidence(files: missingEmbeddingContract).checks.first { $0.requirement == .widgetExtension }?.status, .blocked)
         let widgetTarget = evidence(files: readyFiles).checks.first { $0.requirement == .widgetExtension }
         XCTAssertEqual(widgetTarget?.status, .ready)
-        XCTAssertTrue(widgetTarget?.detail.contains("App Group entitlements") == true)
+        XCTAssertTrue(widgetTarget?.detail.contains("app-bundle embedding") == true)
     }
 
     func testNativeDistributionReadinessCanPassAfterNativeInstallAndDeletionProof() {
@@ -2567,6 +2579,7 @@ final class ModelBehaviorTests: XCTestCase {
         let files: Set<String> = [
             "\(root)/native/Nexus/Package.swift",
             "\(root)/native/Nexus/Nexus.xcodeproj/project.pbxproj",
+            "\(root)/native/Nexus/Scripts/build-app-bundle.sh",
             "\(root)/native/Nexus/Scripts/package-dmg.sh",
             "\(root)/native/Nexus/Scripts/sign-and-notarize.sh",
             "\(root)/native/Nexus/Scripts/import-apple-certificate.sh",
@@ -2609,6 +2622,10 @@ final class ModelBehaviorTests: XCTestCase {
                         || path.hasSuffix("verify-release-bundle.sh")
                 case "Contents/Info.plist":
                     return path.hasSuffix("verify-release-bundle.sh")
+                case "--widget-extension", "Contents/PlugIns", "NexusWidget.appex":
+                    return path.hasSuffix("build-app-bundle.sh")
+                case "--require-widget", "Contents/PlugIns/NexusWidget.appex":
+                    return path.hasSuffix("verify-release-bundle.sh")
                 case "codesign", "notarytool":
                     return path.hasSuffix("sign-and-notarize.sh")
                 case "security import", "security create-keychain", "set-key-partition-list":
@@ -2622,6 +2639,7 @@ final class ModelBehaviorTests: XCTestCase {
                         || path.hasSuffix("verify-release-bundle.sh")
                 case "com.apple.widgetkit-extension":
                     return path.hasSuffix("Info.plist")
+                        || path.hasSuffix("verify-release-bundle.sh")
                 case "group.com.ks.nexus":
                     return path.hasSuffix("NexusWidget.entitlements")
                 case "Native Deletion Order", "Current Legacy Surfaces":
