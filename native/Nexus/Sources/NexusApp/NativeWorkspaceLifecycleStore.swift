@@ -54,8 +54,19 @@ enum NativeWorkspaceLifecycleStore {
             nextAction: nextAction,
             updated: true
         )
-        appendAuditEvent(request: request, response: response)
-        return response
+        let audit = appendAuditEvent(request: request, response: response)
+        return UpdateWorkspaceLifecycleResponse(
+            workspacePath: response.workspacePath,
+            workspaceDocumentPath: response.workspaceDocumentPath,
+            statusDocumentPath: response.statusDocumentPath,
+            previousState: response.previousState,
+            state: response.state,
+            focus: response.focus,
+            nextAction: response.nextAction,
+            updated: response.updated,
+            auditEventID: audit?.event.id,
+            auditEventPath: audit?.path
+        )
     }
 
     private static func expandedURL(for path: String) -> URL {
@@ -198,12 +209,12 @@ enum NativeWorkspaceLifecycleStore {
     private static func appendAuditEvent(
         request: UpdateWorkspaceLifecycleRequest,
         response: UpdateWorkspaceLifecycleResponse
-    ) {
+    ) -> AppendAuditEventResponse? {
         guard let auditRoot = request.auditRoot?.trimmingCharacters(in: .whitespacesAndNewlines),
               !auditRoot.isEmpty else {
-            return
+            return nil
         }
-        _ = try? NativeAuditEventStore.append(
+        return try? NativeAuditEventStore.append(
             auditRoot: auditRoot,
             event: AuditEventInput(
                 actor: request.actor ?? "Nexus Native",

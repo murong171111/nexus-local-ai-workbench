@@ -70,7 +70,7 @@ enum NativeDemandIntakeStore {
             status: status(for: workspaceURL, fileManager: fileManager),
             createdFiles: createdFiles
         )
-        appendAuditEvent(
+        let audit = appendAuditEvent(
             workspacePath: workspaceURL.path,
             demandName: normalizedDemandName,
             lanhuLink: normalizedLanhuLink,
@@ -78,7 +78,12 @@ enum NativeDemandIntakeStore {
             auditRoot: auditRoot,
             actor: actor
         )
-        return response
+        return InitializeDemandIntakeResponse(
+            status: response.status,
+            createdFiles: response.createdFiles,
+            auditEventID: audit?.event.id,
+            auditEventPath: audit?.path
+        )
     }
 
     private static func appendAuditEvent(
@@ -88,12 +93,12 @@ enum NativeDemandIntakeStore {
         response: InitializeDemandIntakeResponse,
         auditRoot: String?,
         actor: String?
-    ) {
+    ) -> AppendAuditEventResponse? {
         guard let auditRoot = auditRoot?.trimmingCharacters(in: .whitespacesAndNewlines),
               !auditRoot.isEmpty else {
-            return
+            return nil
         }
-        _ = try? NativeAuditEventStore.append(
+        return try? NativeAuditEventStore.append(
             auditRoot: auditRoot,
             event: AuditEventInput(
                 actor: actor ?? "Nexus Native",

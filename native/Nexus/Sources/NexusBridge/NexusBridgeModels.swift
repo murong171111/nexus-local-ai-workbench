@@ -161,10 +161,19 @@ public struct DemandIntakeStatus: Codable, Equatable, Sendable {
 public struct InitializeDemandIntakeResponse: Codable, Equatable, Sendable {
     public let status: DemandIntakeStatus
     public let createdFiles: [String]
+    public let auditEventID: String?
+    public let auditEventPath: String?
 
-    public init(status: DemandIntakeStatus, createdFiles: [String]) {
+    public init(
+        status: DemandIntakeStatus,
+        createdFiles: [String],
+        auditEventID: String? = nil,
+        auditEventPath: String? = nil
+    ) {
         self.status = status
         self.createdFiles = createdFiles
+        self.auditEventID = auditEventID
+        self.auditEventPath = auditEventPath
     }
 }
 
@@ -669,12 +678,23 @@ public struct UpdateWorkspaceTaskResponse: Codable, Equatable, Sendable {
     public let task: WorkspaceTaskSnapshot
     public let previousStatus: String
     public let updated: Bool
+    public let auditEventID: String?
+    public let auditEventPath: String?
 
-    public init(path: String, task: WorkspaceTaskSnapshot, previousStatus: String, updated: Bool) {
+    public init(
+        path: String,
+        task: WorkspaceTaskSnapshot,
+        previousStatus: String,
+        updated: Bool,
+        auditEventID: String? = nil,
+        auditEventPath: String? = nil
+    ) {
         self.path = path
         self.task = task
         self.previousStatus = previousStatus
         self.updated = updated
+        self.auditEventID = auditEventID
+        self.auditEventPath = auditEventPath
     }
 }
 
@@ -715,6 +735,8 @@ public struct UpdateWorkspaceLifecycleResponse: Codable, Equatable, Sendable {
     public let focus: String
     public let nextAction: String
     public let updated: Bool
+    public let auditEventID: String?
+    public let auditEventPath: String?
 
     public init(
         workspacePath: String,
@@ -724,7 +746,9 @@ public struct UpdateWorkspaceLifecycleResponse: Codable, Equatable, Sendable {
         state: String,
         focus: String,
         nextAction: String,
-        updated: Bool
+        updated: Bool,
+        auditEventID: String? = nil,
+        auditEventPath: String? = nil
     ) {
         self.workspacePath = workspacePath
         self.workspaceDocumentPath = workspaceDocumentPath
@@ -734,6 +758,8 @@ public struct UpdateWorkspaceLifecycleResponse: Codable, Equatable, Sendable {
         self.focus = focus
         self.nextAction = nextAction
         self.updated = updated
+        self.auditEventID = auditEventID
+        self.auditEventPath = auditEventPath
     }
 }
 

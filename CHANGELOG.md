@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Added
 
+- Native demand initialization, scope freeze, demand-task transfer, task-status, and lifecycle writebacks now return audit event IDs and audit-log paths after confirmed Swift writes.
 - Native task-status writebacks now update root `tasks.md` and append `workspace_task.updated` audit events through Swift Native instead of the Swift/Rust bridge.
 - Native create-workspace now writes the standard workspace skeleton, initialization receipt, `INDEX.md`, and `workspace.created` audit event through Swift Native instead of the Swift/Rust bridge.
 - Native local automation checks now build their response and audit metadata in Swift Native from current workspace summaries, using the Rust bridge only as a fallback when local refresh cannot provide state; branch signals now mean target-branch availability rather than current-checkout alignment.

@@ -6,6 +6,8 @@ struct NativeDemandTaskTransferResponse: Hashable {
     let transferredItems: [DemandTaskTransferItem]
     let duplicateCount: Int
     let transferred: Bool
+    let auditEventID: String?
+    let auditEventPath: String?
 
     var transferredCount: Int {
         transferredItems.count
@@ -50,10 +52,19 @@ enum NativeDemandTaskTransferStore {
             path: plan.executionTasksPath,
             transferredItems: plan.transferableItems,
             duplicateCount: plan.duplicateCount,
-            transferred: true
+            transferred: true,
+            auditEventID: nil,
+            auditEventPath: nil
         )
-        appendAuditEvent(plan: plan, response: response, auditRoot: auditRoot, actor: actor)
-        return response
+        let audit = appendAuditEvent(plan: plan, response: response, auditRoot: auditRoot, actor: actor)
+        return NativeDemandTaskTransferResponse(
+            path: response.path,
+            transferredItems: response.transferredItems,
+            duplicateCount: response.duplicateCount,
+            transferred: response.transferred,
+            auditEventID: audit?.event.id,
+            auditEventPath: audit?.path
+        )
     }
 
     private static func readOrCreateExecutionTasksDocument(
@@ -74,12 +85,12 @@ enum NativeDemandTaskTransferStore {
         response: NativeDemandTaskTransferResponse,
         auditRoot: String?,
         actor: String?
-    ) {
+    ) -> AppendAuditEventResponse? {
         guard let auditRoot = auditRoot?.trimmingCharacters(in: .whitespacesAndNewlines),
               !auditRoot.isEmpty else {
-            return
+            return nil
         }
-        _ = try? NativeAuditEventStore.append(
+        return try? NativeAuditEventStore.append(
             auditRoot: auditRoot,
             event: AuditEventInput(
                 actor: actor ?? "Nexus Native",
