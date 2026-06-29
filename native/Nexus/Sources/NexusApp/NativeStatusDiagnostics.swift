@@ -100,6 +100,14 @@ struct NativeStatusDiagnosticItem: Hashable, Identifiable {
     let isAttention: Bool
 }
 
+struct NativeStatusDiagnosticSummary: Hashable {
+    let title: String
+    let detail: String
+    let actionLabel: String
+    let systemImage: String
+    let status: WorkflowPathStatus
+}
+
 struct NativeStatusDiagnostics: Hashable {
     let workspaceDirectoryCount: Int?
     let indexRecordCount: Int
@@ -126,6 +134,76 @@ struct NativeStatusDiagnostics: Hashable {
         }
         let existsText = latestAuditTargetExists.map { $0 ? "目标存在" : "目标缺失" } ?? "目标未知"
         return "\(latestAuditAction) · \(existsText)"
+    }
+
+    var summary: NativeStatusDiagnosticSummary {
+        guard let workspaceDirectoryCount else {
+            return NativeStatusDiagnosticSummary(
+                title: "状态还未检查",
+                detail: "先运行环境检查，确认真实工作区目录、索引和审计记录是否可读。",
+                actionLabel: "运行环境检查",
+                systemImage: "questionmark.circle",
+                status: .pending
+            )
+        }
+
+        if workspaceDirectoryCount == 0 && indexRecordCount > 0 {
+            return NativeStatusDiagnosticSummary(
+                title: "索引有记录但真实目录为 0",
+                detail: "INDEX.md 仍有 \(indexRecordCount) 条记录，但扫描不到实际目录；优先检查路径配置或目录是否被移动。",
+                actionLabel: "检查路径设置",
+                systemImage: "folder.badge.questionmark",
+                status: .blocked
+            )
+        }
+
+        if workspaceDirectoryCount == 0 {
+            return NativeStatusDiagnosticSummary(
+                title: "还没有真实工作区目录",
+                detail: "路径已可读，但目录数为 0；下一步应创建工作区或刷新团队目录。",
+                actionLabel: "新建工作区",
+                systemImage: "folder.badge.plus",
+                status: .next
+            )
+        }
+
+        if indexRecordCount == 0 {
+            return NativeStatusDiagnosticSummary(
+                title: "目录存在但索引为空",
+                detail: "扫描到 \(workspaceDirectoryCount) 个真实目录，但 INDEX.md 没有工作区记录；刷新索引后再判断列表状态。",
+                actionLabel: "重新扫描",
+                systemImage: "arrow.clockwise",
+                status: .review
+            )
+        }
+
+        if latestAuditTargetExists == false {
+            return NativeStatusDiagnosticSummary(
+                title: "最近审计目标缺失",
+                detail: "最近一次 audit 指向的目标已经不存在；需要刷新扫描或确认该工作区是否已移动。",
+                actionLabel: "重新扫描",
+                systemImage: "exclamationmark.triangle",
+                status: .review
+            )
+        }
+
+        if widgetUpdatedAt?.isEmpty ?? true {
+            return NativeStatusDiagnosticSummary(
+                title: "Widget 快照待更新",
+                detail: "真实目录和索引已可读，但还没有 Native Widget 快照时间。",
+                actionLabel: "刷新 Widget",
+                systemImage: "rectangle.3.group",
+                status: .review
+            )
+        }
+
+        return NativeStatusDiagnosticSummary(
+            title: "本地状态已对齐",
+            detail: "真实目录 \(workspaceDirectoryCount) 个，索引记录 \(indexRecordCount) 条，最近审计目标可验证。",
+            actionLabel: "继续主路径",
+            systemImage: "checkmark.seal",
+            status: .ready
+        )
     }
 
     var diagnosticItems: [NativeStatusDiagnosticItem] {

@@ -281,6 +281,38 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(diagnostics.diagnosticItems.map(\.label), ["真实目录", "索引记录", "Widget 更新", "最近目标"])
         XCTAssertFalse(diagnostics.diagnosticItems.first { $0.id == "directories" }?.isAttention ?? true)
         XCTAssertFalse(diagnostics.diagnosticItems.first { $0.id == "audit" }?.isAttention ?? true)
+        XCTAssertEqual(diagnostics.summary.title, "本地状态已对齐")
+        XCTAssertEqual(diagnostics.summary.actionLabel, "继续主路径")
+        XCTAssertEqual(diagnostics.summary.status, .ready)
+    }
+
+    func testNativeStatusDiagnosticsSummarizesIndexDirectoryMismatch() {
+        let mismatch = NativeStatusDiagnostics(
+            workspaceDirectoryCount: 0,
+            indexRecordCount: 2,
+            widgetUpdatedAt: nil,
+            latestAuditAction: "workspace.created",
+            latestAuditTarget: "/tmp/missing-workspace",
+            latestAuditTargetExists: false
+        )
+
+        XCTAssertEqual(mismatch.summary.title, "索引有记录但真实目录为 0")
+        XCTAssertTrue(mismatch.summary.detail.contains("2 条记录"))
+        XCTAssertEqual(mismatch.summary.actionLabel, "检查路径设置")
+        XCTAssertEqual(mismatch.summary.status, .blocked)
+
+        let indexMissing = NativeStatusDiagnostics(
+            workspaceDirectoryCount: 3,
+            indexRecordCount: 0,
+            widgetUpdatedAt: nil,
+            latestAuditAction: nil,
+            latestAuditTarget: nil,
+            latestAuditTargetExists: nil
+        )
+
+        XCTAssertEqual(indexMissing.summary.title, "目录存在但索引为空")
+        XCTAssertEqual(indexMissing.summary.actionLabel, "重新扫描")
+        XCTAssertEqual(indexMissing.summary.status, .review)
     }
 
     func testMenuBarStatusSummaryPrioritizesBlockedWorkspaces() {

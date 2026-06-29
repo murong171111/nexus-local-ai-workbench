@@ -3807,11 +3807,51 @@ private struct WorkspaceBoardEmptyState: View {
                     DiagnosticMetric(item: item)
                 }
             }
+
+            DiagnosticSummaryView(summary: diagnostics.summary)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(NexusPalette.panel)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct DiagnosticSummaryView: View {
+    let summary: NativeStatusDiagnosticSummary
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: summary.systemImage)
+                .foregroundStyle(summary.status.color)
+                .frame(width: 15)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 7) {
+                    Text(summary.title)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text(summary.status.displayLabel)
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(summary.status.color)
+                }
+                Text(summary.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 12)
+
+            Label(summary.actionLabel, systemImage: "arrow.right.circle")
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(summary.status.color)
+                .lineLimit(1)
+        }
+        .padding(10)
+        .background(NexusPalette.badge)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .help(summary.detail)
     }
 }
 
