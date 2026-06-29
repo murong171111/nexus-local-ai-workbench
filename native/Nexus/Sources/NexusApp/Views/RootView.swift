@@ -57,7 +57,10 @@ struct RootView: View {
                     isSettingsPresented: $isSettingsPresented
                 )
             } else {
-                WorkspaceBoardView {
+                WorkspaceBoardView(
+                    isCreateWorkspacePresented: $isCreateWorkspacePresented,
+                    isSettingsPresented: $isSettingsPresented
+                ) {
                     primarySurface = .console
                 }
             }
@@ -3311,6 +3314,8 @@ private struct WorkspaceConsoleEmptyStateView: View {
 
 private struct WorkspaceBoardView: View {
     @EnvironmentObject private var appState: AppState
+    @Binding var isCreateWorkspacePresented: Bool
+    @Binding var isSettingsPresented: Bool
     let openConsole: () -> Void
     @State private var boardScope: WorkspaceBoardScope = .all
 
@@ -3354,7 +3359,8 @@ private struct WorkspaceBoardView: View {
             if visibleWorkspaces.isEmpty {
                 WorkspaceBoardEmptyState(
                     reason: emptyStateReason ?? .filteredNoResults,
-                    diagnostics: appState.nativeStatusDiagnostics
+                    diagnostics: appState.nativeStatusDiagnostics,
+                    runPrimaryAction: runEmptyStatePrimaryAction
                 )
                     .padding(18)
             } else {
@@ -3372,6 +3378,17 @@ private struct WorkspaceBoardView: View {
             }
         }
         .background(NexusPalette.background)
+    }
+
+    private func runEmptyStatePrimaryAction() {
+        switch emptyStateReason ?? .filteredNoResults {
+        case .unconfigured:
+            isSettingsPresented = true
+        case .configuredNoDirectories:
+            isCreateWorkspacePresented = true
+        case .filteredNoResults:
+            boardScope = .all
+        }
     }
 }
 
@@ -3640,20 +3657,34 @@ private struct BoardInfoRow: View {
 private struct WorkspaceBoardEmptyState: View {
     let reason: WorkspaceBoardEmptyStateReason
     let diagnostics: NativeStatusDiagnostics
+    let runPrimaryAction: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label(reason.title, systemImage: reason.systemImage)
-                .font(.headline)
-            Text(reason.detail)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 7) {
+                    Label(reason.title, systemImage: reason.systemImage)
+                        .font(.headline)
+                        .help(reason.helpText)
+                    Text(reason.detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 18)
+
+                Button(action: runPrimaryAction) {
+                    Label(reason.primaryActionLabel, systemImage: reason.primaryActionSystemImage)
+                        .frame(minWidth: 132)
+                }
+                .buttonStyle(.borderedProminent)
+            }
 
             HStack(spacing: 14) {
-                DiagnosticMetric(label: "目录", value: diagnostics.directoryValue)
-                DiagnosticMetric(label: "INDEX", value: diagnostics.indexValue)
-                DiagnosticMetric(label: "Widget", value: diagnostics.widgetValue)
-                DiagnosticMetric(label: "Audit", value: diagnostics.auditValue)
+                ForEach(diagnostics.diagnosticItems) { item in
+                    DiagnosticMetric(item: item)
+                }
             }
         }
         .padding(16)
@@ -3664,20 +3695,29 @@ private struct WorkspaceBoardEmptyState: View {
 }
 
 private struct DiagnosticMetric: View {
-    let label: String
-    let value: String
+    let item: NativeStatusDiagnosticItem
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label)
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(item.isAttention ? NexusPalette.warning : NexusPalette.success)
+                    .frame(width: 6, height: 6)
+                Text(item.label)
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
             Text(value)
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .help(item.helpText)
+    }
+
+    private var value: String {
+        item.value
     }
 }
 

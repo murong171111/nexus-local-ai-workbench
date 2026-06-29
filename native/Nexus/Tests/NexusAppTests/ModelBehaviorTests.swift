@@ -185,6 +185,12 @@ final class ModelBehaviorTests: XCTestCase {
                 readiness: readyEmpty
             )
         )
+        XCTAssertEqual(WorkspaceBoardEmptyStateReason.unconfigured.title, "本地路径还未确认")
+        XCTAssertEqual(WorkspaceBoardEmptyStateReason.unconfigured.helpText, "Setup needed")
+        XCTAssertEqual(WorkspaceBoardEmptyStateReason.unconfigured.primaryActionLabel, "检查本机设置")
+        XCTAssertEqual(WorkspaceBoardEmptyStateReason.configuredNoDirectories.primaryActionLabel, "新建工作区")
+        XCTAssertEqual(WorkspaceBoardEmptyStateReason.filteredNoResults.primaryActionLabel, "查看全部工作区")
+        XCTAssertFalse(WorkspaceBoardEmptyStateReason.configuredNoDirectories.title.contains("/"))
     }
 
     func testWorkspaceBoardDefaultCopyKeepsEnglishInHelpText() {
@@ -270,7 +276,11 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(diagnostics.directoryValue, "3")
         XCTAssertEqual(diagnostics.indexValue, "1")
         XCTAssertEqual(diagnostics.widgetValue, "2026-06-29T12:00:00Z")
-        XCTAssertTrue(diagnostics.auditValue.contains("target exists"))
+        XCTAssertTrue(diagnostics.auditValue.contains("目标存在"))
+        XCTAssertEqual(diagnostics.diagnosticItems.map(\.id), ["directories", "index", "widget", "audit"])
+        XCTAssertEqual(diagnostics.diagnosticItems.map(\.label), ["真实目录", "索引记录", "Widget 更新", "最近目标"])
+        XCTAssertFalse(diagnostics.diagnosticItems.first { $0.id == "directories" }?.isAttention ?? true)
+        XCTAssertFalse(diagnostics.diagnosticItems.first { $0.id == "audit" }?.isAttention ?? true)
     }
 
     func testMenuBarStatusSummaryPrioritizesBlockedWorkspaces() {

@@ -9,11 +9,22 @@ enum WorkspaceBoardEmptyStateReason: Hashable {
     var title: String {
         switch self {
         case .unconfigured:
-            "本地路径还未确认 / Setup needed"
+            "本地路径还未确认"
         case .configuredNoDirectories:
-            "目录已配置但未扫描到工作区 / No workspace directories"
+            "目录已配置但未扫描到工作区"
         case .filteredNoResults:
-            "当前筛选没有结果 / No matching workspaces"
+            "当前筛选没有结果"
+        }
+    }
+
+    var helpText: String {
+        switch self {
+        case .unconfigured:
+            "Setup needed"
+        case .configuredNoDirectories:
+            "No workspace directories"
+        case .filteredNoResults:
+            "No matching workspaces"
         }
     }
 
@@ -39,6 +50,28 @@ enum WorkspaceBoardEmptyStateReason: Hashable {
         }
     }
 
+    var primaryActionLabel: String {
+        switch self {
+        case .unconfigured:
+            "检查本机设置"
+        case .configuredNoDirectories:
+            "新建工作区"
+        case .filteredNoResults:
+            "查看全部工作区"
+        }
+    }
+
+    var primaryActionSystemImage: String {
+        switch self {
+        case .unconfigured:
+            "gearshape"
+        case .configuredNoDirectories:
+            "plus"
+        case .filteredNoResults:
+            "line.3.horizontal.decrease.circle"
+        }
+    }
+
     static func resolve(
         summary: WorkspaceListSummary,
         visibleCount: Int,
@@ -57,6 +90,14 @@ enum WorkspaceBoardEmptyStateReason: Hashable {
             return .unconfigured
         }
     }
+}
+
+struct NativeStatusDiagnosticItem: Hashable, Identifiable {
+    let id: String
+    let label: String
+    let value: String
+    let helpText: String
+    let isAttention: Bool
 }
 
 struct NativeStatusDiagnostics: Hashable {
@@ -83,8 +124,41 @@ struct NativeStatusDiagnostics: Hashable {
         guard let latestAuditAction else {
             return "无记录"
         }
-        let existsText = latestAuditTargetExists.map { $0 ? "target exists" : "target missing" } ?? "target unknown"
+        let existsText = latestAuditTargetExists.map { $0 ? "目标存在" : "目标缺失" } ?? "目标未知"
         return "\(latestAuditAction) · \(existsText)"
+    }
+
+    var diagnosticItems: [NativeStatusDiagnosticItem] {
+        [
+            NativeStatusDiagnosticItem(
+                id: "directories",
+                label: "真实目录",
+                value: directoryValue,
+                helpText: "Workspace directories from environment health",
+                isAttention: workspaceDirectoryCount == nil || workspaceDirectoryCount == 0
+            ),
+            NativeStatusDiagnosticItem(
+                id: "index",
+                label: "索引记录",
+                value: indexValue,
+                helpText: "Workspace rows found in INDEX.md",
+                isAttention: indexRecordCount == 0
+            ),
+            NativeStatusDiagnosticItem(
+                id: "widget",
+                label: "Widget 更新",
+                value: widgetValue,
+                helpText: "Latest native widget snapshot timestamp",
+                isAttention: widgetUpdatedAt?.isEmpty ?? true
+            ),
+            NativeStatusDiagnosticItem(
+                id: "audit",
+                label: "最近目标",
+                value: auditValue,
+                helpText: "Latest native audit event target existence",
+                isAttention: latestAuditTargetExists == false
+            )
+        ]
     }
 
     static func resolve(
