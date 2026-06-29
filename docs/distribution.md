@@ -48,6 +48,7 @@ The app bundle must include:
 - Confirm Widget snapshot writing works in Application Support and, when signed, the App Group container.
 - Confirm `nexus://workspace/<folder>` opens Nexus and focuses the target workspace.
 - Confirm release docs and workflows point at the Native app artifact path.
+- Confirm release notes and updater policy satisfy `docs/native-release-notes-and-updater.md`.
 - Confirm legacy preview artifacts are not published as product release assets.
 
 ## Signing And Notarization
@@ -78,7 +79,9 @@ Pushing workflow files requires a GitHub token with the `workflow` scope.
 
 ## Auto Updates
 
-Do not enable automatic updates until signing, notarization, updater signing keys, update metadata policy, and user-visible update settings are ready.
+Release notes and updater readiness are tracked in `docs/native-release-notes-and-updater.md`.
+
+Do not enable automatic updates until signing, notarization, updater signing keys, appcast metadata, update metadata policy, and user-visible update settings are ready. The default public-release posture remains automatic updates disabled until that gate is satisfied.
 
 ## WidgetKit Packaging
 

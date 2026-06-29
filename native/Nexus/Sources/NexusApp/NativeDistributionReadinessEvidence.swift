@@ -214,11 +214,12 @@ struct NativeDistributionReadinessEvidence: Hashable {
     ) -> NativeDistributionCheck {
         let distributionDoc = "\(repositoryRoot)/docs/distribution.md"
         let releaseDoc = "\(repositoryRoot)/docs/release-process.md"
+        let releaseNotesDoc = "\(repositoryRoot)/docs/native-release-notes-and-updater.md"
         let ciWorkflow = "\(repositoryRoot)/.github/workflows/ci.yml"
         let releaseWorkflow = "\(repositoryRoot)/.github/workflows/release.yml"
         let dmgScript = "\(repositoryRoot)/native/Nexus/Scripts/package-dmg.sh"
         let signingScript = "\(repositoryRoot)/native/Nexus/Scripts/sign-and-notarize.sh"
-        let hasDocs = fileExists(distributionDoc) && fileExists(releaseDoc)
+        let hasDocs = fileExists(distributionDoc) && fileExists(releaseDoc) && fileExists(releaseNotesDoc)
         let ciMentionsSwift = fileContains(ciWorkflow, "swift test")
         let releaseMentionsNative = fileContains(releaseWorkflow, "native/Nexus")
             || fileContains(releaseWorkflow, "native:build")
@@ -236,6 +237,16 @@ struct NativeDistributionReadinessEvidence: Hashable {
         let releaseDocMentionsNative = fileContains(releaseDoc, "native/Nexus")
             || fileContains(releaseDoc, "NexusNative")
             || fileContains(releaseDoc, "Swift")
+        let hasReleaseNotesGate = fileExists(releaseNotesDoc)
+            && fileContains(releaseNotesDoc, "Release Notes Gate")
+            && fileContains(releaseNotesDoc, "version/tag")
+            && fileContains(releaseNotesDoc, "signing/notarization status")
+            && fileContains(releaseNotesDoc, "known blockers")
+        let hasUpdaterGate = fileExists(releaseNotesDoc)
+            && fileContains(releaseNotesDoc, "Updater Gate")
+            && fileContains(releaseNotesDoc, "Automatic updates disabled")
+            && fileContains(releaseNotesDoc, "updater signing keys")
+            && fileContains(releaseNotesDoc, "appcast metadata")
         let releaseStillTauri = fileContains(releaseWorkflow, "tauri")
             || fileContains(releaseWorkflow, "src-tauri")
             || fileContains(releaseDoc, "Tauri")
@@ -252,6 +263,8 @@ struct NativeDistributionReadinessEvidence: Hashable {
             hasSigningAndNotarization: hasSigningAndNotarization,
             distributionMentionsNative: distributionMentionsNative,
             releaseDocMentionsNative: releaseDocMentionsNative,
+            hasReleaseNotesGate: hasReleaseNotesGate,
+            hasUpdaterGate: hasUpdaterGate,
             releaseStillTauri: releaseStillTauri
         )
         let ready = blockers.isEmpty
@@ -259,9 +272,9 @@ struct NativeDistributionReadinessEvidence: Hashable {
             requirement: .releaseReadiness,
             status: ready ? .ready : .blocked,
             detail: ready
-                ? "Release docs, CI, signing, notarization, and release workflow point at Swift-native DMG artifacts."
+                ? "Release docs, CI, signing, notarization, updater policy, release notes, and release workflow point at Swift-native DMG artifacts."
                 : "Release readiness blockers: \(blockers.joined(separator: " "))",
-            evidence: [distributionDoc, releaseDoc, ciWorkflow, releaseWorkflow, dmgScript, signingScript] + blockers
+            evidence: [distributionDoc, releaseDoc, releaseNotesDoc, ciWorkflow, releaseWorkflow, dmgScript, signingScript] + blockers
         )
     }
 
@@ -275,6 +288,8 @@ struct NativeDistributionReadinessEvidence: Hashable {
         hasSigningAndNotarization: Bool,
         distributionMentionsNative: Bool,
         releaseDocMentionsNative: Bool,
+        hasReleaseNotesGate: Bool,
+        hasUpdaterGate: Bool,
         releaseStillTauri: Bool
     ) -> [String] {
         var blockers: [String] = []
@@ -304,6 +319,12 @@ struct NativeDistributionReadinessEvidence: Hashable {
         }
         if !releaseDocMentionsNative {
             blockers.append("Release process docs do not describe the Native app path.")
+        }
+        if !hasReleaseNotesGate {
+            blockers.append("Release notes gate is missing or incomplete.")
+        }
+        if !hasUpdaterGate {
+            blockers.append("Updater policy gate is missing or incomplete.")
         }
         if releaseStillTauri {
             blockers.append("Release docs or workflows still point to Tauri artifacts.")

@@ -55,6 +55,12 @@ The final public release workflow should build the Native app target for Apple S
 
 You can also run the `Release` workflow manually with a tag input.
 
+## Release Notes And Updater Gate
+
+Before marking a release public, fill the Release Notes Gate in `docs/native-release-notes-and-updater.md`: version/tag, Native artifacts, checksums, signing/notarization status, known blockers, validation summary, and rollback notes.
+
+Keep automatic updates disabled until the Updater Gate in `docs/native-release-notes-and-updater.md` is satisfied with updater signing keys, appcast metadata, user-visible update settings, and signed/notarized Native artifacts.
+
 ## Signing And Notarization
 
 Public macOS distribution should use Apple Developer signing and notarization.
@@ -85,6 +91,6 @@ Before enabling automatic updates:
 
 - Sign and notarize releases.
 - Generate updater signing keys.
-- Publish a stable update manifest.
+- Publish stable appcast metadata or an equivalent update manifest.
 - Make update checks opt-in or clearly visible in Settings.
 - Document what metadata is requested remotely.

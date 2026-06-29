@@ -2209,6 +2209,7 @@ final class ModelBehaviorTests: XCTestCase {
             "\(root)/docs/legacy-retirement-audit.md",
             "\(root)/docs/distribution.md",
             "\(root)/docs/release-process.md",
+            "\(root)/docs/native-release-notes-and-updater.md",
             "\(root)/.github/workflows/ci.yml",
             "\(root)/.github/workflows/release.yml"
         ]
@@ -2241,6 +2242,8 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(evidence.checks.first { $0.requirement == .legacyDeletion }?.detail.contains("Next step: follow the Native deletion order") == true)
         XCTAssertTrue(evidence.checks.first { $0.requirement == .legacyDeletion }?.evidence.contains("\(root)/src-tauri") == true)
         XCTAssertTrue(evidence.checks.first { $0.requirement == .releaseReadiness }?.detail.contains("Release workflow does not build a Native app artifact") == true)
+        XCTAssertTrue(evidence.checks.first { $0.requirement == .releaseReadiness }?.detail.contains("Release notes gate is missing or incomplete") == true)
+        XCTAssertTrue(evidence.checks.first { $0.requirement == .releaseReadiness }?.detail.contains("Updater policy gate is missing or incomplete") == true)
         XCTAssertTrue(evidence.checks.first { $0.requirement == .releaseReadiness }?.detail.contains("Release docs or workflows still point to Tauri artifacts") == true)
         XCTAssertTrue(evidence.reason.contains("M3"))
     }
@@ -2288,6 +2291,8 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertFalse(releaseReadiness?.detail.contains("Release workflow does not build a Native app artifact.") == true)
         XCTAssertFalse(releaseReadiness?.detail.contains("Release workflow does not package Native DMG artifacts.") == true)
         XCTAssertTrue(releaseReadiness?.detail.contains("Release workflow does not sign and notarize Native artifacts.") == true)
+        XCTAssertTrue(releaseReadiness?.detail.contains("Release notes gate is missing or incomplete.") == true)
+        XCTAssertTrue(releaseReadiness?.detail.contains("Updater policy gate is missing or incomplete.") == true)
         XCTAssertEqual(evidence.checks.first { $0.requirement == .installTarget }?.status, .blocked)
         XCTAssertEqual(evidence.checks.first { $0.requirement == .widgetExtension }?.status, .blocked)
         XCTAssertEqual(evidence.checks.first { $0.requirement == .legacyDeletion }?.status, .blocked)
@@ -2350,6 +2355,7 @@ final class ModelBehaviorTests: XCTestCase {
             "\(root)/docs/legacy-retirement-audit.md",
             "\(root)/docs/distribution.md",
             "\(root)/docs/release-process.md",
+            "\(root)/docs/native-release-notes-and-updater.md",
             "\(root)/.github/workflows/ci.yml",
             "\(root)/.github/workflows/release.yml"
         ]
@@ -2403,6 +2409,7 @@ final class ModelBehaviorTests: XCTestCase {
             "\(root)/docs/legacy-retirement-audit.md",
             "\(root)/docs/distribution.md",
             "\(root)/docs/release-process.md",
+            "\(root)/docs/native-release-notes-and-updater.md",
             "\(root)/.github/workflows/ci.yml",
             "\(root)/.github/workflows/release.yml"
         ]
@@ -2434,16 +2441,23 @@ final class ModelBehaviorTests: XCTestCase {
                     return path.hasSuffix("NexusWidget.entitlements")
                 case "Native Deletion Order", "Current Legacy Surfaces":
                     return path.hasSuffix("legacy-retirement-audit.md")
+                case "Release Notes Gate", "version/tag", "signing/notarization status", "known blockers":
+                    return path.hasSuffix("native-release-notes-and-updater.md")
+                case "Updater Gate", "Automatic updates disabled", "updater signing keys", "appcast metadata":
+                    return path.hasSuffix("native-release-notes-and-updater.md")
                 default:
                     return false
                 }
             }
         )
 
-        XCTAssertTrue(evidence.ready)
-        XCTAssertEqual(evidence.status, .ready)
-        XCTAssertEqual(evidence.readinessSummary, "4/4 Ready checks")
-        XCTAssertTrue(evidence.checks.allSatisfy { $0.status == .ready })
+        let diagnostic = evidence.checks
+            .map { "\($0.requirement.rawValue): \($0.status) \($0.detail)" }
+            .joined(separator: "\n")
+        XCTAssertTrue(evidence.ready, diagnostic)
+        XCTAssertEqual(evidence.status, .ready, diagnostic)
+        XCTAssertEqual(evidence.readinessSummary, "4/4 Ready checks", diagnostic)
+        XCTAssertTrue(evidence.checks.allSatisfy { $0.status == .ready }, diagnostic)
     }
 
     @MainActor
