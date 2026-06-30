@@ -16,9 +16,9 @@ struct NativeLifecycleProofEvidence: Hashable {
     static let requiredAuditActions = [
         "workspace.created",
         "demand_intake.initialized",
-        "worktree_setup.executed",
         "scope.freeze_confirmed",
         "demand_tasks.transferred",
+        "worktree_setup.executed",
         "workspace_task.updated",
         "delivery_record.snapshot_appended",
         "archive_checklist.snapshot_appended",

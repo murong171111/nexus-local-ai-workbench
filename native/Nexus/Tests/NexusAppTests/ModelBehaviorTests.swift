@@ -3185,6 +3185,38 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertFalse(incomplete.ready)
         XCTAssertTrue(incomplete.missingActions.contains("demand_intake.initialized"))
 
+        let outOfOrderActions = [
+            "workspace.created",
+            "demand_intake.initialized",
+            "worktree_setup.executed",
+            "scope.freeze_confirmed",
+            "demand_tasks.transferred",
+            "workspace_task.updated",
+            "delivery_record.snapshot_appended",
+            "archive_checklist.snapshot_appended",
+            "workspace_lifecycle.updated"
+        ]
+        let outOfOrderEvents = Array(outOfOrderActions.enumerated().map { offset, action in
+            AuditEvent(
+                id: "out-of-order-proof-\(offset)",
+                timestamp: String(format: "2026-06-30T01:%02d:00Z", offset),
+                actor: "Nexus Test",
+                action: action,
+                target: archived.path,
+                summary: "Out-of-order lifecycle proof \(action) for \(archived.folder)",
+                metadata: action == "workspace_lifecycle.updated"
+                    ? ["workspace": archived.path, "state": "archived"]
+                    : ["workspace": archived.path]
+            )
+        }.reversed())
+        let outOfOrderProof = NativeLifecycleProofEvidence.resolve(
+            workspace: archived,
+            auditEvents: outOfOrderEvents
+        )
+        XCTAssertFalse(outOfOrderProof.ready)
+        XCTAssertEqual(outOfOrderProof.missingActions, [])
+        XCTAssertTrue(outOfOrderProof.detail.contains("audit order is incomplete"))
+
         let developingLifecycle = proofEvents.map { event in
             guard event.action == "workspace_lifecycle.updated" else { return event }
             return AuditEvent(
@@ -4781,18 +4813,6 @@ final class ModelBehaviorTests: XCTestCase {
             auditRoot: auditRoot.path,
             actor: "Nexus Test"
         )
-        let worktree = try NativeWorktreeSetupStore.setup(
-            request: SetupWorktreesRequest(
-                workspacePath: workspaceURL.path,
-                sourceReposRoot: sourceRoot.path,
-                services: ["order"],
-                targetBranch: branch,
-                confirmed: true,
-                auditRoot: auditRoot.path,
-                actor: "Nexus Test"
-            )
-        )
-        XCTAssertEqual(worktree.created.map(\.service), ["order"])
         try """
         # 需求确认卡
 
@@ -4862,6 +4882,19 @@ final class ModelBehaviorTests: XCTestCase {
             actor: "Nexus Test"
         )
         XCTAssertEqual(transferred.transferredCount, 1)
+
+        let worktree = try NativeWorktreeSetupStore.setup(
+            request: SetupWorktreesRequest(
+                workspacePath: workspaceURL.path,
+                sourceReposRoot: sourceRoot.path,
+                services: ["order"],
+                targetBranch: branch,
+                confirmed: true,
+                auditRoot: auditRoot.path,
+                actor: "Nexus Test"
+            )
+        )
+        XCTAssertEqual(worktree.created.map(\.service), ["order"])
 
         for index in 0..<(7 + transferred.transferredCount) {
             _ = try NativeWorkspaceTaskStore.update(
