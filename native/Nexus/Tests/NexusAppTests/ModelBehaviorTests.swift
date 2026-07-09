@@ -3757,7 +3757,37 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(readyBadges.last?.status, .ready)
     }
 
-    func testWorkspaceBoardColumnsFollowMainWorkflowOrder() {
+    func testWorkspaceBoardColumnsFollowMainWorkflowOrder() throws {
+        let deliveryRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-board-delivery-\(UUID().uuidString)")
+        defer {
+            try? FileManager.default.removeItem(at: deliveryRoot)
+        }
+        let demandDir = deliveryRoot.appendingPathComponent("需求")
+        try FileManager.default.createDirectory(at: demandDir, withIntermediateDirectories: true)
+        try writeDemandIntakeFixture(
+            demandDir: demandDir,
+            scope: """
+            # 本次开发范围
+
+            ## 已确认并实现
+
+            - Board 已按真实需求文件进入交付检查列。
+
+            ## 暂不实现
+
+            - 不扩展其他看板维度。
+
+            ## 仍待确认
+
+            - 无 P0 待确认项。
+
+            ## 进入开发条件
+
+            - [x] 本文件已冻结本次开发范围。
+            """
+        )
+
         let createdWorkspace = workspaceForWorkflowSummary(
             stage: "scoping",
             id: "board-created",
@@ -3767,8 +3797,21 @@ final class ModelBehaviorTests: XCTestCase {
             stage: "developing",
             id: "board-delivery",
             name: "交付检查",
+            path: deliveryRoot.path,
             healthChecks: [
                 WorkspaceHealthCheck(id: "demand-intake", label: "需求预检", detail: "需求预检已就绪", status: "pass", action: "demandIntake")
+            ],
+            tasks: [
+                WorkspaceTask(
+                    id: "board-delivery-task",
+                    title: "新增交易快照写入",
+                    status: "done",
+                    detail: "需求任务已转入并完成。",
+                    priority: "high",
+                    source: "workspace",
+                    sourceEventID: nil,
+                    sourceLine: 1
+                )
             ]
         )
         let archivedWorkspace = workspaceForWorkflowSummary(
@@ -3785,7 +3828,37 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(columns.first(where: { $0.id == .archived })?.workspaces.map(\.id), ["board-archive"])
     }
 
-    func testWorkspaceBoardScopeFiltersWithoutChangingColumnOrder() {
+    func testWorkspaceBoardScopeFiltersWithoutChangingColumnOrder() throws {
+        let deliveryRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-board-scope-\(UUID().uuidString)")
+        defer {
+            try? FileManager.default.removeItem(at: deliveryRoot)
+        }
+        let demandDir = deliveryRoot.appendingPathComponent("需求")
+        try FileManager.default.createDirectory(at: demandDir, withIntermediateDirectories: true)
+        try writeDemandIntakeFixture(
+            demandDir: demandDir,
+            scope: """
+            # 本次开发范围
+
+            ## 已确认并实现
+
+            - Board 范围过滤使用真实需求文件样例。
+
+            ## 暂不实现
+
+            - 不新增额外过滤规则。
+
+            ## 仍待确认
+
+            - 无 P0 待确认项。
+
+            ## 进入开发条件
+
+            - [x] 本文件已冻结本次开发范围。
+            """
+        )
+
         let createdWorkspace = workspaceForWorkflowSummary(
             stage: "scoping",
             id: "board-created",
@@ -3795,8 +3868,21 @@ final class ModelBehaviorTests: XCTestCase {
             stage: "developing",
             id: "board-delivery",
             name: "交付检查",
+            path: deliveryRoot.path,
             healthChecks: [
                 WorkspaceHealthCheck(id: "demand-intake", label: "需求预检", detail: "需求预检已就绪", status: "pass", action: "demandIntake")
+            ],
+            tasks: [
+                WorkspaceTask(
+                    id: "board-delivery-task",
+                    title: "新增交易快照写入",
+                    status: "done",
+                    detail: "需求任务已转入并完成。",
+                    priority: "high",
+                    source: "workspace",
+                    sourceEventID: nil,
+                    sourceLine: 1
+                )
             ]
         )
         let archivedWorkspace = workspaceForWorkflowSummary(
@@ -5436,6 +5522,32 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(evidence.intakeEvidenceSources.allSatisfy { !$0.participatesInExecutionQueue })
         XCTAssertTrue(evidence.evidence.contains("需求/tasks.md"))
         XCTAssertEqual(evidence.taskPlan.map(\.taskID), ["root-task"])
+    }
+
+    func testMainStageDoesNotTrustReadyDemandHealthCheckWhenWorkspaceReadFails() {
+        let missingPath = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-missing-demand-\(UUID().uuidString)")
+            .path
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "demand-read-failure",
+            path: missingPath,
+            healthChecks: [
+                WorkspaceHealthCheck(
+                    id: "demand-intake",
+                    label: "需求预检",
+                    detail: "健康检查报告需求预检已就绪。",
+                    status: "pass",
+                    action: "demandIntake"
+                )
+            ]
+        )
+
+        let stage = workspace.mainStage()
+
+        XCTAssertEqual(stage.id, .demandIntake)
+        XCTAssertNotEqual(stage.status, .ready)
+        XCTAssertEqual(stage.primaryAction, .demandIntake)
     }
 
     func testDevelopmentTaskEvidenceBlocksOnBlockedTasks() {

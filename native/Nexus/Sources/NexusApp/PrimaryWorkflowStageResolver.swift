@@ -27,8 +27,8 @@ extension WorkspaceSummary {
             )
         }
 
-        let resolvedDemandIntakeStatus = demandIntakeStatus
-            ?? (try? NativeDemandIntakeStore.status(workspacePath: path))
+        let resolvedDemandIntake = resolveDemandIntakeStatus(explicitStatus: demandIntakeStatus)
+        let resolvedDemandIntakeStatus = resolvedDemandIntake.status
         let resolvedDemandReadiness = demandReadiness
             ?? resolvedDemandIntakeStatus.map {
                 DemandIntakeReadinessEvidence.resolve(status: $0, workspace: self)
@@ -65,6 +65,7 @@ extension WorkspaceSummary {
 
         let demandGate = Self.demandGate(
             for: self,
+            resolution: resolvedDemandIntake,
             status: resolvedDemandIntakeStatus,
             readiness: resolvedDemandReadiness
         )
@@ -212,8 +213,23 @@ extension WorkspaceSummary {
         }
     }
 
+    private func resolveDemandIntakeStatus(
+        explicitStatus: DemandIntakeStatus?
+    ) -> DemandIntakeStatusResolution {
+        if let explicitStatus {
+            return .explicit(explicitStatus)
+        }
+
+        do {
+            return .loaded(try NativeDemandIntakeStore.status(workspacePath: path))
+        } catch {
+            return .failed
+        }
+    }
+
     private static func demandGate(
         for workspace: WorkspaceSummary,
+        resolution: DemandIntakeStatusResolution,
         status: DemandIntakeStatus?,
         readiness: DemandIntakeReadinessEvidence?
     ) -> (status: WorkflowPathStatus, reason: String, evidence: [String]) {
@@ -241,6 +257,19 @@ extension WorkspaceSummary {
         }
 
         if let check = workspace.healthChecks.first(where: { $0.id == "demand-intake" || $0.action == "demandIntake" }) {
+            if case .failed = resolution {
+                switch check.status.lowercased() {
+                case "fail", "blocked", "blocker":
+                    return (.blocked, check.detail, ["需求/"])
+                default:
+                    return (
+                        .pending,
+                        "无法读取工作区里的需求预检文件，不能只凭健康检查判定已就绪。先修复工作区路径或刷新 需求/ 目录后再继续。",
+                        ["需求/"]
+                    )
+                }
+            }
+
             switch check.status.lowercased() {
             case "pass", "ok", "ready":
                 return (.ready, check.detail, ["需求/requirement.md", "需求/questions.md", "需求/scope.md"])
@@ -256,5 +285,20 @@ extension WorkspaceSummary {
             "尚未读取需求预检状态。刷新工作区后确认 需求/ 目录和固定文件是否齐全。",
             ["需求/"]
         )
+    }
+}
+
+private enum DemandIntakeStatusResolution {
+    case explicit(DemandIntakeStatus)
+    case loaded(DemandIntakeStatus)
+    case failed
+
+    var status: DemandIntakeStatus? {
+        switch self {
+        case .explicit(let status), .loaded(let status):
+            return status
+        case .failed:
+            return nil
+        }
     }
 }
