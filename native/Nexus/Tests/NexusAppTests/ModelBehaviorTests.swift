@@ -2089,6 +2089,87 @@ final class ModelBehaviorTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testRealDemandFilesKeepNativeStageSurfacesAligned() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-stage-evidence-\(UUID().uuidString)")
+        let workspacesRoot = root.appendingPathComponent("workspaces")
+        let sourceRoot = root.appendingPathComponent("source-repos")
+        let docsRoot = root.appendingPathComponent("docs")
+        let auditRoot = root.appendingPathComponent("audit")
+        let defaultsSuite = "NexusAppTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: defaultsSuite)!
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            defaults.removePersistentDomain(forName: defaultsSuite)
+        }
+
+        for directory in [workspacesRoot, sourceRoot, docsRoot, auditRoot] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        let created = try NativeWorkspaceCreationStore.create(
+            request: CreateWorkspaceRequest(
+                name: "Stage Evidence",
+                folder: "2026-07-10-stage-evidence",
+                workspacesRoot: workspacesRoot.path,
+                sourceReposRoot: sourceRoot.path,
+                services: [],
+                targetBranch: "",
+                confirmed: true,
+                auditRoot: auditRoot.path,
+                actor: "Nexus Tests"
+            )
+        )
+        _ = try NativeDemandIntakeStore.initialize(
+            workspacePath: created.path,
+            demandName: "Stage Evidence",
+            lanhuLink: "https://lanhu.example/stage-evidence",
+            notes: "Keep every Native surface aligned.",
+            confirmed: true,
+            auditRoot: auditRoot.path,
+            actor: "Nexus Tests"
+        )
+        let dashboard = try NativeWorkspaceScanner.scan(
+            workspacesRoot: workspacesRoot.path,
+            sourceReposRoot: sourceRoot.path,
+            docsRoot: docsRoot.path
+        )
+        let workspace = try XCTUnwrap(
+            dashboard.workspaces.map(WorkspaceSummary.init(snapshot:)).first
+        )
+        let appState = AppState(
+            workspaces: [workspace],
+            agentStatus: AgentStatus(title: "Ready", detail: "Tests", connectedTools: []),
+            bridge: PreviewNexusBridge(),
+            workspaceRoot: workspacesRoot.path,
+            sourceReposRoot: sourceRoot.path,
+            docsRoot: docsRoot.path,
+            defaults: defaults
+        )
+
+        let canonicalStage = appState.mainWorkflowStage(for: workspace)
+        let directStage = workspace.mainStage()
+        let boardColumns = WorkspaceBoardColumn.columns(for: [workspace])
+        let summary = WorkspaceListSummary(workspaces: [workspace])
+        let widget = NativeWidgetSnapshotBuilder.build(
+            generatedAt: "2026-07-10T00:00:00Z",
+            workspacesRoot: workspacesRoot.path,
+            workspaces: [workspace],
+            activeWorkspaceID: workspace.id
+        )
+
+        XCTAssertEqual(canonicalStage.id, .demandIntake)
+        XCTAssertEqual(directStage, canonicalStage)
+        XCTAssertEqual(boardColumns.first { $0.id == .demandIntake }?.count, 1)
+        XCTAssertEqual(boardColumns.first { $0.id == .created }?.count, 0)
+        XCTAssertEqual(summary.blockedWorkspaceCount, 1)
+        XCTAssertTrue(appState.menuBarSummary.activeStageLine?.contains(canonicalStage.answer.stageLabel) == true)
+        XCTAssertEqual(widget.mainStage, canonicalStage.answer.stageLabel)
+        XCTAssertEqual(widget.mainStageStatus, canonicalStage.answer.status.displayLabel)
+        XCTAssertEqual(widget.mainStageNextAction, canonicalStage.answer.nextActionLabel)
+        XCTAssertEqual(widget.mainStageEvidence, canonicalStage.answer.primaryEvidenceLink?.label)
+    }
+
     func testNativeSourceRepositoryStoreSortsAndFiltersDirectories() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-native-source-repos-\(UUID().uuidString)")

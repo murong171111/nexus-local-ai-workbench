@@ -27,9 +27,24 @@ extension WorkspaceSummary {
             )
         }
 
+        let resolvedDemandIntakeStatus = demandIntakeStatus
+            ?? (try? NativeDemandIntakeStore.status(workspacePath: path))
+        let resolvedDemandReadiness = demandReadiness
+            ?? resolvedDemandIntakeStatus.map {
+                DemandIntakeReadinessEvidence.resolve(status: $0, workspace: self)
+            }
+        let resolvedScopeFreeze = scopeFreeze
+            ?? resolvedDemandIntakeStatus.map {
+                ScopeFreezeEvidence.resolve(status: $0, workspace: self)
+            }
+        let resolvedDemandTaskTransfer = demandTaskTransfer
+            ?? resolvedDemandIntakeStatus.map {
+                DemandTaskTransferPlan.resolve(workspace: self, status: $0)
+            }
+
         if shouldShowCreatedStage(
-            demandIntakeStatus: demandIntakeStatus,
-            demandReadiness: demandReadiness
+            demandIntakeStatus: resolvedDemandIntakeStatus,
+            demandReadiness: resolvedDemandReadiness
         ) {
             return WorkspaceMainStage(
                 id: .created,
@@ -48,7 +63,11 @@ extension WorkspaceSummary {
             )
         }
 
-        let demandGate = Self.demandGate(for: self, status: demandIntakeStatus, readiness: demandReadiness)
+        let demandGate = Self.demandGate(
+            for: self,
+            status: resolvedDemandIntakeStatus,
+            readiness: resolvedDemandReadiness
+        )
         if demandGate.status != .ready {
             return WorkspaceMainStage(
                 id: .demandIntake,
@@ -63,7 +82,7 @@ extension WorkspaceSummary {
             )
         }
 
-        let scopeGate = scopeFreeze ?? demandIntakeStatus.map { ScopeFreezeEvidence.resolve(status: $0, workspace: self) }
+        let scopeGate = resolvedScopeFreeze
         if let scopeGate, scopeGate.status != .ready {
             return WorkspaceMainStage(
                 id: .scopeFreeze,
@@ -108,12 +127,12 @@ extension WorkspaceSummary {
             )
         }
 
-        if let demandTaskTransfer, demandTaskTransfer.hasTransferableItems {
+        if let resolvedDemandTaskTransfer, resolvedDemandTaskTransfer.hasTransferableItems {
             return WorkspaceMainStage(
                 id: .development,
                 status: .next,
                 title: "转入执行任务 / Transfer tasks",
-                reason: demandTaskTransfer.summary,
+                reason: resolvedDemandTaskTransfer.summary,
                 primaryActionLabel: "转入 tasks.md",
                 primaryActionSystemImage: "arrow.down.doc",
                 primaryAction: .transferDemandTasks,

@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Added
 
+- Native Board, list, menu bar, Widget, and detail stage answers now resolve missing demand and scope evidence from the same real workspace files.
 - Native startup and unavailable bridge fallbacks no longer present preview workspaces, documents, Agent events, or automation findings as real local state.
 - Native lifecycle proof now requires M1 audit order to freeze scope and transfer demand tasks before worktree setup can count toward real end-to-end evidence.
 - Native release bundle verification now rejects release manifests whose schema, app identity, or artifact size metadata do not match the final Native DMG assets.
