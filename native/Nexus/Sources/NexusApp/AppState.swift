@@ -4137,11 +4137,11 @@ final class AppState: ObservableObject {
 
     static func preview() -> AppState {
         AppState(
-            workspaces: WorkspaceSummary.previewData,
+            workspaces: [],
             agentStatus: AgentStatus(
-                title: "Ready",
-                detail: "Markdown, Git, and Workspace Core online",
-                connectedTools: ["Codex", "Git", "Nexus Core"]
+                title: "Loading",
+                detail: "Reading local workspace state",
+                connectedTools: []
             ),
             bridge: NexusBridgeFactory.makeDefault()
         )

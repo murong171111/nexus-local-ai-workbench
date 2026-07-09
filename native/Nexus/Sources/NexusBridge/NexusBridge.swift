@@ -49,42 +49,15 @@ public final class PreviewNexusBridge: NexusBridge {
     }
 
     public func scanWorkspaces(request: ScanWorkspacesRequest) async throws -> DashboardSnapshot {
-        DashboardSnapshot.preview(
-            workspacesRoot: request.workspacesRoot,
-            sourceReposRoot: request.sourceReposRoot,
-            docsRoot: request.docsRoot
-        )
+        throw unavailable("Workspace scan")
     }
 
     public func scanSourceRepos(request: ScanSourceReposRequest) async throws -> [SourceRepositorySnapshot] {
-        [
-            SourceRepositorySnapshot(
-                name: "order",
-                path: "\(request.sourceReposRoot)/order",
-                isGit: true,
-                branch: "feature/yibao-pay-log",
-                dirty: false,
-                summary: "clean"
-            ),
-            SourceRepositorySnapshot(
-                name: "store-cashier",
-                path: "\(request.sourceReposRoot)/store-cashier",
-                isGit: true,
-                branch: "feature/yibao-pay-log",
-                dirty: true,
-                summary: "dirty"
-            )
-        ]
+        throw unavailable("Source repository scan")
     }
 
     public func readDocument(request: ReadDocumentRequest) async throws -> DocumentSnapshot {
-        DocumentSnapshot(
-            path: request.path,
-            name: URL(fileURLWithPath: request.path).lastPathComponent,
-            extension: URL(fileURLWithPath: request.path).pathExtension,
-            isMarkdown: true,
-            content: "# Preview Document\n\nSet NEXUS_CORE_LIBRARY to read real workspace documents through Rust Core."
-        )
+        throw unavailable("Document read")
     }
 
     public func createWorkspaceDocument(request: CreateWorkspaceDocumentRequest) async throws -> CreateWorkspaceDocumentResponse {
@@ -95,30 +68,7 @@ public final class PreviewNexusBridge: NexusBridge {
     }
 
     public func readDemandIntakeStatus(request: DemandIntakeStatusRequest) async throws -> DemandIntakeStatus {
-        let directoryPath = "\(request.workspacePath)/需求"
-        let files = [
-            ("requirement", "需求确认卡", "requirement.md"),
-            ("questions", "待确认问题", "questions.md"),
-            ("scope", "开发范围", "scope.md"),
-            ("tasks", "需求列表", "tasks.md"),
-            ("delivery", "需求交付", "delivery.md")
-        ].map { item in
-            let (key, label, filename) = item
-            return DemandIntakeFileStatus(
-                key: key,
-                label: label,
-                filename: filename,
-                path: "\(directoryPath)/\(filename)",
-                exists: false
-            )
-        }
-        return DemandIntakeStatus(
-            directoryPath: directoryPath,
-            exists: false,
-            ready: false,
-            missingCount: files.count,
-            files: files
-        )
+        throw unavailable("Demand intake read")
     }
 
     public func initializeDemandIntake(request: InitializeDemandIntakeRequest) async throws -> InitializeDemandIntakeResponse {
@@ -129,16 +79,7 @@ public final class PreviewNexusBridge: NexusBridge {
     }
 
     public func widgetSnapshot(request: WidgetSnapshotRequest) async throws -> WidgetSnapshot {
-        let dashboard = DashboardSnapshot.preview(
-            workspacesRoot: request.workspacesRoot,
-            sourceReposRoot: request.sourceReposRoot,
-            docsRoot: request.docsRoot
-        )
-        return WidgetSnapshot.preview(
-            dashboard: dashboard,
-            activeFolder: request.activeFolder,
-            generatedAt: request.generatedAt
-        )
+        throw unavailable("Widget snapshot read")
     }
 
     public func appendAuditEvent(request: AppendAuditEventRequest) async throws -> AppendAuditEventResponse {
@@ -150,25 +91,7 @@ public final class PreviewNexusBridge: NexusBridge {
     }
 
     public func readAgentEvents(request: ReadAgentEventsRequest) async throws -> [AgentEvent] {
-        [
-            AgentEvent(
-                id: "preview-agent-event",
-                timestamp: "preview",
-                source: "codex",
-                sessionId: "preview-session",
-                workspaceFolder: request.workspaceFolder ?? "2026-05-25-yibao-pay-log",
-                kind: "permission",
-                title: "Agent event preview",
-                summary: "Set NEXUS_CORE_LIBRARY to read real local agent hook events.",
-                severity: "info",
-                metadata: [
-                    "workspaceFolder": request.workspaceFolder ?? "2026-05-25-yibao-pay-log",
-                    "codexSessionUrl": "codex://session/preview-session",
-                    "documentPath": "~/ks_project/workspaces/2026-05-25-yibao-pay-log/handoff.md",
-                    "docs": "https://github.com/murong171111/nexus-local-ai-workbench"
-                ]
-            )
-        ]
+        []
     }
 
     public func agentEventHandoffPrompt(request: AgentEventHandoffPromptRequest) async throws -> AgentEventHandoffPromptResponse {
@@ -213,7 +136,7 @@ public final class PreviewNexusBridge: NexusBridge {
     }
 
     public func localAutomationCheck(request: LocalAutomationCheckRequest) async throws -> LocalAutomationCheckResponse {
-        LocalAutomationCheckResponse.preview(generatedAt: request.generatedAt)
+        throw unavailable("Local automation check")
     }
 
     public func createWorkspace(request: CreateWorkspaceRequest) async throws -> CreateWorkspaceResponse {
@@ -228,6 +151,10 @@ public final class PreviewNexusBridge: NexusBridge {
             throw NexusBridgeError.coreError("worktree setup requires explicit confirmation")
         }
         throw NexusBridgeError.coreError("Worktree setup requires Rust Core bridge. Set NEXUS_CORE_LIBRARY to a local libnexus_ffi.dylib.")
+    }
+
+    private func unavailable(_ operation: String) -> NexusBridgeError {
+        .coreError("\(operation) is unavailable because no Nexus Core bridge is loaded")
     }
 }
 

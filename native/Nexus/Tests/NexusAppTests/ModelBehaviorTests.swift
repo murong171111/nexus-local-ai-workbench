@@ -4,6 +4,78 @@ import XCTest
 @testable import NexusApp
 
 final class ModelBehaviorTests: XCTestCase {
+    @MainActor
+    func testDefaultAppStateStartsWithoutSampleWorkspaces() {
+        let appState = AppState.preview()
+
+        XCTAssertTrue(appState.workspaces.isEmpty)
+        XCTAssertEqual(appState.agentStatus.title, "Loading")
+    }
+
+    func testPreviewBridgeOptionalFeedsAreEmpty() async throws {
+        let bridge = PreviewNexusBridge()
+
+        let events = try await bridge.readAgentEvents(
+            request: ReadAgentEventsRequest(eventsRoot: "/tmp/events", limit: 8)
+        )
+        let results = try await bridge.searchIndex(
+            request: SearchIndexRequest(indexPath: "/tmp/index", query: "demo")
+        )
+
+        XCTAssertTrue(events.isEmpty)
+        XCTAssertTrue(results.isEmpty)
+    }
+
+    func testPreviewBridgeRejectsAuthoritativeLocalReads() async {
+        let bridge = PreviewNexusBridge()
+
+        await assertThrowsUnavailable {
+            _ = try await bridge.scanWorkspaces(
+                request: ScanWorkspacesRequest(
+                    workspacesRoot: "/tmp/workspaces",
+                    sourceReposRoot: "/tmp/source-repos",
+                    docsRoot: "/tmp/docs"
+                )
+            )
+        }
+        await assertThrowsUnavailable {
+            _ = try await bridge.scanSourceRepos(
+                request: ScanSourceReposRequest(sourceReposRoot: "/tmp/source-repos")
+            )
+        }
+        await assertThrowsUnavailable {
+            _ = try await bridge.readDocument(
+                request: ReadDocumentRequest(path: "/missing/tasks.md")
+            )
+        }
+        await assertThrowsUnavailable {
+            _ = try await bridge.readDemandIntakeStatus(
+                request: DemandIntakeStatusRequest(workspacePath: "/tmp/workspaces/demo")
+            )
+        }
+        await assertThrowsUnavailable {
+            _ = try await bridge.widgetSnapshot(
+                request: WidgetSnapshotRequest(
+                    workspacesRoot: "/tmp/workspaces",
+                    sourceReposRoot: "/tmp/source-repos",
+                    docsRoot: "/tmp/docs",
+                    activeFolder: "demo",
+                    generatedAt: "2026-07-10T00:00:00Z"
+                )
+            )
+        }
+        await assertThrowsUnavailable {
+            _ = try await bridge.localAutomationCheck(
+                request: LocalAutomationCheckRequest(
+                    workspacesRoot: "/tmp/workspaces",
+                    sourceReposRoot: "/tmp/source-repos",
+                    docsRoot: "/tmp/docs",
+                    generatedAt: "2026-07-10T00:00:00Z"
+                )
+            )
+        }
+    }
+
     func testNativeModelLayeringKeepsWorkflowLogicOutOfBaseModels() throws {
         let packageRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -7201,6 +7273,24 @@ final class ModelBehaviorTests: XCTestCase {
             count: 1,
             action: "review-risk"
         )
+    }
+
+    private func assertThrowsUnavailable(
+        _ expression: () async throws -> Void,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        do {
+            try await expression()
+            XCTFail("Expected async expression to throw", file: file, line: line)
+        } catch {
+            XCTAssertTrue(
+                error.localizedDescription.contains("unavailable"),
+                error.localizedDescription,
+                file: file,
+                line: line
+            )
+        }
     }
 
     private func runGit(_ arguments: [String], in directory: URL) throws {
