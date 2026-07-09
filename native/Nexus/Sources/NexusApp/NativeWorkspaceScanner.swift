@@ -19,6 +19,18 @@ enum NativeWorkspaceScanner {
         ("delivery-cn", "交付记录.md"),
         ("bootstrap", "bootstrap-report.md")
     ]
+    private static let ignoredWorkspaceDirectoryNames: Set<String> = [
+        "dashboard", "node_modules", "target", "dist", "build", ".build"
+    ]
+    private static let workspaceIdentityFileNames = ["workspace.md", "STATUS.md"]
+
+    static func workspaceDirectoryCount(
+        workspacesRoot: String,
+        fileManager: FileManager = .default
+    ) -> Int {
+        let root = URL(fileURLWithPath: (workspacesRoot as NSString).expandingTildeInPath)
+        return (try? workspaceDirectories(at: root, fileManager: fileManager).count) ?? 0
+    }
 
     static func scan(
         workspacesRoot: String,
@@ -40,14 +52,7 @@ enum NativeWorkspaceScanner {
             )
         }
 
-        let entries = try fileManager.contentsOfDirectory(
-            at: root,
-            includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        )
-        let workspaces = entries
-            .filter { isWorkspaceDirectory($0, fileManager: fileManager) }
-            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+        let workspaces = try workspaceDirectories(at: root, fileManager: fileManager)
             .map { workspaceSnapshot(at: $0, sourceRoot: sourceRoot, fileManager: fileManager) }
 
         return DashboardSnapshot(
@@ -59,10 +64,30 @@ enum NativeWorkspaceScanner {
         )
     }
 
+    private static func workspaceDirectories(
+        at root: URL,
+        fileManager: FileManager
+    ) throws -> [URL] {
+        try fileManager.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        )
+        .filter { isWorkspaceDirectory($0, fileManager: fileManager) }
+        .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+    }
+
     private static func isWorkspaceDirectory(_ url: URL, fileManager: FileManager) -> Bool {
-        guard (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { return false }
-        let ignored = ["node_modules", "target", "dist", "build", ".build"]
-        return !ignored.contains(url.lastPathComponent)
+        guard (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true,
+              !ignoredWorkspaceDirectoryNames.contains(url.lastPathComponent) else {
+            return false
+        }
+
+        return workspaceIdentityFileNames.contains { filename in
+            var isDirectory: ObjCBool = false
+            let path = url.appendingPathComponent(filename, isDirectory: false).path
+            return fileManager.fileExists(atPath: path, isDirectory: &isDirectory) && !isDirectory.boolValue
+        }
     }
 
     private static func workspaceSnapshot(at root: URL, sourceRoot: String, fileManager: FileManager) -> WorkspaceSnapshot {

@@ -4634,9 +4634,8 @@ final class AppState: ObservableObject {
         let toolChecks = [
             environmentToolCheck(key: "git", label: "Git", command: "git", arguments: ["--version"])
         ]
-        let workspaceCount = countChildDirectories(
-            at: localFileURL(for: workspacesRoot),
-            ignoredName: "dashboard"
+        let workspaceCount = NativeWorkspaceScanner.workspaceDirectoryCount(
+            workspacesRoot: workspacesRoot
         )
         let sourceRepoCount = countGitRepositories(at: localFileURL(for: sourceReposRoot))
 
@@ -4756,22 +4755,6 @@ final class AppState: ObservableObject {
                 summary: error.localizedDescription
             )
         }
-    }
-
-    private static func countChildDirectories(at rootURL: URL, ignoredName: String?) -> Int {
-        guard let entries = try? FileManager.default.contentsOfDirectory(
-            at: rootURL,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        ) else {
-            return 0
-        }
-
-        return entries.filter { entry in
-            guard entry.lastPathComponent != ignoredName else { return false }
-            let values = try? entry.resourceValues(forKeys: [.isDirectoryKey])
-            return values?.isDirectory == true
-        }.count
     }
 
     private static func countGitRepositories(at rootURL: URL) -> Int {

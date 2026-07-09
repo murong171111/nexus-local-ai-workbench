@@ -2195,6 +2195,72 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(snapshot.tasks?.map(\.source), ["workspace", "workspace"])
     }
 
+    @MainActor
+    func testNativeWorkspaceRecognitionAlignsDashboardAndEnvironmentCounts() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-workspace-identity-\(UUID().uuidString)")
+        let workspacesRoot = root.appendingPathComponent("workspaces")
+        let sourceRoot = root.appendingPathComponent("source-repos")
+        let docsRoot = root.appendingPathComponent("docs")
+        let workspaceRecord = workspacesRoot.appendingPathComponent("2026-07-10-workspace-record")
+        let statusRecord = workspacesRoot.appendingPathComponent("2026-07-10-status-record")
+        let scratch = workspacesRoot.appendingPathComponent("scratch")
+        let dashboardDirectory = workspacesRoot.appendingPathComponent("dashboard")
+        let defaultsSuite = "NexusAppTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: defaultsSuite)!
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            defaults.removePersistentDomain(forName: defaultsSuite)
+        }
+
+        for directory in [workspaceRecord, statusRecord, scratch, dashboardDirectory, sourceRoot, docsRoot] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        try "# Workspace\n".write(
+            to: workspaceRecord.appendingPathComponent("workspace.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# Status\n\n- 当前状态: created\n".write(
+            to: statusRecord.appendingPathComponent("STATUS.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "notes\n".write(
+            to: scratch.appendingPathComponent("notes.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# Dashboard\n".write(
+            to: dashboardDirectory.appendingPathComponent("workspace.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let dashboard = try NativeWorkspaceScanner.scan(
+            workspacesRoot: workspacesRoot.path,
+            sourceReposRoot: sourceRoot.path,
+            docsRoot: docsRoot.path
+        )
+        let appState = AppState(
+            workspaces: [],
+            agentStatus: AgentStatus(title: "Loading", detail: "Tests", connectedTools: []),
+            bridge: PreviewNexusBridge(),
+            workspaceRoot: workspacesRoot.path,
+            sourceReposRoot: sourceRoot.path,
+            docsRoot: docsRoot.path,
+            defaults: defaults
+        )
+
+        await appState.checkNativeEnvironment()
+
+        XCTAssertEqual(
+            dashboard.workspaces.map(\.folder),
+            ["2026-07-10-status-record", "2026-07-10-workspace-record"]
+        )
+        XCTAssertEqual(appState.nativeEnvironmentHealth?.workspaceCount, dashboard.workspaces.count)
+    }
+
     func testNativeWorkspaceScannerBuildsGitRowsForWorkspaceWorktrees() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-native-workspace-git-\(UUID().uuidString)")
