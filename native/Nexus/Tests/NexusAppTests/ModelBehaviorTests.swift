@@ -5546,8 +5546,36 @@ final class ModelBehaviorTests: XCTestCase {
         let stage = workspace.mainStage()
 
         XCTAssertEqual(stage.id, .demandIntake)
-        XCTAssertNotEqual(stage.status, .ready)
+        XCTAssertEqual(stage.status, .pending)
         XCTAssertEqual(stage.primaryAction, .demandIntake)
+    }
+
+    func testMainStagePreservesBlockedDemandHealthCheckWhenWorkspaceReadFails() {
+        let missingPath = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-missing-blocked-demand-\(UUID().uuidString)")
+            .path
+        let blockerDetail = "需求预检读取失败：工作区路径不可用。"
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "blocked-demand-read-failure",
+            path: missingPath,
+            healthChecks: [
+                WorkspaceHealthCheck(
+                    id: "demand-intake",
+                    label: "需求预检",
+                    detail: blockerDetail,
+                    status: "blocked",
+                    action: "demandIntake"
+                )
+            ]
+        )
+
+        let stage = workspace.mainStage()
+
+        XCTAssertEqual(stage.id, .demandIntake)
+        XCTAssertEqual(stage.status, .blocked)
+        XCTAssertEqual(stage.primaryAction, .demandIntake)
+        XCTAssertTrue(stage.reason.contains(blockerDetail))
     }
 
     func testDevelopmentTaskEvidenceBlocksOnBlockedTasks() {
