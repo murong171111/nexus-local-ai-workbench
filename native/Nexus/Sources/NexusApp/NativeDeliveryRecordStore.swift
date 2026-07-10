@@ -203,6 +203,7 @@ enum NativeDeliveryRecordStore {
         expectedRevision: NativeDeliveryRecordDocumentRevision,
         fileManager: FileManager
     ) throws {
+        let url = expandedURL(for: path)
         let current = inspectDocument(at: path, fileManager: fileManager)
         if case .invalid(let reason) = current.revision {
             throw NativeDeliveryRecordStoreError.invalidCurrentDocument(reason)
@@ -223,7 +224,7 @@ enum NativeDeliveryRecordStore {
         if !content.hasSuffix("\n") {
             content.append("\n")
         }
-        try content.write(toFile: path, atomically: true, encoding: .utf8)
+        try content.write(to: url, atomically: true, encoding: .utf8)
     }
 
     private static func appendAuditEvent(
