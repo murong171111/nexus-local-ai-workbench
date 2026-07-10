@@ -5716,6 +5716,217 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(events.first?.metadata["status"], "next")
     }
 
+    func testNativeScopeFreezeStoreRejectsChangedDeletedAndUnsafeEvidence() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-scope-write-safety-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+        let original = """
+        # 本次开发范围
+
+        ## 已确认并实现
+
+        - 保存订单时记录交易快照。
+
+        ## 暂不实现
+
+        - 不补历史数据。
+
+        ## 仍待确认
+
+        - 无 P0 待确认项。
+
+        ## 进入开发条件
+
+        - [ ] 本文件已冻结本次开发范围。
+        """
+
+        func writablePlan(at directory: URL, id: String) throws -> ScopeFreezeWritePlan {
+            let demandDir = directory.appendingPathComponent("需求")
+            try FileManager.default.createDirectory(at: demandDir, withIntermediateDirectories: true)
+            try writeDemandIntakeFixture(demandDir: demandDir, scope: original)
+            let workspace = workspaceForWorkflowSummary(
+                stage: "scoping",
+                id: id,
+                name: id,
+                path: directory.path
+            )
+            let evidence = ScopeFreezeEvidence.resolve(
+                status: demandIntakeStatus(at: demandDir),
+                workspace: workspace
+            )
+            let plan = ScopeFreezeWritePlan.resolve(workspace: workspace, evidence: evidence)
+            XCTAssertTrue(plan.canWrite)
+            return plan
+        }
+
+        let changedRoot = root.appendingPathComponent("changed")
+        let changedAuditRoot = changedRoot.appendingPathComponent("audit")
+        let changedPlan = try writablePlan(at: changedRoot, id: "scope-freeze-changed")
+        let changedScopeURL = changedRoot.appendingPathComponent("需求/scope.md")
+        let externalEdit = "\n- 外部人工备注：不要覆盖。\n"
+        let changedHandle = try FileHandle(forWritingTo: changedScopeURL)
+        try changedHandle.seekToEnd()
+        try changedHandle.write(contentsOf: Data(externalEdit.utf8))
+        try changedHandle.close()
+
+        XCTAssertThrowsError(
+            try NativeScopeFreezeStore.write(
+                plan: changedPlan,
+                confirmed: true,
+                auditRoot: changedAuditRoot.path,
+                actor: "Nexus Test"
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("changed since confirmation"))
+        }
+        XCTAssertEqual(try String(contentsOf: changedScopeURL, encoding: .utf8), original + externalEdit)
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: changedAuditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path
+        ))
+
+        let deletedRoot = root.appendingPathComponent("deleted")
+        let deletedAuditRoot = deletedRoot.appendingPathComponent("audit")
+        let deletedPlan = try writablePlan(at: deletedRoot, id: "scope-freeze-deleted")
+        let deletedScopeURL = deletedRoot.appendingPathComponent("需求/scope.md")
+        try FileManager.default.removeItem(at: deletedScopeURL)
+
+        XCTAssertThrowsError(
+            try NativeScopeFreezeStore.write(
+                plan: deletedPlan,
+                confirmed: true,
+                auditRoot: deletedAuditRoot.path,
+                actor: "Nexus Test"
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("changed since confirmation"))
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: deletedScopeURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: deletedAuditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path
+        ))
+
+        let symlinkRoot = root.appendingPathComponent("symlink")
+        let symlinkAuditRoot = symlinkRoot.appendingPathComponent("audit")
+        let symlinkPlan = try writablePlan(at: symlinkRoot, id: "scope-freeze-symlink")
+        let symlinkScopeURL = symlinkRoot.appendingPathComponent("需求/scope.md")
+        let externalURL = root.appendingPathComponent("external-scope.md")
+        let externalContent = "# 外部范围\n\n不得写入。\n"
+        try externalContent.write(to: externalURL, atomically: true, encoding: .utf8)
+        try FileManager.default.removeItem(at: symlinkScopeURL)
+        try FileManager.default.createSymbolicLink(at: symlinkScopeURL, withDestinationURL: externalURL)
+
+        XCTAssertThrowsError(
+            try NativeScopeFreezeStore.write(
+                plan: symlinkPlan,
+                confirmed: true,
+                auditRoot: symlinkAuditRoot.path,
+                actor: "Nexus Test"
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("not a regular file"))
+        }
+        XCTAssertEqual(try String(contentsOf: externalURL, encoding: .utf8), externalContent)
+        XCTAssertEqual(
+            try FileManager.default.destinationOfSymbolicLink(atPath: symlinkScopeURL.path),
+            externalURL.path
+        )
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: symlinkAuditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path
+        ))
+
+        let invalidRoot = root.appendingPathComponent("invalid-utf8")
+        let invalidAuditRoot = invalidRoot.appendingPathComponent("audit")
+        let invalidPlan = try writablePlan(at: invalidRoot, id: "scope-freeze-invalid")
+        let invalidScopeURL = invalidRoot.appendingPathComponent("需求/scope.md")
+        let invalidBytes = Data([0x23, 0x20, 0xC3, 0x28, 0x0A])
+        try invalidBytes.write(to: invalidScopeURL)
+
+        XCTAssertThrowsError(
+            try NativeScopeFreezeStore.write(
+                plan: invalidPlan,
+                confirmed: true,
+                auditRoot: invalidAuditRoot.path,
+                actor: "Nexus Test"
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("not valid UTF-8"))
+        }
+        XCTAssertEqual(try Data(contentsOf: invalidScopeURL), invalidBytes)
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: invalidAuditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path
+        ))
+    }
+
+    func testNativeScopeFreezeStoreRejectsSecondSubmissionWithoutDuplicateAudit() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-scope-duplicate-\(UUID().uuidString)")
+        let demandDir = root.appendingPathComponent("需求")
+        let auditRoot = root.appendingPathComponent("audit")
+        try FileManager.default.createDirectory(at: demandDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try writeDemandIntakeFixture(
+            demandDir: demandDir,
+            scope: """
+            # 本次开发范围
+
+            ## 已确认并实现
+
+            - 保存订单时记录交易快照。
+
+            ## 暂不实现
+
+            - 不补历史数据。
+
+            ## 仍待确认
+
+            - 无 P0 待确认项。
+
+            ## 进入开发条件
+
+            - [ ] 本文件已冻结本次开发范围。
+            """
+        )
+        let workspace = workspaceForWorkflowSummary(
+            stage: "scoping",
+            id: "scope-freeze-duplicate",
+            name: "Scope Freeze Duplicate",
+            path: root.path
+        )
+        let plan = ScopeFreezeWritePlan.resolve(
+            workspace: workspace,
+            evidence: ScopeFreezeEvidence.resolve(
+                status: demandIntakeStatus(at: demandDir),
+                workspace: workspace
+            )
+        )
+
+        let first = try NativeScopeFreezeStore.write(
+            plan: plan,
+            confirmed: true,
+            auditRoot: auditRoot.path,
+            actor: "Nexus Test"
+        )
+
+        XCTAssertThrowsError(
+            try NativeScopeFreezeStore.write(
+                plan: plan,
+                confirmed: true,
+                auditRoot: auditRoot.path,
+                actor: "Nexus Test"
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("changed since confirmation"))
+        }
+
+        let content = try String(contentsOf: demandDir.appendingPathComponent("scope.md"), encoding: .utf8)
+        let events = try NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 10)
+        XCTAssertEqual(content.components(separatedBy: "## 范围冻结确认 / Scope Freeze Confirmation").count - 1, 1)
+        XCTAssertEqual(events.filter { $0.action == "scope.freeze_confirmed" }.count, 1)
+        XCTAssertNotNil(first.auditEventID)
+    }
+
     func testScopeFreezeEvidenceAllowsAuditedScopeChanges() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-scope-change-audited-\(UUID().uuidString)")

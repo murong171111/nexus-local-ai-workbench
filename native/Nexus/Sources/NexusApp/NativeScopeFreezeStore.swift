@@ -44,16 +44,40 @@ enum NativeScopeFreezeStore {
         plan: ScopeFreezeWritePlan,
         confirmed: Bool,
         auditRoot: String? = nil,
-        actor: String? = nil
+        actor: String? = nil,
+        fileManager: FileManager = .default
     ) throws -> NativeScopeFreezeWriteResponse {
         guard confirmed else {
             throw NativeScopeFreezeStoreError.unconfirmed
+        }
+        guard case .regularUTF8 = plan.expectedRevision else {
+            throw NativeScopeFreezeStoreError.invalidExpectedRevision(plan.expectedRevision.label)
         }
         guard plan.canWrite else {
             throw NativeScopeFreezeStoreError.notWritable(plan.summary)
         }
 
-        try appendMarkdownBlock(plan.appendedMarkdown, toFile: plan.scopePath, fallbackHeader: "")
+        let url = expandedURL(for: plan.scopePath)
+        let current = inspectDocument(at: plan.scopePath, fileManager: fileManager)
+        if case .invalid(let reason) = current.revision {
+            throw NativeScopeFreezeStoreError.invalidCurrentDocument(reason)
+        }
+        guard case .regularUTF8 = current.revision else {
+            throw NativeScopeFreezeStoreError.staleDocument(
+                path: plan.scopePath,
+                expected: plan.expectedRevision.label,
+                current: current.revision.label
+            )
+        }
+        guard current.revision == plan.expectedRevision else {
+            throw NativeScopeFreezeStoreError.staleDocument(
+                path: plan.scopePath,
+                expected: plan.expectedRevision.label,
+                current: current.revision.label
+            )
+        }
+
+        try appendMarkdownBlock(plan.appendedMarkdown, to: current.content!, at: url)
         let response = NativeScopeFreezeWriteResponse(
             path: plan.scopePath,
             status: plan.status,
@@ -73,10 +97,10 @@ enum NativeScopeFreezeStore {
 
     private static func appendMarkdownBlock(
         _ block: String,
-        toFile path: String,
-        fallbackHeader: String
+        to currentContent: String,
+        at url: URL
     ) throws {
-        var content = (try? String(contentsOfFile: path, encoding: .utf8)) ?? fallbackHeader
+        var content = currentContent
         if !content.isEmpty, !content.hasSuffix("\n") {
             content.append("\n")
         }
@@ -84,7 +108,7 @@ enum NativeScopeFreezeStore {
         if !content.hasSuffix("\n") {
             content.append("\n")
         }
-        try content.write(toFile: path, atomically: true, encoding: .utf8)
+        try content.write(to: url, atomically: true, encoding: .utf8)
     }
 
     private static func appendAuditEvent(
@@ -118,7 +142,7 @@ enum NativeScopeFreezeStore {
         at path: String,
         fileManager: FileManager
     ) -> NativeScopeDocumentSnapshot {
-        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        let url = expandedURL(for: path)
         let attributes: [FileAttributeKey: Any]
         do {
             attributes = try fileManager.attributesOfItem(atPath: url.path)
@@ -162,11 +186,18 @@ enum NativeScopeFreezeStore {
             )
         }
     }
+
+    private static func expandedURL(for path: String) -> URL {
+        URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+    }
 }
 
 private enum NativeScopeFreezeStoreError: LocalizedError {
     case unconfirmed
     case notWritable(String)
+    case invalidExpectedRevision(String)
+    case invalidCurrentDocument(String)
+    case staleDocument(path: String, expected: String, current: String)
 
     var errorDescription: String? {
         switch self {
@@ -174,6 +205,12 @@ private enum NativeScopeFreezeStoreError: LocalizedError {
             return "scope freeze write requires explicit confirmation"
         case .notWritable(let summary):
             return summary
+        case .invalidExpectedRevision(let reason):
+            return reason
+        case .invalidCurrentDocument(let reason):
+            return reason
+        case .staleDocument(let path, let expected, let current):
+            return "scope document changed since confirmation: \(path); expected \(expected); current \(current)"
         }
     }
 }
