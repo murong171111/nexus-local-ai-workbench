@@ -122,4 +122,3 @@ The second test must prove RED before implementation: the current store has no w
 3. A deterministic second-file write failure leaves both lifecycle documents byte-for-byte unchanged.
 4. Failed, conflicted, or stale writes append no `workspace_lifecycle.updated` success audit event.
 5. Successful updates still rewrite both files, return audit feedback, refresh the workspace, and preserve the Native end-to-end lifecycle proof.
-
