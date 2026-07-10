@@ -47,7 +47,8 @@ The parser matches the established Rust/store contract:
 - ordinary row ID: `<workspace-folder>:task-<task-index>`;
 - row with `event=<id>` in detail: `<workspace-folder>:<event-id>`;
 - source: `agent` when an event marker exists, otherwise `workspace`;
-- source event ID, one-based Markdown source line, status, detail, and priority use the same marker/status rules as the current store and Rust Core;
+- source event ID, one-based Markdown source line, status, and detail use the same rules as the current store and Rust Core;
+- a valid fourth-column `high`/`medium`/`normal`/`low` priority remains authoritative for Native tables; otherwise `priority=` and status/detail fallback preserve the existing store rules;
 - title remains the real first table cell after trimming/backtick removal, so scanner and writer compare the same evidence.
 
 The parser also owns table-row recognition, Markdown cell sanitization, row formatting, event-marker extraction, and task-priority derivation. This removes the two divergent Swift implementations without changing the public bridge model or Rust behavior.
