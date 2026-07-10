@@ -186,6 +186,55 @@ final class ModelBehaviorTests: XCTestCase {
         ))
     }
 
+    @MainActor
+    func testAppStateCreationRoutesNewWorkspaceToDemandIntakeWithoutOpeningHandoff() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-app-state-create-demand-first-\(UUID().uuidString)")
+        let workspacesRoot = root.appendingPathComponent("workspaces")
+        let sourceRoot = root.appendingPathComponent("source-repos")
+        let docsRoot = root.appendingPathComponent("docs")
+        let applicationSupportRoot = root.appendingPathComponent("app-support")
+        let defaultsSuite = "NexusAppTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: defaultsSuite)!
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            defaults.removePersistentDomain(forName: defaultsSuite)
+        }
+        for directory in [workspacesRoot, sourceRoot, docsRoot] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        let appState = AppState(
+            workspaces: [],
+            agentStatus: AgentStatus(title: "Ready", detail: "Tests", connectedTools: []),
+            bridge: PreviewNexusBridge(),
+            workspaceRoot: workspacesRoot.path,
+            sourceReposRoot: sourceRoot.path,
+            docsRoot: docsRoot.path,
+            applicationSupportRoot: applicationSupportRoot.path,
+            defaults: defaults
+        )
+
+        await appState.createWorkspace(
+            draft: CreateWorkspaceDraft(
+                name: "Demand first",
+                folder: "demand-first",
+                services: [],
+                targetBranch: "",
+                confirmed: true
+            )
+        )
+
+        let workspace = try XCTUnwrap(appState.selectedWorkspace)
+        XCTAssertNil(appState.lastError)
+        XCTAssertEqual(workspace.folder, "demand-first")
+        XCTAssertTrue(appState.lastCreatedWorkspace?.isVisibleAfterRefresh == true)
+        XCTAssertNil(appState.documentPreview)
+        XCTAssertNil(appState.documentFocusHint)
+        XCTAssertFalse(appState.demandIntakeDisplayStatus(for: workspace).exists)
+        XCTAssertEqual(appState.mainWorkflowStage(for: workspace).id, .created)
+        XCTAssertEqual(appState.mainWorkflowStage(for: workspace).primaryAction, .demandIntake)
+    }
+
     func testNativeModelLayeringKeepsWorkflowLogicOutOfBaseModels() throws {
         let packageRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

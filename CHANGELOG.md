@@ -29,6 +29,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Native local automation checks now build their response and audit metadata in Swift Native from current workspace summaries, using the Rust bridge only as a fallback when local refresh cannot provide state; branch signals now mean target-branch availability rather than current-checkout alignment.
 - Native workspace scanning and status diagnostics now share one file-backed workspace identity rule, excluding unrelated child directories from real workspace counts.
 - Native root view now opens through a top command bar with Console and Board as the two primary surfaces, making single-workspace execution and all-workspace stage overview explicit instead of keeping sidebar, list, and inspector equally dominant.
+- Native create-workspace now leaves document preview closed, refreshes real demand evidence, and routes its only successful post-create action to Demand Intake before service, branch, worktree, or Codex handoff.
 - Native Console now keeps the selected workspace's current stage, blocker reason, next action, evidence files, standard documents, SQL artifacts, and document preview in one focused execution surface.
 - Native create-workspace now uses a three-step sheet for naming/location, service/branch scope, and local preflight before writing standard documents, while worktree setup remains a separate confirmed action.
 - Native workspace refresh now loads demand-intake status from the Swift-native store when possible, and branch comparison now ignores `branch...origin/branch` tracking suffixes before checking target-branch alignment.
@@ -59,10 +60,10 @@ The format follows Keep a Changelog, and versions should follow semantic version
 - Native/Rust local checks now emit an `active-tasks` health row and a `continue-active-tasks` next-step action, so open `doing`/`todo` tasks route directly back to `tasks.md` instead of hiding behind aggregate task counts.
 - Native Codex handoff prompts now include bound Codex session links, so workspace, lifecycle, task, risk, delivery, validation/PR, service, and automation handoffs can resume existing conversations instead of starting from only fresh context.
 - Native workspace detail now promotes SQL readiness into the top-level overview and Command Center workflow path, so SQL artifact state is visible before opening the deeper Workflow checklist.
-- Native workspace creation now opens the generated `handoff.md` after focusing the new workspace, and the document preview has an explicit close-preview control that keeps the workspace detail open.
+- Native workspace creation keeps document preview closed after focusing the new workspace; the document preview has an explicit close-preview control that keeps the workspace detail open.
 - Native Task Center writebacks now keep the task loop moving: completed/deferred tasks can jump to the next active task, the next task row is highlighted, and Agent task writebacks auto-focus the Agent task filter.
 - Native workspace detail now shows an active-document banner after document opens from tasks, risks, delivery, search, or document tiles, with jump-to-documents, copy-path, and close-preview actions that do not close the workspace detail.
-- Native post-create workspace guidance now shows a step-by-step service, branch, worktree, handoff, and local-check checklist with actions that open the nearest document or setup flow.
+- Native post-create workspace guidance now keeps one dynamic primary action: recover the workspace scan when visibility is uncertain, otherwise enter Demand Intake before later workflow steps.
 - Deferred tasks now stay visible in Task Center but no longer trigger task automation warnings, high-priority task routing, menu-bar task attention, or active workflow blockers.
 - Native automation handoff prompts now include Nexus recommended next-step actions, so Codex receives branch/service confirmation blockers alongside the signal evidence.
 - Native Automation Action Center risk signals now select the risky workspace and copy the risk-review Codex handoff directly, so risk checks land on a concrete next step.

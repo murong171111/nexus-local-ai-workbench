@@ -4012,15 +4012,9 @@ final class AppState: ObservableObject {
                 verifiedAgainst: workspaces
             )
             selectedWorkspaceID = response.folder
-            await loadDocument(
-                path: "\(response.path)/handoff.md",
-                focusHint: DocumentFocusHint(
-                    path: "\(response.path)/handoff.md",
-                    line: nil,
-                    title: "Workspace created",
-                    detail: "新工作区已选中，先从 handoff.md 进入后续服务、分支和 worktree 检查。"
-                )
-            )
+            if let workspace = workspaces.first(where: { $0.folder == response.folder }) {
+                await refreshDemandIntakeStatus(for: workspace)
+            }
         } catch {
             lastError = error.localizedDescription
         }
