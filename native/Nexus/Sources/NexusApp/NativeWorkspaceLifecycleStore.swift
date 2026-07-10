@@ -65,7 +65,12 @@ enum NativeWorkspaceLifecycleStore {
             nextAction: nextAction,
             updatedAt: updatedAt
         )
-        let nextWorkspaceContent = upsertBulletValue(in: workspaceContent, label: "当前状态", value: state)
+        let nextWorkspaceContent = upsertBulletValue(
+            in: workspaceContent,
+            label: "当前状态",
+            aliases: ["状态"],
+            value: state
+        )
         do {
             try writeFile(nextWorkspaceContent, workspaceDocumentURL)
             try writeFile(nextStatusContent, statusDocumentURL)
@@ -127,11 +132,19 @@ enum NativeWorkspaceLifecycleStore {
         at url: URL,
         fileManager: FileManager
     ) throws -> LifecycleDocumentSnapshot {
-        var isDirectory: ObjCBool = false
-        guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
+        let attributes: [FileAttributeKey: Any]
+        do {
+            attributes = try fileManager.attributesOfItem(atPath: url.path)
+        } catch let error as NSError
+            where error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoSuchFileError {
             return LifecycleDocumentSnapshot(url: url, content: nil)
+        } catch {
+            throw NativeWorkspaceLifecycleStoreError.documentUnreadable(
+                url.path,
+                error.localizedDescription
+            )
         }
-        guard !isDirectory.boolValue else {
+        guard attributes[.type] as? FileAttributeType == .typeRegular else {
             throw NativeWorkspaceLifecycleStoreError.documentNotFile(url.path)
         }
         do {
@@ -189,7 +202,9 @@ enum NativeWorkspaceLifecycleStore {
 
     private static func firstBulletValue(in text: String?, labels: [String]) -> String? {
         guard let text else { return nil }
-        return labels.lazy.compactMap { extractBulletValue(in: text, label: $0) }.first
+        return labels.lazy
+            .compactMap { extractBulletValue(in: text, label: $0) }
+            .first { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
 
     private static func normalizedCurrentState(_ raw: String, source: String) throws -> String {
@@ -240,17 +255,26 @@ enum NativeWorkspaceLifecycleStore {
         }
     }
 
-    private static func upsertBulletValue(in text: String, label: String, value: String) -> String {
+    private static func upsertBulletValue(
+        in text: String,
+        label: String,
+        aliases: [String] = [],
+        value: String
+    ) -> String {
         var replaced = false
         var lines = text.components(separatedBy: "\n")
         let hadTrailingNewline = text.hasSuffix("\n")
+        let acceptedLabels = [label] + aliases
         if hadTrailingNewline {
             lines.removeLast()
         }
 
-        lines = lines.map { line in
+        lines = lines.compactMap { line in
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            if ["- \(label):", "- \(label)："].contains(where: { trimmed.hasPrefix($0) }) {
+            if acceptedLabels.contains(where: {
+                trimmed.hasPrefix("- \($0):") || trimmed.hasPrefix("- \($0)：")
+            }) {
+                guard !replaced else { return nil }
                 replaced = true
                 return "- \(label): \(value)"
             }
@@ -278,7 +302,12 @@ enum NativeWorkspaceLifecycleStore {
         nextAction: String,
         updatedAt: String
     ) -> String {
-        let withState = upsertBulletValue(in: text, label: "状态", value: state)
+        let withState = upsertBulletValue(
+            in: text,
+            label: "状态",
+            aliases: ["当前状态"],
+            value: state
+        )
         let withFocus = upsertBulletValue(in: withState, label: "当前焦点", value: focus)
         let withNextAction = upsertBulletValue(in: withFocus, label: "下一步", value: nextAction)
         return upsertBulletValue(in: withNextAction, label: "更新时间", value: updatedAt)

@@ -1857,6 +1857,56 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: workspaceDocumentURL, encoding: .utf8), originalWorkspace)
     }
 
+    func testNativeWorkspaceLifecycleStoreRejectsSymlinkBeforeWriting() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-lifecycle-symlink-\(UUID().uuidString)")
+        let workspaceURL = root.appendingPathComponent("workspace")
+        let workspaceDocumentURL = workspaceURL.appendingPathComponent("workspace.md")
+        let statusDocumentURL = workspaceURL.appendingPathComponent("STATUS.md")
+        let statusTargetURL = root.appendingPathComponent("status-target.md")
+        let auditRoot = root.appendingPathComponent("audit")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        let originalWorkspace = "# Workspace\n\n- 当前状态: developing\n"
+        let originalTarget = "# STATUS\n\n- 状态: developing\n"
+        try originalWorkspace.write(to: workspaceDocumentURL, atomically: true, encoding: .utf8)
+        try originalTarget.write(to: statusTargetURL, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: statusDocumentURL, withDestinationURL: statusTargetURL)
+
+        var writeCount = 0
+        XCTAssertThrowsError(
+            try NativeWorkspaceLifecycleStore.update(
+                request: UpdateWorkspaceLifecycleRequest(
+                    workspacePath: workspaceURL.path,
+                    state: "archived",
+                    confirmed: true,
+                    auditRoot: auditRoot.path,
+                    actor: "Nexus Test"
+                ),
+                expectedState: "developing",
+                writeFile: { content, url in
+                    writeCount += 1
+                    try content.write(to: url, atomically: true, encoding: .utf8)
+                }
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("lifecycle document is not a file"))
+        }
+
+        XCTAssertEqual(writeCount, 0)
+        XCTAssertEqual(try String(contentsOf: workspaceDocumentURL, encoding: .utf8), originalWorkspace)
+        XCTAssertEqual(try String(contentsOf: statusTargetURL, encoding: .utf8), originalTarget)
+        XCTAssertEqual(
+            try FileManager.default.destinationOfSymbolicLink(atPath: statusDocumentURL.path),
+            statusTargetURL.path
+        )
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: auditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path
+        ))
+    }
+
     func testNativeWorkspaceLifecycleStoreRejectsStaleAndConflictingEvidenceBeforeWriting() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-native-lifecycle-conflicts-\(UUID().uuidString)")
@@ -1920,6 +1970,130 @@ final class ModelBehaviorTests: XCTestCase {
         ))
     }
 
+    func testNativeWorkspaceLifecycleStoreCanonicalizesStateAliasesAcrossRescanAndSecondUpdate() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-lifecycle-aliases-\(UUID().uuidString)")
+        let workspaceURL = root.appendingPathComponent("2026-07-10-lifecycle-aliases")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        try "# Workspace\n\n- 状态: developing\n".write(
+            to: workspaceURL.appendingPathComponent("workspace.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# STATUS\n\n- 当前状态: developing\n".write(
+            to: workspaceURL.appendingPathComponent("STATUS.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        _ = try NativeWorkspaceLifecycleStore.update(
+            request: UpdateWorkspaceLifecycleRequest(
+                workspacePath: workspaceURL.path,
+                state: "archived",
+                confirmed: true
+            ),
+            expectedState: "developing"
+        )
+        let rescanned = try NativeWorkspaceScanner.scan(
+            workspacesRoot: root.path,
+            sourceReposRoot: root.appendingPathComponent("source-repos").path,
+            docsRoot: root.appendingPathComponent("docs").path
+        )
+        let rescannedWorkspace = try XCTUnwrap(rescanned.workspaces.first)
+
+        XCTAssertEqual(rescannedWorkspace.lifecycle?.stage, "archived")
+        XCTAssertFalse(rescannedWorkspace.risks.contains { $0.contains("生命周期状态冲突") })
+
+        _ = try NativeWorkspaceLifecycleStore.update(
+            request: UpdateWorkspaceLifecycleRequest(
+                workspacePath: workspaceURL.path,
+                state: "developing",
+                confirmed: true
+            ),
+            expectedState: "archived"
+        )
+        let workspaceContent = try String(
+            contentsOf: workspaceURL.appendingPathComponent("workspace.md"),
+            encoding: .utf8
+        )
+        let statusContent = try String(
+            contentsOf: workspaceURL.appendingPathComponent("STATUS.md"),
+            encoding: .utf8
+        )
+
+        XCTAssertEqual(workspaceContent.components(separatedBy: "- 当前状态:").count - 1, 1)
+        XCTAssertFalse(workspaceContent.contains("- 状态:"))
+        XCTAssertEqual(statusContent.components(separatedBy: "- 状态:").count - 1, 1)
+        XCTAssertFalse(statusContent.contains("- 当前状态:"))
+    }
+
+    func testNativeWorkspaceLifecycleStoreResolvesRecognizedStateWhenOtherStateIsEmpty() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-lifecycle-one-empty-\(UUID().uuidString)")
+        let workspaceURL = root.appendingPathComponent("workspace")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        try "# Workspace\n\n- 当前状态:   \n".write(
+            to: workspaceURL.appendingPathComponent("workspace.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# STATUS\n\n- 状态: developing\n".write(
+            to: workspaceURL.appendingPathComponent("STATUS.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let response = try NativeWorkspaceLifecycleStore.update(
+            request: UpdateWorkspaceLifecycleRequest(
+                workspacePath: workspaceURL.path,
+                state: "archived",
+                confirmed: true
+            ),
+            expectedState: "developing"
+        )
+
+        XCTAssertEqual(response.previousState, "developing")
+        XCTAssertEqual(response.state, "archived")
+    }
+
+    func testNativeWorkspaceLifecycleStoreTreatsBothEmptyStatesAsUnknown() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-lifecycle-both-empty-\(UUID().uuidString)")
+        let workspaceURL = root.appendingPathComponent("workspace")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        try "# Workspace\n\n- 当前状态:\n".write(
+            to: workspaceURL.appendingPathComponent("workspace.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# STATUS\n\n- 状态: ` `\n".write(
+            to: workspaceURL.appendingPathComponent("STATUS.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let response = try NativeWorkspaceLifecycleStore.update(
+            request: UpdateWorkspaceLifecycleRequest(
+                workspacePath: workspaceURL.path,
+                state: "developing",
+                confirmed: true
+            ),
+            expectedState: "unknown"
+        )
+
+        XCTAssertEqual(response.previousState, "unknown")
+        XCTAssertEqual(response.state, "developing")
+    }
+
     func testNativeWorkspaceLifecycleStoreRollsBackBothDocumentsWhenSecondWriteFails() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-native-lifecycle-rollback-\(UUID().uuidString)")
@@ -1952,6 +2126,7 @@ final class ModelBehaviorTests: XCTestCase {
                 writeFile: { content, url in
                     writeCount += 1
                     if writeCount == 2 {
+                        try content.write(to: url, atomically: true, encoding: .utf8)
                         throw NSError(
                             domain: "NativeWorkspaceLifecycleStoreTests",
                             code: 2,
@@ -1968,6 +2143,113 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(writeCount, 4)
         XCTAssertEqual(try String(contentsOf: workspaceDocumentURL, encoding: .utf8), originalWorkspace)
         XCTAssertEqual(try String(contentsOf: statusDocumentURL, encoding: .utf8), originalStatus)
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: auditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path
+        ))
+    }
+
+    func testNativeWorkspaceLifecycleStoreRemovesOriginallyMissingDocumentsAfterWriteFailure() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-lifecycle-missing-rollback-\(UUID().uuidString)")
+        let workspaceURL = root.appendingPathComponent("workspace")
+        let workspaceDocumentURL = workspaceURL.appendingPathComponent("workspace.md")
+        let statusDocumentURL = workspaceURL.appendingPathComponent("STATUS.md")
+        let auditRoot = root.appendingPathComponent("audit")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+
+        var writeCount = 0
+        XCTAssertThrowsError(
+            try NativeWorkspaceLifecycleStore.update(
+                request: UpdateWorkspaceLifecycleRequest(
+                    workspacePath: workspaceURL.path,
+                    state: "developing",
+                    confirmed: true,
+                    auditRoot: auditRoot.path,
+                    actor: "Nexus Test"
+                ),
+                expectedState: "unknown",
+                writeFile: { content, url in
+                    writeCount += 1
+                    try content.write(to: url, atomically: true, encoding: .utf8)
+                    if writeCount == 2 {
+                        throw NSError(
+                            domain: "NativeWorkspaceLifecycleStoreTests",
+                            code: 2,
+                            userInfo: [NSLocalizedDescriptionKey: "injected write failure after creating STATUS.md"]
+                        )
+                    }
+                }
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("injected write failure after creating STATUS.md"))
+        }
+
+        XCTAssertEqual(writeCount, 2)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: workspaceDocumentURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: statusDocumentURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: auditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path
+        ))
+    }
+
+    func testNativeWorkspaceLifecycleStoreContinuesRollbackAndReportsRollbackFailure() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-lifecycle-rollback-failure-\(UUID().uuidString)")
+        let workspaceURL = root.appendingPathComponent("workspace")
+        let workspaceDocumentURL = workspaceURL.appendingPathComponent("workspace.md")
+        let statusDocumentURL = workspaceURL.appendingPathComponent("STATUS.md")
+        let auditRoot = root.appendingPathComponent("audit")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        let originalWorkspace = "# Workspace\n\n- 当前状态: developing\n- 需求名称: Rollback Failure\n"
+        let originalStatus = "# STATUS\n\n- 状态: developing\n- 当前焦点: Before write\n"
+        try originalWorkspace.write(to: workspaceDocumentURL, atomically: true, encoding: .utf8)
+        try originalStatus.write(to: statusDocumentURL, atomically: true, encoding: .utf8)
+
+        var writeCount = 0
+        XCTAssertThrowsError(
+            try NativeWorkspaceLifecycleStore.update(
+                request: UpdateWorkspaceLifecycleRequest(
+                    workspacePath: workspaceURL.path,
+                    state: "archived",
+                    confirmed: true,
+                    auditRoot: auditRoot.path,
+                    actor: "Nexus Test"
+                ),
+                expectedState: "developing",
+                writeFile: { content, url in
+                    writeCount += 1
+                    if writeCount == 3 {
+                        throw NSError(
+                            domain: "NativeWorkspaceLifecycleStoreTests",
+                            code: 3,
+                            userInfo: [NSLocalizedDescriptionKey: "injected STATUS.md rollback failure"]
+                        )
+                    }
+                    try content.write(to: url, atomically: true, encoding: .utf8)
+                    if writeCount == 2 {
+                        throw NSError(
+                            domain: "NativeWorkspaceLifecycleStoreTests",
+                            code: 2,
+                            userInfo: [NSLocalizedDescriptionKey: "injected STATUS.md target write failure"]
+                        )
+                    }
+                }
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("rollback is incomplete"))
+            XCTAssertTrue(error.localizedDescription.contains("injected STATUS.md target write failure"))
+            XCTAssertTrue(error.localizedDescription.contains("injected STATUS.md rollback failure"))
+        }
+
+        XCTAssertEqual(writeCount, 4)
+        XCTAssertEqual(try String(contentsOf: workspaceDocumentURL, encoding: .utf8), originalWorkspace)
+        XCTAssertNotEqual(try String(contentsOf: statusDocumentURL, encoding: .utf8), originalStatus)
         XCTAssertFalse(FileManager.default.fileExists(
             atPath: auditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path
         ))
