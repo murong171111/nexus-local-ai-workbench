@@ -8710,6 +8710,171 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(events.first?.metadata["duplicateCount"], "1")
     }
 
+    func testDemandTaskTransferPlanCapturesStrictInputAndOutputSnapshots() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-demand-task-transfer-revisions-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let intake = """
+        # 需求列表
+
+        | 需求点 | 状态 | 优先级 | 来源 | 说明 |
+        | --- | --- | --- | --- | --- |
+        | 新增交易快照写入 | 待办 | P0 | 蓝湖 | 保存订单时记录快照 |
+        """ + "\n"
+        let execution = """
+        # Tasks
+
+        | 任务 | 状态 | 说明 |
+        | --- | --- | --- |
+        | 已有执行任务 | 待办 | priority=medium |
+        """ + "\n"
+
+        func intakeURL(for name: String) -> URL {
+            root.appendingPathComponent(name).appendingPathComponent("需求/tasks.md")
+        }
+
+        func executionURL(for name: String) -> URL {
+            root.appendingPathComponent(name).appendingPathComponent("tasks.md")
+        }
+
+        func write(_ content: String, to url: URL) throws {
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try content.write(to: url, atomically: true, encoding: .utf8)
+        }
+
+        func plan(_ name: String) -> DemandTaskTransferPlan {
+            let workspaceRoot = root.appendingPathComponent(name)
+            return DemandTaskTransferPlan.resolve(
+                workspace: workspaceForWorkflowSummary(
+                    stage: "developing",
+                    id: "demand-transfer-revisions-\(name)",
+                    path: workspaceRoot.path
+                ),
+                status: demandIntakeStatus(at: workspaceRoot.appendingPathComponent("需求"))
+            )
+        }
+
+        try write(intake, to: intakeURL(for: "regular"))
+        try write(execution, to: executionURL(for: "regular"))
+        try write(intake, to: intakeURL(for: "missing-output"))
+        try write(execution, to: executionURL(for: "missing-intake"))
+        try write(intake, to: root.appendingPathComponent("external-intake.md"))
+        try FileManager.default.createDirectory(
+            at: intakeURL(for: "linked-intake").deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createSymbolicLink(
+            at: intakeURL(for: "linked-intake"),
+            withDestinationURL: root.appendingPathComponent("external-intake.md")
+        )
+        try FileManager.default.createDirectory(
+            at: intakeURL(for: "invalid-intake").deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data([0x23, 0x20, 0xC3, 0x28, 0x0A]).write(to: intakeURL(for: "invalid-intake"))
+        try write(intake, to: intakeURL(for: "linked-output"))
+        try write(execution, to: root.appendingPathComponent("external-output.md"))
+        try FileManager.default.createDirectory(
+            at: executionURL(for: "linked-output").deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createSymbolicLink(
+            at: executionURL(for: "linked-output"),
+            withDestinationURL: root.appendingPathComponent("external-output.md")
+        )
+        try write(intake, to: intakeURL(for: "invalid-output"))
+        try FileManager.default.createDirectory(
+            at: executionURL(for: "invalid-output").deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data([0x23, 0x20, 0xC3, 0x28, 0x0A]).write(to: executionURL(for: "invalid-output"))
+
+        let regular = plan("regular")
+        let missingOutput = plan("missing-output")
+        let missingIntake = plan("missing-intake")
+        let linkedIntake = plan("linked-intake")
+        let invalidIntake = plan("invalid-intake")
+        let linkedOutput = plan("linked-output")
+        let invalidOutput = plan("invalid-output")
+
+        guard case .regularUTF8(let intakeSHA, let intakeBytes) = regular.expectedIntakeRevision else {
+            return XCTFail("expected regular intake revision")
+        }
+        guard case .regularUTF8(let outputSHA, let outputBytes) = regular.expectedExecutionRevision else {
+            return XCTFail("expected regular execution revision")
+        }
+        XCTAssertEqual(intakeSHA.count, 64)
+        XCTAssertEqual(intakeBytes, Data(intake.utf8).count)
+        XCTAssertEqual(outputSHA.count, 64)
+        XCTAssertEqual(outputBytes, Data(execution.utf8).count)
+        XCTAssertNil(regular.blockerSummary)
+        XCTAssertEqual(regular.transferableItems.map(\.title), ["新增交易快照写入"])
+
+        XCTAssertEqual(missingOutput.expectedExecutionRevision, .missing)
+        XCTAssertNil(missingOutput.blockerSummary)
+        XCTAssertTrue(missingOutput.hasTransferableItems)
+
+        XCTAssertTrue(missingIntake.isBlocked)
+        XCTAssertTrue(missingIntake.blockerSummary?.contains("missing") == true)
+        XCTAssertFalse(missingIntake.hasTransferableItems)
+        XCTAssertTrue(linkedIntake.blockerSummary?.contains("not a regular file") == true)
+        XCTAssertTrue(invalidIntake.blockerSummary?.contains("not valid UTF-8") == true)
+        XCTAssertTrue(linkedOutput.blockerSummary?.contains("not a regular file") == true)
+        XCTAssertTrue(invalidOutput.blockerSummary?.contains("not valid UTF-8") == true)
+    }
+
+    func testDemandTaskTransferPlanUsesExactOutputSnapshotInsteadOfStaleWorkspaceTasks() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-demand-task-transfer-stale-workspace-\(UUID().uuidString)")
+        let demandDir = root.appendingPathComponent("需求")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: demandDir, withIntermediateDirectories: true)
+        try """
+        # 需求列表
+
+        | 需求点 | 状态 | 优先级 | 来源 | 说明 |
+        | --- | --- | --- | --- | --- |
+        | 重新加入任务 | 待办 | P1 | 蓝湖 | 当前 root tasks.md 中不存在 |
+        """.write(to: demandDir.appendingPathComponent("tasks.md"), atomically: true, encoding: .utf8)
+        try """
+        # Tasks
+
+        | 任务 | 状态 | 说明 |
+        | --- | --- | --- |
+        | 已有执行任务 | 待办 | priority=medium |
+        """.write(to: root.appendingPathComponent("tasks.md"), atomically: true, encoding: .utf8)
+
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "demand-transfer-stale-workspace",
+            path: root.path,
+            tasks: [
+                WorkspaceTask(
+                    id: "stale-task",
+                    title: "重新加入任务",
+                    status: "待办",
+                    detail: "stale workspace summary",
+                    priority: "medium",
+                    source: "workspace",
+                    sourceEventID: nil,
+                    sourceLine: 5
+                )
+            ]
+        )
+
+        let plan = DemandTaskTransferPlan.resolve(
+            workspace: workspace,
+            status: demandIntakeStatus(at: demandDir)
+        )
+
+        XCTAssertEqual(plan.transferableItems.map(\.title), ["重新加入任务"])
+        XCTAssertEqual(plan.duplicateCount, 0)
+    }
+
     func testWorkflowPathStatusLabelsStayChineseFirst() {
         XCTAssertEqual(WorkflowPathStatus.ready.displayLabel, "就绪 / ready")
         XCTAssertEqual(WorkflowPathStatus.review.displayLabel, "复核 / review")

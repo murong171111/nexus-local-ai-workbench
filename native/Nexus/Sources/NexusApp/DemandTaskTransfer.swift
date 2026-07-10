@@ -75,6 +75,10 @@ struct DemandTaskTransferPlan: Identifiable, Hashable {
     let executionTasksPath: String
     let candidates: [DemandTaskTransferItem]
     let existingTitles: Set<String>
+    let expectedIntakeRevision: NativeDemandTaskDocumentRevision
+    let expectedExecutionRevision: NativeDemandTaskDocumentRevision
+    let blockerSummary: String?
+    let blockerPath: String?
 
     var id: String {
         workspaceID
@@ -89,10 +93,17 @@ struct DemandTaskTransferPlan: Identifiable, Hashable {
     }
 
     var hasTransferableItems: Bool {
-        !transferableItems.isEmpty
+        !isBlocked && !transferableItems.isEmpty
+    }
+
+    var isBlocked: Bool {
+        blockerSummary != nil
     }
 
     var summary: String {
+        if let blockerSummary {
+            return blockerSummary
+        }
         if candidates.isEmpty {
             return "需求/tasks.md 中还没有可转入的真实需求点。"
         }
@@ -107,17 +118,32 @@ struct DemandTaskTransferPlan: Identifiable, Hashable {
 
     static func resolve(
         workspace: WorkspaceSummary,
-        status: DemandIntakeStatus
+        status: DemandIntakeStatus,
+        fileManager: FileManager = .default
     ) -> DemandTaskTransferPlan {
         let intakeTasksPath = status.files.first { $0.key == "tasks" }?.path
             ?? "\(workspace.path)/需求/tasks.md"
         let executionTasksPath = workspace.documentLinks["tasks"] ?? "\(workspace.path)/tasks.md"
-        let intakeText = readText(at: intakeTasksPath)
-        let executionText = readText(at: executionTasksPath)
-        let candidates = demandTaskCandidates(in: intakeText)
+        let intakeSnapshot = NativeDemandTaskTransferStore.inspectDocument(
+            at: intakeTasksPath,
+            fileManager: fileManager
+        )
+        let executionSnapshot = NativeDemandTaskTransferStore.inspectDocument(
+            at: executionTasksPath,
+            fileManager: fileManager
+        )
+        let candidates = demandTaskCandidates(in: intakeSnapshot.content ?? "")
         let existingTitles = Set(
-            workspace.tasks.map { DemandTaskTransferItem.normalizeTitle($0.title) }
-                + rootTaskTitles(in: executionText)
+            (executionSnapshot.content.map {
+                NativeWorkspaceTaskParser.rows(from: $0, folder: workspace.id)
+            } ?? [])
+                .map { DemandTaskTransferItem.normalizeTitle($0.snapshot.title) }
+        )
+        let blocker = blocker(
+            intakePath: intakeTasksPath,
+            intakeRevision: intakeSnapshot.revision,
+            executionPath: executionTasksPath,
+            executionRevision: executionSnapshot.revision
         )
 
         return DemandTaskTransferPlan(
@@ -127,12 +153,47 @@ struct DemandTaskTransferPlan: Identifiable, Hashable {
             intakeTasksPath: intakeTasksPath,
             executionTasksPath: executionTasksPath,
             candidates: candidates,
-            existingTitles: existingTitles
+            existingTitles: existingTitles,
+            expectedIntakeRevision: intakeSnapshot.revision,
+            expectedExecutionRevision: executionSnapshot.revision,
+            blockerSummary: blocker.summary,
+            blockerPath: blocker.path
         )
     }
 
-    private static func readText(at path: String) -> String {
-        (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+    private static func blocker(
+        intakePath: String,
+        intakeRevision: NativeDemandTaskDocumentRevision,
+        executionPath: String,
+        executionRevision: NativeDemandTaskDocumentRevision
+    ) -> (summary: String?, path: String?) {
+        if case .regularUTF8 = intakeRevision {
+            // A missing root tasks.md is a safe, new-document state.
+        } else {
+            return (blockerSummary(for: intakeRevision, path: intakePath), intakePath)
+        }
+        if case .regularUTF8 = executionRevision {
+            return (nil, nil)
+        }
+        if case .missing = executionRevision {
+            return (nil, nil)
+        }
+        return (blockerSummary(for: executionRevision, path: executionPath), executionPath)
+    }
+
+    private static func blockerSummary(
+        for revision: NativeDemandTaskDocumentRevision,
+        path: String
+    ) -> String {
+        switch revision {
+        case .missing:
+            let expandedPath = (path as NSString).expandingTildeInPath
+            return "demand task document is missing: \(expandedPath)"
+        case .regularUTF8:
+            return ""
+        case .invalid(let reason):
+            return reason
+        }
     }
 
     private static func demandTaskCandidates(in text: String) -> [DemandTaskTransferItem] {
@@ -160,17 +221,6 @@ struct DemandTaskTransferPlan: Identifiable, Hashable {
                 detail: cells[safe: 4]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
                 sourceLine: sourceLine
             )
-        }
-    }
-
-    private static func rootTaskTitles(in text: String) -> [String] {
-        tableRowsWithLineNumbers(in: text).compactMap { _, cells in
-            guard let title = cells.first?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !title.isEmpty,
-                  !title.elementsEqual("任务") else {
-                return nil
-            }
-            return DemandTaskTransferItem.normalizeTitle(title)
         }
     }
 
