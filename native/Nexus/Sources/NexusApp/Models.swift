@@ -654,7 +654,7 @@ struct TaskCenterItem: Identifiable, Hashable {
     let task: WorkspaceTask
 
     var id: String {
-        "\(workspaceID):\(task.id)"
+        "\(workspaceID):\(task.id):\(task.sourceLineLabel)"
     }
 }
 

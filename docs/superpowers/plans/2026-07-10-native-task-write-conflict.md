@@ -746,3 +746,22 @@ git add native/Nexus/Sources/NexusApp/NativeWorkspaceTaskStore.swift \
     CHANGELOG.md
 git commit -m "Protect Native task status writes"
 ```
+
+---
+
+## Final Review Fix Addendum
+
+### Scope
+
+Address the final review findings without changing the historical Task 1-3 steps: source line is locating/diagnostic evidence rather than an independent write CAS condition; Task Center presentation identity must distinguish duplicate canonical IDs by source line; the AppState confirmation interaction needs direct stale/success coverage; and the scanner-to-store round trip must retain Agent evidence and fourth-column priority.
+
+### Steps
+
+- [x] Add `testNativeWorkspaceTaskStoreAllowsNonTaskLineDriftWhenTaskEvidenceUnchanged`. Start from a confirmation snapshot at L5, add only non-task blank/text lines before the table, and prove `task-0` updates the unchanged title/status at its current line. Keep `testNativeWorkspaceTaskStoreRejectsStaleStatusAndShiftedTaskID` green so inserted task-row title/status changes still reject.
+- [x] Run that test RED, remove source-line equality from `NativeWorkspaceTaskStore.update`, and preserve expected/current source lines in `staleConfirmation` diagnostics.
+- [x] Add `testTaskCenterItemIdentitySeparatesDuplicateCanonicalTaskIDsBySourceLine` using scanner-produced duplicate `event=` rows. Prove equal canonical write IDs and distinct Task Center IDs; include a stable `L?` fallback when source line is unavailable.
+- [x] Run that test RED, include `WorkspaceTask.sourceLineLabel` in `TaskCenterItem.id`, and keep task filtering and confirmation UI unchanged.
+- [x] Add an `@MainActor async` AppState request/confirm interaction test. For stale evidence, assert pending remains, stale error appears, updating resets, file/audit stay unchanged. Restore valid evidence and assert success clears pending/error/updating state, refreshes the task status, produces local feedback, and focuses the next active task. Do not modify `AppState.swift` unless this test proves a behavior defect.
+- [x] Add a scanner-produced Agent task round trip: update through the store, rescan, and assert stable Agent ID/source event/source line, changed status, and retained fourth-column priority.
+- [x] Run focused task-store, Task Center, AppState, scanner, and lifecycle tests; then run `swift test --disable-sandbox --package-path native/Nexus` with the established temporary cache environment.
+- [x] Append RED/GREEN and full-suite evidence to `.superpowers/sdd/task-write-conflict-final-fixes-report.md`, then commit only tracked changes with `Fix Native task review findings`.

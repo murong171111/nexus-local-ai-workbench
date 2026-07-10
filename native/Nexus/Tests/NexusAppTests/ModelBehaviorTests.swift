@@ -847,6 +847,70 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertFalse(TaskCenterFilter.agent.matches(blocked))
     }
 
+    func testTaskCenterItemIdentitySeparatesDuplicateCanonicalTaskIDsBySourceLine() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-task-center-duplicate-id-\(UUID().uuidString)")
+        let workspaceURL = root.appendingPathComponent("workspace")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        try "# Workspace\n\n- 当前状态: developing\n".write(
+            to: workspaceURL.appendingPathComponent("workspace.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try """
+        # Tasks
+
+        | 任务 | 状态 | 说明 |
+        | --- | --- | --- |
+        | First Agent task | 进行中 | event=shared-event |
+        | Second Agent task | 待办 | event=shared-event |
+        """.write(
+            to: workspaceURL.appendingPathComponent("tasks.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let dashboard = try NativeWorkspaceScanner.scan(
+            workspacesRoot: root.path,
+            sourceReposRoot: root.appendingPathComponent("source-repos").path,
+            docsRoot: root.appendingPathComponent("docs").path
+        )
+        let workspace = WorkspaceSummary(snapshot: try XCTUnwrap(dashboard.workspaces.first))
+        let items = workspace.tasks.map {
+            TaskCenterItem(
+                workspaceID: workspace.id,
+                workspaceName: workspace.name,
+                workspaceFolder: workspace.folder,
+                task: $0
+            )
+        }
+
+        XCTAssertEqual(workspace.tasks.map(\.id), ["workspace:shared-event", "workspace:shared-event"])
+        XCTAssertEqual(workspace.tasks.map(\.sourceLine), [5, 6])
+        XCTAssertNotEqual(items[0].id, items[1].id)
+        XCTAssertEqual(items[0].id, "workspace:workspace:shared-event:L5")
+        XCTAssertEqual(items[1].id, "workspace:workspace:shared-event:L6")
+        XCTAssertEqual(
+            TaskCenterItem(
+                workspaceID: workspace.id,
+                workspaceName: workspace.name,
+                workspaceFolder: workspace.folder,
+                task: WorkspaceTask(
+                    id: "workspace:shared-event",
+                    title: "No line evidence",
+                    status: "待办",
+                    detail: "",
+                    priority: "normal",
+                    source: "agent",
+                    sourceEventID: "shared-event",
+                    sourceLine: nil
+                )
+            ).id,
+            "workspace:workspace:shared-event:L?"
+        )
+    }
+
     @MainActor
     func testTaskCenterContinuationPrefersSameWorkspaceActiveTask() {
         let sameWorkspace = workspaceForWorkflowSummary(
@@ -912,7 +976,7 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(nextTask?.task.id, "same-next")
         XCTAssertEqual(appState.selectedTaskCenterFilter, .all)
         XCTAssertEqual(appState.selectedWorkspaceID, sameWorkspace.id)
-        XCTAssertEqual(appState.focusedTaskCenterItemID, "\(sameWorkspace.id):same-next")
+        XCTAssertEqual(appState.focusedTaskCenterItemID, "\(sameWorkspace.id):same-next:L8")
     }
 
     func testWorkspaceFiltersMatchLifecycleRiskAndSearchQuery() {
@@ -1918,6 +1982,180 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(
             atPath: auditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path
         ))
+    }
+
+    func testNativeWorkspaceTaskStoreAllowsNonTaskLineDriftWhenTaskEvidenceUnchanged() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-task-line-drift-\(UUID().uuidString)")
+        let workspaceURL = root.appendingPathComponent("workspace")
+        let tasksURL = workspaceURL.appendingPathComponent("tasks.md")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        let currentContent = """
+        # Tasks
+
+        This note was added after confirmation.
+
+        | 任务 | 状态 | 说明 |
+        | --- | --- | --- |
+        | Original | 进行中 | keep |
+        | Next | 待办 | remain active |
+        """ + "\n"
+        try currentContent.write(to: tasksURL, atomically: true, encoding: .utf8)
+
+        let response = try NativeWorkspaceTaskStore.update(
+            request: UpdateWorkspaceTaskRequest(
+                workspacePath: workspaceURL.path,
+                taskId: "workspace:task-0",
+                status: "已完成",
+                confirmed: true
+            ),
+            expectedTitle: "Original",
+            expectedStatus: "进行中",
+            expectedSourceLine: 5
+        )
+        let updated = try String(contentsOf: tasksURL, encoding: .utf8)
+
+        XCTAssertEqual(response.task.id, "workspace:task-0")
+        XCTAssertEqual(response.task.sourceLine, 7)
+        XCTAssertTrue(updated.contains("This note was added after confirmation."))
+        XCTAssertTrue(updated.contains("| Original | 已完成 | keep |"))
+        XCTAssertTrue(updated.contains("| Next | 待办 | remain active |"))
+    }
+
+    func testNativeWorkspaceScannerTaskStoreRoundTripPreservesAgentEvidenceAndPriority() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-agent-round-trip-\(UUID().uuidString)")
+        let workspaceURL = root.appendingPathComponent("workspace")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        try "# Workspace\n\n- 当前状态: developing\n".write(
+            to: workspaceURL.appendingPathComponent("workspace.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try """
+        # Tasks
+
+        | 任务 | 状态 | 说明 | 优先级 |
+        | --- | --- | --- | --- |
+        | Agent work | 进行中 | event=agent-42 | high |
+        """.write(
+            to: workspaceURL.appendingPathComponent("tasks.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let scanned = try scannedWorkspace(
+            folder: "workspace",
+            workspacesRoot: root,
+            sourceRoot: root.appendingPathComponent("source-repos")
+        )
+        let task = try XCTUnwrap(scanned.tasks.first)
+        _ = try NativeWorkspaceTaskStore.update(
+            request: UpdateWorkspaceTaskRequest(
+                workspacePath: workspaceURL.path,
+                taskId: task.id,
+                status: "已完成",
+                confirmed: true
+            ),
+            expectedTitle: task.title,
+            expectedStatus: task.status,
+            expectedSourceLine: task.sourceLine
+        )
+
+        let rescanned = try scannedWorkspace(
+            folder: "workspace",
+            workspacesRoot: root,
+            sourceRoot: root.appendingPathComponent("source-repos")
+        )
+        let updated = try XCTUnwrap(rescanned.tasks.first)
+
+        XCTAssertEqual(updated.id, "workspace:agent-42")
+        XCTAssertEqual(updated.title, "Agent work")
+        XCTAssertEqual(updated.status, "已完成")
+        XCTAssertEqual(updated.source, "agent")
+        XCTAssertEqual(updated.sourceEventID, "agent-42")
+        XCTAssertEqual(updated.sourceLine, task.sourceLine)
+        XCTAssertEqual(updated.priority, "high")
+    }
+
+    @MainActor
+    func testAppStateTaskStatusConfirmationKeepsStalePendingThenRefreshesSuccessfulWrite() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-app-state-task-confirmation-\(UUID().uuidString)")
+        let workspacesRoot = root.appendingPathComponent("workspaces")
+        let workspaceURL = workspacesRoot.appendingPathComponent("workspace")
+        let sourceRoot = root.appendingPathComponent("source-repos")
+        let docsRoot = root.appendingPathComponent("docs")
+        let defaultsSuite = "NexusAppTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: defaultsSuite)!
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            defaults.removePersistentDomain(forName: defaultsSuite)
+        }
+        for directory in [workspaceURL, sourceRoot, docsRoot] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        try "# Workspace\n\n- 当前状态: developing\n".write(
+            to: workspaceURL.appendingPathComponent("workspace.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let originalTasks = """
+        # Tasks
+
+        | 任务 | 状态 | 说明 |
+        | --- | --- | --- |
+        | Original | 进行中 | update me |
+        | Next | 待办 | remain active |
+        """ + "\n"
+        let tasksURL = workspaceURL.appendingPathComponent("tasks.md")
+        try originalTasks.write(to: tasksURL, atomically: true, encoding: .utf8)
+        let initialWorkspace = try scannedWorkspace(
+            folder: "workspace",
+            workspacesRoot: workspacesRoot,
+            sourceRoot: sourceRoot
+        )
+        let appState = AppState(
+            workspaces: [initialWorkspace],
+            agentStatus: AgentStatus(title: "Ready", detail: "Tests", connectedTools: []),
+            bridge: PreviewNexusBridge(),
+            workspaceRoot: workspacesRoot.path,
+            sourceReposRoot: sourceRoot.path,
+            docsRoot: docsRoot.path,
+            defaults: defaults
+        )
+        let auditRoot = try XCTUnwrap(
+            FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        )
+        .appendingPathComponent("com.ks.nexus/audit")
+        let auditCountBefore = (try? NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 200).count) ?? 0
+        let item = try XCTUnwrap(appState.taskCenterItems.first { $0.task.id == "workspace:task-0" })
+
+        appState.requestTaskStatusUpdate(item, status: "已完成")
+        let staleTasks = originalTasks.replacingOccurrences(of: "| Original | 进行中 |", with: "| Changed | 阻塞 |")
+        try staleTasks.write(to: tasksURL, atomically: true, encoding: .utf8)
+        await appState.confirmPendingTaskStatusUpdate(confirmed: true)
+
+        XCTAssertNotNil(appState.pendingTaskStatusUpdate)
+        XCTAssertTrue(appState.lastError?.contains("changed since confirmation") == true)
+        XCTAssertFalse(appState.isUpdatingTask)
+        XCTAssertEqual(try String(contentsOf: tasksURL, encoding: .utf8), staleTasks)
+        XCTAssertEqual(
+            (try? NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 200).count) ?? 0,
+            auditCountBefore
+        )
+
+        try originalTasks.write(to: tasksURL, atomically: true, encoding: .utf8)
+        await appState.confirmPendingTaskStatusUpdate(confirmed: true)
+
+        XCTAssertNil(appState.pendingTaskStatusUpdate)
+        XCTAssertNil(appState.lastError)
+        XCTAssertFalse(appState.isUpdatingTask)
+        XCTAssertEqual(appState.workspaces.first?.tasks.first?.status, "已完成")
+        XCTAssertNotNil(appState.localWriteFeedback)
+        XCTAssertEqual(appState.focusedTaskCenterItemID, "workspace:workspace:task-1:L6")
     }
 
     func testNativeWorkspaceTaskStoreRejectsSymlinkBeforeWriting() throws {

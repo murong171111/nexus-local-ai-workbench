@@ -46,10 +46,8 @@ enum NativeWorkspaceTaskStore {
         let normalizedExpectedTitle = NativeWorkspaceTaskParser.sanitizedCell(expectedTitle)
         let normalizedExpectedStatus = NativeWorkspaceTaskParser.sanitizedCell(expectedStatus)
         let currentTask = matchedRow.snapshot
-        let sourceLineMatches = expectedSourceLine.map { $0 == currentTask.sourceLine } ?? true
         guard currentTask.title == normalizedExpectedTitle,
-              currentTask.status == normalizedExpectedStatus,
-              sourceLineMatches else {
+              currentTask.status == normalizedExpectedStatus else {
             throw NativeWorkspaceTaskStoreError.staleConfirmation(
                 taskID: taskID,
                 expected: taskSnapshotSummary(
