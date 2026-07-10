@@ -3449,6 +3449,178 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(status.files.filter { $0.exists }.map(\.filename), ["requirement.md", "questions.md"])
     }
 
+    func testNativeDemandIntakeStoreStatusRejectsUnsafeEntryEvidence() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-demand-unsafe-status-\(UUID().uuidString)")
+        let externalDirectory = root.appendingPathComponent("external-demand")
+        let externalTasks = root.appendingPathComponent("external-tasks.md")
+        let linkedDirectoryWorkspace = root.appendingPathComponent("linked-directory-workspace")
+        let linkedFileWorkspace = root.appendingPathComponent("linked-file-workspace")
+        let directoryFileWorkspace = root.appendingPathComponent("directory-file-workspace")
+        let invalidFileWorkspace = root.appendingPathComponent("invalid-file-workspace")
+        let linkedWorkspace = root.appendingPathComponent("linked-workspace")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: externalDirectory, withIntermediateDirectories: true)
+        try "# External tasks\n".write(to: externalTasks, atomically: true, encoding: .utf8)
+        try FileManager.default.createDirectory(at: linkedDirectoryWorkspace, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(
+            at: linkedDirectoryWorkspace.appendingPathComponent("需求"),
+            withDestinationURL: externalDirectory
+        )
+
+        for workspace in [linkedFileWorkspace, directoryFileWorkspace, invalidFileWorkspace] {
+            try FileManager.default.createDirectory(
+                at: workspace.appendingPathComponent("需求"),
+                withIntermediateDirectories: true
+            )
+        }
+        try FileManager.default.createSymbolicLink(
+            at: linkedFileWorkspace.appendingPathComponent("需求/tasks.md"),
+            withDestinationURL: externalTasks
+        )
+        try FileManager.default.createDirectory(
+            at: directoryFileWorkspace.appendingPathComponent("需求/tasks.md"),
+            withIntermediateDirectories: true
+        )
+        try Data([0x23, 0x20, 0xC3, 0x28, 0x0A]).write(
+            to: invalidFileWorkspace.appendingPathComponent("需求/tasks.md")
+        )
+        try FileManager.default.createSymbolicLink(at: linkedWorkspace, withDestinationURL: linkedFileWorkspace)
+
+        let linkedDirectoryStatus = try NativeDemandIntakeStore.status(workspacePath: linkedDirectoryWorkspace.path)
+        let linkedFileStatus = try NativeDemandIntakeStore.status(workspacePath: linkedFileWorkspace.path)
+        let directoryFileStatus = try NativeDemandIntakeStore.status(workspacePath: directoryFileWorkspace.path)
+        let invalidFileStatus = try NativeDemandIntakeStore.status(workspacePath: invalidFileWorkspace.path)
+
+        XCTAssertFalse(linkedDirectoryStatus.exists)
+        XCTAssertFalse(linkedDirectoryStatus.ready)
+        XCTAssertEqual(linkedDirectoryStatus.missingCount, 5)
+        XCTAssertFalse(linkedFileStatus.files.first { $0.key == "tasks" }?.exists ?? true)
+        XCTAssertFalse(directoryFileStatus.files.first { $0.key == "tasks" }?.exists ?? true)
+        XCTAssertFalse(invalidFileStatus.files.first { $0.key == "tasks" }?.exists ?? true)
+        XCTAssertThrowsError(
+            try NativeDemandIntakeStore.status(workspacePath: linkedWorkspace.path)
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("workspace path is not a real directory"))
+        }
+    }
+
+    func testNativeDemandIntakeInitializationPlanCapturesStatesTemplatesAndNoOp() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-demand-initialization-plan-\(UUID().uuidString)")
+        let missingWorkspace = root.appendingPathComponent("missing-workspace")
+        let partialWorkspace = root.appendingPathComponent("partial-workspace")
+        let unsafeDirectoryWorkspace = root.appendingPathComponent("unsafe-directory-workspace")
+        let unsafeFileWorkspace = root.appendingPathComponent("unsafe-file-workspace")
+        let completeWorkspace = root.appendingPathComponent("complete-workspace")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        for workspace in [missingWorkspace, partialWorkspace, unsafeDirectoryWorkspace, unsafeFileWorkspace, completeWorkspace] {
+            try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        }
+        try FileManager.default.createDirectory(
+            at: partialWorkspace.appendingPathComponent("需求"),
+            withIntermediateDirectories: true
+        )
+        try "# Existing questions\n".write(
+            to: partialWorkspace.appendingPathComponent("需求/questions.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let externalDemandDirectory = root.appendingPathComponent("external-demand-directory")
+        try FileManager.default.createDirectory(at: externalDemandDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(
+            at: unsafeDirectoryWorkspace.appendingPathComponent("需求"),
+            withDestinationURL: externalDemandDirectory
+        )
+        try FileManager.default.createDirectory(
+            at: unsafeFileWorkspace.appendingPathComponent("需求"),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(
+            at: unsafeFileWorkspace.appendingPathComponent("需求/tasks.md"),
+            withIntermediateDirectories: true
+        )
+        let completeDemandDirectory = completeWorkspace.appendingPathComponent("需求")
+        try FileManager.default.createDirectory(at: completeDemandDirectory, withIntermediateDirectories: true)
+        for filename in ["requirement.md", "questions.md", "scope.md", "tasks.md", "delivery.md"] {
+            try "# Complete\n".write(
+                to: completeDemandDirectory.appendingPathComponent(filename),
+                atomically: true,
+                encoding: .utf8
+            )
+        }
+
+        var demandName = "  会员权益页  "
+        var lanhuLink = "  https://lanhu.example/design  "
+        var notes = "  先确认首屏  "
+        let missingPlan = NativeDemandIntakeStore.makeInitializationPlan(
+            workspacePath: missingWorkspace.path,
+            demandName: demandName,
+            lanhuLink: lanhuLink,
+            notes: notes
+        )
+        demandName = "Changed demand"
+        lanhuLink = "https://changed.example/design"
+        notes = "Changed notes"
+        let partialPlan = NativeDemandIntakeStore.makeInitializationPlan(
+            workspacePath: partialWorkspace.path,
+            demandName: demandName,
+            lanhuLink: lanhuLink,
+            notes: notes
+        )
+        let unsafeDirectoryPlan = NativeDemandIntakeStore.makeInitializationPlan(
+            workspacePath: unsafeDirectoryWorkspace.path,
+            demandName: demandName,
+            lanhuLink: lanhuLink,
+            notes: notes
+        )
+        let unsafeFilePlan = NativeDemandIntakeStore.makeInitializationPlan(
+            workspacePath: unsafeFileWorkspace.path,
+            demandName: demandName,
+            lanhuLink: lanhuLink,
+            notes: notes
+        )
+        let completePlan = NativeDemandIntakeStore.makeInitializationPlan(
+            workspacePath: completeWorkspace.path,
+            demandName: demandName,
+            lanhuLink: lanhuLink,
+            notes: notes
+        )
+
+        XCTAssertEqual(missingPlan.expectedDemandDirectoryState, .missing)
+        XCTAssertEqual(
+            missingPlan.createdFiles,
+            ["requirement.md", "questions.md", "scope.md", "tasks.md", "delivery.md"]
+        )
+        XCTAssertTrue(missingPlan.canInitialize)
+        XCTAssertTrue(missingPlan.filePlans.first { $0.key == "requirement" }?.template.contains("会员权益页") == true)
+        XCTAssertTrue(missingPlan.filePlans.first { $0.key == "requirement" }?.template.contains("https://lanhu.example/design") == true)
+        XCTAssertEqual(missingPlan.demandName, "会员权益页")
+        XCTAssertEqual(missingPlan.lanhuLink, "https://lanhu.example/design")
+        XCTAssertEqual(missingPlan.notes, "先确认首屏")
+
+        XCTAssertEqual(partialPlan.createdFiles, ["requirement.md", "scope.md", "tasks.md", "delivery.md"])
+        XCTAssertNil(partialPlan.blockerSummary)
+        XCTAssertTrue(partialPlan.canInitialize)
+
+        XCTAssertTrue(unsafeDirectoryPlan.blockerSummary?.contains("not a real directory") == true)
+        XCTAssertTrue(unsafeFilePlan.blockerSummary?.contains("not a regular UTF-8 file") == true)
+        XCTAssertFalse(unsafeFilePlan.canInitialize)
+
+        XCTAssertTrue(completePlan.createdFiles.isEmpty)
+        XCTAssertTrue(completePlan.blockerSummary?.contains("already complete") == true)
+        XCTAssertFalse(completePlan.canInitialize)
+    }
+
     func testNativeDemandIntakeStoreInitializesMissingFilesWithoutOverwriting() throws {
         let workspaceURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-native-demand-init-\(UUID().uuidString)")

@@ -1,5 +1,65 @@
+import CryptoKit
 import Foundation
 import NexusBridge
+
+enum NativeDemandIntakeEntryState: Hashable {
+    case missing
+    case directory
+    case regularUTF8(sha256: String, byteCount: Int)
+    case invalid(reason: String)
+
+    var label: String {
+        switch self {
+        case .missing:
+            return "missing"
+        case .directory:
+            return "directory"
+        case .regularUTF8(let sha256, let byteCount):
+            return "regular UTF-8 \(byteCount) bytes sha256=\(sha256)"
+        case .invalid(let reason):
+            return "invalid: \(reason)"
+        }
+    }
+}
+
+struct NativeDemandIntakeFilePlan: Hashable, Identifiable {
+    let key: String
+    let label: String
+    let filename: String
+    let path: String
+    let expectedState: NativeDemandIntakeEntryState
+    let template: String
+
+    var id: String { key }
+}
+
+struct NativeDemandIntakeInitializationPlan: Hashable {
+    let workspacePath: String
+    let demandDirectoryPath: String
+    let demandName: String
+    let lanhuLink: String
+    let notes: String
+    let expectedWorkspaceState: NativeDemandIntakeEntryState
+    let expectedDemandDirectoryState: NativeDemandIntakeEntryState
+    let filePlans: [NativeDemandIntakeFilePlan]
+    let blockerSummary: String?
+
+    var createdFiles: [String] {
+        filePlans.compactMap { $0.expectedState == .missing ? $0.filename : nil }
+    }
+
+    var canInitialize: Bool {
+        blockerSummary == nil && !createdFiles.isEmpty
+    }
+
+    var summary: String {
+        if let blockerSummary {
+            return blockerSummary
+        }
+        let preservedCount = filePlans.count - createdFiles.count
+        return "will create \(createdFiles.joined(separator: ", ")); preserve \(preservedCount) existing files"
+    }
+}
 
 enum NativeDemandIntakeStore {
     private static let directoryName = "需求"
@@ -14,6 +74,118 @@ enum NativeDemandIntakeStore {
     static func status(workspacePath: String, fileManager: FileManager = .default) throws -> DemandIntakeStatus {
         let workspaceURL = try checkedWorkspaceURL(workspacePath, fileManager: fileManager)
         return status(for: workspaceURL, fileManager: fileManager)
+    }
+
+    static func inspectEntry(
+        at path: String,
+        fileManager: FileManager = .default
+    ) -> NativeDemandIntakeEntryState {
+        let url = expandedURL(for: path)
+        let attributes: [FileAttributeKey: Any]
+        do {
+            attributes = try fileManager.attributesOfItem(atPath: url.path)
+        } catch let error as NSError
+            where error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoSuchFileError {
+            return .missing
+        } catch {
+            return .invalid(reason: "entry is unreadable: \(url.path): \(error.localizedDescription)")
+        }
+
+        guard let type = attributes[.type] as? FileAttributeType else {
+            return .invalid(reason: "entry has no file type: \(url.path)")
+        }
+        switch type {
+        case .typeDirectory:
+            return .directory
+        case .typeRegular:
+            do {
+                let data = try Data(contentsOf: url)
+                guard String(data: data, encoding: .utf8) != nil else {
+                    return .invalid(reason: "entry is not valid UTF-8: \(url.path)")
+                }
+                let sha256 = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+                return .regularUTF8(sha256: sha256, byteCount: data.count)
+            } catch {
+                return .invalid(reason: "entry is unreadable: \(url.path): \(error.localizedDescription)")
+            }
+        default:
+            return .invalid(reason: "entry is not a real directory or regular UTF-8 file: \(url.path)")
+        }
+    }
+
+    static func makeInitializationPlan(
+        workspacePath: String,
+        demandName: String,
+        lanhuLink: String,
+        notes: String,
+        fileManager: FileManager = .default
+    ) -> NativeDemandIntakeInitializationPlan {
+        let workspaceURL = expandedURL(for: workspacePath)
+        let demandURL = workspaceURL.appendingPathComponent(directoryName, isDirectory: true)
+        let normalizedDemandName = nonEmpty(demandName, fallback: "待补充")
+        let normalizedLanhuLink = nonEmpty(lanhuLink, fallback: "待补充")
+        let normalizedNotes = nonEmpty(notes, fallback: "待补充")
+        let workspaceState = inspectEntry(at: workspaceURL.path, fileManager: fileManager)
+        let demandState = inspectEntry(at: demandURL.path, fileManager: fileManager)
+        let filePlans = files.map { file in
+            let fileURL = demandURL.appendingPathComponent(file.filename, isDirectory: false)
+            return NativeDemandIntakeFilePlan(
+                key: file.key,
+                label: file.label,
+                filename: file.filename,
+                path: fileURL.path,
+                expectedState: inspectEntry(at: fileURL.path, fileManager: fileManager),
+                template: template(
+                    for: file.key,
+                    demandName: normalizedDemandName,
+                    lanhuLink: normalizedLanhuLink,
+                    notes: normalizedNotes
+                )
+            )
+        }
+        let blockerSummary: String?
+        switch workspaceState {
+        case .directory:
+            switch demandState {
+            case .missing, .directory:
+                if let filePlan = filePlans.first(where: {
+                    if case .invalid = $0.expectedState {
+                        return true
+                    }
+                    if case .directory = $0.expectedState {
+                        return true
+                    }
+                    return false
+                }) {
+                    blockerSummary = "demand intake file is not a regular UTF-8 file: \(filePlan.path)"
+                } else if filePlans.allSatisfy({
+                    if case .regularUTF8 = $0.expectedState {
+                        return true
+                    }
+                    return false
+                }) {
+                    blockerSummary = "demand intake is already complete; no files will be created"
+                } else {
+                    blockerSummary = nil
+                }
+            default:
+                blockerSummary = "demand intake path is not a real directory: \(demandURL.path)"
+            }
+        default:
+            blockerSummary = "workspace path is not a real directory: \(workspaceURL.path)"
+        }
+
+        return NativeDemandIntakeInitializationPlan(
+            workspacePath: workspaceURL.path,
+            demandDirectoryPath: demandURL.path,
+            demandName: normalizedDemandName,
+            lanhuLink: normalizedLanhuLink,
+            notes: normalizedNotes,
+            expectedWorkspaceState: workspaceState,
+            expectedDemandDirectoryState: demandState,
+            filePlans: filePlans,
+            blockerSummary: blockerSummary
+        )
     }
 
     static func initialize(
@@ -117,25 +289,28 @@ enum NativeDemandIntakeStore {
     }
 
     private static func checkedWorkspaceURL(_ workspacePath: String, fileManager: FileManager) throws -> URL {
-        let url = URL(fileURLWithPath: (workspacePath as NSString).expandingTildeInPath)
-        var isDirectory: ObjCBool = false
-        guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
+        let url = expandedURL(for: workspacePath)
+        switch inspectEntry(at: url.path, fileManager: fileManager) {
+        case .missing:
             throw NativeDemandIntakeStoreError.workspaceMissing(url.path)
-        }
-        guard isDirectory.boolValue else {
+        case .directory:
+            return url
+        default:
             throw NativeDemandIntakeStoreError.workspaceNotDirectory(url.path)
         }
-        return url
     }
 
     private static func status(for workspaceURL: URL, fileManager: FileManager) -> DemandIntakeStatus {
         let demandURL = workspaceURL.appendingPathComponent(directoryName, isDirectory: true)
-        var isDirectory: ObjCBool = false
-        let exists = fileManager.fileExists(atPath: demandURL.path, isDirectory: &isDirectory) && isDirectory.boolValue
+        let exists = inspectEntry(at: demandURL.path, fileManager: fileManager) == .directory
         let fileStatuses = files.map { file in
             let path = demandURL.appendingPathComponent(file.filename, isDirectory: false).path
-            var fileIsDirectory: ObjCBool = false
-            let fileExists = fileManager.fileExists(atPath: path, isDirectory: &fileIsDirectory) && !fileIsDirectory.boolValue
+            let fileExists: Bool
+            if case .regularUTF8 = inspectEntry(at: path, fileManager: fileManager) {
+                fileExists = true
+            } else {
+                fileExists = false
+            }
             return DemandIntakeFileStatus(
                 key: file.key,
                 label: file.label,
@@ -152,6 +327,10 @@ enum NativeDemandIntakeStore {
             missingCount: missingCount,
             files: fileStatuses
         )
+    }
+
+    private static func expandedURL(for path: String) -> URL {
+        URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL
     }
 
     private static func nonEmpty(_ value: String, fallback: String) -> String {
@@ -191,7 +370,7 @@ private enum NativeDemandIntakeStoreError: LocalizedError {
         case .workspaceMissing(let path):
             return "workspace does not exist: \(path)"
         case .workspaceNotDirectory(let path):
-            return "workspace path is not a directory: \(path)"
+            return "workspace path is not a real directory: \(path)"
         case .demandPathNotDirectory(let path):
             return "demand intake path exists but is not a directory: \(path)"
         case .filePathNotFile(let path):
