@@ -195,6 +195,7 @@ final class AppState: ObservableObject {
     @Published var demandInputLoadingWorkspaceID: WorkspaceSummary.ID?
     @Published var demandInputSavingWorkspaceID: WorkspaceSummary.ID?
     @Published var demandInputsByWorkspace: [WorkspaceSummary.ID: DemandInputSnapshot] = [:]
+    @Published var demandInputSaveStatusesByWorkspace: [WorkspaceSummary.ID: DemandInputSaveStatus] = [:]
     @Published var isUpdatingTask = false
     @Published var isUpdatingDeliveryRecord = false
     @Published var isUpdatingLifecycle = false
@@ -3356,6 +3357,10 @@ final class AppState: ObservableObject {
         demandInputsByWorkspace[workspace.id]
     }
 
+    func demandInputSaveStatus(for workspace: WorkspaceSummary) -> DemandInputSaveStatus {
+        demandInputSaveStatusesByWorkspace[workspace.id] ?? .idle
+    }
+
     func loadDemandInput(for workspace: WorkspaceSummary) async {
         demandInputLoadingWorkspaceID = workspace.id
         lastError = nil
@@ -3375,6 +3380,7 @@ final class AppState: ObservableObject {
 
     func saveDemandInputDraft(_ draft: DemandInputDraft, in workspace: WorkspaceSummary) async -> DemandInputSaveResult {
         demandInputSavingWorkspaceID = workspace.id
+        demandInputSaveStatusesByWorkspace[workspace.id] = .saving
         lastError = nil
         defer {
             if demandInputSavingWorkspaceID == workspace.id {
@@ -3396,6 +3402,7 @@ final class AppState: ObservableObject {
             )
             let snapshot = try NativeDemandInputStore.load(workspacePath: workspace.path)
             demandInputsByWorkspace[workspace.id] = snapshot
+            demandInputSaveStatusesByWorkspace[workspace.id] = .saved
             markLocalWriteFeedback(
                 title: "需求草稿已保存 / Demand draft saved",
                 detail: "\(workspace.name) · \(draft.links.count) links · \(draft.attachments.count) materials。",
@@ -3417,6 +3424,7 @@ final class AppState: ObservableObject {
                 )
             }
             lastError = message
+            demandInputSaveStatusesByWorkspace[workspace.id] = .failed(message)
             return .failed(message: message)
         }
     }
@@ -3445,28 +3453,47 @@ final class AppState: ObservableObject {
                 auditRoot: auditRootPath,
                 actor: "Nexus Native"
             )
-            let current = try NativeDemandInputStore.load(workspacePath: workspace.path)
             let attachmentPaths = copied.copiedPaths.compactMap { path -> String? in
                 let workspacePrefix = workspace.path.hasSuffix("/") ? workspace.path : "\(workspace.path)/"
                 guard path.hasPrefix(workspacePrefix) else { return nil }
                 return String(path.dropFirst(workspacePrefix.count))
             }
-            var next = current.draft
+            let preservedSnapshot = demandInputsByWorkspace[workspace.id] ?? DemandInputSnapshot(
+                draft: .empty,
+                revision: plan.expectedDraftRevision,
+                path: "\(workspace.path)/需求/intake-draft.md"
+            )
+            var next = preservedSnapshot.draft
             for path in attachmentPaths where !next.attachments.contains(path) {
                 next.attachments.append(path)
             }
             demandInputsByWorkspace[workspace.id] = DemandInputSnapshot(
                 draft: next,
-                revision: current.revision,
-                path: current.path
+                revision: preservedSnapshot.revision,
+                path: preservedSnapshot.path
             )
-            let saveResult = next == current.draft
-                ? DemandInputSaveResult.saved(current)
-                : await saveDemandInputDraft(next, in: workspace)
+            var followUpError: String?
+            do {
+                let current = try NativeDemandInputStore.load(workspacePath: workspace.path)
+                for path in attachmentPaths where !next.attachments.contains(path) {
+                    next.attachments.append(path)
+                }
+                demandInputsByWorkspace[workspace.id] = DemandInputSnapshot(
+                    draft: next,
+                    revision: current.revision,
+                    path: current.path
+                )
+                if next != current.draft {
+                    let saveResult = await saveDemandInputDraft(next, in: workspace)
+                    followUpError = saveResult.message
+                }
+            } catch {
+                followUpError = error.localizedDescription
+            }
             let failureDetail = copied.errors.prefix(2).map(\.message).joined(separator: " | ")
-            if !copied.errors.isEmpty {
-                let saveDetail = saveResult.message.map { " \($0)" } ?? ""
-                lastError = "\(copied.errors.count) material copy failure(s): \(failureDetail).\(saveDetail)"
+            if !copied.errors.isEmpty || followUpError != nil {
+                let copyDetail = copied.errors.isEmpty ? "" : "\(copied.errors.count) material copy failure(s): \(failureDetail). "
+                lastError = "\(copyDetail)\(followUpError ?? "")"
             }
             markLocalWriteFeedback(
                 title: "需求材料已确认 / Materials copied",

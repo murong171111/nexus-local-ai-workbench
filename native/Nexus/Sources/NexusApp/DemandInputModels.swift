@@ -54,6 +54,13 @@ enum DemandInputSaveResult: Hashable {
     }
 }
 
+enum DemandInputSaveStatus: Hashable {
+    case idle
+    case saving
+    case saved
+    case failed(String)
+}
+
 struct DemandAttachmentPlan: Hashable {
     let workspacePath: String
     let expectedDraftRevision: DemandInputRevision

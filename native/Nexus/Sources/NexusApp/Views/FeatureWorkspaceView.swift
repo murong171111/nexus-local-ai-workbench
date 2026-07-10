@@ -16,6 +16,15 @@ struct FeatureWorkspaceView: View {
         appState.demandInputSavingWorkspaceID == workspace.id
     }
 
+    private var saveStatus: DemandInputSaveStatus {
+        appState.demandInputSaveStatus(for: workspace)
+    }
+
+    private var hasSaveFailure: Bool {
+        if case .failed = saveStatus { return true }
+        return false
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("需求输入 / Demand")
@@ -98,12 +107,18 @@ struct FeatureWorkspaceView: View {
                 }
 
                 HStack(spacing: 8) {
-                    Image(systemName: isSaving ? "arrow.triangle.2.circlepath" : "checkmark.circle")
-                        .foregroundStyle(isSaving ? Color.orange : Color.green)
-                    Text(isLoading ? "正在加载" : (isSaving ? "正在保存" : "已自动保存"))
+                    Image(systemName: saveStatus == .saving ? "arrow.triangle.2.circlepath" : (hasSaveFailure ? "exclamationmark.triangle" : "checkmark.circle"))
+                        .foregroundStyle(hasSaveFailure ? Color.orange : (isSaving ? Color.orange : Color.green))
+                    Text(saveStatusText)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(hasSaveFailure ? Color.orange : .secondary)
                     Spacer()
+                }
+                if case .failed(let message) = saveStatus {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(Color.orange)
+                        .textSelection(.enabled)
                 }
 
                 Button {
@@ -174,6 +189,18 @@ struct FeatureWorkspaceView: View {
             try? await Task.sleep(nanoseconds: 600_000_000)
             guard !Task.isCancelled else { return }
             _ = await appState.saveDemandInputDraft(draft, in: workspace)
+        }
+    }
+
+    private var saveStatusText: String {
+        if isLoading { return "正在加载" }
+        switch saveStatus {
+        case .saving:
+            return "正在保存"
+        case .failed:
+            return "保存失败"
+        case .idle, .saved:
+            return "已自动保存"
         }
     }
 }

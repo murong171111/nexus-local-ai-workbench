@@ -1,4 +1,5 @@
 import CryptoKit
+import Darwin
 import Foundation
 import NexusBridge
 
@@ -9,16 +10,23 @@ enum NativeDemandInputStore {
 
     // ponytail: one Nexus-local lock is sufficient for the current in-process editor; split by workspace only if concurrent editing becomes a measured need.
     private static let writeLock = NSLock()
+    internal static var testBeforeDemandDirectoryOpen: (() throws -> Void)?
+    internal static var testBeforeAttachmentResponse: (() -> Void)?
 
     static func load(
         workspacePath: String,
         fileManager: FileManager = .default
     ) throws -> DemandInputSnapshot {
         let workspaceURL = try validatedWorkspaceURL(workspacePath, fileManager: fileManager)
-        let demandURL = try existingDemandDirectory(in: workspaceURL, fileManager: fileManager)
-        let draftURL = demandURL.appendingPathComponent(draftFileName, isDirectory: false)
-        let document = inspectDraft(at: draftURL, fileManager: fileManager)
-        return DemandInputSnapshot(draft: document.draft, revision: document.revision, path: draftURL.path)
+        let draftPath = workspaceURL.appendingPathComponent(demandDirectoryName).appendingPathComponent(draftFileName).path
+        return try withWorkspaceDirectory(workspaceURL) { workspaceFD in
+            guard let demandFD = try openDemandDirectory(workspaceFD: workspaceFD, path: draftPath, create: false) else {
+                return DemandInputSnapshot(draft: .empty, revision: .missing, path: draftPath)
+            }
+            defer { close(demandFD) }
+            let document = inspectDraft(demandFD: demandFD, path: draftPath)
+            return DemandInputSnapshot(draft: document.draft, revision: document.revision, path: draftPath)
+        }
     }
 
     static func save(
@@ -37,35 +45,41 @@ enum NativeDemandInputStore {
         writeLock.lock()
         defer { writeLock.unlock() }
         let workspaceURL = try validatedWorkspaceURL(workspacePath, fileManager: fileManager)
-        let demandURL = try ensureDemandDirectory(in: workspaceURL, fileManager: fileManager)
-        let draftURL = demandURL.appendingPathComponent(draftFileName, isDirectory: false)
-        let current = inspectDraft(at: draftURL, fileManager: fileManager)
-        try requireExpectedDraftRevision(current.revision, expected: expectedRevision, path: draftURL.path)
+        let draftPath = workspaceURL.appendingPathComponent(demandDirectoryName).appendingPathComponent(draftFileName).path
+        let revision = try withWorkspaceDirectory(workspaceURL) { workspaceFD in
+            guard let demandFD = try openDemandDirectory(workspaceFD: workspaceFD, path: draftPath, create: true) else {
+                throw NativeDemandInputStoreError.unsafeDirectory(draftPath)
+            }
+            defer { close(demandFD) }
+            let current = inspectDraft(demandFD: demandFD, path: draftPath)
+            try requireExpectedDraftRevision(current.revision, expected: expectedRevision, path: draftPath)
 
-        let temporaryURL = demandURL.appendingPathComponent(".\(draftFileName).\(UUID().uuidString).tmp")
-        defer { try? fileManager.removeItem(at: temporaryURL) }
-        try Data(render(draft).utf8).write(to: temporaryURL, options: [.withoutOverwriting])
-        try beforeFinalRevisionCheck?()
+            let temporaryName = ".\(draftFileName).\(UUID().uuidString).tmp"
+            defer { _ = unlinkat(demandFD, temporaryName, 0) }
+            try writeNewFile(Data(render(draft).utf8), parentFD: demandFD, name: temporaryName)
+            try beforeFinalRevisionCheck?()
 
-        let latest = inspectDraft(at: draftURL, fileManager: fileManager)
-        try requireExpectedDraftRevision(latest.revision, expected: expectedRevision, path: draftURL.path)
-        try replaceDraft(
-            temporaryURL: temporaryURL,
-            draftURL: draftURL,
-            expectedRevision: expectedRevision,
-            fileManager: fileManager
-        )
+            let latest = inspectDraft(demandFD: demandFD, path: draftPath)
+            try requireExpectedDraftRevision(latest.revision, expected: expectedRevision, path: draftPath)
+            try replaceDraft(
+                demandFD: demandFD,
+                temporaryName: temporaryName,
+                draftPath: draftPath,
+                expectedRevision: expectedRevision
+            )
 
-        let revision = inspectDraft(at: draftURL, fileManager: fileManager).revision
-        guard case .regularUTF8 = revision else {
-            throw NativeDemandInputStoreError.invalidDraft("staged draft write did not produce a regular UTF-8 file")
+            let revision = inspectDraft(demandFD: demandFD, path: draftPath).revision
+            guard case .regularUTF8 = revision else {
+                throw NativeDemandInputStoreError.invalidDraft("staged draft write did not produce a regular UTF-8 file")
+            }
+            return revision
         }
         let audit = NativeAuditEventStore.appendFeedback(
             auditRoot: auditRoot,
             event: AuditEventInput(
                 actor: actor ?? "Nexus Native",
                 action: "demand_input.saved",
-                target: draftURL.path,
+                target: draftPath,
                 summary: "Saved free-form demand draft",
                 metadata: [
                     "workspace": workspaceURL.path,
@@ -76,7 +90,7 @@ enum NativeDemandInputStore {
             )
         )
         return DemandInputSaveResponse(
-            path: draftURL.path,
+            path: draftPath,
             revision: revision,
             auditEventID: audit.response?.event.id,
             auditEventPath: audit.response?.path,
@@ -90,35 +104,45 @@ enum NativeDemandInputStore {
         fileManager: FileManager = .default
     ) throws -> DemandAttachmentPlan {
         let workspaceURL = try validatedWorkspaceURL(workspacePath, fileManager: fileManager)
-        let snapshot = try load(workspacePath: workspaceURL.path, fileManager: fileManager)
-        if case .invalid(let reason) = snapshot.revision {
-            throw NativeDemandInputStoreError.invalidDraft(reason)
-        }
-        let attachmentsURL = try ensureAttachmentsDirectory(in: workspaceURL, fileManager: fileManager)
-        var names = Set<String>()
-        let items = try sourceURLs.map { sourceURL in
-            let normalizedURL = sourceURL.standardizedFileURL
-            let data = try regularFileData(at: normalizedURL, fileManager: fileManager)
-            let name = try sanitizedAttachmentName(for: normalizedURL)
-            guard names.insert(name).inserted else {
-                throw NativeDemandInputStoreError.duplicateAttachmentName(name)
+        let demandURL = workspaceURL.appendingPathComponent(demandDirectoryName, isDirectory: true)
+        let draftPath = demandURL.appendingPathComponent(draftFileName).path
+        let attachmentsURL = demandURL.appendingPathComponent(attachmentsDirectoryName, isDirectory: true)
+        return try withWorkspaceDirectory(workspaceURL) { workspaceFD in
+            guard let demandFD = try openDemandDirectory(workspaceFD: workspaceFD, path: demandURL.path, create: true) else {
+                throw NativeDemandInputStoreError.unsafeDirectory(demandURL.path)
             }
-            let destinationURL = attachmentsURL.appendingPathComponent(name, isDirectory: false)
-            guard entryKind(at: destinationURL, fileManager: fileManager) == .missing else {
-                throw NativeDemandInputStoreError.destinationExists(destinationURL.path)
+            defer { close(demandFD) }
+            let snapshot = inspectDraft(demandFD: demandFD, path: draftPath)
+            if case .invalid(let reason) = snapshot.revision {
+                throw NativeDemandInputStoreError.invalidDraft(reason)
             }
-            return DemandAttachmentPlanItem(
-                sourceURL: normalizedURL,
-                destinationURL: destinationURL,
-                expectedSizeBytes: data.count,
-                expectedSHA256: sha256Hex(data)
+            let attachmentsFD = try openAttachmentsDirectory(demandFD: demandFD, path: attachmentsURL.path)
+            defer { close(attachmentsFD) }
+            var names = Set<String>()
+            let items = try sourceURLs.map { sourceURL in
+                let normalizedURL = sourceURL.standardizedFileURL
+                let data = try regularFileData(at: normalizedURL, fileManager: fileManager)
+                let name = try sanitizedAttachmentName(for: normalizedURL)
+                guard names.insert(name).inserted else {
+                    throw NativeDemandInputStoreError.duplicateAttachmentName(name)
+                }
+                let destinationURL = attachmentsURL.appendingPathComponent(name, isDirectory: false)
+                guard entryKind(at: attachmentsFD, name: name) == .missing else {
+                    throw NativeDemandInputStoreError.destinationExists(destinationURL.path)
+                }
+                return DemandAttachmentPlanItem(
+                    sourceURL: normalizedURL,
+                    destinationURL: destinationURL,
+                    expectedSizeBytes: data.count,
+                    expectedSHA256: sha256Hex(data)
+                )
+            }
+            return DemandAttachmentPlan(
+                workspacePath: workspaceURL.path,
+                expectedDraftRevision: snapshot.revision,
+                items: items
             )
         }
-        return DemandAttachmentPlan(
-            workspacePath: workspaceURL.path,
-            expectedDraftRevision: snapshot.revision,
-            items: items
-        )
     }
 
     static func copyAttachments(
@@ -134,12 +158,8 @@ enum NativeDemandInputStore {
         }
 
         let workspaceURL = try validatedWorkspaceURL(plan.workspacePath, fileManager: fileManager)
-        let currentDraft = try load(workspacePath: workspaceURL.path, fileManager: fileManager)
-        try requireExpectedDraftRevision(
-            currentDraft.revision,
-            expected: plan.expectedDraftRevision,
-            path: currentDraft.path
-        )
+        let demandURL = workspaceURL.appendingPathComponent(demandDirectoryName, isDirectory: true)
+        let draftPath = demandURL.appendingPathComponent(draftFileName).path
         let expectedAttachmentsURL = workspaceURL
             .appendingPathComponent(demandDirectoryName, isDirectory: true)
             .appendingPathComponent(attachmentsDirectoryName, isDirectory: true)
@@ -148,50 +168,62 @@ enum NativeDemandInputStore {
             workspaceURL: workspaceURL,
             attachmentsURL: expectedAttachmentsURL
         )
-        let attachmentsURL = try ensureAttachmentsDirectory(in: workspaceURL, fileManager: fileManager)
-
-        var copiedPaths: [String] = []
-        var errors: [DemandAttachmentCopyError] = []
-        for item in plan.items {
-            do {
-                let data = try verifiedAttachmentData(item, fileManager: fileManager)
-                try beforeDestinationWrite?(item)
-                guard entryKind(at: item.destinationURL, fileManager: fileManager) == .missing else {
-                    throw NativeDemandInputStoreError.destinationExists(item.destinationURL.path)
-                }
-                try data.write(to: item.destinationURL, options: [.withoutOverwriting])
-                let writtenData = try regularFileData(at: item.destinationURL, fileManager: fileManager)
-                guard writtenData.count == item.expectedSizeBytes,
-                      sha256Hex(writtenData) == item.expectedSHA256 else {
-                    throw NativeDemandInputStoreError.destinationVerificationFailed(item.destinationURL.path)
-                }
-                copiedPaths.append(item.destinationURL.path)
-            } catch {
-                errors.append(DemandAttachmentCopyError(
-                    sourcePath: item.sourceURL.path,
-                    message: error.localizedDescription
-                ))
+        let result = try withWorkspaceDirectory(workspaceURL) { workspaceFD -> (copiedPaths: [String], errors: [DemandAttachmentCopyError]) in
+            guard let demandFD = try openDemandDirectory(workspaceFD: workspaceFD, path: demandURL.path, create: true) else {
+                throw NativeDemandInputStoreError.unsafeDirectory(demandURL.path)
             }
+            defer { close(demandFD) }
+            let currentDraft = inspectDraft(demandFD: demandFD, path: draftPath)
+            try requireExpectedDraftRevision(currentDraft.revision, expected: plan.expectedDraftRevision, path: draftPath)
+            let attachmentsFD = try openAttachmentsDirectory(demandFD: demandFD, path: expectedAttachmentsURL.path)
+            defer { close(attachmentsFD) }
+
+            var copiedPaths: [String] = []
+            var errors: [DemandAttachmentCopyError] = []
+            for item in plan.items {
+                do {
+                    let data = try verifiedAttachmentData(item, fileManager: fileManager)
+                    try beforeDestinationWrite?(item)
+                    let name = item.destinationURL.lastPathComponent
+                    guard entryKind(at: attachmentsFD, name: name) == .missing else {
+                        throw NativeDemandInputStoreError.destinationExists(item.destinationURL.path)
+                    }
+                    try writeNewFile(data, parentFD: attachmentsFD, name: name)
+                    let writtenData = try readRegularFile(parentFD: attachmentsFD, name: name, path: item.destinationURL.path)
+                    guard writtenData.count == item.expectedSizeBytes,
+                          sha256Hex(writtenData) == item.expectedSHA256 else {
+                        throw NativeDemandInputStoreError.destinationVerificationFailed(item.destinationURL.path)
+                    }
+                    copiedPaths.append(item.destinationURL.path)
+                } catch {
+                    errors.append(DemandAttachmentCopyError(
+                        sourcePath: item.sourceURL.path,
+                        message: error.localizedDescription
+                    ))
+                }
+            }
+            return (copiedPaths, errors)
         }
+        testBeforeAttachmentResponse?()
 
         let audit = NativeAuditEventStore.appendFeedback(
             auditRoot: auditRoot,
             event: AuditEventInput(
                 actor: actor ?? "Nexus Native",
                 action: "demand_input.attachments_copied",
-                target: attachmentsURL.path,
-                summary: "Copied \(copiedPaths.count) confirmed demand attachment(s), \(errors.count) failed",
+                target: expectedAttachmentsURL.path,
+                summary: "Copied \(result.copiedPaths.count) confirmed demand attachment(s), \(result.errors.count) failed",
                 metadata: [
                     "workspace": workspaceURL.path,
-                    "copiedPaths": copiedPaths.joined(separator: " | "),
-                    "errorCount": "\(errors.count)",
-                    "errors": errors.map(\.message).joined(separator: " | ")
+                    "copiedPaths": result.copiedPaths.joined(separator: " | "),
+                    "errorCount": "\(result.errors.count)",
+                    "errors": result.errors.map { $0.message }.joined(separator: " | ")
                 ]
             )
         )
         return DemandAttachmentCopyResponse(
-            copiedPaths: copiedPaths,
-            errors: errors,
+            copiedPaths: result.copiedPaths,
+            errors: result.errors,
             auditEventID: audit.response?.event.id,
             auditEventPath: audit.response?.path,
             auditError: audit.error
@@ -199,37 +231,38 @@ enum NativeDemandInputStore {
     }
 
     private static func replaceDraft(
-        temporaryURL: URL,
-        draftURL: URL,
+        demandFD: Int32,
+        temporaryName: String,
+        draftPath: String,
         expectedRevision: DemandInputRevision,
-        fileManager: FileManager
     ) throws {
         switch expectedRevision {
         case .missing:
-            guard entryKind(at: draftURL, fileManager: fileManager) == .missing else {
-                let current = inspectDraft(at: draftURL, fileManager: fileManager).revision
+            guard entryKind(at: demandFD, name: draftFileName) == .missing else {
+                let current = inspectDraft(demandFD: demandFD, path: draftPath).revision
                 throw NativeDemandInputStoreError.staleDraft(
-                    path: draftURL.path,
+                    path: draftPath,
                     expected: expectedRevision.label,
                     current: current.label
                 )
             }
-            try fileManager.moveItem(at: temporaryURL, to: draftURL)
+            guard linkat(demandFD, temporaryName, demandFD, draftFileName, 0) == 0 else {
+                let current = inspectDraft(demandFD: demandFD, path: draftPath).revision
+                throw NativeDemandInputStoreError.staleDraft(path: draftPath, expected: expectedRevision.label, current: current.label)
+            }
+            _ = unlinkat(demandFD, temporaryName, 0)
         case .regularUTF8:
-            guard entryKind(at: draftURL, fileManager: fileManager) == .regular else {
-                let current = inspectDraft(at: draftURL, fileManager: fileManager).revision
+            guard entryKind(at: demandFD, name: draftFileName) == .regular else {
+                let current = inspectDraft(demandFD: demandFD, path: draftPath).revision
                 throw NativeDemandInputStoreError.staleDraft(
-                    path: draftURL.path,
+                    path: draftPath,
                     expected: expectedRevision.label,
                     current: current.label
                 )
             }
-            _ = try fileManager.replaceItemAt(
-                draftURL,
-                withItemAt: temporaryURL,
-                backupItemName: nil,
-                options: [.usingNewMetadataOnly]
-            )
+            guard renameat(demandFD, temporaryName, demandFD, draftFileName) == 0 else {
+                throw NativeDemandInputStoreError.invalidDraft("could not replace demand draft: \(draftPath)")
+            }
         case .invalid(let reason):
             throw NativeDemandInputStoreError.invalidExpectedRevision(reason)
         }
@@ -289,63 +322,61 @@ enum NativeDemandInputStore {
         return data
     }
 
-    private static func existingDemandDirectory(in workspaceURL: URL, fileManager: FileManager) throws -> URL {
-        let demandURL = workspaceURL.appendingPathComponent(demandDirectoryName, isDirectory: true)
-        switch entryKind(at: demandURL, fileManager: fileManager) {
-        case .missing, .directory:
-            return demandURL
-        default:
-            throw NativeDemandInputStoreError.unsafeDirectory(demandURL.path)
-        }
-    }
-
-    private static func ensureDemandDirectory(in workspaceURL: URL, fileManager: FileManager) throws -> URL {
-        let demandURL = try existingDemandDirectory(in: workspaceURL, fileManager: fileManager)
-        if entryKind(at: demandURL, fileManager: fileManager) == .missing {
-            try fileManager.createDirectory(at: demandURL, withIntermediateDirectories: false)
-        }
-        guard entryKind(at: demandURL, fileManager: fileManager) == .directory else {
-            throw NativeDemandInputStoreError.unsafeDirectory(demandURL.path)
-        }
-        return demandURL
-    }
-
-    private static func ensureAttachmentsDirectory(in workspaceURL: URL, fileManager: FileManager) throws -> URL {
-        let demandURL = try ensureDemandDirectory(in: workspaceURL, fileManager: fileManager)
-        let attachmentsURL = demandURL.appendingPathComponent(attachmentsDirectoryName, isDirectory: true)
-        switch entryKind(at: attachmentsURL, fileManager: fileManager) {
-        case .missing:
-            try fileManager.createDirectory(at: attachmentsURL, withIntermediateDirectories: false)
-        case .directory:
-            break
-        default:
-            throw NativeDemandInputStoreError.unsafeDirectory(attachmentsURL.path)
-        }
-        guard entryKind(at: attachmentsURL, fileManager: fileManager) == .directory else {
-            throw NativeDemandInputStoreError.unsafeDirectory(attachmentsURL.path)
-        }
-        return attachmentsURL
-    }
-
     private static func validatedWorkspaceURL(_ workspacePath: String, fileManager: FileManager) throws -> URL {
         let workspaceURL = URL(fileURLWithPath: (workspacePath as NSString).expandingTildeInPath).standardizedFileURL
-        guard entryKind(at: workspaceURL, fileManager: fileManager) == .directory else {
-            throw NativeDemandInputStoreError.invalidWorkspace(workspaceURL.path)
-        }
         return workspaceURL
     }
 
-    private static func inspectDraft(at url: URL, fileManager: FileManager) -> DemandDocumentSnapshot {
-        switch entryKind(at: url, fileManager: fileManager) {
+    private static func withWorkspaceDirectory<T>(_ workspaceURL: URL, body: (Int32) throws -> T) throws -> T {
+        let workspaceFD = open(workspaceURL.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+        guard workspaceFD >= 0 else {
+            throw NativeDemandInputStoreError.invalidWorkspace(workspaceURL.path)
+        }
+        defer { close(workspaceFD) }
+        return try body(workspaceFD)
+    }
+
+    private static func openDemandDirectory(workspaceFD: Int32, path: String, create: Bool) throws -> Int32? {
+        try testBeforeDemandDirectoryOpen?()
+        var demandFD = openat(workspaceFD, demandDirectoryName, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+        if demandFD < 0 && errno == ENOENT && create {
+            guard mkdirat(workspaceFD, demandDirectoryName, mode_t(0o700)) == 0 || errno == EEXIST else {
+                throw NativeDemandInputStoreError.unsafeDirectory(path)
+            }
+            demandFD = openat(workspaceFD, demandDirectoryName, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+        }
+        if demandFD < 0 {
+            if errno == ENOENT { return nil }
+            throw NativeDemandInputStoreError.unsafeDirectory(path)
+        }
+        return demandFD
+    }
+
+    private static func openAttachmentsDirectory(demandFD: Int32, path: String) throws -> Int32 {
+        var attachmentsFD = openat(demandFD, attachmentsDirectoryName, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+        if attachmentsFD < 0 && errno == ENOENT {
+            guard mkdirat(demandFD, attachmentsDirectoryName, mode_t(0o700)) == 0 || errno == EEXIST else {
+                throw NativeDemandInputStoreError.unsafeDirectory(path)
+            }
+            attachmentsFD = openat(demandFD, attachmentsDirectoryName, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+        }
+        guard attachmentsFD >= 0 else {
+            throw NativeDemandInputStoreError.unsafeDirectory(path)
+        }
+        return attachmentsFD
+    }
+
+    private static func inspectDraft(demandFD: Int32, path: String) -> DemandDocumentSnapshot {
+        switch entryKind(at: demandFD, name: draftFileName) {
         case .missing:
             return DemandDocumentSnapshot(draft: .empty, revision: .missing)
         case .regular:
             do {
-                let data = try Data(contentsOf: url)
+                let data = try readRegularFile(parentFD: demandFD, name: draftFileName, path: path)
                 guard let content = String(data: data, encoding: .utf8) else {
                     return DemandDocumentSnapshot(
                         draft: .empty,
-                        revision: .invalid(reason: "demand draft is not valid UTF-8: \(url.path)")
+                        revision: .invalid(reason: "demand draft is not valid UTF-8: \(path)")
                     )
                 }
                 return DemandDocumentSnapshot(
@@ -355,13 +386,13 @@ enum NativeDemandInputStore {
             } catch {
                 return DemandDocumentSnapshot(
                     draft: .empty,
-                    revision: .invalid(reason: "demand draft is unreadable: \(url.path): \(error.localizedDescription)")
+                    revision: .invalid(reason: "demand draft is unreadable: \(path): \(error.localizedDescription)")
                 )
             }
         default:
             return DemandDocumentSnapshot(
                 draft: .empty,
-                revision: .invalid(reason: "demand draft is not a regular file: \(url.path)")
+                revision: .invalid(reason: "demand draft is not a regular file: \(path)")
             )
         }
     }
@@ -474,6 +505,53 @@ enum NativeDemandInputStore {
 
     private static func sha256Hex(_ data: Data) -> String {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func writeNewFile(_ data: Data, parentFD: Int32, name: String) throws {
+        let fileFD = openat(parentFD, name, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, mode_t(0o600))
+        guard fileFD >= 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+        defer { close(fileFD) }
+        let handle = FileHandle(fileDescriptor: fileFD, closeOnDealloc: false)
+        try handle.write(contentsOf: data)
+        guard fsync(fileFD) == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+    }
+
+    private static func readRegularFile(parentFD: Int32, name: String, path: String) throws -> Data {
+        let fileFD = openat(parentFD, name, O_RDONLY | O_NOFOLLOW)
+        guard fileFD >= 0 else {
+            throw NativeDemandInputStoreError.unsafeSource(path)
+        }
+        defer { close(fileFD) }
+        var info = stat()
+        guard fstat(fileFD, &info) == 0, fileType(info) == .regular else {
+            throw NativeDemandInputStoreError.unsafeSource(path)
+        }
+        return try FileHandle(fileDescriptor: fileFD, closeOnDealloc: false).readToEnd() ?? Data()
+    }
+
+    private static func entryKind(at parentFD: Int32, name: String) -> EntryKind {
+        var info = stat()
+        guard fstatat(parentFD, name, &info, AT_SYMLINK_NOFOLLOW) == 0 else {
+            return errno == ENOENT ? .missing : .other
+        }
+        return fileType(info)
+    }
+
+    private static func fileType(_ info: stat) -> EntryKind {
+        switch info.st_mode & S_IFMT {
+        case S_IFREG:
+            .regular
+        case S_IFDIR:
+            .directory
+        case S_IFLNK:
+            .symlink
+        default:
+            .other
+        }
     }
 
     private static func entryKind(at url: URL, fileManager: FileManager) -> EntryKind {
