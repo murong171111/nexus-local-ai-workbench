@@ -1827,6 +1827,78 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(events.first?.metadata["status"], "延期")
     }
 
+    func testNativeWorkspaceTaskStoreRejectsSymlinkBeforeWriting() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-task-symlink-\(UUID().uuidString)")
+        let workspaceURL = root.appendingPathComponent("workspace")
+        let tasksURL = workspaceURL.appendingPathComponent("tasks.md")
+        let targetURL = root.appendingPathComponent("external-tasks.md")
+        let auditRoot = root.appendingPathComponent("audit")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        let original = "# Tasks\n\n| 任务 | 状态 | 说明 |\n| --- | --- | --- |\n| External | 进行中 | keep |\n"
+        try original.write(to: targetURL, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: tasksURL, withDestinationURL: targetURL)
+
+        XCTAssertThrowsError(
+            try NativeWorkspaceTaskStore.update(
+                request: UpdateWorkspaceTaskRequest(
+                    workspacePath: workspaceURL.path,
+                    taskId: "workspace:task-0",
+                    status: "已完成",
+                    confirmed: true,
+                    auditRoot: auditRoot.path,
+                    actor: "Nexus Test"
+                )
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("tasks.md is not a file"))
+        }
+        XCTAssertEqual(try String(contentsOf: targetURL, encoding: .utf8), original)
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: tasksURL.path), targetURL.path)
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: auditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path
+        ))
+    }
+
+    func testNativeWorkspaceTaskStoreRejectsDuplicateAgentTaskID() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-task-duplicate-id-\(UUID().uuidString)")
+        let workspaceURL = root.appendingPathComponent("workspace")
+        let tasksURL = workspaceURL.appendingPathComponent("tasks.md")
+        let auditRoot = root.appendingPathComponent("audit")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        let original = """
+        # Tasks
+
+        | 任务 | 状态 | 说明 |
+        | --- | --- | --- |
+        | First | 进行中 | event=agent-1 |
+        | Second | 待办 | event=agent-1 |
+        """ + "\n"
+        try original.write(to: tasksURL, atomically: true, encoding: .utf8)
+
+        XCTAssertThrowsError(
+            try NativeWorkspaceTaskStore.update(
+                request: UpdateWorkspaceTaskRequest(
+                    workspacePath: workspaceURL.path,
+                    taskId: "workspace:agent-1",
+                    status: "已完成",
+                    confirmed: true,
+                    auditRoot: auditRoot.path,
+                    actor: "Nexus Test"
+                )
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("matches 2 rows"))
+        }
+        XCTAssertEqual(try String(contentsOf: tasksURL, encoding: .utf8), original)
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: auditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path
+        ))
+    }
+
     func testNativeWorkspaceLifecycleStoreRejectsInvalidStatusBeforeChangingWorkspace() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-native-lifecycle-invalid-status-\(UUID().uuidString)")
