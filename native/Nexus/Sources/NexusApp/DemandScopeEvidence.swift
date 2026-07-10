@@ -520,13 +520,54 @@ struct ScopeFreezeWritePlan: Identifiable, Hashable {
     let summary: String
     let items: [ScopeFreezeWritePlanItem]
     let appendedMarkdown: String
+    let expectedRevision: NativeScopeDocumentRevision
 
     var canWrite: Bool {
-        status == .next && !appendedMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard case .regularUTF8 = expectedRevision else { return false }
+        return status == .next
+            && !appendedMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    static func resolve(workspace: WorkspaceSummary, evidence: ScopeFreezeEvidence) -> ScopeFreezeWritePlan {
+    static func resolve(
+        workspace: WorkspaceSummary,
+        evidence: ScopeFreezeEvidence,
+        fileManager: FileManager = .default
+    ) -> ScopeFreezeWritePlan {
         let id = "\(workspace.id)-scope-freeze"
+        let expectedRevision = NativeScopeFreezeStore.inspectRevision(
+            at: evidence.scopePath,
+            fileManager: fileManager
+        )
+        let unsafeDocumentReason: String?
+        switch expectedRevision {
+        case .regularUTF8:
+            unsafeDocumentReason = nil
+        case .missing:
+            unsafeDocumentReason = "scope document is missing: \((evidence.scopePath as NSString).expandingTildeInPath)"
+        case .invalid(let reason):
+            unsafeDocumentReason = reason
+        }
+        if let unsafeDocumentReason {
+            return ScopeFreezeWritePlan(
+                id: id,
+                workspaceID: workspace.id,
+                workspaceName: workspace.name,
+                scopePath: evidence.scopePath,
+                status: .blocked,
+                summary: unsafeDocumentReason,
+                items: [
+                    ScopeFreezeWritePlanItem(
+                        id: "unsafe-scope-document",
+                        label: "范围文档 / Scope",
+                        detail: unsafeDocumentReason,
+                        status: .blocked,
+                        systemImage: "exclamationmark.triangle"
+                    )
+                ],
+                appendedMarkdown: "",
+                expectedRevision: expectedRevision
+            )
+        }
 
         if evidence.scopeFrozen {
             return ScopeFreezeWritePlan(
@@ -545,7 +586,8 @@ struct ScopeFreezeWritePlan: Identifiable, Hashable {
                         systemImage: "checkmark.seal"
                     )
                 ],
-                appendedMarkdown: ""
+                appendedMarkdown: "",
+                expectedRevision: expectedRevision
             )
         }
 
@@ -559,7 +601,8 @@ struct ScopeFreezeWritePlan: Identifiable, Hashable {
                 status: .blocked,
                 summary: "范围冻结前仍有 \(blockers.count) 个前置项需要处理，Nexus 不会替用户补造范围结论。",
                 items: blockers,
-                appendedMarkdown: ""
+                appendedMarkdown: "",
+                expectedRevision: expectedRevision
             )
         }
 
@@ -580,7 +623,8 @@ struct ScopeFreezeWritePlan: Identifiable, Hashable {
                     systemImage: "square.and.pencil"
                 )
             ],
-            appendedMarkdown: markdown
+            appendedMarkdown: markdown,
+            expectedRevision: expectedRevision
         )
     }
 

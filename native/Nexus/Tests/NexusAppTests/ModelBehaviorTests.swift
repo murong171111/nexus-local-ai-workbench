@@ -5549,7 +5549,7 @@ final class ModelBehaviorTests: XCTestCase {
             reason: "missing scope",
             evidence: ["需求/scope.md"],
             checks: [],
-            scopePath: "\(workspace.path)/需求/scope.md",
+            scopePath: #filePath,
             hasInScope: false,
             hasOutOfScope: true,
             scopeFrozen: false,
@@ -5564,6 +5564,76 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(plan.items.map(\.id), ["missing-in-scope", "pending-p0"])
         XCTAssertTrue(plan.appendedMarkdown.isEmpty)
         XCTAssertTrue(plan.summary.contains("不会替用户补造范围结论"))
+    }
+
+    func testScopeFreezeWritePlanCapturesStrictDocumentRevision() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-scope-revision-\(UUID().uuidString)")
+        let regularURL = root.appendingPathComponent("regular/需求/scope.md")
+        let missingURL = root.appendingPathComponent("missing/需求/scope.md")
+        let linkedURL = root.appendingPathComponent("linked/需求/scope.md")
+        let invalidURL = root.appendingPathComponent("invalid/需求/scope.md")
+        let externalURL = root.appendingPathComponent("external-scope.md")
+        defer { try? FileManager.default.removeItem(at: root) }
+        for url in [regularURL, missingURL, linkedURL, invalidURL] {
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+        }
+        let original = "# Scope\n\n## In scope\n\n- Real.\n\n## Out of scope\n\n- None.\n"
+        try original.write(to: regularURL, atomically: true, encoding: .utf8)
+        try original.write(to: externalURL, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: linkedURL, withDestinationURL: externalURL)
+        try Data([0x23, 0x20, 0xC3, 0x28, 0x0A]).write(to: invalidURL)
+
+        func plan(id: String, path: URL) -> ScopeFreezeWritePlan {
+            let workspace = workspaceForWorkflowSummary(
+                stage: "scoping",
+                id: id,
+                path: path.deletingLastPathComponent().deletingLastPathComponent().path
+            )
+            let evidence = ScopeFreezeEvidence(
+                status: .blocked,
+                reason: "ready to freeze",
+                evidence: [path.path],
+                checks: [],
+                scopePath: path.path,
+                hasInScope: true,
+                hasOutOfScope: true,
+                scopeFrozen: false,
+                scopeChangeDeclared: false,
+                scopeChangeAudited: true,
+                unresolvedP0Count: 0
+            )
+            return ScopeFreezeWritePlan.resolve(workspace: workspace, evidence: evidence)
+        }
+
+        let regular = plan(id: "scope-revision-regular", path: regularURL)
+        let missing = plan(id: "scope-revision-missing", path: missingURL)
+        let linked = plan(id: "scope-revision-linked", path: linkedURL)
+        let invalid = plan(id: "scope-revision-invalid", path: invalidURL)
+
+        guard case .regularUTF8(let sha256, let byteCount) = regular.expectedRevision else {
+            return XCTFail("expected regular UTF-8 scope revision")
+        }
+        XCTAssertEqual(sha256.count, 64)
+        XCTAssertEqual(byteCount, original.data(using: .utf8)?.count)
+        XCTAssertTrue(regular.canWrite)
+        XCTAssertEqual(missing.expectedRevision, .missing)
+        XCTAssertFalse(missing.canWrite)
+        XCTAssertTrue(missing.summary.contains("missing"))
+        guard case .invalid(let linkedReason) = linked.expectedRevision else {
+            return XCTFail("expected invalid symlink scope revision")
+        }
+        XCTAssertTrue(linkedReason.contains("not a regular file"))
+        XCTAssertFalse(linked.canWrite)
+        guard case .invalid(let invalidReason) = invalid.expectedRevision else {
+            return XCTFail("expected invalid UTF-8 scope revision")
+        }
+        XCTAssertTrue(invalidReason.contains("not valid UTF-8"))
+        XCTAssertFalse(invalid.canWrite)
+        XCTAssertEqual(try String(contentsOf: externalURL, encoding: .utf8), original)
     }
 
     func testScopeFreezeWritePlanAppendsOnlyFreezeConfirmationWhenReady() throws {

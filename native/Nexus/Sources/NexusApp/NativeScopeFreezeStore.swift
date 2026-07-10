@@ -1,5 +1,23 @@
+import CryptoKit
 import Foundation
 import NexusBridge
+
+enum NativeScopeDocumentRevision: Hashable {
+    case missing
+    case regularUTF8(sha256: String, byteCount: Int)
+    case invalid(reason: String)
+
+    var label: String {
+        switch self {
+        case .missing:
+            return "missing"
+        case .regularUTF8(let sha256, let byteCount):
+            return "regular UTF-8 \(byteCount) bytes sha256=\(sha256)"
+        case .invalid(let reason):
+            return "invalid: \(reason)"
+        }
+    }
+}
 
 struct NativeScopeFreezeWriteResponse: Hashable {
     let path: String
@@ -9,7 +27,19 @@ struct NativeScopeFreezeWriteResponse: Hashable {
     let auditEventPath: String?
 }
 
+private struct NativeScopeDocumentSnapshot {
+    let revision: NativeScopeDocumentRevision
+    let content: String?
+}
+
 enum NativeScopeFreezeStore {
+    static func inspectRevision(
+        at path: String,
+        fileManager: FileManager = .default
+    ) -> NativeScopeDocumentRevision {
+        inspectDocument(at: path, fileManager: fileManager).revision
+    }
+
     static func write(
         plan: ScopeFreezeWritePlan,
         confirmed: Bool,
@@ -82,6 +112,55 @@ enum NativeScopeFreezeStore {
                 ]
             )
         )
+    }
+
+    private static func inspectDocument(
+        at path: String,
+        fileManager: FileManager
+    ) -> NativeScopeDocumentSnapshot {
+        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        let attributes: [FileAttributeKey: Any]
+        do {
+            attributes = try fileManager.attributesOfItem(atPath: url.path)
+        } catch let error as NSError
+            where error.domain == NSCocoaErrorDomain
+                && error.code == NSFileReadNoSuchFileError {
+            return NativeScopeDocumentSnapshot(revision: .missing, content: nil)
+        } catch {
+            return NativeScopeDocumentSnapshot(
+                revision: .invalid(
+                    reason: "scope document is unreadable: \(url.path): \(error.localizedDescription)"
+                ),
+                content: nil
+            )
+        }
+        guard attributes[.type] as? FileAttributeType == .typeRegular else {
+            return NativeScopeDocumentSnapshot(
+                revision: .invalid(reason: "scope document is not a regular file: \(url.path)"),
+                content: nil
+            )
+        }
+        do {
+            let data = try Data(contentsOf: url)
+            guard let content = String(data: data, encoding: .utf8) else {
+                return NativeScopeDocumentSnapshot(
+                    revision: .invalid(reason: "scope document is not valid UTF-8: \(url.path)"),
+                    content: nil
+                )
+            }
+            let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+            return NativeScopeDocumentSnapshot(
+                revision: .regularUTF8(sha256: digest, byteCount: data.count),
+                content: content
+            )
+        } catch {
+            return NativeScopeDocumentSnapshot(
+                revision: .invalid(
+                    reason: "scope document is unreadable: \(url.path): \(error.localizedDescription)"
+                ),
+                content: nil
+            )
+        }
     }
 }
 
