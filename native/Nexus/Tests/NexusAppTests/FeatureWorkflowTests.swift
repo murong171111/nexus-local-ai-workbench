@@ -48,6 +48,75 @@ final class FeatureWorkflowTests: XCTestCase {
         )
     }
 
+    func testDemandInputDraftRoundTripsRequirementContainingH2Sections() throws {
+        let root = try temporaryDemandWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let draft = DemandInputDraft(
+            requirement: """
+            保存订单快照。
+
+            ## 验收标准
+
+            - 可以查询历史快照。
+
+            ## 风险
+
+            - 不回填历史数据。
+            """,
+            links: ["https://example.com/spec"],
+            attachments: ["需求/attachments/order-flow.png"]
+        )
+
+        _ = try NativeDemandInputStore.save(
+            draft: draft,
+            workspacePath: root.path,
+            expectedRevision: .missing
+        )
+
+        XCTAssertEqual(try NativeDemandInputStore.load(workspacePath: root.path).draft, draft)
+    }
+
+    func testDemandInputLoadRejectsSymlinkedDemandDirectory() throws {
+        let root = try temporaryDemandWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let externalDemand = root.appendingPathComponent("external-demand")
+        try FileManager.default.createDirectory(at: externalDemand, withIntermediateDirectories: true)
+        try "# Demand Intake Draft\n".write(
+            to: externalDemand.appendingPathComponent("intake-draft.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try FileManager.default.createSymbolicLink(
+            at: root.appendingPathComponent("需求"),
+            withDestinationURL: externalDemand
+        )
+
+        XCTAssertThrowsError(try NativeDemandInputStore.load(workspacePath: root.path))
+    }
+
+    func testDemandInputSaveRejectsRevisionChangedBeforeFinalReplacement() throws {
+        let root = try temporaryDemandWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let initial = try NativeDemandInputStore.save(
+            draft: DemandInputDraft(requirement: "initial", links: [], attachments: []),
+            workspacePath: root.path,
+            expectedRevision: .missing
+        )
+        let draftURL = URL(fileURLWithPath: initial.path)
+
+        XCTAssertThrowsError(
+            try NativeDemandInputStore.save(
+                draft: DemandInputDraft(requirement: "Nexus write", links: [], attachments: []),
+                workspacePath: root.path,
+                expectedRevision: initial.revision,
+                beforeFinalRevisionCheck: {
+                    try "external write".write(to: draftURL, atomically: true, encoding: .utf8)
+                }
+            )
+        )
+        XCTAssertEqual(try String(contentsOf: draftURL, encoding: .utf8), "external write")
+    }
+
     func testDemandAttachmentPlanRejectsDestinationCreatedAfterConfirmation() throws {
         let fixture = try demandAttachmentFixture()
         defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -57,7 +126,71 @@ final class FeatureWorkflowTests: XCTestCase {
         )
         try "external".write(to: plan.items[0].destinationURL, atomically: true, encoding: .utf8)
 
-        XCTAssertThrowsError(try NativeDemandInputStore.copyAttachments(plan: plan, confirmed: true))
+        let response = try NativeDemandInputStore.copyAttachments(plan: plan, confirmed: true)
+
+        XCTAssertTrue(response.copiedPaths.isEmpty)
+        XCTAssertEqual(response.errors.map(\.sourcePath), [fixture.source.path])
+    }
+
+    func testDemandAttachmentCopyReturnsCopiedPathsWhenAnotherItemFails() throws {
+        let fixture = try demandAttachmentFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let second = fixture.root.appendingPathComponent("second.png")
+        try Data("second".utf8).write(to: second)
+        let plan = try NativeDemandInputStore.makeAttachmentPlan(
+            workspacePath: fixture.workspace.path,
+            sourceURLs: [fixture.source, second]
+        )
+        try "external".write(to: plan.items[1].destinationURL, atomically: true, encoding: .utf8)
+
+        let response = try NativeDemandInputStore.copyAttachments(plan: plan, confirmed: true)
+
+        XCTAssertEqual(response.copiedPaths, [plan.items[0].destinationURL.path])
+        XCTAssertEqual(response.errors.map(\.sourcePath), [second.path])
+        XCTAssertEqual(try Data(contentsOf: plan.items[0].destinationURL), Data("prototype".utf8))
+    }
+
+    func testDemandAttachmentCopyWritesVerifiedDataInsteadOfRereadingSourcePath() throws {
+        let fixture = try demandAttachmentFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let plan = try NativeDemandInputStore.makeAttachmentPlan(
+            workspacePath: fixture.workspace.path,
+            sourceURLs: [fixture.source]
+        )
+
+        let response = try NativeDemandInputStore.copyAttachments(
+            plan: plan,
+            confirmed: true,
+            beforeDestinationWrite: { _ in
+                try Data("changed".utf8).write(to: fixture.source)
+            }
+        )
+
+        XCTAssertEqual(response.copiedPaths, [plan.items[0].destinationURL.path])
+        XCTAssertTrue(response.errors.isEmpty)
+        XCTAssertEqual(try Data(contentsOf: plan.items[0].destinationURL), Data("prototype".utf8))
+    }
+
+    func testDemandAttachmentCopyRejectsForgedPlanBeforeCreatingDemandDirectories() throws {
+        let root = try temporaryDemandWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = root.appendingPathComponent("source.png")
+        try Data("source".utf8).write(to: source)
+        let forged = DemandAttachmentPlan(
+            workspacePath: root.path,
+            expectedDraftRevision: .missing,
+            items: [
+                DemandAttachmentPlanItem(
+                    sourceURL: source,
+                    destinationURL: root.appendingPathComponent("outside.png"),
+                    expectedSizeBytes: 6,
+                    expectedSHA256: String(repeating: "0", count: 64)
+                )
+            ]
+        )
+
+        XCTAssertThrowsError(try NativeDemandInputStore.copyAttachments(plan: forged, confirmed: true))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("需求").path))
     }
 
     @MainActor
@@ -83,7 +216,7 @@ final class FeatureWorkflowTests: XCTestCase {
             defaults: defaults
         )
 
-        await appState.saveDemandInputDraft(
+        _ = await appState.saveDemandInputDraft(
             DemandInputDraft(
                 requirement: "为订单保存增加快照。",
                 links: ["https://example.com/prototype"],
@@ -103,6 +236,37 @@ final class FeatureWorkflowTests: XCTestCase {
         XCTAssertTrue(prompt.contains("Write a proposal to \(root.path)/FEATURES.draft.md."))
         XCTAssertTrue(prompt.contains("Do not modify FEATURES.md."))
         XCTAssertTrue(prompt.contains("DRAFT-001, DRAFT-002"))
+    }
+
+    @MainActor
+    func testAppStateDemandSaveFailurePreservesEditedDraftAndReportsResult() async throws {
+        let root = try temporaryDemandWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = demandInputWorkspace(path: root.path)
+        let defaultsSuite = "NexusAppTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: defaultsSuite)!
+        defer { defaults.removePersistentDomain(forName: defaultsSuite) }
+        let appState = AppState(
+            workspaces: [workspace],
+            agentStatus: AgentStatus(title: "Ready", detail: "Tests", connectedTools: []),
+            bridge: PreviewNexusBridge(),
+            workspaceRoot: root.deletingLastPathComponent().path,
+            sourceReposRoot: root.path,
+            docsRoot: root.path,
+            defaults: defaults
+        )
+        let original = DemandInputDraft(requirement: "original", links: [], attachments: [])
+        let initialResult = await appState.saveDemandInputDraft(original, in: workspace)
+        XCTAssertTrue(initialResult.succeeded)
+        let snapshot = try XCTUnwrap(appState.demandInputSnapshot(for: workspace))
+        try "external".write(to: URL(fileURLWithPath: snapshot.path), atomically: true, encoding: .utf8)
+        let edited = DemandInputDraft(requirement: "edited", links: [], attachments: [])
+
+        let result = await appState.saveDemandInputDraft(edited, in: workspace)
+
+        XCTAssertFalse(result.succeeded)
+        XCTAssertEqual(appState.demandInputSnapshot(for: workspace)?.draft, edited)
+        XCTAssertEqual(appState.lastError, result.message)
     }
 
     func testConsoleRoutesDemandPrimaryActionToVisibleEditor() {

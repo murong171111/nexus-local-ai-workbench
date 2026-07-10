@@ -109,7 +109,8 @@ struct FeatureWorkspaceView: View {
                 Button {
                     autosaveTask?.cancel()
                     Task {
-                        await appState.saveDemandInputDraft(draft, in: workspace)
+                        let result = await appState.saveDemandInputDraft(draft, in: workspace)
+                        guard result.succeeded else { return }
                         await appState.openFeatureIntakeInCodex(for: workspace)
                     }
                 } label: {
@@ -156,7 +157,7 @@ struct FeatureWorkspaceView: View {
                 let urls = pendingMaterials
                 pendingMaterials = []
                 Task {
-                    await appState.attachDemandMaterials(urls, to: workspace, confirmed: true)
+                    _ = await appState.attachDemandMaterials(urls, to: workspace, confirmed: true)
                     draft = appState.demandInputSnapshot(for: workspace)?.draft ?? draft
                 }
             }
@@ -172,7 +173,7 @@ struct FeatureWorkspaceView: View {
         autosaveTask = Task {
             try? await Task.sleep(nanoseconds: 600_000_000)
             guard !Task.isCancelled else { return }
-            await appState.saveDemandInputDraft(draft, in: workspace)
+            _ = await appState.saveDemandInputDraft(draft, in: workspace)
         }
     }
 }

@@ -3373,7 +3373,7 @@ final class AppState: ObservableObject {
         }
     }
 
-    func saveDemandInputDraft(_ draft: DemandInputDraft, in workspace: WorkspaceSummary) async {
+    func saveDemandInputDraft(_ draft: DemandInputDraft, in workspace: WorkspaceSummary) async -> DemandInputSaveResult {
         demandInputSavingWorkspaceID = workspace.id
         lastError = nil
         defer {
@@ -3382,9 +3382,11 @@ final class AppState: ObservableObject {
             }
         }
 
+        var preservedSnapshot = demandInputsByWorkspace[workspace.id]
         do {
             let current = try demandInputsByWorkspace[workspace.id]
                 ?? NativeDemandInputStore.load(workspacePath: workspace.path)
+            preservedSnapshot = current
             let response = try NativeDemandInputStore.save(
                 draft: draft,
                 workspacePath: workspace.path,
@@ -3404,12 +3406,26 @@ final class AppState: ObservableObject {
                 systemImage: "square.and.pencil",
                 auditError: response.auditError
             )
+            return .saved(snapshot)
         } catch {
-            lastError = error.localizedDescription
+            let message = error.localizedDescription
+            if let preservedSnapshot {
+                demandInputsByWorkspace[workspace.id] = DemandInputSnapshot(
+                    draft: draft,
+                    revision: preservedSnapshot.revision,
+                    path: preservedSnapshot.path
+                )
+            }
+            lastError = message
+            return .failed(message: message)
         }
     }
 
-    func attachDemandMaterials(_ urls: [URL], to workspace: WorkspaceSummary, confirmed: Bool) async {
+    func attachDemandMaterials(
+        _ urls: [URL],
+        to workspace: WorkspaceSummary,
+        confirmed: Bool
+    ) async -> DemandAttachmentCopyResponse? {
         demandInputSavingWorkspaceID = workspace.id
         lastError = nil
         defer {
@@ -3439,19 +3455,22 @@ final class AppState: ObservableObject {
             for path in attachmentPaths where !next.attachments.contains(path) {
                 next.attachments.append(path)
             }
-            if next != current.draft {
-                _ = try NativeDemandInputStore.save(
-                    draft: next,
-                    workspacePath: workspace.path,
-                    expectedRevision: current.revision,
-                    auditRoot: auditRootPath,
-                    actor: "Nexus Native"
-                )
+            demandInputsByWorkspace[workspace.id] = DemandInputSnapshot(
+                draft: next,
+                revision: current.revision,
+                path: current.path
+            )
+            let saveResult = next == current.draft
+                ? DemandInputSaveResult.saved(current)
+                : await saveDemandInputDraft(next, in: workspace)
+            let failureDetail = copied.errors.prefix(2).map(\.message).joined(separator: " | ")
+            if !copied.errors.isEmpty {
+                let saveDetail = saveResult.message.map { " \($0)" } ?? ""
+                lastError = "\(copied.errors.count) material copy failure(s): \(failureDetail).\(saveDetail)"
             }
-            demandInputsByWorkspace[workspace.id] = try NativeDemandInputStore.load(workspacePath: workspace.path)
             markLocalWriteFeedback(
                 title: "需求材料已确认 / Materials copied",
-                detail: "\(workspace.name) · \(copied.copiedPaths.count) copied · \(copied.errors.count) needs review。",
+                detail: "\(workspace.name) · \(copied.copiedPaths.count) copied · \(copied.errors.count) needs review。\(failureDetail)",
                 workspaceID: workspace.id,
                 workspaceName: workspace.name,
                 documentPath: "\(workspace.path)/需求/attachments",
@@ -3459,8 +3478,10 @@ final class AppState: ObservableObject {
                 systemImage: "paperclip",
                 auditError: copied.auditError
             )
+            return copied
         } catch {
             lastError = error.localizedDescription
+            return nil
         }
     }
 

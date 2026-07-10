@@ -39,6 +39,21 @@ struct DemandInputSaveResponse: Hashable {
     let auditError: String?
 }
 
+enum DemandInputSaveResult: Hashable {
+    case saved(DemandInputSnapshot)
+    case failed(message: String)
+
+    var succeeded: Bool {
+        if case .saved = self { return true }
+        return false
+    }
+
+    var message: String? {
+        if case .failed(let message) = self { return message }
+        return nil
+    }
+}
+
 struct DemandAttachmentPlan: Hashable {
     let workspacePath: String
     let expectedDraftRevision: DemandInputRevision
