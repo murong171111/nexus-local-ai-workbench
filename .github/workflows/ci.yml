@@ -48,6 +48,9 @@ jobs:
       - name: Type-check widget source
         run: npm run widget:typecheck
 
+      - name: Test native Mac shell
+        run: npm run native:test
+
       - name: Build native Mac shell
         run: npm run native:build
 
