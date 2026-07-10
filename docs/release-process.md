@@ -17,9 +17,15 @@ Use semantic versioning after stable release. Alpha builds can use tags like `v0
 Run:
 
 ```bash
+# Focused real-workspace M1 lifecycle gate
+npm run native:m1-acceptance
+
+# Complete Native regression and build
 swift test --package-path native/Nexus
 swift build --package-path native/Nexus
 ```
+
+The focused M1 gate creates temporary real workspace files, Git repositories, and worktrees, then proves the Native path through demand intake, scope freeze, task transfer and writeback, delivery, archive, lifecycle proof export, and restore to development. The complete Native suite remains the release regression gate.
 
 Before publishing an installable artifact, also run the Native app target build once it exists.
 

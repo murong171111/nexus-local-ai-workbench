@@ -529,10 +529,10 @@ The main workflow must not require new legacy features to become true.
 
 M1 is complete when:
 
-- A real workspace can move through every stage in the Native Mac app. `[started with MainWorkflowAcceptanceEvidence stage coverage]`
-- Every stage has one primary action and one routed evidence source. `[started with WorkspaceStageAnswer primaryEvidenceLink and MainWorkflowAcceptanceEvidence complete-answer checks]`
-- Demand intake blocks development until scope and P0 questions are handled. `[started with MainWorkflowAcceptanceEvidence demand gate check]`
-- Root `tasks.md` is the only execution task source. `[started with MainWorkflowAcceptanceEvidence task source check]`
-- Worktree status distinguishes source repo, worktree, branch, dirty, and clean states. `[started with MainWorkflowAcceptanceEvidence worktree state coverage]`
-- Delivery and archive use the same hard SQL and task/risk/git gates, and archive actions are routed through confirmed lifecycle writeback. `[started with MainWorkflowAcceptanceEvidence delivery/archive gate check]`
-- Legacy React/Tauri/Rust/TypeScript code has no new product workflow features added after this roadmap. `[started with MainWorkflowAcceptanceEvidence legacy boundary check]`
+- A real workspace can move through every stage in the Native Mac app. `[done with the real-files-and-Git testNativeStoresCanProveEndToEndWorkspaceLifecycle acceptance path, including archive, proof export, and restore]`
+- Every stage has one primary action and one routed evidence source. `[done with WorkspaceStageAnswer and MainWorkflowAcceptanceEvidence complete-answer checks]`
+- Demand intake blocks development until scope and P0 questions are handled. `[done with demand, scope-freeze, and canonical-stage evidence tests]`
+- Root `tasks.md` is the only execution task source. `[done with demand-transfer, Task Center, and MainWorkflowAcceptanceEvidence task-source checks]`
+- Worktree status distinguishes source repo, worktree, branch, dirty, and clean states. `[done with Native Git/worktree state coverage and real worktree lifecycle acceptance]`
+- Delivery and archive use the same hard SQL and task/risk/git gates, and archive actions are routed through confirmed lifecycle writeback. `[done with delivery, validation/PR, archive checklist, lifecycle writeback, and lifecycle proof tests]`
+- Legacy React/Tauri/Rust/TypeScript code has no new product workflow features added after this roadmap. `[done for M1 with the Swift Native workflow boundary check; legacy deletion remains an M3 gate]`

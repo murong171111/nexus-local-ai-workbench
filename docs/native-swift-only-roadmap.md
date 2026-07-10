@@ -277,10 +277,11 @@ Until then, legacy code is frozen reference, not the product direction.
 
 ### M1: Main Workflow Native
 
-- Workspace list and detail use Swift-native domain state.
-- Demand intake and document preview are Native-first.
-- Git/worktree and delivery readiness use Native-owned rules.
-- Main path shows one current stage, one blocker summary, one recommended next step, and the primary evidence file. `[started with WorkspaceStageAnswer blockerSummary and primaryEvidenceLink surfaced in Command Center, workspace list, handoff prompts, menu bar status, Widget snapshot, and Native widget preview; Command Center now keeps one prominent primary action while workflow path actions move behind compact menus, with CommandCenterLayoutAuditSummary proving the primary/secondary action hierarchy; Main workflow summary shows only primary evidence by default and folds additional evidence into a disclosure; Workspace Board empty states now stay Chinese-first, route to one primary action, show diagnostics for real directories, INDEX records, widget timestamp, and latest audit target existence, and summarize those diagnostics into one conclusion plus next step; NativeOnboardingPath now proves the first-run route across team profile, environment check, workspace creation, and main path with one current step; post-create receipts now surface a recovery panel when the workspace directory was written but the refreshed Native scan did not return the new workspace]`
+- Workspace list and detail use Swift-native domain state. `[done for M1]`
+- Demand intake and document preview are Native-first. `[done for M1]`
+- Git/worktree and delivery readiness use Native-owned rules. `[done for M1]`
+- Main path shows one current stage, one blocker summary, one recommended next step, and the primary evidence file. `[done for M1 with WorkspaceStageAnswer, Command Center action hierarchy, truthful empty-state diagnostics, Native onboarding, and post-create visibility recovery]`
+- Real workspace lifecycle acceptance is repeatable with `npm run native:m1-acceptance`, covering Native files and Git from workspace creation through archive, proof export, and restore. `[done]`
 
 ### M2: Native Local Core
 
