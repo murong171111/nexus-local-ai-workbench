@@ -2331,6 +2331,77 @@ final class ModelBehaviorTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testAppStateDeliveryRecordConfirmationKeepsStalePendingEvidence() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-app-state-delivery-confirmation-\(UUID().uuidString)")
+        let workspacesRoot = root.appendingPathComponent("workspaces")
+        let workspaceURL = workspacesRoot.appendingPathComponent("workspace")
+        let sourceRoot = root.appendingPathComponent("source-repos")
+        let docsRoot = root.appendingPathComponent("docs")
+        let applicationSupportRoot = root.appendingPathComponent("app-support")
+        let defaultsSuite = "NexusAppTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: defaultsSuite)!
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            defaults.removePersistentDomain(forName: defaultsSuite)
+        }
+        for directory in [workspaceURL, sourceRoot, docsRoot] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        try "# Workspace\n\n- 需求名称: Delivery Conflict\n- 当前状态: developing\n- 目标分支: feature/delivery-conflict\n".write(
+            to: workspaceURL.appendingPathComponent("workspace.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# STATUS\n\n- 当前状态: developing\n- 当前焦点: Delivery conflict test\n".write(
+            to: workspaceURL.appendingPathComponent("STATUS.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# Tasks\n\n| 任务 | 状态 | 说明 |\n| --- | --- | --- |\n| Delivery proof | 已完成 | ready |\n".write(
+            to: workspaceURL.appendingPathComponent("tasks.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let deliveryURL = workspaceURL.appendingPathComponent("交付记录.md")
+        let original = "# 交付记录\n\n## 人工记录\n\n原始内容。\n"
+        try original.write(to: deliveryURL, atomically: true, encoding: .utf8)
+
+        let workspace = try scannedWorkspace(
+            folder: "workspace",
+            workspacesRoot: workspacesRoot,
+            sourceRoot: sourceRoot
+        )
+        let appState = AppState(
+            workspaces: [workspace],
+            agentStatus: AgentStatus(title: "Ready", detail: "Tests", connectedTools: []),
+            bridge: PreviewNexusBridge(),
+            workspaceRoot: workspacesRoot.path,
+            sourceReposRoot: sourceRoot.path,
+            docsRoot: docsRoot.path,
+            applicationSupportRoot: applicationSupportRoot.path,
+            defaults: defaults
+        )
+
+        appState.requestDeliveryRecordWrite(in: workspace)
+        let pending = try XCTUnwrap(appState.pendingDeliveryRecordWrite)
+        XCTAssertTrue(pending.canWrite)
+        let externallyEdited = original + "\n## 外部修改\n\n确认后写入。\n"
+        try externallyEdited.write(to: deliveryURL, atomically: true, encoding: .utf8)
+
+        await appState.confirmPendingDeliveryRecordWrite(confirmed: true)
+
+        XCTAssertEqual(appState.pendingDeliveryRecordWrite, pending)
+        XCTAssertTrue(appState.lastError?.contains("changed since confirmation") == true)
+        XCTAssertFalse(appState.isUpdatingDeliveryRecord)
+        XCTAssertEqual(try String(contentsOf: deliveryURL, encoding: .utf8), externallyEdited)
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: applicationSupportRoot
+                .appendingPathComponent("audit/\(NativeAuditEventStore.fileName)").path
+        ))
+    }
+
     func testNativeWorkspaceTaskStoreRejectsSymlinkBeforeWriting() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-native-task-symlink-\(UUID().uuidString)")
@@ -7508,7 +7579,7 @@ final class ModelBehaviorTests: XCTestCase {
     }
 
     func testNativeDeliveryRecordStoreCreatesMissingRecordAtExpandedTildePath() throws {
-        let workspacePath = "~/nexus-delivery-tilde-\(UUID().uuidString)"
+        let workspacePath = "~/../../private/tmp/nexus-delivery-tilde-\(UUID().uuidString)"
         let expandedWorkspacePath = (workspacePath as NSString).expandingTildeInPath
         let workspaceURL = URL(fileURLWithPath: expandedWorkspacePath, isDirectory: true)
         let deliveryURL = workspaceURL.appendingPathComponent("交付记录.md")
