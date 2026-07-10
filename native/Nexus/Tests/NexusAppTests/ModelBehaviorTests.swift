@@ -7136,6 +7136,82 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: external, encoding: .utf8), original)
     }
 
+    func testInvalidDeliveryRecordRevisionBlocksArchiveAndValidationPlans() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-delivery-revision-followup-\(UUID().uuidString)")
+        let linked = root.appendingPathComponent("linked")
+        let external = root.appendingPathComponent("external.md")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: linked, withIntermediateDirectories: true)
+        let original = "# 交付记录\n\n人工记录。\n"
+        try original.write(to: external, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(
+            at: linked.appendingPathComponent("交付记录.md"),
+            withDestinationURL: external
+        )
+        let healthChecks = [
+            WorkspaceHealthCheck(
+                id: "delivery-record",
+                label: "交付记录",
+                detail: "交付记录可用",
+                status: "pass",
+                action: "delivery"
+            ),
+            WorkspaceHealthCheck(
+                id: "sql-directory",
+                label: "SQL",
+                detail: "未声明 SQL 变更。",
+                status: "pass",
+                action: "sql"
+            )
+        ]
+        let linkedWorkspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "delivery-revision-followup-linked",
+            path: linked.path,
+            healthChecks: healthChecks
+        )
+
+        let archivePlan = ArchiveChecklistWritePlan.resolve(
+            workspace: linkedWorkspace,
+            archiveGate: ArchiveGateEvidence(
+                status: .next,
+                title: "coverage gap",
+                reason: "coverage gap",
+                value: "coverage gap",
+                evidence: [linked.appendingPathComponent("交付记录.md").path],
+                checks: [],
+                confirmationPlan: [],
+                primaryActionLabel: "归档",
+                primaryActionSystemImage: "archivebox",
+                primaryAction: .lifecycle(.archived),
+                blockerCount: 0,
+                warningCount: 0
+            )
+        )
+        guard case .invalid(let archiveReason) = archivePlan.expectedRevision else {
+            return XCTFail("expected invalid archive revision")
+        }
+        XCTAssertTrue(archiveReason.contains("not a regular file"))
+        XCTAssertFalse(archivePlan.canWrite)
+        XCTAssertTrue(archivePlan.summary.contains("not a regular file"))
+
+        let validationPlan = ValidationPrWritePlan.resolve(
+            workspace: linkedWorkspace,
+            evidence: ValidationPrEvidence.resolve(
+                workspace: linkedWorkspace,
+                deliveryGate: DeliveryGateEvidence.resolve(workspace: linkedWorkspace)
+            )
+        )
+        guard case .invalid(let validationReason) = validationPlan.expectedRevision else {
+            return XCTFail("expected invalid validation revision")
+        }
+        XCTAssertTrue(validationReason.contains("not a regular file"))
+        XCTAssertFalse(validationPlan.canWrite)
+        XCTAssertTrue(validationPlan.summary.contains("not a regular file"))
+        XCTAssertEqual(try String(contentsOf: external, encoding: .utf8), original)
+    }
+
     func testDeliveryRecordWritePlanAppendsCurrentGateSnapshot() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-delivery-record-write-\(UUID().uuidString)")
