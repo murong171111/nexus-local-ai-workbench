@@ -1920,6 +1920,59 @@ final class ModelBehaviorTests: XCTestCase {
         ))
     }
 
+    func testNativeWorkspaceLifecycleStoreRollsBackBothDocumentsWhenSecondWriteFails() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-lifecycle-rollback-\(UUID().uuidString)")
+        let workspaceURL = root.appendingPathComponent("workspace")
+        let workspaceDocumentURL = workspaceURL.appendingPathComponent("workspace.md")
+        let statusDocumentURL = workspaceURL.appendingPathComponent("STATUS.md")
+        let auditRoot = root.appendingPathComponent("audit")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        let originalWorkspace = "# Workspace\n\n- 当前状态: developing\n- 需求名称: Rollback Demo\n"
+        let originalStatus = "# STATUS\n\n- 状态: developing\n- 当前焦点: Before write\n- 下一步: Keep original\n"
+        try originalWorkspace.write(to: workspaceDocumentURL, atomically: true, encoding: .utf8)
+        try originalStatus.write(to: statusDocumentURL, atomically: true, encoding: .utf8)
+
+        var writeCount = 0
+        XCTAssertThrowsError(
+            try NativeWorkspaceLifecycleStore.update(
+                request: UpdateWorkspaceLifecycleRequest(
+                    workspacePath: workspaceURL.path,
+                    state: "archived",
+                    focus: "Should roll back",
+                    nextAction: "Keep both originals",
+                    confirmed: true,
+                    auditRoot: auditRoot.path,
+                    actor: "Nexus Test"
+                ),
+                expectedState: "developing",
+                writeFile: { content, url in
+                    writeCount += 1
+                    if writeCount == 2 {
+                        throw NSError(
+                            domain: "NativeWorkspaceLifecycleStoreTests",
+                            code: 2,
+                            userInfo: [NSLocalizedDescriptionKey: "injected STATUS.md write failure"]
+                        )
+                    }
+                    try content.write(to: url, atomically: true, encoding: .utf8)
+                }
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("injected STATUS.md write failure"))
+        }
+
+        XCTAssertEqual(writeCount, 4)
+        XCTAssertEqual(try String(contentsOf: workspaceDocumentURL, encoding: .utf8), originalWorkspace)
+        XCTAssertEqual(try String(contentsOf: statusDocumentURL, encoding: .utf8), originalStatus)
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: auditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path
+        ))
+    }
+
     func testNativeWorkspaceLifecycleStoreRequiresConfirmationAndRewritesStatusDocuments() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-native-lifecycle-\(UUID().uuidString)")

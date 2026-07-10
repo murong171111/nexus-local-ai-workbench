@@ -14,7 +14,10 @@ enum NativeWorkspaceLifecycleStore {
     static func update(
         request: UpdateWorkspaceLifecycleRequest,
         expectedState: String,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        writeFile: (String, URL) throws -> Void = { content, url in
+            try content.write(to: url, atomically: true, encoding: .utf8)
+        }
     ) throws -> UpdateWorkspaceLifecycleResponse {
         guard request.confirmed else {
             throw NativeWorkspaceLifecycleStoreError.unconfirmed
@@ -63,8 +66,24 @@ enum NativeWorkspaceLifecycleStore {
             updatedAt: updatedAt
         )
         let nextWorkspaceContent = upsertBulletValue(in: workspaceContent, label: "当前状态", value: state)
-        try nextWorkspaceContent.write(to: workspaceDocumentURL, atomically: true, encoding: .utf8)
-        try nextStatusContent.write(to: statusDocumentURL, atomically: true, encoding: .utf8)
+        do {
+            try writeFile(nextWorkspaceContent, workspaceDocumentURL)
+            try writeFile(nextStatusContent, statusDocumentURL)
+        } catch {
+            let writeFailure = error.localizedDescription
+            let restoreFailures = restoreSnapshots(
+                snapshots: [statusSnapshot, workspaceSnapshot],
+                fileManager: fileManager,
+                writeFile: writeFile
+            )
+            if !restoreFailures.isEmpty {
+                throw NativeWorkspaceLifecycleStoreError.rollbackFailed(
+                    writeFailure: writeFailure,
+                    rollbackFailures: restoreFailures
+                )
+            }
+            throw NativeWorkspaceLifecycleStoreError.writeFailed(writeFailure)
+        }
 
         let response = UpdateWorkspaceLifecycleResponse(
             workspacePath: workspaceURL.path,
@@ -125,6 +144,33 @@ enum NativeWorkspaceLifecycleStore {
                 url.path,
                 error.localizedDescription
             )
+        }
+    }
+
+    private static func restore(
+        _ snapshot: LifecycleDocumentSnapshot,
+        fileManager: FileManager,
+        writeFile: (String, URL) throws -> Void
+    ) throws {
+        if let content = snapshot.content {
+            try writeFile(content, snapshot.url)
+        } else if fileManager.fileExists(atPath: snapshot.url.path) {
+            try fileManager.removeItem(at: snapshot.url)
+        }
+    }
+
+    private static func restoreSnapshots(
+        snapshots: [LifecycleDocumentSnapshot],
+        fileManager: FileManager,
+        writeFile: (String, URL) throws -> Void
+    ) -> [String] {
+        snapshots.compactMap { snapshot in
+            do {
+                try restore(snapshot, fileManager: fileManager, writeFile: writeFile)
+                return nil
+            } catch {
+                return "\(snapshot.url.lastPathComponent): \(error.localizedDescription)"
+            }
         }
     }
 
@@ -345,6 +391,8 @@ private enum NativeWorkspaceLifecycleStoreError: LocalizedError {
     case unsupportedExpectedState(String)
     case conflictingCurrentStates(String, String)
     case staleConfirmation(expected: String, current: String)
+    case writeFailed(String)
+    case rollbackFailed(writeFailure: String, rollbackFailures: [String])
 
     var errorDescription: String? {
         switch self {
@@ -368,6 +416,10 @@ private enum NativeWorkspaceLifecycleStoreError: LocalizedError {
             return "workspace lifecycle files conflict: workspace.md=\(workspaceState), STATUS.md=\(statusState)"
         case .staleConfirmation(let expected, let current):
             return "workspace lifecycle changed since confirmation: expected \(expected), found \(current)"
+        case .writeFailed(let reason):
+            return "workspace lifecycle write failed and original documents were restored: \(reason)"
+        case .rollbackFailed(let writeFailure, let rollbackFailures):
+            return "workspace lifecycle write failed and rollback is incomplete: \(writeFailure); \(rollbackFailures.joined(separator: "; "))"
         }
     }
 }

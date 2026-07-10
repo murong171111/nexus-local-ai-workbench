@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Added
 
+- Native lifecycle writeback now rejects stale or contradictory Markdown state and restores both lifecycle documents after an in-process write failure before emitting success audit feedback.
 - Native workspace scanning now builds lifecycle from `workspace.md` and `STATUS.md`, preserving explicit states while surfacing missing, unsupported, or conflicting records conservatively.
 - Native Board, list, menu bar, Widget, and detail stage answers now resolve missing demand and scope evidence from the same real workspace files.
 - Native startup and unavailable bridge fallbacks no longer present preview workspaces, documents, Agent events, or automation findings as real local state.
