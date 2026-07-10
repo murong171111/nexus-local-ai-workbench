@@ -84,6 +84,7 @@ enum NativeDeliveryRecordStore {
             status: plan.status,
             itemCount: plan.items.count,
             appendedMarkdown: plan.appendedMarkdown,
+            expectedRevision: plan.expectedRevision,
             canWrite: plan.canWrite,
             notWritableSummary: plan.summary,
             confirmed: confirmed,
@@ -106,6 +107,7 @@ enum NativeDeliveryRecordStore {
             status: plan.status,
             itemCount: plan.items.count,
             appendedMarkdown: plan.appendedMarkdown,
+            expectedRevision: plan.expectedRevision,
             canWrite: plan.canWrite,
             notWritableSummary: plan.summary,
             confirmed: confirmed,
@@ -128,6 +130,7 @@ enum NativeDeliveryRecordStore {
             status: plan.status,
             itemCount: plan.items.count,
             appendedMarkdown: plan.appendedMarkdown,
+            expectedRevision: plan.expectedRevision,
             canWrite: plan.canWrite,
             notWritableSummary: plan.summary,
             confirmed: confirmed,
@@ -144,6 +147,7 @@ enum NativeDeliveryRecordStore {
         status: WorkflowPathStatus,
         itemCount: Int,
         appendedMarkdown: String,
+        expectedRevision: NativeDeliveryRecordDocumentRevision,
         canWrite: Bool,
         notWritableSummary: String,
         confirmed: Bool,
@@ -153,11 +157,19 @@ enum NativeDeliveryRecordStore {
         guard confirmed else {
             throw NativeDeliveryRecordStoreError.unconfirmed
         }
+        if case .invalid(let reason) = expectedRevision {
+            throw NativeDeliveryRecordStoreError.invalidExpectedRevision(reason)
+        }
         guard canWrite else {
             throw NativeDeliveryRecordStoreError.notWritable(notWritableSummary)
         }
 
-        try appendMarkdownBlock(appendedMarkdown, toFile: deliveryPath, fallbackHeader: "# 交付记录\n")
+        try appendMarkdownBlock(
+            appendedMarkdown,
+            toFile: deliveryPath,
+            expectedRevision: expectedRevision,
+            fileManager: .default
+        )
         let response = NativeDeliveryRecordWriteResponse(
             kind: kind,
             path: deliveryPath,
@@ -188,9 +200,22 @@ enum NativeDeliveryRecordStore {
     private static func appendMarkdownBlock(
         _ block: String,
         toFile path: String,
-        fallbackHeader: String
+        expectedRevision: NativeDeliveryRecordDocumentRevision,
+        fileManager: FileManager
     ) throws {
-        var content = (try? String(contentsOfFile: path, encoding: .utf8)) ?? fallbackHeader
+        let current = inspectDocument(at: path, fileManager: fileManager)
+        if case .invalid(let reason) = current.revision {
+            throw NativeDeliveryRecordStoreError.invalidCurrentDocument(reason)
+        }
+        guard current.revision == expectedRevision else {
+            throw NativeDeliveryRecordStoreError.staleDocument(
+                path: path,
+                expected: expectedRevision.label,
+                current: current.revision.label
+            )
+        }
+
+        var content = current.content ?? "# 交付记录\n"
         if !content.isEmpty, !content.hasSuffix("\n") {
             content.append("\n")
         }
@@ -293,6 +318,9 @@ enum NativeDeliveryRecordStore {
 private enum NativeDeliveryRecordStoreError: LocalizedError {
     case unconfirmed
     case notWritable(String)
+    case invalidExpectedRevision(String)
+    case invalidCurrentDocument(String)
+    case staleDocument(path: String, expected: String, current: String)
 
     var errorDescription: String? {
         switch self {
@@ -300,6 +328,12 @@ private enum NativeDeliveryRecordStoreError: LocalizedError {
             return "delivery record write requires explicit confirmation"
         case .notWritable(let summary):
             return summary
+        case .invalidExpectedRevision(let reason):
+            return reason
+        case .invalidCurrentDocument(let reason):
+            return reason
+        case .staleDocument(let path, let expected, let current):
+            return "delivery record changed since confirmation: \(path): expected \(expected), found \(current)"
         }
     }
 }

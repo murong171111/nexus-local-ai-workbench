@@ -7212,6 +7212,230 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: external, encoding: .utf8), original)
     }
 
+    func testNativeDeliveryRecordStoreRejectsChangedCreatedDeletedAndInvalidEvidence() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-delivery-write-safety-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+        let healthChecks = [
+            WorkspaceHealthCheck(
+                id: "delivery-record",
+                label: "交付记录",
+                detail: "交付记录可用",
+                status: "pass",
+                action: "delivery"
+            ),
+            WorkspaceHealthCheck(
+                id: "sql-directory",
+                label: "SQL",
+                detail: "未声明 SQL 变更。",
+                status: "pass",
+                action: "sql"
+            )
+        ]
+
+        func workspace(at directory: URL, id: String) -> WorkspaceSummary {
+            workspaceForWorkflowSummary(
+                stage: "developing",
+                id: id,
+                name: id,
+                path: directory.path,
+                healthChecks: healthChecks
+            )
+        }
+
+        func deliveryPlan(at directory: URL, id: String) -> DeliveryRecordWritePlan {
+            let summary = workspace(at: directory, id: id)
+            return DeliveryRecordWritePlan.resolve(
+                workspace: summary,
+                gate: DeliveryGateEvidence.resolve(workspace: summary)
+            )
+        }
+
+        let changedRoot = root.appendingPathComponent("changed")
+        let changedAuditRoot = changedRoot.appendingPathComponent("audit")
+        try FileManager.default.createDirectory(at: changedRoot, withIntermediateDirectories: true)
+        let changedDeliveryURL = changedRoot.appendingPathComponent("交付记录.md")
+        let originalChangedContent = "# 交付记录\n\n## 人工记录\n\n原始版本。\n"
+        let manualChangedContent = "# 交付记录\n\n## 人工记录\n\n人工修改后版本。\n"
+        try originalChangedContent.write(to: changedDeliveryURL, atomically: true, encoding: .utf8)
+        let changedPlan = deliveryPlan(at: changedRoot, id: "delivery-record-changed")
+        try manualChangedContent.write(to: changedDeliveryURL, atomically: true, encoding: .utf8)
+
+        XCTAssertThrowsError(
+            try NativeDeliveryRecordStore.appendDeliverySnapshot(
+                plan: changedPlan,
+                confirmed: true,
+                auditRoot: changedAuditRoot.path,
+                actor: "Nexus Test"
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("changed since confirmation"))
+        }
+        let changedContent = try String(contentsOf: changedDeliveryURL, encoding: .utf8)
+        XCTAssertEqual(changedContent, manualChangedContent)
+        XCTAssertFalse(changedContent.contains("## Nexus Delivery Gate Snapshot"))
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: changedAuditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path
+        ))
+
+        let createdRoot = root.appendingPathComponent("created-after-missing")
+        let createdAuditRoot = createdRoot.appendingPathComponent("audit")
+        try FileManager.default.createDirectory(at: createdRoot, withIntermediateDirectories: true)
+        let createdDeliveryURL = createdRoot.appendingPathComponent("交付记录.md")
+        let createdPlan = deliveryPlan(at: createdRoot, id: "delivery-record-created-after-missing")
+        let createdContent = "# 交付记录\n\n## 人工记录\n\n后来创建。\n"
+        try createdContent.write(to: createdDeliveryURL, atomically: true, encoding: .utf8)
+
+        XCTAssertThrowsError(
+            try NativeDeliveryRecordStore.appendDeliverySnapshot(
+                plan: createdPlan,
+                confirmed: true,
+                auditRoot: createdAuditRoot.path,
+                actor: "Nexus Test"
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("changed since confirmation"))
+        }
+        let createdWrittenContent = try String(contentsOf: createdDeliveryURL, encoding: .utf8)
+        XCTAssertEqual(createdWrittenContent, createdContent)
+        XCTAssertFalse(createdWrittenContent.contains("## Nexus Delivery Gate Snapshot"))
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: createdAuditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path
+        ))
+
+        let deletedRoot = root.appendingPathComponent("deleted-after-existing")
+        let deletedAuditRoot = deletedRoot.appendingPathComponent("audit")
+        try FileManager.default.createDirectory(at: deletedRoot, withIntermediateDirectories: true)
+        let deletedDeliveryURL = deletedRoot.appendingPathComponent("交付记录.md")
+        try "# 交付记录\n\n## 人工记录\n\n会被删除。\n".write(
+            to: deletedDeliveryURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        let deletedPlan = deliveryPlan(at: deletedRoot, id: "delivery-record-deleted-after-existing")
+        try FileManager.default.removeItem(at: deletedDeliveryURL)
+
+        XCTAssertThrowsError(
+            try NativeDeliveryRecordStore.appendDeliverySnapshot(
+                plan: deletedPlan,
+                confirmed: true,
+                auditRoot: deletedAuditRoot.path,
+                actor: "Nexus Test"
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("changed since confirmation"))
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: deletedDeliveryURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: deletedAuditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path
+        ))
+
+        let linkedRoot = root.appendingPathComponent("symlink")
+        let linkedAuditRoot = linkedRoot.appendingPathComponent("audit")
+        let externalURL = root.appendingPathComponent("external-delivery.md")
+        try FileManager.default.createDirectory(at: linkedRoot, withIntermediateDirectories: true)
+        let linkedDeliveryURL = linkedRoot.appendingPathComponent("交付记录.md")
+        let linkedOriginal = "# 交付记录\n\n外部链接。\n"
+        try linkedOriginal.write(to: externalURL, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: linkedDeliveryURL, withDestinationURL: externalURL)
+        let linkedPlan = deliveryPlan(at: linkedRoot, id: "delivery-record-symlink")
+
+        XCTAssertThrowsError(
+            try NativeDeliveryRecordStore.appendDeliverySnapshot(
+                plan: linkedPlan,
+                confirmed: true,
+                auditRoot: linkedAuditRoot.path,
+                actor: "Nexus Test"
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("not a regular file"))
+        }
+        XCTAssertEqual(try String(contentsOf: externalURL, encoding: .utf8), linkedOriginal)
+        XCTAssertEqual(
+            try FileManager.default.destinationOfSymbolicLink(atPath: linkedDeliveryURL.path),
+            externalURL.path
+        )
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: linkedAuditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path
+        ))
+
+        let invalidRoot = root.appendingPathComponent("invalid-utf8")
+        let invalidAuditRoot = invalidRoot.appendingPathComponent("audit")
+        try FileManager.default.createDirectory(at: invalidRoot, withIntermediateDirectories: true)
+        let invalidDeliveryURL = invalidRoot.appendingPathComponent("交付记录.md")
+        let invalidBytes = Data([0x23, 0x20, 0xE4, 0xBA, 0xA4, 0xE4, 0xBB, 0x98, 0x0A, 0xC3, 0x28, 0x0A])
+        try invalidBytes.write(to: invalidDeliveryURL)
+        let invalidPlan = deliveryPlan(at: invalidRoot, id: "delivery-record-invalid-utf8")
+
+        XCTAssertThrowsError(
+            try NativeDeliveryRecordStore.appendDeliverySnapshot(
+                plan: invalidPlan,
+                confirmed: true,
+                auditRoot: invalidAuditRoot.path,
+                actor: "Nexus Test"
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("not valid UTF-8"))
+        }
+        XCTAssertEqual(try Data(contentsOf: invalidDeliveryURL), invalidBytes)
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: invalidAuditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path
+        ))
+    }
+
+    func testNativeDeliveryRecordStoreRejectsSecondSubmissionWithoutDuplicateAudit() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-delivery-duplicate-\(UUID().uuidString)")
+        let auditRoot = root.appendingPathComponent("audit")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let deliveryURL = root.appendingPathComponent("交付记录.md")
+        try "# 交付记录\n\n## 人工记录\n\n保留。\n".write(
+            to: deliveryURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "delivery-record-duplicate",
+            name: "Delivery Record Duplicate",
+            path: root.path,
+            healthChecks: [
+                WorkspaceHealthCheck(id: "delivery-record", label: "交付记录", detail: "交付记录可用", status: "pass", action: "delivery"),
+                WorkspaceHealthCheck(id: "sql-directory", label: "SQL", detail: "未声明 SQL 变更。", status: "pass", action: "sql")
+            ]
+        )
+        let gate = DeliveryGateEvidence.resolve(workspace: workspace)
+        let plan = DeliveryRecordWritePlan.resolve(workspace: workspace, gate: gate)
+
+        let first = try NativeDeliveryRecordStore.appendDeliverySnapshot(
+            plan: plan,
+            confirmed: true,
+            auditRoot: auditRoot.path,
+            actor: "Nexus Test"
+        )
+
+        XCTAssertThrowsError(
+            try NativeDeliveryRecordStore.appendDeliverySnapshot(
+                plan: plan,
+                confirmed: true,
+                auditRoot: auditRoot.path,
+                actor: "Nexus Test"
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("changed since confirmation"))
+        }
+
+        let content = try String(contentsOf: deliveryURL, encoding: .utf8)
+        let events = try NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 10)
+        XCTAssertEqual(content.components(separatedBy: "## Nexus Delivery Gate Snapshot").count - 1, 1)
+        XCTAssertEqual(events.filter { $0.action == "delivery_record.snapshot_appended" }.count, 1)
+        XCTAssertNotNil(first.auditEventID)
+    }
+
     func testDeliveryRecordWritePlanAppendsCurrentGateSnapshot() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-delivery-record-write-\(UUID().uuidString)")
