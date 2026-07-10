@@ -76,6 +76,116 @@ final class ModelBehaviorTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testAppStateDemandIntakeStatusFailureDoesNotFallBackToPreviewBridge() async {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "scoping",
+            id: "missing-demand-workspace",
+            path: "/tmp/nexus-missing-demand-workspace-\(UUID().uuidString)"
+        )
+        let defaultsSuite = "NexusAppTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: defaultsSuite)!
+        defer {
+            defaults.removePersistentDomain(forName: defaultsSuite)
+        }
+        let appState = AppState(
+            workspaces: [workspace],
+            agentStatus: AgentStatus(title: "Ready", detail: "Tests", connectedTools: []),
+            bridge: PreviewNexusBridge(),
+            workspaceRoot: "/tmp/workspaces",
+            sourceReposRoot: "/tmp/source-repos",
+            docsRoot: "/tmp/docs",
+            defaults: defaults
+        )
+
+        await appState.refreshDemandIntakeStatus(for: workspace)
+
+        XCTAssertTrue(appState.lastError?.contains("workspace does not exist") == true)
+        XCTAssertFalse(appState.lastError?.contains("Nexus Core bridge") == true)
+        XCTAssertFalse(appState.demandIntakeDisplayStatus(for: workspace).exists)
+        XCTAssertEqual(appState.demandIntakeDisplayStatus(for: workspace).missingCount, 5)
+    }
+
+    @MainActor
+    func testAppStateDemandIntakeInitializationUsesConfirmedPlanWithoutBridgeFallback() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-app-state-demand-plan-\(UUID().uuidString)")
+        let workspacesRoot = root.appendingPathComponent("workspaces")
+        let sourceRoot = root.appendingPathComponent("source-repos")
+        let docsRoot = root.appendingPathComponent("docs")
+        let applicationSupportRoot = root.appendingPathComponent("app-support")
+        let defaultsSuite = "NexusAppTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: defaultsSuite)!
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            defaults.removePersistentDomain(forName: defaultsSuite)
+        }
+        for directory in [workspacesRoot, sourceRoot, docsRoot] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        let created = try NativeWorkspaceCreationStore.create(
+            request: CreateWorkspaceRequest(
+                name: "Demand plan",
+                folder: "demand-plan",
+                workspacesRoot: workspacesRoot.path,
+                sourceReposRoot: sourceRoot.path,
+                services: [],
+                targetBranch: "",
+                confirmed: true
+            )
+        )
+        let workspace = try scannedWorkspace(
+            folder: created.folder,
+            workspacesRoot: workspacesRoot,
+            sourceRoot: sourceRoot
+        )
+        let appState = AppState(
+            workspaces: [workspace],
+            agentStatus: AgentStatus(title: "Ready", detail: "Tests", connectedTools: []),
+            bridge: PreviewNexusBridge(),
+            workspaceRoot: workspacesRoot.path,
+            sourceReposRoot: sourceRoot.path,
+            docsRoot: docsRoot.path,
+            applicationSupportRoot: applicationSupportRoot.path,
+            defaults: defaults
+        )
+        let plan = appState.demandIntakeInitializationPlan(
+            for: workspace,
+            demandName: "Demand plan",
+            lanhuLink: "",
+            notes: ""
+        )
+        let demandURL = URL(fileURLWithPath: created.path).appendingPathComponent("需求")
+        let externallyCreatedRequirement = "# External requirement\n"
+        try FileManager.default.createDirectory(at: demandURL, withIntermediateDirectories: true)
+        try externallyCreatedRequirement.write(
+            to: demandURL.appendingPathComponent("requirement.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let response = await appState.initializeDemandIntake(
+            in: workspace,
+            plan: plan,
+            confirmed: true
+        )
+
+        XCTAssertNil(response)
+        XCTAssertTrue(appState.lastError?.contains("changed since confirmation") == true)
+        XCTAssertFalse(appState.lastError?.contains("Nexus Core bridge") == true)
+        XCTAssertFalse(appState.isInitializingDemandIntake)
+        XCTAssertEqual(
+            try String(contentsOf: demandURL.appendingPathComponent("requirement.md"), encoding: .utf8),
+            externallyCreatedRequirement
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: demandURL.appendingPathComponent("questions.md").path))
+        XCTAssertNil(appState.localWriteFeedback)
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: applicationSupportRoot
+                .appendingPathComponent("audit/\(NativeAuditEventStore.fileName)").path
+        ))
+    }
+
     func testNativeModelLayeringKeepsWorkflowLogicOutOfBaseModels() throws {
         let packageRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -1220,18 +1330,73 @@ final class ModelBehaviorTests: XCTestCase {
             missingCount: 1,
             files: []
         )
+        let writablePlan = NativeDemandIntakeInitializationPlan(
+            workspacePath: workspace.path,
+            demandDirectoryPath: "\(workspace.path)/需求",
+            demandName: workspace.name,
+            lanhuLink: "",
+            notes: "",
+            expectedWorkspaceState: .directory,
+            expectedDemandDirectoryState: .directory,
+            filePlans: [
+                NativeDemandIntakeFilePlan(
+                    key: "requirement",
+                    label: "需求确认卡",
+                    filename: "requirement.md",
+                    path: "\(workspace.path)/需求/requirement.md",
+                    expectedState: .missing,
+                    template: "# Requirement\n"
+                )
+            ],
+            blockerSummary: nil
+        )
+        let completePlan = NativeDemandIntakeInitializationPlan(
+            workspacePath: workspace.path,
+            demandDirectoryPath: "\(workspace.path)/需求",
+            demandName: workspace.name,
+            lanhuLink: "",
+            notes: "",
+            expectedWorkspaceState: .directory,
+            expectedDemandDirectoryState: .directory,
+            filePlans: [
+                NativeDemandIntakeFilePlan(
+                    key: "requirement",
+                    label: "需求确认卡",
+                    filename: "requirement.md",
+                    path: "\(workspace.path)/需求/requirement.md",
+                    expectedState: .regularUTF8(sha256: "complete", byteCount: 1),
+                    template: "# Requirement\n"
+                )
+            ],
+            blockerSummary: "demand intake is already complete; no files will be created"
+        )
 
         let unconfirmedPolicy = DemandIntakeM1ActionPolicy(
             status: status,
             confirmed: false,
             isInitializing: false,
-            requirementFileExists: false
+            requirementFileExists: false,
+            initializationPlan: writablePlan
         )
         let confirmedPolicy = DemandIntakeM1ActionPolicy(
             status: status,
             confirmed: true,
             isInitializing: false,
-            requirementFileExists: true
+            requirementFileExists: true,
+            initializationPlan: writablePlan
+        )
+        let completePolicy = DemandIntakeM1ActionPolicy(
+            status: DemandIntakeStatus(
+                directoryPath: status.directoryPath,
+                exists: true,
+                ready: true,
+                missingCount: 0,
+                files: []
+            ),
+            confirmed: true,
+            isInitializing: false,
+            requirementFileExists: true,
+            initializationPlan: completePlan
         )
 
         XCTAssertEqual(unconfirmedPolicy.actions.map(\.kind), [.initializeOrRepair, .openRequirement, .copyHandoffPrompt])
@@ -1241,6 +1406,9 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(confirmedPolicy.actions.first { $0.kind == .initializeOrRepair }?.isEnabled ?? false)
         XCTAssertTrue(confirmedPolicy.actions.first { $0.kind == .openRequirement }?.isEnabled ?? false)
         XCTAssertTrue(confirmedPolicy.actions.first { $0.kind == .copyHandoffPrompt }?.label.contains("交接") ?? false)
+        XCTAssertFalse(completePolicy.actions.first { $0.kind == .initializeOrRepair }?.isEnabled ?? true)
+        XCTAssertFalse(completePolicy.actions.first { $0.kind == .initializeOrRepair }?.isPrimary ?? true)
+        XCTAssertTrue(completePolicy.actions.first { $0.kind == .openRequirement }?.isPrimary ?? false)
     }
 
     func testMainStageAlwaysExplainsStageActionAndEvidence() {
@@ -3632,11 +3800,14 @@ final class ModelBehaviorTests: XCTestCase {
         try FileManager.default.createDirectory(at: demandURL, withIntermediateDirectories: true)
         try "# Existing questions\n".write(to: demandURL.appendingPathComponent("questions.md"), atomically: true, encoding: .utf8)
 
-        let response = try NativeDemandIntakeStore.initialize(
+        let plan = NativeDemandIntakeStore.makeInitializationPlan(
             workspacePath: workspaceURL.path,
             demandName: "会员权益页",
             lanhuLink: "https://lanhu.example/design",
-            notes: "先确认首屏",
+            notes: "先确认首屏"
+        )
+        let response = try NativeDemandIntakeStore.initialize(
+            plan: plan,
             confirmed: true,
             auditRoot: auditRoot.path,
             actor: "Nexus Test"
@@ -3655,6 +3826,180 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(events.first?.actor, "Nexus Test")
         XCTAssertEqual(events.first?.metadata["workspacePath"], workspaceURL.path)
         XCTAssertEqual(events.first?.metadata["createdFiles"], "requirement.md,scope.md,tasks.md,delivery.md")
+    }
+
+    func testNativeDemandIntakeStoreRejectsChangedEntriesBeforeMutation() throws {
+        let workspaceURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-demand-stale-plan-\(UUID().uuidString)")
+        let demandURL = workspaceURL.appendingPathComponent("需求")
+        let auditRoot = workspaceURL.appendingPathComponent("audit")
+        defer {
+            try? FileManager.default.removeItem(at: workspaceURL)
+        }
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        let plan = NativeDemandIntakeStore.makeInitializationPlan(
+            workspacePath: workspaceURL.path,
+            demandName: "Stale plan",
+            lanhuLink: "",
+            notes: ""
+        )
+        try FileManager.default.createDirectory(at: demandURL, withIntermediateDirectories: true)
+
+        XCTAssertThrowsError(
+            try NativeDemandIntakeStore.initialize(
+                plan: plan,
+                confirmed: true,
+                auditRoot: auditRoot.path
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("changed since confirmation"))
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: demandURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: demandURL.appendingPathComponent("requirement.md").path))
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: auditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path
+        ))
+    }
+
+    func testNativeDemandIntakeStoreRollsBackPartialWriteFailure() throws {
+        let workspaceURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-demand-rollback-\(UUID().uuidString)")
+        let demandURL = workspaceURL.appendingPathComponent("需求")
+        let auditRoot = workspaceURL.appendingPathComponent("audit")
+        defer {
+            try? FileManager.default.removeItem(at: workspaceURL)
+        }
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        let plan = NativeDemandIntakeStore.makeInitializationPlan(
+            workspacePath: workspaceURL.path,
+            demandName: "Rollback",
+            lanhuLink: "",
+            notes: ""
+        )
+        var writeCount = 0
+
+        XCTAssertThrowsError(
+            try NativeDemandIntakeStore.initialize(
+                plan: plan,
+                confirmed: true,
+                auditRoot: auditRoot.path,
+                fileWriter: { data, url in
+                    writeCount += 1
+                    if writeCount == 3 {
+                        throw NSError(domain: "NexusTests", code: 1)
+                    }
+                    try data.write(to: url, options: [.withoutOverwriting])
+                }
+            )
+        )
+        XCTAssertEqual(writeCount, 3)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: demandURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: auditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path
+        ))
+    }
+
+    func testNativeDemandIntakeStorePreservesExternalNoOverwriteRaceAndRollsBack() throws {
+        let workspaceURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-demand-race-\(UUID().uuidString)")
+        let demandURL = workspaceURL.appendingPathComponent("需求")
+        let auditRoot = workspaceURL.appendingPathComponent("audit")
+        let externalContent = Data("# External scope\n".utf8)
+        defer {
+            try? FileManager.default.removeItem(at: workspaceURL)
+        }
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        let plan = NativeDemandIntakeStore.makeInitializationPlan(
+            workspacePath: workspaceURL.path,
+            demandName: "Race",
+            lanhuLink: "",
+            notes: ""
+        )
+        var writeCount = 0
+
+        XCTAssertThrowsError(
+            try NativeDemandIntakeStore.initialize(
+                plan: plan,
+                confirmed: true,
+                auditRoot: auditRoot.path,
+                fileWriter: { data, url in
+                    writeCount += 1
+                    if writeCount == 3 {
+                        try externalContent.write(to: url, options: [.withoutOverwriting])
+                    }
+                    try data.write(to: url, options: [.withoutOverwriting])
+                }
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("cleanup needs review"))
+        }
+        XCTAssertEqual(writeCount, 3)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: demandURL.path))
+        XCTAssertEqual(
+            try Data(contentsOf: demandURL.appendingPathComponent("scope.md")),
+            externalContent
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: demandURL.appendingPathComponent("requirement.md").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: demandURL.appendingPathComponent("questions.md").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: demandURL.appendingPathComponent("tasks.md").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: demandURL.appendingPathComponent("delivery.md").path))
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: auditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path
+        ))
+    }
+
+    func testNativeDemandIntakeStoreRejectsNoOpAndSecondSubmissionWithoutAudit() throws {
+        let workspaceURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-demand-noop-\(UUID().uuidString)")
+        let auditRoot = workspaceURL.appendingPathComponent("audit")
+        defer {
+            try? FileManager.default.removeItem(at: workspaceURL)
+        }
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        let initialPlan = NativeDemandIntakeStore.makeInitializationPlan(
+            workspacePath: workspaceURL.path,
+            demandName: "No-op",
+            lanhuLink: "",
+            notes: ""
+        )
+
+        _ = try NativeDemandIntakeStore.initialize(
+            plan: initialPlan,
+            confirmed: true,
+            auditRoot: auditRoot.path
+        )
+        XCTAssertThrowsError(
+            try NativeDemandIntakeStore.initialize(
+                plan: initialPlan,
+                confirmed: true,
+                auditRoot: auditRoot.path
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("changed since confirmation"))
+        }
+
+        let completePlan = NativeDemandIntakeStore.makeInitializationPlan(
+            workspacePath: workspaceURL.path,
+            demandName: "No-op",
+            lanhuLink: "",
+            notes: ""
+        )
+        XCTAssertFalse(completePlan.canInitialize)
+        XCTAssertThrowsError(
+            try NativeDemandIntakeStore.initialize(
+                plan: completePlan,
+                confirmed: true,
+                auditRoot: auditRoot.path
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("cannot write"))
+        }
+        XCTAssertEqual(
+            try NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 10)
+                .filter { $0.action == "demand_intake.initialized" }
+                .count,
+            1
+        )
     }
 
     func testNativeDemandIntakeStoreRequiresConfirmationAndFileEntries() throws {
@@ -3688,7 +4033,7 @@ final class ModelBehaviorTests: XCTestCase {
                 confirmed: true
             )
         ) { error in
-            XCTAssertTrue(error.localizedDescription.contains("file path exists but is not a file"))
+            XCTAssertTrue(error.localizedDescription.contains("not a regular UTF-8 file"))
         }
     }
 

@@ -61,6 +61,13 @@ struct NativeDemandIntakeInitializationPlan: Hashable {
     }
 }
 
+typealias NativeDemandIntakeFileWriter = (Data, URL) throws -> Void
+
+private struct NativeDemandIntakeCreatedFile {
+    let url: URL
+    let expectedState: NativeDemandIntakeEntryState
+}
+
 enum NativeDemandIntakeStore {
     private static let directoryName = "需求"
     private static let files: [(key: String, label: String, filename: String)] = [
@@ -198,64 +205,231 @@ enum NativeDemandIntakeStore {
         actor: String? = nil,
         fileManager: FileManager = .default
     ) throws -> InitializeDemandIntakeResponse {
+        let plan = makeInitializationPlan(
+            workspacePath: workspacePath,
+            demandName: demandName,
+            lanhuLink: lanhuLink,
+            notes: notes,
+            fileManager: fileManager
+        )
+        return try initialize(
+            plan: plan,
+            confirmed: confirmed,
+            auditRoot: auditRoot,
+            actor: actor,
+            fileManager: fileManager
+        )
+    }
+
+    static func initialize(
+        plan: NativeDemandIntakeInitializationPlan,
+        confirmed: Bool,
+        auditRoot: String? = nil,
+        actor: String? = nil,
+        fileManager: FileManager = .default
+    ) throws -> InitializeDemandIntakeResponse {
+        try initialize(
+            plan: plan,
+            confirmed: confirmed,
+            auditRoot: auditRoot,
+            actor: actor,
+            fileManager: fileManager,
+            fileWriter: { data, url in
+                try data.write(to: url, options: [.withoutOverwriting])
+            }
+        )
+    }
+
+    static func initialize(
+        plan: NativeDemandIntakeInitializationPlan,
+        confirmed: Bool,
+        auditRoot: String? = nil,
+        actor: String? = nil,
+        fileManager: FileManager = .default,
+        fileWriter: NativeDemandIntakeFileWriter
+    ) throws -> InitializeDemandIntakeResponse {
         guard confirmed else {
             throw NativeDemandIntakeStoreError.unconfirmed
         }
-
-        let workspaceURL = try checkedWorkspaceURL(workspacePath, fileManager: fileManager)
-        let demandURL = workspaceURL.appendingPathComponent(directoryName, isDirectory: true)
-        var isDirectory: ObjCBool = false
-        if fileManager.fileExists(atPath: demandURL.path, isDirectory: &isDirectory), !isDirectory.boolValue {
-            throw NativeDemandIntakeStoreError.demandPathNotDirectory(demandURL.path)
+        guard plan.canInitialize else {
+            throw NativeDemandIntakeStoreError.planNotWritable(plan.blockerSummary ?? "no demand intake files need creation")
         }
 
-        try fileManager.createDirectory(at: demandURL, withIntermediateDirectories: true)
-        for file in files {
-            let fileURL = demandURL.appendingPathComponent(file.filename, isDirectory: false)
-            var fileIsDirectory: ObjCBool = false
-            if fileManager.fileExists(atPath: fileURL.path, isDirectory: &fileIsDirectory), fileIsDirectory.boolValue {
-                throw NativeDemandIntakeStoreError.filePathNotFile(fileURL.path)
+        let workspaceURL = expandedURL(for: plan.workspacePath)
+        let demandURL = workspaceURL.appendingPathComponent(directoryName, isDirectory: true)
+        try validatePlanShape(plan, workspaceURL: workspaceURL, demandURL: demandURL)
+        try requireExpectedEntryState(
+            at: workspaceURL.path,
+            expected: plan.expectedWorkspaceState,
+            fileManager: fileManager
+        )
+        try requireExpectedEntryState(
+            at: demandURL.path,
+            expected: plan.expectedDemandDirectoryState,
+            fileManager: fileManager
+        )
+        for filePlan in plan.filePlans {
+            try requireExpectedEntryState(
+                at: filePlan.path,
+                expected: filePlan.expectedState,
+                fileManager: fileManager
+            )
+        }
+
+        var createdFiles: [NativeDemandIntakeCreatedFile] = []
+        var createdDemandDirectory = false
+
+        do {
+            if plan.expectedDemandDirectoryState == .missing {
+                try fileManager.createDirectory(at: demandURL, withIntermediateDirectories: false)
+                createdDemandDirectory = true
+                try requireExpectedEntryState(
+                    at: demandURL.path,
+                    expected: .directory,
+                    fileManager: fileManager
+                )
+            }
+
+            for filePlan in plan.filePlans where filePlan.expectedState == .missing {
+                let data = Data(filePlan.template.utf8)
+                try fileWriter(data, URL(fileURLWithPath: filePlan.path))
+                createdFiles.append(
+                    NativeDemandIntakeCreatedFile(
+                        url: URL(fileURLWithPath: filePlan.path),
+                        expectedState: regularUTF8State(for: data)
+                    )
+                )
+            }
+
+            let resultStatus = status(for: workspaceURL, fileManager: fileManager)
+            guard resultStatus.ready else {
+                throw NativeDemandIntakeStoreError.finalStatusNotReady(resultStatus.directoryPath)
+            }
+
+            let response = InitializeDemandIntakeResponse(
+                status: resultStatus,
+                createdFiles: plan.createdFiles
+            )
+            let audit = appendAuditEvent(
+                workspacePath: workspaceURL.path,
+                demandName: plan.demandName,
+                lanhuLink: plan.lanhuLink,
+                response: response,
+                auditRoot: auditRoot,
+                actor: actor
+            )
+            return InitializeDemandIntakeResponse(
+                status: response.status,
+                createdFiles: response.createdFiles,
+                auditEventID: audit?.event.id,
+                auditEventPath: audit?.path
+            )
+        } catch {
+            let remainingPaths = rollback(
+                createdFiles: createdFiles,
+                createdDemandDirectory: createdDemandDirectory,
+                demandURL: demandURL,
+                fileManager: fileManager
+            )
+            guard remainingPaths.isEmpty else {
+                throw NativeDemandIntakeStoreError.rollbackFailed(
+                    writeFailure: error.localizedDescription,
+                    remainingPaths: remainingPaths
+                )
+            }
+            throw error
+        }
+    }
+
+    private static func validatePlanShape(
+        _ plan: NativeDemandIntakeInitializationPlan,
+        workspaceURL: URL,
+        demandURL: URL
+    ) throws {
+        guard plan.workspacePath == workspaceURL.path,
+              plan.demandDirectoryPath == demandURL.path,
+              plan.filePlans.count == files.count else {
+            throw NativeDemandIntakeStoreError.malformedPlan(
+                "workspace or file count does not match the fixed demand intake layout"
+            )
+        }
+
+        for (definition, filePlan) in zip(files, plan.filePlans) {
+            let expectedPath = demandURL.appendingPathComponent(definition.filename, isDirectory: false).path
+            guard filePlan.key == definition.key,
+                  filePlan.label == definition.label,
+                  filePlan.filename == definition.filename,
+                  filePlan.path == expectedPath else {
+                throw NativeDemandIntakeStoreError.malformedPlan(
+                    "file plan does not match the fixed demand intake layout"
+                )
             }
         }
+    }
 
-        let normalizedDemandName = nonEmpty(demandName, fallback: "待补充")
-        let normalizedLanhuLink = nonEmpty(lanhuLink, fallback: "待补充")
-        let normalizedNotes = nonEmpty(notes, fallback: "待补充")
-        var createdFiles: [String] = []
+    private static func requireExpectedEntryState(
+        at path: String,
+        expected: NativeDemandIntakeEntryState,
+        fileManager: FileManager
+    ) throws {
+        let current = inspectEntry(at: path, fileManager: fileManager)
+        guard current == expected else {
+            throw NativeDemandIntakeStoreError.entryChanged(
+                path: expandedURL(for: path).path,
+                expected: expected.label,
+                current: current.label
+            )
+        }
+    }
 
-        for file in files {
-            let fileURL = demandURL.appendingPathComponent(file.filename, isDirectory: false)
-            guard !fileManager.fileExists(atPath: fileURL.path) else {
+    private static func regularUTF8State(for data: Data) -> NativeDemandIntakeEntryState {
+        let sha256 = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        return .regularUTF8(sha256: sha256, byteCount: data.count)
+    }
+
+    private static func rollback(
+        createdFiles: [NativeDemandIntakeCreatedFile],
+        createdDemandDirectory: Bool,
+        demandURL: URL,
+        fileManager: FileManager
+    ) -> [String] {
+        var remainingPaths: [String] = []
+
+        for file in createdFiles.reversed() {
+            let current = inspectEntry(at: file.url.path, fileManager: fileManager)
+            guard current != .missing else { continue }
+            guard current == file.expectedState else {
+                remainingPaths.append(file.url.path)
                 continue
             }
-            try template(
-                for: file.key,
-                demandName: normalizedDemandName,
-                lanhuLink: normalizedLanhuLink,
-                notes: normalizedNotes
-            )
-            .write(to: fileURL, atomically: true, encoding: .utf8)
-            createdFiles.append(file.filename)
+            do {
+                try fileManager.removeItem(at: file.url)
+            } catch {
+                remainingPaths.append(file.url.path)
+            }
         }
 
-        let response = InitializeDemandIntakeResponse(
-            status: status(for: workspaceURL, fileManager: fileManager),
-            createdFiles: createdFiles
-        )
-        let audit = appendAuditEvent(
-            workspacePath: workspaceURL.path,
-            demandName: normalizedDemandName,
-            lanhuLink: normalizedLanhuLink,
-            response: response,
-            auditRoot: auditRoot,
-            actor: actor
-        )
-        return InitializeDemandIntakeResponse(
-            status: response.status,
-            createdFiles: response.createdFiles,
-            auditEventID: audit?.event.id,
-            auditEventPath: audit?.path
-        )
+        if createdDemandDirectory {
+            do {
+                let contents = try fileManager.contentsOfDirectory(
+                    at: demandURL,
+                    includingPropertiesForKeys: nil,
+                    options: []
+                )
+                if contents.isEmpty {
+                    try fileManager.removeItem(at: demandURL)
+                } else {
+                    remainingPaths.append(demandURL.path)
+                }
+            } catch let error as NSError
+                where error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoSuchFileError {
+                // A concurrent cleanup already removed the directory.
+            } catch {
+                remainingPaths.append(demandURL.path)
+            }
+        }
+
+        return remainingPaths
     }
 
     private static func appendAuditEvent(
@@ -362,6 +536,11 @@ private enum NativeDemandIntakeStoreError: LocalizedError {
     case workspaceNotDirectory(String)
     case demandPathNotDirectory(String)
     case filePathNotFile(String)
+    case planNotWritable(String)
+    case malformedPlan(String)
+    case entryChanged(path: String, expected: String, current: String)
+    case finalStatusNotReady(String)
+    case rollbackFailed(writeFailure: String, remainingPaths: [String])
 
     var errorDescription: String? {
         switch self {
@@ -375,6 +554,16 @@ private enum NativeDemandIntakeStoreError: LocalizedError {
             return "demand intake path exists but is not a directory: \(path)"
         case .filePathNotFile(let path):
             return "demand intake file path exists but is not a file: \(path)"
+        case .planNotWritable(let reason):
+            return "demand intake initialization plan cannot write: \(reason)"
+        case .malformedPlan(let reason):
+            return "demand intake initialization plan is invalid: \(reason)"
+        case .entryChanged(let path, let expected, let current):
+            return "demand intake entry changed since confirmation: \(path); expected \(expected), found \(current)"
+        case .finalStatusNotReady(let path):
+            return "demand intake initialization did not produce ready evidence: \(path)"
+        case .rollbackFailed(let writeFailure, let remainingPaths):
+            return "demand intake initialization failed and cleanup needs review: \(writeFailure); remaining \(remainingPaths.joined(separator: ", "))"
         }
     }
 }

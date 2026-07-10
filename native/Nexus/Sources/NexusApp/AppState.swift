@@ -2633,6 +2633,20 @@ final class AppState: ObservableObject {
         )
     }
 
+    func demandIntakeInitializationPlan(
+        for workspace: WorkspaceSummary,
+        demandName: String,
+        lanhuLink: String,
+        notes: String
+    ) -> NativeDemandIntakeInitializationPlan {
+        NativeDemandIntakeStore.makeInitializationPlan(
+            workspacePath: workspace.path,
+            demandName: demandName,
+            lanhuLink: lanhuLink,
+            notes: notes
+        )
+    }
+
     func scopeFreezeEvidence(for workspace: WorkspaceSummary) -> ScopeFreezeEvidence {
         ScopeFreezeEvidence.resolve(
             status: demandIntakeDisplayStatus(for: workspace),
@@ -3191,23 +3205,14 @@ final class AppState: ObservableObject {
             let status = try NativeDemandIntakeStore.status(workspacePath: workspace.path)
             demandIntakeStatusesByWorkspace[workspace.id] = status
         } catch {
-            do {
-                let status = try await bridge.readDemandIntakeStatus(
-                    request: DemandIntakeStatusRequest(workspacePath: workspace.path)
-                )
-                demandIntakeStatusesByWorkspace[workspace.id] = status
-            } catch {
-                lastError = error.localizedDescription
-                demandIntakeStatusesByWorkspace[workspace.id] = Self.fallbackDemandIntakeStatus(for: workspace)
-            }
+            lastError = error.localizedDescription
+            demandIntakeStatusesByWorkspace[workspace.id] = Self.fallbackDemandIntakeStatus(for: workspace)
         }
     }
 
     func initializeDemandIntake(
         in workspace: WorkspaceSummary,
-        demandName: String,
-        lanhuLink: String,
-        notes: String,
+        plan: NativeDemandIntakeInitializationPlan,
         confirmed: Bool
     ) async -> InitializeDemandIntakeResponse? {
         isInitializingDemandIntake = true
@@ -3217,30 +3222,12 @@ final class AppState: ObservableObject {
         }
 
         do {
-            let response: InitializeDemandIntakeResponse
-            do {
-                response = try NativeDemandIntakeStore.initialize(
-                    workspacePath: workspace.path,
-                    demandName: demandName,
-                    lanhuLink: lanhuLink,
-                    notes: notes,
-                    confirmed: confirmed,
-                    auditRoot: auditRootPath,
-                    actor: "Nexus Native"
-                )
-            } catch {
-                response = try await bridge.initializeDemandIntake(
-                    request: InitializeDemandIntakeRequest(
-                        workspacePath: workspace.path,
-                        demandName: demandName,
-                        lanhuLink: lanhuLink,
-                        notes: notes,
-                        confirmed: confirmed,
-                        auditRoot: auditRootPath,
-                        actor: "Nexus Native"
-                    )
-                )
-            }
+            let response = try NativeDemandIntakeStore.initialize(
+                plan: plan,
+                confirmed: confirmed,
+                auditRoot: auditRootPath,
+                actor: "Nexus Native"
+            )
             demandIntakeStatusesByWorkspace[workspace.id] = response.status
             await refreshFromBridge()
             markLocalWriteFeedback(

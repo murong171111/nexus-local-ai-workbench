@@ -7865,6 +7865,7 @@ private struct WorkspaceDemandIntakeView: View {
     @State private var lanhuLink = ""
     @State private var notes = ""
     @State private var confirmed = false
+    @State private var initializationPlan: NativeDemandIntakeInitializationPlan?
     let workspace: WorkspaceSummary
 
     private var status: DemandIntakeStatus {
@@ -7892,7 +7893,8 @@ private struct WorkspaceDemandIntakeView: View {
             status: status,
             confirmed: confirmed,
             isInitializing: appState.isInitializingDemandIntake,
-            requirementFileExists: requirementFile?.exists ?? false
+            requirementFileExists: requirementFile?.exists ?? false,
+            initializationPlan: initializationPlan
         )
     }
 
@@ -7985,15 +7987,41 @@ private struct WorkspaceDemandIntakeView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     TextField("需求名称", text: $demandName)
                         .textFieldStyle(.roundedBorder)
+                        .disabled(confirmed)
                     TextField("蓝湖链接", text: $lanhuLink)
                         .textFieldStyle(.roundedBorder)
+                        .disabled(confirmed)
                     TextField("备注", text: $notes, axis: .vertical)
                         .textFieldStyle(.roundedBorder)
                         .lineLimit(2...4)
+                        .disabled(confirmed)
                 }
 
                 Toggle("确认创建或补齐需求预检文件", isOn: $confirmed)
                     .toggleStyle(.checkbox)
+                    .onChange(of: confirmed) { isConfirmed in
+                        if isConfirmed {
+                            initializationPlan = appState.demandIntakeInitializationPlan(
+                                for: workspace,
+                                demandName: demandName,
+                                lanhuLink: lanhuLink,
+                                notes: notes
+                            )
+                        } else {
+                            initializationPlan = nil
+                        }
+                    }
+
+                if let initializationPlan {
+                    Text(initializationPlan.summary)
+                        .font(.caption)
+                        .foregroundStyle(
+                            initializationPlan.canInitialize
+                                ? NexusPalette.success
+                                : NexusPalette.warning
+                        )
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 LazyVGrid(columns: actionColumns, alignment: .leading, spacing: 8) {
                     ForEach(actionPolicy.actions) { action in
@@ -8003,6 +8031,8 @@ private struct WorkspaceDemandIntakeView: View {
             }
         }
         .task(id: workspace.id) {
+            confirmed = false
+            initializationPlan = nil
             if demandName.isEmpty {
                 demandName = workspace.name
             }
@@ -8072,16 +8102,18 @@ private struct WorkspaceDemandIntakeView: View {
     private func runDemandIntakeAction(_ kind: DemandIntakeM1ActionKind) {
         switch kind {
         case .initializeOrRepair:
+            guard let initializationPlan else {
+                return
+            }
             Task {
                 let response = await appState.initializeDemandIntake(
                     in: workspace,
-                    demandName: demandName,
-                    lanhuLink: lanhuLink,
-                    notes: notes,
+                    plan: initializationPlan,
                     confirmed: confirmed
                 )
                 if response != nil {
                     confirmed = false
+                    self.initializationPlan = nil
                 }
             }
         case .openRequirement:

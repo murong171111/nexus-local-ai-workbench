@@ -120,7 +120,7 @@ When no files are missing, initialize is disabled and the existing requirement-d
 4. re-inspect demand directory and require exact expected state;
 5. re-inspect all five files and require exact expected states;
 6. if demand directory was expected missing, create that direct child without intermediate directories;
-7. create each expected-missing file in standard order using `Data.write(options: [.atomic, .withoutOverwriting])`;
+7. create each expected-missing file in standard order using Foundation's `Data.write(options: [.withoutOverwriting])`;
 8. record each file only after its write succeeds;
 9. build strict status from the resulting filesystem;
 10. create response;

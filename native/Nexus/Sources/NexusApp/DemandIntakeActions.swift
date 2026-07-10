@@ -24,21 +24,26 @@ struct DemandIntakeM1ActionPolicy: Hashable {
         status: DemandIntakeStatus,
         confirmed: Bool,
         isInitializing: Bool,
-        requirementFileExists: Bool
+        requirementFileExists: Bool,
+        initializationPlan: NativeDemandIntakeInitializationPlan?
     ) {
+        let initializationIsPrimary = !status.ready
+        let initializeEnabled = confirmed
+            && !isInitializing
+            && initializationPlan?.canInitialize == true
         actions = [
             DemandIntakeM1Action(
                 kind: .initializeOrRepair,
                 label: isInitializing ? "处理中" : (status.exists ? "补齐文件" : "初始化预检"),
                 systemImage: "doc.badge.plus",
-                isPrimary: true,
-                isEnabled: confirmed && !isInitializing
+                isPrimary: initializationIsPrimary,
+                isEnabled: initializeEnabled
             ),
             DemandIntakeM1Action(
                 kind: .openRequirement,
                 label: "打开确认卡",
                 systemImage: "doc.text",
-                isPrimary: false,
+                isPrimary: !initializationIsPrimary,
                 isEnabled: requirementFileExists
             ),
             DemandIntakeM1Action(

@@ -289,7 +289,7 @@ Add `initialize(plan:..., fileWriter:)`, defaulting to:
 
 ```swift
 { data, url in
-    try data.write(to: url, options: [.atomic, .withoutOverwriting])
+    try data.write(to: url, options: [.withoutOverwriting])
 }
 ```
 
