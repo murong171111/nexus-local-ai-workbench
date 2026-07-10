@@ -11,6 +11,7 @@ const ignoredDirectories = new Set([
   ".npm-cache",
   ".swift-module-cache",
   ".swiftpm",
+  ".superpowers",
   ".tmp-tests",
   ".vite",
   "dist",
