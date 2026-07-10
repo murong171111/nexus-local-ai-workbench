@@ -62,8 +62,8 @@ AppState continues to create the pending plan before showing the sheet. The pend
 All three public append methods pass their plan's `expectedRevision` into the shared append function. The shared function preserves this order:
 
 1. require explicit confirmation;
-2. require the plan to be writable;
-3. reject an invalid expected revision;
+2. reject an invalid expected revision;
+3. require the plan to be writable;
 4. inspect the current path strictly;
 5. reject a non-regular or unreadable current path;
 6. compare current and expected revisions exactly;
