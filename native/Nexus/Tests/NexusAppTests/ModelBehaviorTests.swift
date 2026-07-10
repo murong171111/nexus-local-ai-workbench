@@ -1899,6 +1899,37 @@ final class ModelBehaviorTests: XCTestCase {
         ))
     }
 
+    func testNativeWorkspaceTaskStoreRejectsInvalidUTF8BeforeWriting() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-task-invalid-utf8-\(UUID().uuidString)")
+        let workspaceURL = root.appendingPathComponent("workspace")
+        let tasksURL = workspaceURL.appendingPathComponent("tasks.md")
+        let auditRoot = root.appendingPathComponent("audit")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        let original = Data([0x23, 0x20, 0x54, 0x61, 0x73, 0x6B, 0x73, 0x0A, 0xC3, 0x28, 0x0A])
+        try original.write(to: tasksURL)
+
+        XCTAssertThrowsError(
+            try NativeWorkspaceTaskStore.update(
+                request: UpdateWorkspaceTaskRequest(
+                    workspacePath: workspaceURL.path,
+                    taskId: "workspace:task-0",
+                    status: "已完成",
+                    confirmed: true,
+                    auditRoot: auditRoot.path,
+                    actor: "Nexus Test"
+                )
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("tasks.md is unreadable"))
+        }
+        XCTAssertEqual(try Data(contentsOf: tasksURL), original)
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: auditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path
+        ))
+    }
+
     func testNativeWorkspaceLifecycleStoreRejectsInvalidStatusBeforeChangingWorkspace() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-native-lifecycle-invalid-status-\(UUID().uuidString)")
