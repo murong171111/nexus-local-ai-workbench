@@ -2514,6 +2514,106 @@ final class ModelBehaviorTests: XCTestCase {
         ))
     }
 
+    @MainActor
+    func testAppStateDemandTaskTransferConfirmationKeepsStalePendingEvidence() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-app-state-demand-transfer-confirmation-\(UUID().uuidString)")
+        let workspacesRoot = root.appendingPathComponent("workspaces")
+        let workspaceURL = workspacesRoot.appendingPathComponent("workspace")
+        let sourceRoot = root.appendingPathComponent("source-repos")
+        let docsRoot = root.appendingPathComponent("docs")
+        let applicationSupportRoot = root.appendingPathComponent("app-support")
+        let defaultsSuite = "NexusAppTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: defaultsSuite)!
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            defaults.removePersistentDomain(forName: defaultsSuite)
+        }
+        for directory in [workspaceURL, sourceRoot, docsRoot] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        try "# Workspace\n\n- 需求名称: Demand transfer conflict\n- 当前状态: developing\n".write(
+            to: workspaceURL.appendingPathComponent("workspace.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# STATUS\n\n- 当前状态: developing\n- 当前焦点: Confirm demand task transfer\n".write(
+            to: workspaceURL.appendingPathComponent("STATUS.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let executionURL = workspaceURL.appendingPathComponent("tasks.md")
+        let originalExecution = """
+        # Tasks
+
+        | 任务 | 状态 | 说明 |
+        | --- | --- | --- |
+        | Existing root task | 待办 | keep this task |
+        """ + "\n"
+        try originalExecution.write(to: executionURL, atomically: true, encoding: .utf8)
+        let demandURL = workspaceURL.appendingPathComponent("需求")
+        try FileManager.default.createDirectory(at: demandURL, withIntermediateDirectories: true)
+        try writeDemandIntakeFixture(
+            demandDir: demandURL,
+            scope: """
+            # 本次开发范围
+
+            ## 已确认并实现
+
+            - 验证需求任务转入确认后的冲突反馈。
+
+            ## 暂不实现
+
+            - 不覆盖确认后的 root tasks.md 外部编辑。
+
+            ## 仍待确认
+
+            - 无 P0 待确认项。
+
+            ## 进入开发条件
+
+            - [x] 本文件已冻结本次开发范围。
+            """ + "\n"
+        )
+        let intakeURL = demandURL.appendingPathComponent("tasks.md")
+        let originalIntake = try String(contentsOf: intakeURL, encoding: .utf8)
+
+        let workspace = try scannedWorkspace(
+            folder: "workspace",
+            workspacesRoot: workspacesRoot,
+            sourceRoot: sourceRoot
+        )
+        let appState = AppState(
+            workspaces: [workspace],
+            agentStatus: AgentStatus(title: "Ready", detail: "Tests", connectedTools: []),
+            bridge: PreviewNexusBridge(),
+            workspaceRoot: workspacesRoot.path,
+            sourceReposRoot: sourceRoot.path,
+            docsRoot: docsRoot.path,
+            applicationSupportRoot: applicationSupportRoot.path,
+            defaults: defaults
+        )
+
+        appState.requestDemandTaskTransfer(in: workspace)
+        let pending = try XCTUnwrap(appState.pendingDemandTaskTransfer)
+        XCTAssertTrue(pending.hasTransferableItems)
+        let externallyEdited = originalExecution + "\n| External root task | 进行中 | added after confirmation |\n"
+        try externallyEdited.write(to: executionURL, atomically: true, encoding: .utf8)
+
+        await appState.confirmPendingDemandTaskTransfer(confirmed: true)
+
+        XCTAssertEqual(appState.pendingDemandTaskTransfer, pending)
+        XCTAssertTrue(appState.lastError?.contains("changed since confirmation") == true)
+        XCTAssertFalse(appState.isUpdatingTask)
+        XCTAssertEqual(try String(contentsOf: executionURL, encoding: .utf8), externallyEdited)
+        XCTAssertEqual(try String(contentsOf: intakeURL, encoding: .utf8), originalIntake)
+        XCTAssertNil(appState.localWriteFeedback)
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: applicationSupportRoot
+                .appendingPathComponent("audit/\(NativeAuditEventStore.fileName)").path
+        ))
+    }
+
     func testNativeWorkspaceTaskStoreRejectsSymlinkBeforeWriting() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-native-task-symlink-\(UUID().uuidString)")
