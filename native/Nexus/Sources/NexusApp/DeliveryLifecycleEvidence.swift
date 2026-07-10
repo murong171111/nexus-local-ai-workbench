@@ -653,17 +653,29 @@ struct DeliveryRecordWritePlan: Identifiable, Hashable {
     let workspaceID: WorkspaceSummary.ID
     let workspaceName: String
     let deliveryPath: String
+    let expectedRevision: NativeDeliveryRecordDocumentRevision
     let status: WorkflowPathStatus
     let summary: String
     let items: [DeliveryRecordWritePlanItem]
     let appendedMarkdown: String
 
     var canWrite: Bool {
-        status != .archived && !appendedMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        expectedRevision.blockerSummary == nil
+            && status != .archived
+            && !appendedMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    static func resolve(workspace: WorkspaceSummary, gate: DeliveryGateEvidence) -> DeliveryRecordWritePlan {
+    static func resolve(
+        workspace: WorkspaceSummary,
+        gate: DeliveryGateEvidence,
+        fileManager: FileManager = .default
+    ) -> DeliveryRecordWritePlan {
         let deliveryPath = deliveryRecordPath(for: workspace)
+        let expectedRevision = NativeDeliveryRecordStore.inspectRevision(
+            at: deliveryPath,
+            fileManager: fileManager
+        )
+        let revisionBlocker = expectedRevision.blockerSummary
         let id = "\(workspace.id)-delivery-record"
 
         guard gate.status != .archived else {
@@ -672,6 +684,7 @@ struct DeliveryRecordWritePlan: Identifiable, Hashable {
                 workspaceID: workspace.id,
                 workspaceName: workspace.name,
                 deliveryPath: deliveryPath,
+                expectedRevision: expectedRevision,
                 status: .archived,
                 summary: "已归档工作区默认只读；恢复开发后再追加交付记录。",
                 items: [],
@@ -693,8 +706,10 @@ struct DeliveryRecordWritePlan: Identifiable, Hashable {
             workspaceID: workspace.id,
             workspaceName: workspace.name,
             deliveryPath: deliveryPath,
+            expectedRevision: expectedRevision,
             status: gate.status == .ready ? .next : gate.status,
-            summary: "确认后只会向交付记录追加当前 Delivery Gate 快照，不覆盖人工记录。",
+            summary: revisionBlocker
+                ?? "确认后只会向交付记录追加当前 Delivery Gate 快照，不覆盖人工记录。",
             items: items,
             appendedMarkdown: deliverySnapshotMarkdown(workspace: workspace, gate: gate, items: items)
         )
@@ -1171,17 +1186,30 @@ struct ArchiveChecklistWritePlan: Identifiable, Hashable {
     let workspaceID: WorkspaceSummary.ID
     let workspaceName: String
     let deliveryPath: String
+    let expectedRevision: NativeDeliveryRecordDocumentRevision
     let status: WorkflowPathStatus
     let summary: String
     let items: [ArchiveConfirmationPlanItem]
     let appendedMarkdown: String
 
     var canWrite: Bool {
-        status != .archived && !items.isEmpty && !appendedMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        expectedRevision.blockerSummary == nil
+            && status != .archived
+            && !items.isEmpty
+            && !appendedMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    static func resolve(workspace: WorkspaceSummary, archiveGate: ArchiveGateEvidence) -> ArchiveChecklistWritePlan {
+    static func resolve(
+        workspace: WorkspaceSummary,
+        archiveGate: ArchiveGateEvidence,
+        fileManager: FileManager = .default
+    ) -> ArchiveChecklistWritePlan {
         let deliveryPath = deliveryRecordPath(for: workspace)
+        let expectedRevision = NativeDeliveryRecordStore.inspectRevision(
+            at: deliveryPath,
+            fileManager: fileManager
+        )
+        let revisionBlocker = expectedRevision.blockerSummary
         let id = "\(workspace.id)-archive-checklist"
 
         guard archiveGate.status != .archived else {
@@ -1190,6 +1218,7 @@ struct ArchiveChecklistWritePlan: Identifiable, Hashable {
                 workspaceID: workspace.id,
                 workspaceName: workspace.name,
                 deliveryPath: deliveryPath,
+                expectedRevision: expectedRevision,
                 status: .archived,
                 summary: "已归档工作区默认只读；恢复开发后再追加归档清单。",
                 items: archiveGate.confirmationPlan,
@@ -1203,8 +1232,9 @@ struct ArchiveChecklistWritePlan: Identifiable, Hashable {
                 workspaceID: workspace.id,
                 workspaceName: workspace.name,
                 deliveryPath: deliveryPath,
+                expectedRevision: expectedRevision,
                 status: archiveGate.status,
-                summary: "当前没有可写入的归档确认项。",
+                summary: revisionBlocker ?? "当前没有可写入的归档确认项。",
                 items: [],
                 appendedMarkdown: ""
             )
@@ -1215,8 +1245,10 @@ struct ArchiveChecklistWritePlan: Identifiable, Hashable {
             workspaceID: workspace.id,
             workspaceName: workspace.name,
             deliveryPath: deliveryPath,
+            expectedRevision: expectedRevision,
             status: archiveGate.status == .ready ? .next : archiveGate.status,
-            summary: "确认后只会向交付记录追加当前归档确认清单，不会写回生命周期状态。",
+            summary: revisionBlocker
+                ?? "确认后只会向交付记录追加当前归档确认清单，不会写回生命周期状态。",
             items: archiveGate.confirmationPlan,
             appendedMarkdown: archiveChecklistMarkdown(workspace: workspace, archiveGate: archiveGate)
         )
@@ -1638,17 +1670,29 @@ struct ValidationPrWritePlan: Identifiable, Hashable {
     let workspaceID: WorkspaceSummary.ID
     let workspaceName: String
     let deliveryPath: String
+    let expectedRevision: NativeDeliveryRecordDocumentRevision
     let status: WorkflowPathStatus
     let summary: String
     let items: [ValidationPrWritePlanItem]
     let appendedMarkdown: String
 
     var canWrite: Bool {
-        status != .archived && !appendedMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        expectedRevision.blockerSummary == nil
+            && status != .archived
+            && !appendedMarkdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    static func resolve(workspace: WorkspaceSummary, evidence: ValidationPrEvidence) -> ValidationPrWritePlan {
+    static func resolve(
+        workspace: WorkspaceSummary,
+        evidence: ValidationPrEvidence,
+        fileManager: FileManager = .default
+    ) -> ValidationPrWritePlan {
         let deliveryPath = deliveryRecordPath(for: workspace)
+        let expectedRevision = NativeDeliveryRecordStore.inspectRevision(
+            at: deliveryPath,
+            fileManager: fileManager
+        )
+        let revisionBlocker = expectedRevision.blockerSummary
         let id = "\(workspace.id)-validation-pr"
 
         guard evidence.status != .archived else {
@@ -1657,6 +1701,7 @@ struct ValidationPrWritePlan: Identifiable, Hashable {
                 workspaceID: workspace.id,
                 workspaceName: workspace.name,
                 deliveryPath: deliveryPath,
+                expectedRevision: expectedRevision,
                 status: .archived,
                 summary: "已归档工作区默认只读；恢复开发后再追加验证/PR 结论。",
                 items: [],
@@ -1678,8 +1723,10 @@ struct ValidationPrWritePlan: Identifiable, Hashable {
             workspaceID: workspace.id,
             workspaceName: workspace.name,
             deliveryPath: deliveryPath,
+            expectedRevision: expectedRevision,
             status: evidence.status == .ready ? .next : evidence.status,
-            summary: "确认后只会向交付记录追加当前验证/PR 复核快照，不会调用 GitHub 或写回生命周期。",
+            summary: revisionBlocker
+                ?? "确认后只会向交付记录追加当前验证/PR 复核快照，不会调用 GitHub 或写回生命周期。",
             items: items,
             appendedMarkdown: validationPrMarkdown(workspace: workspace, evidence: evidence, items: items)
         )

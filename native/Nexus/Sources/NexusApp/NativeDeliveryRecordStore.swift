@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import NexusBridge
 
@@ -29,6 +30,28 @@ enum NativeDeliveryRecordWriteKind: String, Hashable {
     }
 }
 
+enum NativeDeliveryRecordDocumentRevision: Hashable {
+    case missing
+    case regularUTF8(sha256: String, byteCount: Int)
+    case invalid(reason: String)
+
+    var blockerSummary: String? {
+        guard case .invalid(let reason) = self else { return nil }
+        return reason
+    }
+
+    var label: String {
+        switch self {
+        case .missing:
+            return "missing"
+        case .regularUTF8(let sha256, let byteCount):
+            return "regular UTF-8 \(byteCount) bytes sha256=\(sha256)"
+        case .invalid(let reason):
+            return "invalid: \(reason)"
+        }
+    }
+}
+
 struct NativeDeliveryRecordWriteResponse: Hashable {
     let kind: NativeDeliveryRecordWriteKind
     let path: String
@@ -40,6 +63,13 @@ struct NativeDeliveryRecordWriteResponse: Hashable {
 }
 
 enum NativeDeliveryRecordStore {
+    static func inspectRevision(
+        at path: String,
+        fileManager: FileManager = .default
+    ) -> NativeDeliveryRecordDocumentRevision {
+        inspectDocument(at: path, fileManager: fileManager).revision
+    }
+
     static func appendDeliverySnapshot(
         plan: DeliveryRecordWritePlan,
         confirmed: Bool,
@@ -199,6 +229,64 @@ enum NativeDeliveryRecordStore {
                 ]
             )
         )
+    }
+
+    private struct DeliveryRecordDocumentSnapshot {
+        let revision: NativeDeliveryRecordDocumentRevision
+        let content: String?
+    }
+
+    private static func expandedURL(for path: String) -> URL {
+        URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+    }
+
+    private static func inspectDocument(
+        at path: String,
+        fileManager: FileManager
+    ) -> DeliveryRecordDocumentSnapshot {
+        let url = expandedURL(for: path)
+        let attributes: [FileAttributeKey: Any]
+        do {
+            attributes = try fileManager.attributesOfItem(atPath: url.path)
+        } catch let error as NSError
+            where error.domain == NSCocoaErrorDomain
+                && error.code == NSFileReadNoSuchFileError {
+            return DeliveryRecordDocumentSnapshot(revision: .missing, content: nil)
+        } catch {
+            return DeliveryRecordDocumentSnapshot(
+                revision: .invalid(
+                    reason: "delivery record is unreadable: \(url.path): \(error.localizedDescription)"
+                ),
+                content: nil
+            )
+        }
+        guard attributes[.type] as? FileAttributeType == .typeRegular else {
+            return DeliveryRecordDocumentSnapshot(
+                revision: .invalid(reason: "delivery record is not a regular file: \(url.path)"),
+                content: nil
+            )
+        }
+        do {
+            let data = try Data(contentsOf: url)
+            guard let content = String(data: data, encoding: .utf8) else {
+                return DeliveryRecordDocumentSnapshot(
+                    revision: .invalid(reason: "delivery record is not valid UTF-8: \(url.path)"),
+                    content: nil
+                )
+            }
+            let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+            return DeliveryRecordDocumentSnapshot(
+                revision: .regularUTF8(sha256: digest, byteCount: data.count),
+                content: content
+            )
+        } catch {
+            return DeliveryRecordDocumentSnapshot(
+                revision: .invalid(
+                    reason: "delivery record is unreadable: \(url.path): \(error.localizedDescription)"
+                ),
+                content: nil
+            )
+        }
     }
 }
 

@@ -7054,6 +7054,88 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertFalse(stage.nextStageAllowed)
     }
 
+    func testDeliveryRecordWritePlansCaptureStrictDocumentRevisions() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-delivery-revision-\(UUID().uuidString)")
+        let missing = root.appendingPathComponent("missing")
+        let regular = root.appendingPathComponent("regular")
+        let linked = root.appendingPathComponent("linked")
+        let external = root.appendingPathComponent("external.md")
+        defer { try? FileManager.default.removeItem(at: root) }
+        for directory in [missing, regular, linked] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        let original = "# 交付记录\n\n人工记录。\n"
+        try original.write(to: regular.appendingPathComponent("交付记录.md"), atomically: true, encoding: .utf8)
+        try original.write(to: external, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(
+            at: linked.appendingPathComponent("交付记录.md"),
+            withDestinationURL: external
+        )
+        let healthChecks = [
+            WorkspaceHealthCheck(
+                id: "delivery-record",
+                label: "交付记录",
+                detail: "交付记录可用",
+                status: "pass",
+                action: "delivery"
+            ),
+            WorkspaceHealthCheck(
+                id: "sql-directory",
+                label: "SQL",
+                detail: "未声明 SQL 变更。",
+                status: "pass",
+                action: "sql"
+            )
+        ]
+
+        let missingWorkspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "delivery-revision-missing",
+            path: missing.path,
+            healthChecks: healthChecks
+        )
+        let regularWorkspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "delivery-revision-regular",
+            path: regular.path,
+            healthChecks: healthChecks
+        )
+        let linkedWorkspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "delivery-revision-linked",
+            path: linked.path,
+            healthChecks: healthChecks
+        )
+
+        let missingPlan = DeliveryRecordWritePlan.resolve(
+            workspace: missingWorkspace,
+            gate: DeliveryGateEvidence.resolve(workspace: missingWorkspace)
+        )
+        let regularPlan = DeliveryRecordWritePlan.resolve(
+            workspace: regularWorkspace,
+            gate: DeliveryGateEvidence.resolve(workspace: regularWorkspace)
+        )
+        let linkedPlan = DeliveryRecordWritePlan.resolve(
+            workspace: linkedWorkspace,
+            gate: DeliveryGateEvidence.resolve(workspace: linkedWorkspace)
+        )
+
+        XCTAssertEqual(missingPlan.expectedRevision, .missing)
+        guard case .regularUTF8(let sha256, let byteCount) = regularPlan.expectedRevision else {
+            return XCTFail("expected regular UTF-8 revision")
+        }
+        XCTAssertEqual(sha256.count, 64)
+        XCTAssertEqual(byteCount, original.data(using: .utf8)?.count)
+        guard case .invalid(let reason) = linkedPlan.expectedRevision else {
+            return XCTFail("expected invalid symlink revision")
+        }
+        XCTAssertTrue(reason.contains("not a regular file"))
+        XCTAssertFalse(linkedPlan.canWrite)
+        XCTAssertTrue(linkedPlan.summary.contains("not a regular file"))
+        XCTAssertEqual(try String(contentsOf: external, encoding: .utf8), original)
+    }
+
     func testDeliveryRecordWritePlanAppendsCurrentGateSnapshot() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-delivery-record-write-\(UUID().uuidString)")
