@@ -2203,6 +2203,162 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(events.first?.metadata["status"], "延期")
     }
 
+    func testNativeWorkspaceTaskStoreReportsAuditFailureAfterSuccessfulWrite() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-task-audit-failure-\(UUID().uuidString)")
+        let workspaceURL = root.appendingPathComponent("2026-07-10-task-audit-failure")
+        let auditRoot = root.appendingPathComponent("audit")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        let tasksURL = workspaceURL.appendingPathComponent("tasks.md")
+        try """
+        # Tasks
+
+        | 任务 | 状态 | 说明 |
+        | --- | --- | --- |
+        | 核对审计反馈 | 进行中 | priority=high |
+        """.appending("\n").write(to: tasksURL, atomically: true, encoding: .utf8)
+        try "not a directory".write(to: auditRoot, atomically: true, encoding: .utf8)
+
+        let response = try NativeWorkspaceTaskStore.update(
+            request: UpdateWorkspaceTaskRequest(
+                workspacePath: workspaceURL.path,
+                taskId: "2026-07-10-task-audit-failure:task-0",
+                status: "已完成",
+                confirmed: true,
+                auditRoot: auditRoot.path,
+                actor: "Nexus Test"
+            ),
+            expectedTitle: "核对审计反馈",
+            expectedStatus: "进行中",
+            expectedDetail: "priority=high",
+            expectedPriority: "high",
+            expectedSourceLine: 5
+        )
+
+        let content = try String(contentsOf: tasksURL, encoding: .utf8)
+        XCTAssertTrue(content.contains("| 核对审计反馈 | 已完成 | priority=high |"))
+        XCTAssertNil(response.auditEventID)
+        XCTAssertNil(response.auditEventPath)
+        XCTAssertNotNil(response.auditError)
+    }
+
+    func testNativeConfirmedDocumentWritesReportAuditFailureAfterSuccessfulMutation() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-document-audit-failure-\(UUID().uuidString)")
+        let demandDir = root.appendingPathComponent("需求")
+        let auditRoot = root.appendingPathComponent("audit")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try FileManager.default.createDirectory(at: demandDir, withIntermediateDirectories: true)
+        try writeDemandIntakeFixture(
+            demandDir: demandDir,
+            scope: """
+            # 本次开发范围
+
+            ## 已确认并实现
+
+            - 保存订单时记录交易快照。
+
+            ## 暂不实现
+
+            - 不补历史数据。
+
+            ## 仍待确认
+
+            - 无 P0 待确认项。
+
+            ## 进入开发条件
+
+            - [ ] 本文件已冻结本次开发范围。
+            """
+        )
+        try """
+        # 需求列表
+
+        | 需求点 | 状态 | 优先级 | 来源 | 说明 |
+        | --- | --- | --- | --- | --- |
+        | 新增交易快照写入 | 待办 | P0 | 蓝湖 | 保存订单时记录快照 |
+        """.appending("\n").write(
+            to: demandDir.appendingPathComponent("tasks.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let tasksURL = root.appendingPathComponent("tasks.md")
+        try """
+        # Tasks
+
+        | 任务 | 状态 | 说明 |
+        | --- | --- | --- |
+        """.appending("\n").write(to: tasksURL, atomically: true, encoding: .utf8)
+        let deliveryURL = root.appendingPathComponent("交付记录.md")
+        try "# 交付记录\n".write(to: deliveryURL, atomically: true, encoding: .utf8)
+        try "not a directory".write(to: auditRoot, atomically: true, encoding: .utf8)
+
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "document-audit-failure",
+            name: "Document Audit Failure",
+            path: root.path,
+            healthChecks: [
+                WorkspaceHealthCheck(
+                    id: "delivery-record",
+                    label: "交付记录",
+                    detail: "交付记录可用",
+                    status: "pass",
+                    action: "delivery"
+                ),
+                WorkspaceHealthCheck(
+                    id: "sql-directory",
+                    label: "SQL",
+                    detail: "未声明 SQL 变更。",
+                    status: "pass",
+                    action: "sql"
+                )
+            ]
+        )
+        let intakeStatus = demandIntakeStatus(at: demandDir)
+        let scopePlan = ScopeFreezeWritePlan.resolve(
+            workspace: workspace,
+            evidence: ScopeFreezeEvidence.resolve(status: intakeStatus, workspace: workspace)
+        )
+        let transferPlan = DemandTaskTransferPlan.resolve(workspace: workspace, status: intakeStatus)
+        let deliveryPlan = DeliveryRecordWritePlan.resolve(
+            workspace: workspace,
+            gate: DeliveryGateEvidence.resolve(workspace: workspace)
+        )
+
+        let scope = try NativeScopeFreezeStore.write(
+            plan: scopePlan,
+            confirmed: true,
+            auditRoot: auditRoot.path,
+            actor: "Nexus Test"
+        )
+        let transfer = try NativeDemandTaskTransferStore.transfer(
+            plan: transferPlan,
+            confirmed: true,
+            auditRoot: auditRoot.path,
+            actor: "Nexus Test"
+        )
+        let delivery = try NativeDeliveryRecordStore.appendDeliverySnapshot(
+            plan: deliveryPlan,
+            confirmed: true,
+            auditRoot: auditRoot.path,
+            actor: "Nexus Test"
+        )
+
+        XCTAssertNotNil(scope.auditError)
+        XCTAssertNotNil(transfer.auditError)
+        XCTAssertNotNil(delivery.auditError)
+        XCTAssertTrue(try String(contentsOf: demandDir.appendingPathComponent("scope.md"), encoding: .utf8)
+            .contains("## 范围冻结确认 / Scope Freeze Confirmation"))
+        XCTAssertTrue(try String(contentsOf: tasksURL, encoding: .utf8)
+            .contains("新增交易快照写入"))
+        XCTAssertTrue(try String(contentsOf: deliveryURL, encoding: .utf8)
+            .contains("Delivery Gate"))
+    }
+
     func testNativeWorkspaceTaskStoreRejectsStaleStatusAndShiftedTaskID() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-native-task-stale-\(UUID().uuidString)")

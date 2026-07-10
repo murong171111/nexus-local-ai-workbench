@@ -1,6 +1,11 @@
 import Foundation
 import NexusBridge
 
+struct NativeAuditAppendFeedback {
+    let response: AppendAuditEventResponse?
+    let error: String?
+}
+
 enum NativeAuditEventStore {
     static let fileName = "audit-events.jsonl"
 
@@ -33,6 +38,24 @@ enum NativeAuditEventStore {
             try line.write(to: fileURL, options: .atomic)
         }
         return AppendAuditEventResponse(path: fileURL.path, event: event)
+    }
+
+    static func appendFeedback(
+        auditRoot: String?,
+        event: AuditEventInput
+    ) -> NativeAuditAppendFeedback {
+        guard let auditRoot = auditRoot?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !auditRoot.isEmpty else {
+            return NativeAuditAppendFeedback(response: nil, error: nil)
+        }
+        do {
+            return NativeAuditAppendFeedback(
+                response: try append(auditRoot: auditRoot, event: event),
+                error: nil
+            )
+        } catch {
+            return NativeAuditAppendFeedback(response: nil, error: error.localizedDescription)
+        }
     }
 
     static func loadRecent(

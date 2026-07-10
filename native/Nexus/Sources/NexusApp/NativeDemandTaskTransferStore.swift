@@ -31,6 +31,7 @@ struct NativeDemandTaskTransferResponse: Hashable {
     let transferred: Bool
     let auditEventID: String?
     let auditEventPath: String?
+    let auditError: String?
 
     var transferredCount: Int {
         transferredItems.count
@@ -177,7 +178,8 @@ enum NativeDemandTaskTransferStore {
             duplicateCount: plan.duplicateCount,
             transferred: true,
             auditEventID: nil,
-            auditEventPath: nil
+            auditEventPath: nil,
+            auditError: nil
         )
         let audit = appendAuditEvent(plan: plan, response: response, auditRoot: auditRoot, actor: actor)
         return NativeDemandTaskTransferResponse(
@@ -185,8 +187,9 @@ enum NativeDemandTaskTransferStore {
             transferredItems: response.transferredItems,
             duplicateCount: response.duplicateCount,
             transferred: response.transferred,
-            auditEventID: audit?.event.id,
-            auditEventPath: audit?.path
+            auditEventID: audit.response?.event.id,
+            auditEventPath: audit.response?.path,
+            auditError: audit.error
         )
     }
 
@@ -199,12 +202,8 @@ enum NativeDemandTaskTransferStore {
         response: NativeDemandTaskTransferResponse,
         auditRoot: String?,
         actor: String?
-    ) -> AppendAuditEventResponse? {
-        guard let auditRoot = auditRoot?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !auditRoot.isEmpty else {
-            return nil
-        }
-        return try? NativeAuditEventStore.append(
+    ) -> NativeAuditAppendFeedback {
+        NativeAuditEventStore.appendFeedback(
             auditRoot: auditRoot,
             event: AuditEventInput(
                 actor: actor ?? "Nexus Native",

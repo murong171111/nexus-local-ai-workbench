@@ -25,6 +25,7 @@ struct NativeScopeFreezeWriteResponse: Hashable {
     let appended: Bool
     let auditEventID: String?
     let auditEventPath: String?
+    let auditError: String?
 }
 
 struct NativeScopeDocumentSnapshot {
@@ -83,15 +84,17 @@ enum NativeScopeFreezeStore {
             status: plan.status,
             appended: true,
             auditEventID: nil,
-            auditEventPath: nil
+            auditEventPath: nil,
+            auditError: nil
         )
         let audit = appendAuditEvent(plan: plan, response: response, auditRoot: auditRoot, actor: actor)
         return NativeScopeFreezeWriteResponse(
             path: response.path,
             status: response.status,
             appended: response.appended,
-            auditEventID: audit?.event.id,
-            auditEventPath: audit?.path
+            auditEventID: audit.response?.event.id,
+            auditEventPath: audit.response?.path,
+            auditError: audit.error
         )
     }
 
@@ -116,12 +119,8 @@ enum NativeScopeFreezeStore {
         response: NativeScopeFreezeWriteResponse,
         auditRoot: String?,
         actor: String?
-    ) -> AppendAuditEventResponse? {
-        guard let auditRoot = auditRoot?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !auditRoot.isEmpty else {
-            return nil
-        }
-        return try? NativeAuditEventStore.append(
+    ) -> NativeAuditAppendFeedback {
+        NativeAuditEventStore.appendFeedback(
             auditRoot: auditRoot,
             event: AuditEventInput(
                 actor: actor ?? "Nexus Native",

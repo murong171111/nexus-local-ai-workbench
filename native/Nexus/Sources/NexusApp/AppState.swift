@@ -2936,7 +2936,8 @@ final class AppState: ObservableObject {
                 workspaceName: plan.workspaceName,
                 documentPath: response.path,
                 documentLabel: "打开交付记录",
-                systemImage: "shippingbox"
+                systemImage: "shippingbox",
+                auditError: response.auditError
             )
         } catch {
             lastError = error.localizedDescription
@@ -3003,7 +3004,8 @@ final class AppState: ObservableObject {
                 workspaceName: plan.workspaceName,
                 documentPath: response.path,
                 documentLabel: "打开交付记录",
-                systemImage: "archivebox"
+                systemImage: "archivebox",
+                auditError: response.auditError
             )
         } catch {
             lastError = error.localizedDescription
@@ -3059,7 +3061,8 @@ final class AppState: ObservableObject {
                 workspaceName: plan.workspaceName,
                 documentPath: response.path,
                 documentLabel: "打开交付记录",
-                systemImage: "point.3.connected.trianglepath.dotted"
+                systemImage: "point.3.connected.trianglepath.dotted",
+                auditError: response.auditError
             )
         } catch {
             lastError = error.localizedDescription
@@ -3121,7 +3124,8 @@ final class AppState: ObservableObject {
                 workspaceName: plan.workspaceName,
                 documentPath: response.path,
                 documentLabel: "打开 scope.md",
-                systemImage: "scope"
+                systemImage: "scope",
+                auditError: response.auditError
             )
         } catch {
             lastError = error.localizedDescription
@@ -3171,7 +3175,8 @@ final class AppState: ObservableObject {
                 workspaceName: plan.workspaceName,
                 documentPath: response.path,
                 documentLabel: "打开 tasks.md",
-                systemImage: "checklist"
+                systemImage: "checklist",
+                auditError: response.auditError
             )
         } catch {
             lastError = error.localizedDescription
@@ -3782,7 +3787,8 @@ final class AppState: ObservableObject {
         workspaceName: String,
         documentPath: String,
         documentLabel: String,
-        systemImage: String
+        systemImage: String,
+        auditError: String? = nil
     ) {
         localWriteFeedback = LocalWriteFeedback(
             title: title,
@@ -3792,7 +3798,8 @@ final class AppState: ObservableObject {
             workspaceName: workspaceName,
             documentPath: documentPath,
             documentLabel: documentLabel,
-            systemImage: systemImage
+            systemImage: systemImage,
+            auditError: auditError
         )
     }
 
@@ -3914,7 +3921,8 @@ final class AppState: ObservableObject {
                         workspaceName: update.workspaceName,
                         documentPath: response.path,
                         documentLabel: "打开 tasks.md",
-                        systemImage: "checkmark.circle"
+                        systemImage: "checkmark.circle",
+                        auditError: response.auditError
                     )
                 }
             }

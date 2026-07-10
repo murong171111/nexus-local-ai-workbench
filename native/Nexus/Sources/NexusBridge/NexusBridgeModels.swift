@@ -695,6 +695,7 @@ public struct UpdateWorkspaceTaskResponse: Codable, Equatable, Sendable {
     public let updated: Bool
     public let auditEventID: String?
     public let auditEventPath: String?
+    public let auditError: String?
 
     public init(
         path: String,
@@ -702,7 +703,8 @@ public struct UpdateWorkspaceTaskResponse: Codable, Equatable, Sendable {
         previousStatus: String,
         updated: Bool,
         auditEventID: String? = nil,
-        auditEventPath: String? = nil
+        auditEventPath: String? = nil,
+        auditError: String? = nil
     ) {
         self.path = path
         self.task = task
@@ -710,6 +712,7 @@ public struct UpdateWorkspaceTaskResponse: Codable, Equatable, Sendable {
         self.updated = updated
         self.auditEventID = auditEventID
         self.auditEventPath = auditEventPath
+        self.auditError = auditError
     }
 }
 

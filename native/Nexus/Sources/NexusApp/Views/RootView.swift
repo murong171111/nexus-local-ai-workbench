@@ -4666,7 +4666,7 @@ private struct LocalWriteFeedbackView: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top, spacing: 9) {
                     Image(systemName: feedback.systemImage)
-                        .foregroundStyle(NexusPalette.success)
+                        .foregroundStyle(feedback.auditError == nil ? NexusPalette.success : NexusPalette.warning)
                         .frame(width: 16)
 
                     VStack(alignment: .leading, spacing: 3) {
@@ -4676,6 +4676,12 @@ private struct LocalWriteFeedbackView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
+                        if let auditError = feedback.auditError {
+                            Label("主写入已完成，但审计未记录：\(auditError)", systemImage: "exclamationmark.triangle")
+                                .font(.caption)
+                                .foregroundStyle(NexusPalette.warning)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                         Text("\(feedback.timestamp) · \(feedback.workspaceName) · Workspace state refreshed")
                             .font(.system(size: 10, design: .monospaced))
                             .foregroundStyle(.secondary)

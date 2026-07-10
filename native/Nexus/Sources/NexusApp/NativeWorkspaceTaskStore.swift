@@ -121,8 +121,9 @@ enum NativeWorkspaceTaskStore {
             task: response.task,
             previousStatus: response.previousStatus,
             updated: response.updated,
-            auditEventID: audit?.event.id,
-            auditEventPath: audit?.path
+            auditEventID: audit.response?.event.id,
+            auditEventPath: audit.response?.path,
+            auditError: audit.error
         )
     }
 
@@ -157,13 +158,9 @@ enum NativeWorkspaceTaskStore {
     private static func appendAuditEvent(
         request: UpdateWorkspaceTaskRequest,
         response: UpdateWorkspaceTaskResponse
-    ) -> AppendAuditEventResponse? {
-        guard let auditRoot = request.auditRoot?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !auditRoot.isEmpty else {
-            return nil
-        }
-        return try? NativeAuditEventStore.append(
-            auditRoot: auditRoot,
+    ) -> NativeAuditAppendFeedback {
+        NativeAuditEventStore.appendFeedback(
+            auditRoot: request.auditRoot,
             event: AuditEventInput(
                 actor: request.actor ?? "Nexus Native",
                 action: "workspace_task.updated",

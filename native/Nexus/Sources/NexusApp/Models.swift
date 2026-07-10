@@ -480,6 +480,29 @@ struct LocalWriteFeedback: Identifiable, Hashable {
     let documentPath: String
     let documentLabel: String
     let systemImage: String
+    let auditError: String?
+
+    init(
+        title: String,
+        detail: String,
+        timestamp: String,
+        workspaceID: WorkspaceSummary.ID,
+        workspaceName: String,
+        documentPath: String,
+        documentLabel: String,
+        systemImage: String,
+        auditError: String? = nil
+    ) {
+        self.title = title
+        self.detail = detail
+        self.timestamp = timestamp
+        self.workspaceID = workspaceID
+        self.workspaceName = workspaceName
+        self.documentPath = documentPath
+        self.documentLabel = documentLabel
+        self.systemImage = systemImage
+        self.auditError = auditError
+    }
 }
 
 struct WorkspaceLinkFeedback: Identifiable, Hashable {

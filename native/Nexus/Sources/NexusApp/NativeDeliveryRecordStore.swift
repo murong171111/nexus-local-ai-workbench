@@ -60,6 +60,7 @@ struct NativeDeliveryRecordWriteResponse: Hashable {
     let appended: Bool
     let auditEventID: String?
     let auditEventPath: String?
+    let auditError: String?
 }
 
 enum NativeDeliveryRecordStore {
@@ -177,7 +178,8 @@ enum NativeDeliveryRecordStore {
             itemCount: itemCount,
             appended: true,
             auditEventID: nil,
-            auditEventPath: nil
+            auditEventPath: nil,
+            auditError: nil
         )
         let audit = appendAuditEvent(
             response: response,
@@ -192,8 +194,9 @@ enum NativeDeliveryRecordStore {
             status: response.status,
             itemCount: response.itemCount,
             appended: response.appended,
-            auditEventID: audit?.event.id,
-            auditEventPath: audit?.path
+            auditEventID: audit.response?.event.id,
+            auditEventPath: audit.response?.path,
+            auditError: audit.error
         )
     }
 
@@ -233,12 +236,8 @@ enum NativeDeliveryRecordStore {
         workspaceName: String,
         auditRoot: String?,
         actor: String?
-    ) -> AppendAuditEventResponse? {
-        guard let auditRoot = auditRoot?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !auditRoot.isEmpty else {
-            return nil
-        }
-        return try? NativeAuditEventStore.append(
+    ) -> NativeAuditAppendFeedback {
+        NativeAuditEventStore.appendFeedback(
             auditRoot: auditRoot,
             event: AuditEventInput(
                 actor: actor ?? "Nexus Native",
