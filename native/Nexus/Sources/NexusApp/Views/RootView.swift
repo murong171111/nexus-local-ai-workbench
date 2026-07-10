@@ -2618,11 +2618,12 @@ private struct WorkspaceConsoleView: View {
     }
 
     private func demandInput(for workspace: WorkspaceSummary) -> some View {
-        WorkspaceDemandIntakeView(workspace: workspace)
+        FeatureWorkspaceView(
+            workspace: workspace,
+            demandInputFocused: $demandInputFocused
+        )
             .environmentObject(appState)
             .id(WorkspaceConsoleTarget.demandInput)
-            .focusable()
-            .focused($demandInputFocused)
     }
 
     private func run(_ action: WorkspaceSessionAction, in workspace: WorkspaceSummary, proxy: ScrollViewProxy) {

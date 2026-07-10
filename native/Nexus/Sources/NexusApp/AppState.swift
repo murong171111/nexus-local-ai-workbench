@@ -192,6 +192,9 @@ final class AppState: ObservableObject {
     @Published var isInitializingDemandIntake = false
     @Published var demandIntakeLoadingWorkspaceID: WorkspaceSummary.ID?
     @Published var demandIntakeStatusesByWorkspace: [WorkspaceSummary.ID: DemandIntakeStatus] = [:]
+    @Published var demandInputLoadingWorkspaceID: WorkspaceSummary.ID?
+    @Published var demandInputSavingWorkspaceID: WorkspaceSummary.ID?
+    @Published var demandInputsByWorkspace: [WorkspaceSummary.ID: DemandInputSnapshot] = [:]
     @Published var isUpdatingTask = false
     @Published var isUpdatingDeliveryRecord = false
     @Published var isUpdatingLifecycle = false
@@ -3344,6 +3347,208 @@ final class AppState: ObservableObject {
                 "demandName": cleanDemandName,
                 "hasLanhuLink": "\(!lanhuLink.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)",
                 "hasNotes": "\(!notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)"
+            ],
+            workspaceOverride: workspace
+        )
+    }
+
+    func demandInputSnapshot(for workspace: WorkspaceSummary) -> DemandInputSnapshot? {
+        demandInputsByWorkspace[workspace.id]
+    }
+
+    func loadDemandInput(for workspace: WorkspaceSummary) async {
+        demandInputLoadingWorkspaceID = workspace.id
+        lastError = nil
+        defer {
+            if demandInputLoadingWorkspaceID == workspace.id {
+                demandInputLoadingWorkspaceID = nil
+            }
+        }
+
+        do {
+            let snapshot = try NativeDemandInputStore.load(workspacePath: workspace.path)
+            demandInputsByWorkspace[workspace.id] = snapshot
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    func saveDemandInputDraft(_ draft: DemandInputDraft, in workspace: WorkspaceSummary) async {
+        demandInputSavingWorkspaceID = workspace.id
+        lastError = nil
+        defer {
+            if demandInputSavingWorkspaceID == workspace.id {
+                demandInputSavingWorkspaceID = nil
+            }
+        }
+
+        do {
+            let current = try demandInputsByWorkspace[workspace.id]
+                ?? NativeDemandInputStore.load(workspacePath: workspace.path)
+            let response = try NativeDemandInputStore.save(
+                draft: draft,
+                workspacePath: workspace.path,
+                expectedRevision: current.revision,
+                auditRoot: auditRootPath,
+                actor: "Nexus Native"
+            )
+            let snapshot = try NativeDemandInputStore.load(workspacePath: workspace.path)
+            demandInputsByWorkspace[workspace.id] = snapshot
+            markLocalWriteFeedback(
+                title: "需求草稿已保存 / Demand draft saved",
+                detail: "\(workspace.name) · \(draft.links.count) links · \(draft.attachments.count) materials。",
+                workspaceID: workspace.id,
+                workspaceName: workspace.name,
+                documentPath: response.path,
+                documentLabel: "Demand intake draft",
+                systemImage: "square.and.pencil",
+                auditError: response.auditError
+            )
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    func attachDemandMaterials(_ urls: [URL], to workspace: WorkspaceSummary, confirmed: Bool) async {
+        demandInputSavingWorkspaceID = workspace.id
+        lastError = nil
+        defer {
+            if demandInputSavingWorkspaceID == workspace.id {
+                demandInputSavingWorkspaceID = nil
+            }
+        }
+
+        do {
+            let plan = try NativeDemandInputStore.makeAttachmentPlan(
+                workspacePath: workspace.path,
+                sourceURLs: urls
+            )
+            let copied = try NativeDemandInputStore.copyAttachments(
+                plan: plan,
+                confirmed: confirmed,
+                auditRoot: auditRootPath,
+                actor: "Nexus Native"
+            )
+            let current = try NativeDemandInputStore.load(workspacePath: workspace.path)
+            let attachmentPaths = copied.copiedPaths.compactMap { path -> String? in
+                let workspacePrefix = workspace.path.hasSuffix("/") ? workspace.path : "\(workspace.path)/"
+                guard path.hasPrefix(workspacePrefix) else { return nil }
+                return String(path.dropFirst(workspacePrefix.count))
+            }
+            var next = current.draft
+            for path in attachmentPaths where !next.attachments.contains(path) {
+                next.attachments.append(path)
+            }
+            if next != current.draft {
+                _ = try NativeDemandInputStore.save(
+                    draft: next,
+                    workspacePath: workspace.path,
+                    expectedRevision: current.revision,
+                    auditRoot: auditRootPath,
+                    actor: "Nexus Native"
+                )
+            }
+            demandInputsByWorkspace[workspace.id] = try NativeDemandInputStore.load(workspacePath: workspace.path)
+            markLocalWriteFeedback(
+                title: "需求材料已确认 / Materials copied",
+                detail: "\(workspace.name) · \(copied.copiedPaths.count) copied · \(copied.errors.count) needs review。",
+                workspaceID: workspace.id,
+                workspaceName: workspace.name,
+                documentPath: "\(workspace.path)/需求/attachments",
+                documentLabel: "Demand materials",
+                systemImage: "paperclip",
+                auditError: copied.auditError
+            )
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    func featureIntakePrompt(for workspace: WorkspaceSummary) -> String {
+        let snapshot = demandInputsByWorkspace[workspace.id]
+            ?? (try? NativeDemandInputStore.load(workspacePath: workspace.path))
+        let draft = snapshot?.draft ?? .empty
+        let materialLines = draft.attachments.isEmpty
+            ? ["- None confirmed."]
+            : draft.attachments.map { "- \($0)" }
+        let linkLines = draft.links.isEmpty
+            ? ["- None."]
+            : draft.links.map { "- \($0)" }
+        let changePaths = [workspace.documentLinks["changes"], "\(workspace.path)/changes.md"]
+            .compactMap { $0 }
+            .filter { FileManager.default.fileExists(atPath: $0) }
+            .reduce(into: [String]()) { paths, path in
+                if !paths.contains(path) { paths.append(path) }
+            }
+        let activityLines = workspace.activities.prefix(3).map { "- \($0.title): \($0.detail)" }
+
+        return [
+            "Prepare a feature proposal from this Nexus demand input.",
+            "",
+            "## Workspace",
+            "- Name: \(workspace.name)",
+            "- Path: \(workspace.path)",
+            "- Target branch: \(workspace.branch)",
+            "- Services: \(workspace.serviceSummary.isEmpty ? "None confirmed." : workspace.serviceSummary)",
+            "",
+            "## Demand",
+            draft.requirement.isEmpty ? "- No requirement text saved yet." : draft.requirement,
+            "",
+            "## Links",
+            linkLines.joined(separator: "\n"),
+            "",
+            "## Confirmed materials",
+            materialLines.joined(separator: "\n"),
+            "",
+            "## Recent known changes",
+            (changePaths.isEmpty ? ["- No confirmed changes.md path found."] : changePaths.map { "- \($0)" }).joined(separator: "\n"),
+            activityLines.isEmpty ? "" : activityLines.joined(separator: "\n"),
+            "",
+            "## Output contract",
+            "Write a proposal to \(workspace.path)/FEATURES.draft.md.",
+            "Do not modify FEATURES.md.",
+            "Use stable provisional IDs DRAFT-001, DRAFT-002, ... and propose Verification values code, sql, documentation, or manual."
+        ].filter { !$0.isEmpty }.joined(separator: "\n")
+    }
+
+    func openFeatureIntakeInCodex(for workspace: WorkspaceSummary) async {
+        await loadDemandInput(for: workspace)
+        let prompt = featureIntakePrompt(for: workspace)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(prompt, forType: .string)
+        lastCopiedCodexHandoffPayload = prompt
+
+        let rawURL = codexURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? Self.defaultCodexURL
+            : codexURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let didOpen = URL(string: rawURL).map { NSWorkspace.shared.open($0) } ?? false
+        if didOpen {
+            markCodexHandoff(
+                title: "Codex 已打开 / Feature intake copied",
+                detail: "\(workspace.name) · 需求草稿与确认材料已复制到剪贴板。",
+                systemImage: "sparkles",
+                sectionTitle: "功能提案 / Feature proposal",
+                clipboardLabel: "Feature intake prompt is on the clipboard"
+            )
+        } else {
+            lastError = "Could not open Codex URL: \(rawURL)"
+            markCodexHandoff(
+                title: "需求上下文已复制 / Open Codex manually",
+                detail: "\(workspace.name) · Codex 未能打开，提示词仍保留在剪贴板。",
+                systemImage: "exclamationmark.triangle",
+                sectionTitle: "功能提案 / Feature proposal",
+                clipboardLabel: "Feature intake prompt is on the clipboard"
+            )
+        }
+        await recordWorkspaceAction(
+            action: "feature_intake.opened",
+            target: "\(workspace.path)/FEATURES.draft.md",
+            summary: "Copied feature intake prompt and attempted to open Codex",
+            metadata: [
+                "tool": "Codex",
+                "codexUrl": rawURL,
+                "opened": "\(didOpen)",
+                "draftPath": "\(workspace.path)/需求/intake-draft.md"
             ],
             workspaceOverride: workspace
         )
