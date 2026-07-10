@@ -10,6 +10,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 - Native Swift tests now run in both the standard repository verification command and main-branch CI, with a policy test protecting the required quality gate.
 - Native worktree setup now preserves real Git results while returning and displaying audit-write failures instead of silently presenting unaudited operations as complete success.
+- Native worktree confirmation now freezes workspace/source paths, services, target branch, and source commit revisions, rejecting changed Git or target-path evidence before creating worktrees.
 - Native worktree setup now validates services before filesystem mutation, rejects symbolic-link workspace and `repos/` roots, and reports linked or non-directory service targets as failures instead of trusted skips.
 - Native service/branch readiness now requires a real regular UTF-8 `branches.md` with recorded branch policy, keeping missing or symbolic-link evidence in the service/branch stage.
 - Native workspace stage cards now show only the selected workspace's current stage, next action, and routed evidence; global M1 acceptance is order-independent and reserved for distribution readiness.

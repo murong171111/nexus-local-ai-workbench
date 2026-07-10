@@ -4061,7 +4061,7 @@ final class AppState: ObservableObject {
         return evidence.mutationPolicy.canRequestConfirmation
     }
 
-    func setupMissingWorktrees(for workspace: WorkspaceSummary, confirmed: Bool) async {
+    func worktreeSetupPlan(for workspace: WorkspaceSummary) throws -> NativeWorktreeSetupPlan {
         lastError = nil
         lastWorktreeSetupResponse = nil
 
@@ -4069,27 +4069,40 @@ final class AppState: ObservableObject {
         let mutationPolicy = evidence.mutationPolicy
         let missingServices = evidence.missingServices
         guard !missingServices.isEmpty else {
-            lastError = "当前工作区没有缺失的 worktree。"
-            return
+            throw AppStateWorktreeSetupPlanError.notReady("当前工作区没有缺失的 worktree。")
         }
 
         guard evidence.branchConfirmed else {
-            lastError = "目标分支仍未确认，不能创建 worktree。"
-            return
+            throw AppStateWorktreeSetupPlanError.notReady("目标分支仍未确认，不能创建 worktree。")
         }
         guard evidence.missingSourceServices.isEmpty else {
-            lastError = "存在源仓库不可用的服务：\(evidence.missingSourceServices.joined(separator: ", "))。"
-            return
+            throw AppStateWorktreeSetupPlanError.notReady("存在源仓库不可用的服务：\(evidence.missingSourceServices.joined(separator: ", "))。")
         }
         guard evidence.branchMismatchServices.isEmpty else {
-            lastError = "存在目标分支不可用的服务：\(evidence.branchMismatchServices.joined(separator: ", "))。"
-            return
+            throw AppStateWorktreeSetupPlanError.notReady("存在目标分支不可用的服务：\(evidence.branchMismatchServices.joined(separator: ", "))。")
         }
         guard mutationPolicy.canRequestConfirmation else {
-            lastError = mutationPolicy.summary
-            return
+            throw AppStateWorktreeSetupPlanError.notReady(mutationPolicy.summary)
         }
-        guard mutationPolicy.canRun(afterConfirmation: confirmed) else {
+
+        return try NativeWorktreeSetupStore.makePlan(
+            request: SetupWorktreesRequest(
+                workspacePath: workspace.path,
+                sourceReposRoot: sourceReposRoot,
+                services: mutationPolicy.allowedServices,
+                targetBranch: workspace.branch,
+                confirmed: false,
+                auditRoot: auditRootPath,
+                actor: "Nexus Native"
+            )
+        )
+    }
+
+    func setupMissingWorktrees(plan: NativeWorktreeSetupPlan, confirmed: Bool) async {
+        lastError = nil
+        lastWorktreeSetupResponse = nil
+
+        guard confirmed else {
             lastError = "需要在确认 sheet 勾选本地 git 写入确认后，才会执行 worktree 创建。"
             return
         }
@@ -4100,17 +4113,7 @@ final class AppState: ObservableObject {
         }
 
         do {
-            let response = try NativeWorktreeSetupStore.setup(
-                request: SetupWorktreesRequest(
-                    workspacePath: workspace.path,
-                    sourceReposRoot: sourceReposRoot,
-                    services: mutationPolicy.allowedServices,
-                    targetBranch: workspace.branch,
-                    confirmed: confirmed,
-                    auditRoot: auditRootPath,
-                    actor: "Nexus Native"
-                )
-            )
+            let response = try NativeWorktreeSetupStore.setup(plan: plan, confirmed: confirmed)
             lastWorktreeSetupResponse = response
             await refreshFromBridge()
             if let auditError = response.auditError {
@@ -5122,4 +5125,15 @@ struct CreateWorkspaceDraft: Equatable {
     var services: [String]
     var targetBranch: String
     var confirmed: Bool
+}
+
+private enum AppStateWorktreeSetupPlanError: LocalizedError {
+    case notReady(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .notReady(let detail):
+            return detail
+        }
+    }
 }

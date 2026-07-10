@@ -479,6 +479,7 @@ Plan:
   - clean
 - Keep all mutation behind confirmation. `[started with WorktreeSetupMutationPolicy]`
 - Reject symbolic-link workspace, `repos/`, and service-target paths before Git mutation, and validate empty requests before creating directories. `[started with NativeWorktreeSetupStore strict path preflight]`
+- Freeze workspace/source paths, services, target branch, and per-service source commit revisions when confirmation is checked; reject changed Git or target-path evidence before worktree creation. `[started with NativeWorktreeSetupPlan]`
 - Keep source repositories read-only unless the user explicitly opens them outside Nexus. `[started with SourceRepositoryAccess]`
 
 ### Audit / Delivery

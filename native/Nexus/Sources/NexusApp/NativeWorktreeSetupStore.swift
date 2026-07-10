@@ -1,10 +1,106 @@
 import Foundation
 import NexusBridge
 
+struct NativeWorktreeSetupPlan: Equatable {
+    let workspacePath: String
+    let sourceReposRoot: String
+    let services: [String]
+    let targetBranch: String
+    let sourceRevisions: [String: String]
+    let auditRoot: String?
+    let actor: String?
+
+    var summary: String {
+        "确认后将在 \(workspacePath)/repos/ 为 \(services.joined(separator: ", ")) 创建 \(targetBranch) worktree；每个 source commit 已冻结。"
+    }
+}
+
 enum NativeWorktreeSetupStore {
+    static func makePlan(
+        request: SetupWorktreesRequest,
+        fileManager: FileManager = .default
+    ) throws -> NativeWorktreeSetupPlan {
+        let targetBranch = normalizedGitBranch(request.targetBranch)
+        guard isConfirmedTargetBranch(targetBranch) else {
+            throw NativeWorktreeSetupError.unconfirmedBranch
+        }
+        let services = normalizedServices(request.services)
+        guard !services.isEmpty else {
+            throw NativeWorktreeSetupError.noServices
+        }
+
+        let workspaceURL = expandedURL(for: request.workspacePath)
+        try validateWorkspace(workspaceURL, fileManager: fileManager)
+        let reposURL = workspaceURL.appendingPathComponent("repos", isDirectory: true)
+        try validateReposRoot(reposURL, fileManager: fileManager)
+        let sourceRootURL = expandedURL(for: request.sourceReposRoot)
+        var sourceRevisions: [String: String] = [:]
+
+        for service in services {
+            guard isSafeServiceName(service) else {
+                throw NativeWorktreeSetupError.unsafeServiceName(service)
+            }
+            let sourceURL = sourceRootURL.appendingPathComponent(service, isDirectory: true)
+            let worktreeURL = reposURL.appendingPathComponent(service, isDirectory: true)
+            guard fileType(at: sourceURL, fileManager: fileManager) == .typeDirectory else {
+                throw NativeWorktreeSetupError.sourceNotDirectory(service, sourceURL.path)
+            }
+            guard fileManager.fileExists(atPath: sourceURL.appendingPathComponent(".git").path) else {
+                throw NativeWorktreeSetupError.sourceNotGit(service, sourceURL.path)
+            }
+            guard fileType(at: worktreeURL, fileManager: fileManager) == nil else {
+                throw NativeWorktreeSetupError.targetChangedSinceConfirmation(service, worktreeURL.path)
+            }
+            guard let revision = branchRevision(targetBranch, in: sourceURL) else {
+                throw NativeWorktreeSetupError.branchRevisionUnavailable(service, targetBranch)
+            }
+            sourceRevisions[service] = revision
+        }
+
+        return NativeWorktreeSetupPlan(
+            workspacePath: workspaceURL.path,
+            sourceReposRoot: sourceRootURL.path,
+            services: services,
+            targetBranch: targetBranch,
+            sourceRevisions: sourceRevisions,
+            auditRoot: request.auditRoot,
+            actor: request.actor
+        )
+    }
+
+    static func setup(
+        plan: NativeWorktreeSetupPlan,
+        confirmed: Bool,
+        fileManager: FileManager = .default
+    ) throws -> SetupWorktreesResponse {
+        guard confirmed else {
+            throw NativeWorktreeSetupError.unconfirmed
+        }
+        let currentPlan = try makePlan(
+            request: request(from: plan, confirmed: false),
+            fileManager: fileManager
+        )
+        guard currentPlan.sourceRevisions == plan.sourceRevisions else {
+            throw NativeWorktreeSetupError.planChangedSinceConfirmation
+        }
+        return try execute(
+            request: request(from: plan, confirmed: true),
+            expectedSourceRevisions: plan.sourceRevisions,
+            fileManager: fileManager
+        )
+    }
+
     static func setup(
         request: SetupWorktreesRequest,
         fileManager: FileManager = .default
+    ) throws -> SetupWorktreesResponse {
+        try execute(request: request, expectedSourceRevisions: nil, fileManager: fileManager)
+    }
+
+    private static func execute(
+        request: SetupWorktreesRequest,
+        expectedSourceRevisions: [String: String]?,
+        fileManager: FileManager
     ) throws -> SetupWorktreesResponse {
         guard request.confirmed else {
             throw NativeWorktreeSetupError.unconfirmed
@@ -18,24 +114,13 @@ enum NativeWorktreeSetupStore {
             throw NativeWorktreeSetupError.noServices
         }
 
-        let workspaceURL = URL(fileURLWithPath: (request.workspacePath as NSString).expandingTildeInPath)
-        guard let workspaceType = fileType(at: workspaceURL, fileManager: fileManager) else {
-            throw NativeWorktreeSetupError.workspaceMissing(workspaceURL.path)
-        }
-        guard workspaceType != .typeSymbolicLink else {
-            throw NativeWorktreeSetupError.workspaceSymbolicLink(workspaceURL.path)
-        }
-        guard workspaceType == .typeDirectory else {
-            throw NativeWorktreeSetupError.workspaceNotDirectory(workspaceURL.path)
-        }
+        let workspaceURL = expandedURL(for: request.workspacePath)
+        try validateWorkspace(workspaceURL, fileManager: fileManager)
 
         let reposURL = workspaceURL.appendingPathComponent("repos", isDirectory: true)
-        if let reposType = fileType(at: reposURL, fileManager: fileManager),
-           reposType != .typeDirectory {
-            throw NativeWorktreeSetupError.worktreeRootNotDirectory(reposURL.path)
-        }
+        try validateReposRoot(reposURL, fileManager: fileManager)
 
-        let sourceRootURL = URL(fileURLWithPath: (request.sourceReposRoot as NSString).expandingTildeInPath)
+        let sourceRootURL = expandedURL(for: request.sourceReposRoot)
         var created: [WorktreeSetupResult] = []
         var skipped: [WorktreeSetupResult] = []
         var failed: [WorktreeSetupResult] = []
@@ -48,6 +133,10 @@ enum NativeWorktreeSetupStore {
                 continue
             }
             if let worktreeType = fileType(at: worktreeURL, fileManager: fileManager) {
+                if expectedSourceRevisions?[service] != nil {
+                    failed.append(result(service: service, sourceURL: sourceURL, worktreeURL: worktreeURL, status: "failed", detail: "worktree path changed since confirmation"))
+                    continue
+                }
                 guard worktreeType == .typeDirectory else {
                     failed.append(result(
                         service: service,
@@ -78,6 +167,18 @@ enum NativeWorktreeSetupStore {
                 continue
             }
 
+            if let expectedRevision = expectedSourceRevisions?[service],
+               branchRevision(targetBranch, in: sourceURL) != expectedRevision {
+                failed.append(result(
+                    service: service,
+                    sourceURL: sourceURL,
+                    worktreeURL: worktreeURL,
+                    status: "failed",
+                    detail: "target branch changed since confirmation; refresh and confirm the worktree plan again"
+                ))
+                continue
+            }
+
             if fileType(at: reposURL, fileManager: fileManager) == nil {
                 try fileManager.createDirectory(at: reposURL, withIntermediateDirectories: false)
             }
@@ -85,6 +186,10 @@ enum NativeWorktreeSetupStore {
                 throw NativeWorktreeSetupError.worktreeRootNotDirectory(reposURL.path)
             }
             if let currentTargetType = fileType(at: worktreeURL, fileManager: fileManager) {
+                if expectedSourceRevisions?[service] != nil {
+                    failed.append(result(service: service, sourceURL: sourceURL, worktreeURL: worktreeURL, status: "failed", detail: "worktree path changed since confirmation"))
+                    continue
+                }
                 if currentTargetType == .typeDirectory {
                     skipped.append(result(service: service, sourceURL: sourceURL, worktreeURL: worktreeURL, status: "skipped", detail: "worktree path appeared before creation"))
                 } else {
@@ -174,6 +279,56 @@ enum NativeWorktreeSetupStore {
 
     private static func normalizedServices(_ services: [String]) -> [String] {
         Array(Set(services.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })).sorted()
+    }
+
+    private static func expandedURL(for path: String) -> URL {
+        URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+    }
+
+    private static func validateWorkspace(_ url: URL, fileManager: FileManager) throws {
+        guard let workspaceType = fileType(at: url, fileManager: fileManager) else {
+            throw NativeWorktreeSetupError.workspaceMissing(url.path)
+        }
+        guard workspaceType != .typeSymbolicLink else {
+            throw NativeWorktreeSetupError.workspaceSymbolicLink(url.path)
+        }
+        guard workspaceType == .typeDirectory else {
+            throw NativeWorktreeSetupError.workspaceNotDirectory(url.path)
+        }
+    }
+
+    private static func validateReposRoot(_ url: URL, fileManager: FileManager) throws {
+        if let reposType = fileType(at: url, fileManager: fileManager),
+           reposType != .typeDirectory {
+            throw NativeWorktreeSetupError.worktreeRootNotDirectory(url.path)
+        }
+    }
+
+    private static func request(
+        from plan: NativeWorktreeSetupPlan,
+        confirmed: Bool
+    ) -> SetupWorktreesRequest {
+        SetupWorktreesRequest(
+            workspacePath: plan.workspacePath,
+            sourceReposRoot: plan.sourceReposRoot,
+            services: plan.services,
+            targetBranch: plan.targetBranch,
+            confirmed: confirmed,
+            auditRoot: plan.auditRoot,
+            actor: plan.actor
+        )
+    }
+
+    private static func branchRevision(_ branch: String, in sourceURL: URL) -> String? {
+        for reference in [branch, "origin/\(branch)"] {
+            switch runGit(["rev-parse", "--verify", "\(reference)^{commit}"], in: sourceURL) {
+            case .success(let revision) where !revision.isEmpty:
+                return revision
+            case .success, .failure:
+                continue
+            }
+        }
+        return nil
     }
 
     private static func fileType(at url: URL, fileManager: FileManager) -> FileAttributeType? {
@@ -283,6 +438,12 @@ private enum NativeWorktreeSetupError: LocalizedError {
     case workspaceSymbolicLink(String)
     case workspaceNotDirectory(String)
     case worktreeRootNotDirectory(String)
+    case unsafeServiceName(String)
+    case sourceNotDirectory(String, String)
+    case sourceNotGit(String, String)
+    case branchRevisionUnavailable(String, String)
+    case targetChangedSinceConfirmation(String, String)
+    case planChangedSinceConfirmation
     case noServices
 
     var errorDescription: String? {
@@ -299,6 +460,18 @@ private enum NativeWorktreeSetupError: LocalizedError {
             return "workspace is not a directory: \(path)"
         case .worktreeRootNotDirectory(let path):
             return "worktree root must be a real directory; symbolic links and files are not allowed: \(path)"
+        case .unsafeServiceName(let service):
+            return "service name must be a single safe path segment: \(service)"
+        case .sourceNotDirectory(let service, let path):
+            return "source repository must be a real directory for \(service): \(path)"
+        case .sourceNotGit(let service, let path):
+            return "source path is not a git worktree for \(service): \(path)"
+        case .branchRevisionUnavailable(let service, let branch):
+            return "target branch revision is unavailable for \(service): \(branch)"
+        case .targetChangedSinceConfirmation(let service, let path):
+            return "worktree target changed since confirmation for \(service): \(path)"
+        case .planChangedSinceConfirmation:
+            return "worktree source revisions changed since confirmation; refresh and confirm the plan again"
         case .noServices:
             return "no services selected for worktree setup"
         }

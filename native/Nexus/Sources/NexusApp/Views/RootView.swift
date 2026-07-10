@@ -1553,6 +1553,8 @@ private struct WorktreeSetupSheet: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
     @State private var confirmed = false
+    @State private var confirmedPlan: NativeWorktreeSetupPlan?
+    @State private var planError: String?
     let workspace: WorkspaceSummary
 
     private var currentWorkspace: WorkspaceSummary {
@@ -1580,7 +1582,7 @@ private struct WorktreeSetupSheet: View {
     }
 
     private var canRun: Bool {
-        mutationPolicy.canRun(afterConfirmation: confirmed) && !appState.isSettingUpWorktrees
+        confirmed && confirmedPlan != nil && !appState.isSettingUpWorktrees
     }
 
     private var branchIsReady: Bool {
@@ -1599,9 +1601,9 @@ private struct WorktreeSetupSheet: View {
                 }
 
                 VStack(alignment: .leading, spacing: 10) {
-                    WorktreeSetupMetaRow(label: "Workspace", value: currentWorkspace.path)
-                    WorktreeSetupMetaRow(label: "Source repos", value: appState.sourceReposRoot)
-                    WorktreeSetupMetaRow(label: "Target branch", value: currentWorkspace.branch)
+                    WorktreeSetupMetaRow(label: "Workspace", value: confirmedPlan?.workspacePath ?? currentWorkspace.path)
+                    WorktreeSetupMetaRow(label: "Source repos", value: confirmedPlan?.sourceReposRoot ?? appState.sourceReposRoot)
+                    WorktreeSetupMetaRow(label: "Target branch", value: confirmedPlan?.targetBranch ?? currentWorkspace.branch)
                 }
 
                 WorktreeSetupPreflightView(
@@ -1616,14 +1618,14 @@ private struct WorktreeSetupSheet: View {
                 if preflightIsReady {
                     SectionBlock(title: "将要执行 / Local git operations") {
                         VStack(alignment: .leading, spacing: 8) {
-                            Label("Nexus 会为 \(mutationPolicy.allowedServices.count) 个服务执行 git fetch origin 和 git worktree add。", systemImage: "terminal")
+                            Label("Nexus 会为 \(confirmedPlan?.services.count ?? mutationPolicy.allowedServices.count) 个服务执行 git fetch origin 和 git worktree add。", systemImage: "terminal")
                                 .font(.caption)
-                            Text("\(currentWorkspace.path)/repos/<service>")
+                            Text("\(confirmedPlan?.workspacePath ?? currentWorkspace.path)/repos/<service>")
                                 .font(.system(.caption, design: .monospaced))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(2)
-                            FlowTags(values: mutationPolicy.allowedServices)
-                            Text(mutationPolicy.summary)
+                            FlowTags(values: confirmedPlan?.services ?? mutationPolicy.allowedServices)
+                            Text(confirmedPlan?.summary ?? mutationPolicy.summary)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -1633,6 +1635,21 @@ private struct WorktreeSetupSheet: View {
 
                 Toggle("确认执行本地 git fetch 与 git worktree add / Confirm local git write", isOn: $confirmed)
                     .disabled(!preflightIsReady)
+                    .onChange(of: confirmed) { isConfirmed in
+                        guard isConfirmed else {
+                            confirmedPlan = nil
+                            planError = nil
+                            return
+                        }
+                        do {
+                            confirmedPlan = try appState.worktreeSetupPlan(for: currentWorkspace)
+                            planError = nil
+                        } catch {
+                            confirmedPlan = nil
+                            planError = error.localizedDescription
+                            confirmed = false
+                        }
+                    }
 
                 HStack {
                     Button("Close") {
@@ -1647,13 +1664,15 @@ private struct WorktreeSetupSheet: View {
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-                    .disabled(appState.isLoading || appState.isSettingUpWorktrees)
+                    .disabled(confirmed || appState.isLoading || appState.isSettingUpWorktrees)
 
                     Spacer()
 
                     Button(appState.isSettingUpWorktrees ? "Setting up" : "Setup worktrees") {
-                        Task {
-                            await appState.setupMissingWorktrees(for: currentWorkspace, confirmed: confirmed)
+                        if let confirmedPlan {
+                            Task {
+                                await appState.setupMissingWorktrees(plan: confirmedPlan, confirmed: confirmed)
+                            }
                         }
                     }
                     .keyboardShortcut(.defaultAction)
@@ -1664,6 +1683,13 @@ private struct WorktreeSetupSheet: View {
                     Text(preflightGuidance)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if let planError {
+                    Text(planError)
+                        .font(.caption)
+                        .foregroundStyle(NexusPalette.danger)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 

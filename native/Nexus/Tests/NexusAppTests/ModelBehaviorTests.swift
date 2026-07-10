@@ -7876,17 +7876,18 @@ final class ModelBehaviorTests: XCTestCase {
         try runGit(["push", "origin", "feature/native-audit-failure"], in: source)
         try "not a directory\n".write(to: invalidAuditRoot, atomically: true, encoding: .utf8)
 
-        let response = try NativeWorktreeSetupStore.setup(
+        let plan = try NativeWorktreeSetupStore.makePlan(
             request: SetupWorktreesRequest(
                 workspacePath: workspace.path,
                 sourceReposRoot: sourceRoot.path,
                 services: ["order"],
                 targetBranch: "feature/native-audit-failure",
-                confirmed: true,
+                confirmed: false,
                 auditRoot: invalidAuditRoot.path,
                 actor: "Nexus Test"
             )
         )
+        let response = try NativeWorktreeSetupStore.setup(plan: plan, confirmed: true)
 
         XCTAssertEqual(response.created.map(\.service), ["order"])
         XCTAssertTrue(response.skipped.isEmpty)
@@ -7895,6 +7896,94 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertNil(response.auditEventPath)
         XCTAssertTrue(response.auditError?.contains("audit-root-file") == true)
         XCTAssertTrue(FileManager.default.fileExists(atPath: workspace.appendingPathComponent("repos/order/.git").path))
+    }
+
+    func testNativeWorktreeSetupStoreRejectsChangedConfirmedBranchBeforeMutation() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-worktree-stale-plan-\(UUID().uuidString)")
+        let remote = root.appendingPathComponent("remote-order.git")
+        let sourceRoot = root.appendingPathComponent("source-repos")
+        let source = sourceRoot.appendingPathComponent("order")
+        let workspace = root.appendingPathComponent("workspace")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try FileManager.default.createDirectory(at: sourceRoot, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        try runGit(["init", "--bare", remote.path], in: root)
+        try runGit(["clone", remote.path, source.path], in: root)
+        try runGit(["config", "user.email", "nexus@example.com"], in: source)
+        try runGit(["config", "user.name", "Nexus Test"], in: source)
+        try "first\n".write(to: source.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+        try runGit(["add", "README.md"], in: source)
+        try runGit(["commit", "-m", "first"], in: source)
+        try runGit(["branch", "feature/native-stale-plan"], in: source)
+        try runGit(["push", "origin", "HEAD:main"], in: source)
+        try runGit(["push", "origin", "feature/native-stale-plan"], in: source)
+
+        let plan = try NativeWorktreeSetupStore.makePlan(
+            request: SetupWorktreesRequest(
+                workspacePath: workspace.path,
+                sourceReposRoot: sourceRoot.path,
+                services: ["order"],
+                targetBranch: "feature/native-stale-plan",
+                confirmed: false
+            )
+        )
+        XCTAssertEqual(plan.services, ["order"])
+        XCTAssertEqual(plan.targetBranch, "feature/native-stale-plan")
+        XCTAssertNotNil(plan.sourceRevisions["order"])
+
+        try "second\n".write(to: source.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+        try runGit(["add", "README.md"], in: source)
+        try runGit(["commit", "-m", "second"], in: source)
+        try runGit(["branch", "-f", "feature/native-stale-plan", "HEAD"], in: source)
+
+        XCTAssertThrowsError(
+            try NativeWorktreeSetupStore.setup(plan: plan, confirmed: true)
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("changed since confirmation"))
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: workspace.appendingPathComponent("repos").path))
+    }
+
+    func testNativeWorktreeSetupStoreRejectsTargetCreatedAfterConfirmation() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-worktree-target-conflict-\(UUID().uuidString)")
+        let sourceRoot = root.appendingPathComponent("source-repos")
+        let source = sourceRoot.appendingPathComponent("order")
+        let workspace = root.appendingPathComponent("workspace")
+        let target = workspace.appendingPathComponent("repos/order")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        try runGit(["init"], in: source)
+        try runGit(["config", "user.email", "nexus@example.com"], in: source)
+        try runGit(["config", "user.name", "Nexus Test"], in: source)
+        try "demo\n".write(to: source.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+        try runGit(["add", "README.md"], in: source)
+        try runGit(["commit", "-m", "init"], in: source)
+        try runGit(["branch", "feature/native-target-conflict"], in: source)
+
+        let plan = try NativeWorktreeSetupStore.makePlan(
+            request: SetupWorktreesRequest(
+                workspacePath: workspace.path,
+                sourceReposRoot: sourceRoot.path,
+                services: ["order"],
+                targetBranch: "feature/native-target-conflict",
+                confirmed: false
+            )
+        )
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+
+        XCTAssertThrowsError(
+            try NativeWorktreeSetupStore.setup(plan: plan, confirmed: true)
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("changed since confirmation"))
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: target.appendingPathComponent(".git").path))
     }
 
     func testNativeWorktreeSetupStoreRequiresConfirmation() throws {
