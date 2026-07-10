@@ -3645,6 +3645,124 @@ final class ModelBehaviorTests: XCTestCase {
         }
     }
 
+    func testNativeDocumentStoreRejectsSymlinksAndPreservesExternalFileRace() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-document-safety-\(UUID().uuidString)")
+        let workspaceURL = root.appendingPathComponent("workspace")
+        let externalURL = root.appendingPathComponent("external")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: externalURL, withIntermediateDirectories: true)
+
+        let linkedWorkspaceURL = root.appendingPathComponent("linked-workspace")
+        try FileManager.default.createSymbolicLink(at: linkedWorkspaceURL, withDestinationURL: workspaceURL)
+        XCTAssertThrowsError(
+            try NativeDocumentStore.createWorkspaceDocument(
+                workspacePath: linkedWorkspaceURL.path,
+                documentKey: "tasks",
+                relativePath: "tasks.md",
+                confirmed: true
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("not a real directory"))
+        }
+
+        let externalTasksURL = externalURL.appendingPathComponent("tasks.md")
+        try "# External tasks\n".write(to: externalTasksURL, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(
+            at: workspaceURL.appendingPathComponent("tasks.md"),
+            withDestinationURL: externalTasksURL
+        )
+        XCTAssertThrowsError(
+            try NativeDocumentStore.createWorkspaceDocument(
+                workspacePath: workspaceURL.path,
+                documentKey: "tasks",
+                relativePath: "tasks.md",
+                confirmed: true
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("not a regular file"))
+        }
+
+        try FileManager.default.createSymbolicLink(
+            at: workspaceURL.appendingPathComponent("scripts"),
+            withDestinationURL: externalURL
+        )
+        XCTAssertThrowsError(
+            try NativeDocumentStore.createWorkspaceDocument(
+                workspacePath: workspaceURL.path,
+                documentKey: "worktreeScript",
+                relativePath: "scripts/worktree-commands.sh",
+                confirmed: true
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("parent path is not a real directory"))
+        }
+
+        let raceWorkspaceURL = root.appendingPathComponent("race-workspace")
+        try FileManager.default.createDirectory(at: raceWorkspaceURL, withIntermediateDirectories: true)
+        let raceExternalContent = Data("# External race\n".utf8)
+        XCTAssertThrowsError(
+            try NativeDocumentStore.createWorkspaceDocument(
+                workspacePath: raceWorkspaceURL.path,
+                documentKey: "tasks",
+                relativePath: "tasks.md",
+                confirmed: true,
+                fileWriter: { data, url in
+                    try raceExternalContent.write(to: url, options: [.withoutOverwriting])
+                    try data.write(to: url, options: [.withoutOverwriting])
+                }
+            )
+        )
+        XCTAssertEqual(
+            try Data(contentsOf: raceWorkspaceURL.appendingPathComponent("tasks.md")),
+            raceExternalContent
+        )
+    }
+
+    @MainActor
+    func testAppStateDocumentRecoveryPreservesNativeErrorWithoutBridgeFallback() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-app-state-document-native-only-\(UUID().uuidString)")
+        let workspaceURL = root.appendingPathComponent("workspace")
+        let defaultsSuite = "NexusAppTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: defaultsSuite)!
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            defaults.removePersistentDomain(forName: defaultsSuite)
+        }
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        let workspace = workspaceForWorkflowSummary(
+            stage: "scoping",
+            id: "document-native-only",
+            path: workspaceURL.path
+        )
+        let appState = AppState(
+            workspaces: [workspace],
+            agentStatus: AgentStatus(title: "Ready", detail: "Tests", connectedTools: []),
+            bridge: PreviewNexusBridge(),
+            workspaceRoot: root.path,
+            sourceReposRoot: root.path,
+            docsRoot: root.path,
+            defaults: defaults
+        )
+
+        let response = await appState.createWorkspaceDocument(
+            in: workspace,
+            documentKey: "tasks",
+            relativePath: "../tasks.md",
+            documentLabel: "tasks.md",
+            confirmed: true
+        )
+
+        XCTAssertNil(response)
+        XCTAssertTrue(appState.lastError?.contains("cannot contain parent directories") == true)
+        XCTAssertFalse(appState.lastError?.contains("Nexus Core bridge") == true)
+        XCTAssertFalse(appState.isCreatingDocument)
+    }
+
     func testNativeDemandIntakeStoreReportsStatusFromWorkspaceFiles() throws {
         let workspaceURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-native-demand-status-\(UUID().uuidString)")

@@ -1,6 +1,15 @@
 import Foundation
 import NexusBridge
 
+typealias NativeDocumentFileWriter = (Data, URL) throws -> Void
+
+private enum NativeDocumentEntryState: Equatable {
+    case missing
+    case directory
+    case regularFile
+    case invalid
+}
+
 enum NativeDocumentStore {
     private static let markdownExtensions: Set<String> = ["md", "markdown", "mdown", "mkdn"]
 
@@ -24,26 +33,42 @@ enum NativeDocumentStore {
         confirmed: Bool,
         fileManager: FileManager = .default
     ) throws -> CreateWorkspaceDocumentResponse {
+        try createWorkspaceDocument(
+            workspacePath: workspacePath,
+            documentKey: documentKey,
+            relativePath: relativePath,
+            confirmed: confirmed,
+            fileManager: fileManager,
+            fileWriter: { data, url in
+                try data.write(to: url, options: [.withoutOverwriting])
+            }
+        )
+    }
+
+    static func createWorkspaceDocument(
+        workspacePath: String,
+        documentKey: String,
+        relativePath: String,
+        confirmed: Bool,
+        fileManager: FileManager = .default,
+        fileWriter: NativeDocumentFileWriter
+    ) throws -> CreateWorkspaceDocumentResponse {
         guard confirmed else {
             throw NativeDocumentStoreError.unconfirmed
         }
 
         let workspaceURL = expandedURL(for: workspacePath)
-        var isDirectory: ObjCBool = false
-        guard fileManager.fileExists(atPath: workspaceURL.path, isDirectory: &isDirectory) else {
+        guard entryState(at: workspaceURL, fileManager: fileManager) != .missing else {
             throw NativeDocumentStoreError.workspaceMissing(workspaceURL.path)
         }
-        guard isDirectory.boolValue else {
+        guard entryState(at: workspaceURL, fileManager: fileManager) == .directory else {
             throw NativeDocumentStoreError.workspaceNotDirectory(workspaceURL.path)
         }
 
         let normalizedRelativePath = try standardRelativePath(documentKey: documentKey, relativePath: relativePath)
         let documentURL = workspaceURL.appendingPathComponent(normalizedRelativePath, isDirectory: false)
-        var documentIsDirectory: ObjCBool = false
-        if fileManager.fileExists(atPath: documentURL.path, isDirectory: &documentIsDirectory) {
-            guard !documentIsDirectory.boolValue else {
-                throw NativeDocumentStoreError.documentPathNotFile(documentURL.path)
-            }
+        switch entryState(at: documentURL, fileManager: fileManager) {
+        case .regularFile:
             return CreateWorkspaceDocumentResponse(
                 path: documentURL.path,
                 documentKey: documentKey,
@@ -51,11 +76,23 @@ enum NativeDocumentStore {
                 created: false,
                 alreadyExists: true
             )
+        case .directory, .invalid:
+            throw NativeDocumentStoreError.documentPathNotFile(documentURL.path)
+        case .missing:
+            break
         }
 
-        let parentURL = documentURL.deletingLastPathComponent()
-        try fileManager.createDirectory(at: parentURL, withIntermediateDirectories: true)
-        try template(for: documentKey).write(to: documentURL, atomically: true, encoding: .utf8)
+        let createdParentDirectories = try ensureRealParentDirectories(
+            workspaceURL: workspaceURL,
+            relativePath: normalizedRelativePath,
+            fileManager: fileManager
+        )
+        do {
+            try fileWriter(Data(template(for: documentKey).utf8), documentURL)
+        } catch {
+            rollbackEmptyDirectories(createdParentDirectories, fileManager: fileManager)
+            throw error
+        }
         return CreateWorkspaceDocumentResponse(
             path: documentURL.path,
             documentKey: documentKey,
@@ -63,6 +100,68 @@ enum NativeDocumentStore {
             created: true,
             alreadyExists: false
         )
+    }
+
+    private static func ensureRealParentDirectories(
+        workspaceURL: URL,
+        relativePath: String,
+        fileManager: FileManager
+    ) throws -> [URL] {
+        let components = relativePath.split(separator: "/", omittingEmptySubsequences: true)
+        var currentURL = workspaceURL
+        var createdDirectories: [URL] = []
+
+        for component in components.dropLast() {
+            currentURL.appendPathComponent(String(component), isDirectory: true)
+            switch entryState(at: currentURL, fileManager: fileManager) {
+            case .directory:
+                continue
+            case .missing:
+                try fileManager.createDirectory(at: currentURL, withIntermediateDirectories: false)
+                guard entryState(at: currentURL, fileManager: fileManager) == .directory else {
+                    throw NativeDocumentStoreError.parentPathNotDirectory(currentURL.path)
+                }
+                createdDirectories.append(currentURL)
+            case .regularFile, .invalid:
+                throw NativeDocumentStoreError.parentPathNotDirectory(currentURL.path)
+            }
+        }
+
+        return createdDirectories
+    }
+
+    private static func rollbackEmptyDirectories(_ directories: [URL], fileManager: FileManager) {
+        for directory in directories.reversed() {
+            guard entryState(at: directory, fileManager: fileManager) == .directory,
+                  let contents = try? fileManager.contentsOfDirectory(
+                      at: directory,
+                      includingPropertiesForKeys: nil,
+                      options: []
+                  ),
+                  contents.isEmpty else {
+                continue
+            }
+            try? fileManager.removeItem(at: directory)
+        }
+    }
+
+    private static func entryState(at url: URL, fileManager: FileManager) -> NativeDocumentEntryState {
+        do {
+            let attributes = try fileManager.attributesOfItem(atPath: url.path)
+            switch attributes[.type] as? FileAttributeType {
+            case .typeDirectory:
+                return .directory
+            case .typeRegular:
+                return .regularFile
+            default:
+                return .invalid
+            }
+        } catch let error as NSError
+            where error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoSuchFileError {
+            return .missing
+        } catch {
+            return .invalid
+        }
     }
 
     private static func expandedURL(for path: String) -> URL {
@@ -145,6 +244,7 @@ private enum NativeDocumentStoreError: LocalizedError {
     case workspaceMissing(String)
     case workspaceNotDirectory(String)
     case documentPathNotFile(String)
+    case parentPathNotDirectory(String)
     case unsupportedDocumentKey(String)
     case missingRelativePath
     case absoluteRelativePath
@@ -158,9 +258,11 @@ private enum NativeDocumentStoreError: LocalizedError {
         case .workspaceMissing(let path):
             return "workspace does not exist: \(path)"
         case .workspaceNotDirectory(let path):
-            return "workspace is not a directory: \(path)"
+            return "workspace is not a real directory: \(path)"
         case .documentPathNotFile(let path):
-            return "document path exists but is not a file: \(path)"
+            return "document path exists but is not a regular file: \(path)"
+        case .parentPathNotDirectory(let path):
+            return "document parent path is not a real directory: \(path)"
         case .unsupportedDocumentKey(let documentKey):
             return "unsupported workspace document key: \(documentKey)"
         case .missingRelativePath:
