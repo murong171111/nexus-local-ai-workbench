@@ -150,7 +150,15 @@ case .documentUnreadable(let path, let reason):
 
 - [ ] **Step 4: Verify strict preflight prevents the partial write**
 
-Re-run the focused command from Step 2 with the original store call. Expected: PASS and the error text contains `lifecycle document is not a file`. Keep that call unchanged until Step 8 adds the required expected-state argument to every call site.
+Before rerunning, add this handler to the `XCTAssertThrowsError` from Step 1:
+
+```swift
+) { error in
+    XCTAssertTrue(error.localizedDescription.contains("lifecycle document is not a file"))
+}
+```
+
+Re-run the focused command from Step 2 with the original store call. Expected: PASS. Keep that call unchanged until Step 8 adds the required expected-state argument to every call site.
 
 - [ ] **Step 5: Add failing stale-confirmation and existing-conflict coverage**
 
