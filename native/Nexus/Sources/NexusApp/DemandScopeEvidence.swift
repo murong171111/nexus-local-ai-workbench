@@ -267,6 +267,7 @@ struct ScopeFreezeEvidence: Hashable {
     let evidence: [String]
     let checks: [ScopeFreezeCheck]
     let scopePath: String
+    let revision: NativeScopeDocumentRevision
     let hasInScope: Bool
     let hasOutOfScope: Bool
     let scopeFrozen: Bool
@@ -281,7 +282,8 @@ struct ScopeFreezeEvidence: Hashable {
     static func resolve(status: DemandIntakeStatus, workspace: WorkspaceSummary) -> ScopeFreezeEvidence {
         let scopePath = status.files.first { $0.key == "scope" }?.path
             ?? "\(workspace.path)/需求/scope.md"
-        let text = readText(at: scopePath)
+        let snapshot = NativeScopeFreezeStore.inspectDocument(at: scopePath, fileManager: .default)
+        let text = snapshot.content ?? ""
 
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return ScopeFreezeEvidence(
@@ -299,6 +301,7 @@ struct ScopeFreezeEvidence: Hashable {
                     )
                 ],
                 scopePath: scopePath,
+                revision: snapshot.revision,
                 hasInScope: false,
                 hasOutOfScope: false,
                 scopeFrozen: false,
@@ -389,6 +392,7 @@ struct ScopeFreezeEvidence: Hashable {
             evidence: ["需求/scope.md"],
             checks: checks,
             scopePath: scopePath,
+            revision: snapshot.revision,
             hasInScope: hasInScope,
             hasOutOfScope: hasOutOfScope,
             scopeFrozen: scopeFrozen,
@@ -396,10 +400,6 @@ struct ScopeFreezeEvidence: Hashable {
             scopeChangeAudited: scopeChangeAudited,
             unresolvedP0Count: pendingP0Items.count
         )
-    }
-
-    private static func readText(at path: String) -> String {
-        (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
     }
 
     private static func hasSectionContent(in text: String, headingMarkers: [String]) -> Bool {
@@ -534,18 +534,25 @@ struct ScopeFreezeWritePlan: Identifiable, Hashable {
         fileManager: FileManager = .default
     ) -> ScopeFreezeWritePlan {
         let id = "\(workspace.id)-scope-freeze"
-        let expectedRevision = NativeScopeFreezeStore.inspectRevision(
+        let expectedRevision = evidence.revision
+        let currentRevision = NativeScopeFreezeStore.inspectRevision(
             at: evidence.scopePath,
             fileManager: fileManager
         )
         let unsafeDocumentReason: String?
-        switch expectedRevision {
-        case .regularUTF8:
+        switch (expectedRevision, currentRevision) {
+        case (.missing, _):
+            unsafeDocumentReason = "scope document evidence is missing: \((evidence.scopePath as NSString).expandingTildeInPath); refresh and review scope.md before confirming"
+        case (.invalid(let reason), _):
+            unsafeDocumentReason = "\(reason); restore a regular UTF-8 scope.md, then refresh and review it before confirming"
+        case (_, .missing):
+            unsafeDocumentReason = "scope document is missing: \((evidence.scopePath as NSString).expandingTildeInPath); refresh and review scope.md before confirming"
+        case (_, .invalid(let reason)):
+            unsafeDocumentReason = "\(reason); restore a regular UTF-8 scope.md, then refresh and review it before confirming"
+        case (.regularUTF8, .regularUTF8) where expectedRevision != currentRevision:
+            unsafeDocumentReason = "scope document changed while preparing confirmation: \((evidence.scopePath as NSString).expandingTildeInPath); refresh and review scope.md again before confirming"
+        case (.regularUTF8, .regularUTF8):
             unsafeDocumentReason = nil
-        case .missing:
-            unsafeDocumentReason = "scope document is missing: \((evidence.scopePath as NSString).expandingTildeInPath)"
-        case .invalid(let reason):
-            unsafeDocumentReason = reason
         }
         if let unsafeDocumentReason {
             return ScopeFreezeWritePlan(

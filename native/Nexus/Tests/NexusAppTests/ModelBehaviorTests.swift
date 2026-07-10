@@ -2506,6 +2506,7 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(appState.pendingScopeFreezeWrite, pending)
         XCTAssertTrue(appState.lastError?.contains("changed since confirmation") == true)
         XCTAssertFalse(appState.isInitializingDemandIntake)
+        XCTAssertNil(appState.localWriteFeedback)
         XCTAssertEqual(try String(contentsOf: scopeURL, encoding: .utf8), externallyEdited)
         XCTAssertFalse(FileManager.default.fileExists(
             atPath: applicationSupportRoot
@@ -5661,6 +5662,7 @@ final class ModelBehaviorTests: XCTestCase {
             evidence: ["需求/scope.md"],
             checks: [],
             scopePath: #filePath,
+            revision: NativeScopeFreezeStore.inspectRevision(at: #filePath),
             hasInScope: false,
             hasOutOfScope: true,
             scopeFrozen: false,
@@ -5675,6 +5677,93 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(plan.items.map(\.id), ["missing-in-scope", "pending-p0"])
         XCTAssertTrue(plan.appendedMarkdown.isEmpty)
         XCTAssertTrue(plan.summary.contains("不会替用户补造范围结论"))
+    }
+
+    func testScopeFreezeWritePlanRejectsRevisionDetachedFromEvidence() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-scope-revision-detached-\(UUID().uuidString)")
+        let demandDir = root.appendingPathComponent("需求")
+        let scopeURL = demandDir.appendingPathComponent("scope.md")
+        let auditRoot = root.appendingPathComponent("audit")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: demandDir, withIntermediateDirectories: true)
+
+        try writeDemandIntakeFixture(
+            demandDir: demandDir,
+            scope: """
+            # 本次开发范围
+
+            ## 已确认并实现
+
+            - 保存订单时记录交易快照。
+
+            ## 暂不实现
+
+            - 不补历史数据。
+
+            ## 仍待确认
+
+            - 无 P0 待确认项。
+
+            ## 进入开发条件
+
+            - [ ] 本文件已冻结本次开发范围。
+            """
+        )
+        let workspace = workspaceForWorkflowSummary(
+            stage: "scoping",
+            id: "scope-revision-detached",
+            path: root.path
+        )
+        let evidence = ScopeFreezeEvidence.resolve(
+            status: demandIntakeStatus(at: demandDir),
+            workspace: workspace
+        )
+        XCTAssertTrue(evidence.hasInScope)
+        XCTAssertTrue(evidence.hasOutOfScope)
+        XCTAssertEqual(evidence.unresolvedP0Count, 0)
+
+        let changed = """
+        # 本次开发范围
+
+        ## 已确认并实现
+
+        - 改为保存订单时覆盖交易快照。
+
+        ## 暂不实现
+
+        - 不补历史数据。
+
+        ## 仍待确认
+
+        - P0：覆盖规则尚未确认。
+
+        ## 进入开发条件
+
+        - [ ] 本文件已冻结本次开发范围。
+        """ + "\n"
+        let changedBytes = Data(changed.utf8)
+        try changedBytes.write(to: scopeURL, options: .atomic)
+
+        let plan = ScopeFreezeWritePlan.resolve(workspace: workspace, evidence: evidence)
+
+        XCTAssertEqual(plan.status, .blocked)
+        XCTAssertFalse(plan.canWrite)
+        XCTAssertTrue(plan.appendedMarkdown.isEmpty)
+        XCTAssertEqual(plan.items.map(\.id), ["unsafe-scope-document"])
+        XCTAssertTrue(plan.summary.contains("changed while preparing confirmation"))
+        XCTAssertThrowsError(
+            try NativeScopeFreezeStore.write(
+                plan: plan,
+                confirmed: true,
+                auditRoot: auditRoot.path,
+                actor: "Nexus Test"
+            )
+        )
+        XCTAssertEqual(try Data(contentsOf: scopeURL), changedBytes)
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: auditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path
+        ))
     }
 
     func testScopeFreezeWritePlanCapturesStrictDocumentRevision() throws {
@@ -5710,6 +5799,7 @@ final class ModelBehaviorTests: XCTestCase {
                 evidence: [path.path],
                 checks: [],
                 scopePath: path.path,
+                revision: NativeScopeFreezeStore.inspectRevision(at: path.path),
                 hasInScope: true,
                 hasOutOfScope: true,
                 scopeFrozen: false,
@@ -5792,6 +5882,7 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertFalse(evidence.scopeFrozen)
         XCTAssertEqual(plan.status, .next)
         XCTAssertTrue(plan.canWrite)
+        XCTAssertEqual(plan.expectedRevision, evidence.revision)
         XCTAssertEqual(plan.items.map(\.id), ["append-freeze-marker"])
         XCTAssertTrue(plan.appendedMarkdown.contains("范围已冻结"))
         XCTAssertTrue(plan.appendedMarkdown.contains("Nexus Native confirmed write"))
@@ -9591,6 +9682,7 @@ final class ModelBehaviorTests: XCTestCase {
             evidence: ["需求/scope.md"],
             checks: [],
             scopePath: "/tmp/scope.md",
+            revision: .missing,
             hasInScope: true,
             hasOutOfScope: true,
             scopeFrozen: true,

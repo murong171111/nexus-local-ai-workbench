@@ -27,7 +27,7 @@ struct NativeScopeFreezeWriteResponse: Hashable {
     let auditEventPath: String?
 }
 
-private struct NativeScopeDocumentSnapshot {
+struct NativeScopeDocumentSnapshot {
     let revision: NativeScopeDocumentRevision
     let content: String?
 }
@@ -138,7 +138,7 @@ enum NativeScopeFreezeStore {
         )
     }
 
-    private static func inspectDocument(
+    static func inspectDocument(
         at path: String,
         fileManager: FileManager
     ) -> NativeScopeDocumentSnapshot {
