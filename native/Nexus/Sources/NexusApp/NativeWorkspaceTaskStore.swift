@@ -6,6 +6,8 @@ enum NativeWorkspaceTaskStore {
         request: UpdateWorkspaceTaskRequest,
         expectedTitle: String,
         expectedStatus: String,
+        expectedDetail: String,
+        expectedPriority: String,
         expectedSourceLine: Int?,
         fileManager: FileManager = .default
     ) throws -> UpdateWorkspaceTaskResponse {
@@ -43,23 +45,31 @@ enum NativeWorkspaceTaskStore {
             throw NativeWorkspaceTaskStoreError.ambiguousTaskID(taskID, matches.count)
         }
 
-        let normalizedExpectedTitle = NativeWorkspaceTaskParser.sanitizedCell(expectedTitle)
-        let normalizedExpectedStatus = NativeWorkspaceTaskParser.sanitizedCell(expectedStatus)
+        let expectedConfirmation = TaskConfirmationSnapshot(
+            title: expectedTitle,
+            status: expectedStatus,
+            detail: expectedDetail,
+            priority: expectedPriority
+        )
         let currentTask = matchedRow.snapshot
-        guard currentTask.title == normalizedExpectedTitle,
-              currentTask.status == normalizedExpectedStatus else {
+        let matchingConfirmationRows = taskRows.filter {
+            expectedConfirmation.matches($0.snapshot)
+        }
+        if currentTask.sourceEventId == nil, matchingConfirmationRows.count > 1 {
+            throw NativeWorkspaceTaskStoreError.ambiguousConfirmationEvidence(
+                taskID: taskID,
+                expected: expectedConfirmation.summary(sourceLine: expectedSourceLine),
+                sourceLines: matchingConfirmationRows.map(\.sourceLine)
+            )
+        }
+        guard expectedConfirmation.matches(currentTask),
+              currentTask.sourceEventId != nil
+                || matchingConfirmationRows.count == 1
+                    && matchingConfirmationRows[0].sourceLine == matchedRow.sourceLine else {
             throw NativeWorkspaceTaskStoreError.staleConfirmation(
                 taskID: taskID,
-                expected: taskSnapshotSummary(
-                    title: normalizedExpectedTitle,
-                    status: normalizedExpectedStatus,
-                    sourceLine: expectedSourceLine
-                ),
-                current: taskSnapshotSummary(
-                    title: currentTask.title,
-                    status: currentTask.status,
-                    sourceLine: currentTask.sourceLine
-                )
+                expected: expectedConfirmation.summary(sourceLine: expectedSourceLine),
+                current: TaskConfirmationSnapshot(currentTask).summary(sourceLine: currentTask.sourceLine)
             )
         }
 
@@ -120,14 +130,6 @@ enum NativeWorkspaceTaskStore {
         URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
     }
 
-    private static func taskSnapshotSummary(
-        title: String,
-        status: String,
-        sourceLine: Int?
-    ) -> String {
-        "\(title) [\(status)] at L\(sourceLine.map(String.init) ?? "?")"
-    }
-
     private static func readTasksDocument(
         at url: URL,
         fileManager: FileManager
@@ -179,6 +181,37 @@ enum NativeWorkspaceTaskStore {
     }
 }
 
+private struct TaskConfirmationSnapshot: Equatable {
+    let title: String
+    let status: String
+    let detail: String
+    let priority: String
+
+    init(title: String, status: String, detail: String, priority: String) {
+        self.title = NativeWorkspaceTaskParser.sanitizedCell(title)
+        self.status = NativeWorkspaceTaskParser.sanitizedCell(status)
+        self.detail = NativeWorkspaceTaskParser.sanitizedCell(detail)
+        self.priority = NativeWorkspaceTaskParser.sanitizedCell(priority).lowercased()
+    }
+
+    init(_ task: WorkspaceTaskSnapshot) {
+        self.init(
+            title: task.title,
+            status: task.status,
+            detail: task.detail,
+            priority: task.priority
+        )
+    }
+
+    func matches(_ task: WorkspaceTaskSnapshot) -> Bool {
+        self == TaskConfirmationSnapshot(task)
+    }
+
+    func summary(sourceLine: Int?) -> String {
+        "\(title) [\(status)] {\(detail)} priority=\(priority) at L\(sourceLine.map(String.init) ?? "?")"
+    }
+}
+
 private enum NativeWorkspaceTaskStoreError: LocalizedError {
     case unconfirmed
     case missingTaskID
@@ -191,6 +224,7 @@ private enum NativeWorkspaceTaskStoreError: LocalizedError {
     case updatedTaskUnparseable
     case taskNotFound(String)
     case ambiguousTaskID(String, Int)
+    case ambiguousConfirmationEvidence(taskID: String, expected: String, sourceLines: [Int])
     case staleConfirmation(taskID: String, expected: String, current: String)
 
     var errorDescription: String? {
@@ -217,6 +251,8 @@ private enum NativeWorkspaceTaskStoreError: LocalizedError {
             return "task not found: \(taskID)"
         case .ambiguousTaskID(let taskID, let count):
             return "task id \(taskID) matches \(count) rows"
+        case .ambiguousConfirmationEvidence(let taskID, let expected, let sourceLines):
+            return "task \(taskID) confirmation evidence \(expected) matches \(sourceLines.count) rows: \(sourceLines.map { "L\($0)" }.joined(separator: ", "))"
         case .staleConfirmation(let taskID, let expected, let current):
             return "task \(taskID) changed since confirmation: expected \(expected), found \(current)"
         }

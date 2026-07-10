@@ -744,6 +744,8 @@ final class ModelBehaviorTests: XCTestCase {
             workspacePath: workspace.path,
             taskID: task.id,
             taskTitle: task.title,
+            taskDetail: task.detail,
+            taskPriority: task.priority,
             taskSourceLine: task.sourceLine,
             currentStatus: task.status,
             nextStatus: "已完成",
@@ -907,8 +909,47 @@ final class ModelBehaviorTests: XCTestCase {
                     sourceLine: nil
                 )
             ).id,
-            "workspace:workspace:shared-event:L?"
+            "workspace:workspace:shared-event:I0"
         )
+    }
+
+    @MainActor
+    func testTaskCenterAppStatePresentationIndexSeparatesNilSourceLineDuplicateIDs() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "duplicate-nil-lines",
+            tasks: [
+                WorkspaceTask(
+                    id: "duplicate",
+                    title: "First duplicate",
+                    status: "进行中",
+                    detail: "",
+                    priority: "normal",
+                    source: "workspace",
+                    sourceEventID: nil,
+                    sourceLine: nil
+                ),
+                WorkspaceTask(
+                    id: "duplicate",
+                    title: "Second duplicate",
+                    status: "待办",
+                    detail: "",
+                    priority: "normal",
+                    source: "workspace",
+                    sourceEventID: nil,
+                    sourceLine: nil
+                )
+            ]
+        )
+        let appState = appStateForAutomationTests(workspaces: [workspace])
+        let items = appState.taskCenterItems.filter { $0.task.id == "duplicate" }
+
+        XCTAssertEqual(items.map(\.task.id), ["duplicate", "duplicate"])
+        XCTAssertNotEqual(items[0].id, items[1].id)
+        XCTAssertEqual(items.map(\.id), [
+            "duplicate-nil-lines:duplicate:I0",
+            "duplicate-nil-lines:duplicate:I1"
+        ])
     }
 
     @MainActor
@@ -1842,6 +1883,8 @@ final class ModelBehaviorTests: XCTestCase {
                 ),
                 expectedTitle: "核对任务中心",
                 expectedStatus: "进行中",
+                expectedDetail: "priority=high",
+                expectedPriority: "high",
                 expectedSourceLine: 5
             )
         ) { error in
@@ -1859,6 +1902,8 @@ final class ModelBehaviorTests: XCTestCase {
             ),
             expectedTitle: "核对任务中心",
             expectedStatus: "进行中",
+            expectedDetail: "priority=high",
+            expectedPriority: "high",
             expectedSourceLine: 5
         )
         let deferred = try NativeWorkspaceTaskStore.update(
@@ -1873,6 +1918,8 @@ final class ModelBehaviorTests: XCTestCase {
             ),
             expectedTitle: "Review permission request",
             expectedStatus: "待办",
+            expectedDetail: "priority=medium event=agent-1",
+            expectedPriority: "medium",
             expectedSourceLine: 6
         )
         let content = try String(contentsOf: tasksURL, encoding: .utf8)
@@ -1905,9 +1952,12 @@ final class ModelBehaviorTests: XCTestCase {
             .appendingPathComponent("nexus-native-task-stale-\(UUID().uuidString)")
         let staleURL = root.appendingPathComponent("stale")
         let shiftedURL = root.appendingPathComponent("shifted")
+        let fingerprintShiftedURL = root.appendingPathComponent("fingerprint-shifted")
+        let duplicateFingerprintURL = root.appendingPathComponent("duplicate-fingerprint")
+        let changedEvidenceURL = root.appendingPathComponent("changed-evidence")
         let auditRoot = root.appendingPathComponent("audit")
         defer { try? FileManager.default.removeItem(at: root) }
-        for directory in [staleURL, shiftedURL] {
+        for directory in [staleURL, shiftedURL, fingerprintShiftedURL, duplicateFingerprintURL, changedEvidenceURL] {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         }
 
@@ -1930,6 +1980,8 @@ final class ModelBehaviorTests: XCTestCase {
                 ),
                 expectedTitle: "Original",
                 expectedStatus: "进行中",
+                expectedDetail: "previous detail",
+                expectedPriority: "normal",
                 expectedSourceLine: 5
             )
         ) { error in
@@ -1969,6 +2021,8 @@ final class ModelBehaviorTests: XCTestCase {
                 ),
                 expectedTitle: "Original",
                 expectedStatus: "进行中",
+                expectedDetail: "expected task moved",
+                expectedPriority: "normal",
                 expectedSourceLine: 5
             )
         ) { error in
@@ -1978,6 +2032,113 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(
             try String(contentsOf: shiftedURL.appendingPathComponent("tasks.md"), encoding: .utf8),
             shiftedContent
+        )
+
+        let fingerprintShiftedContent = """
+        # Tasks
+
+        | 任务 | 状态 | 说明 | 优先级 |
+        | --- | --- | --- | --- |
+        | Original | 进行中 | inserted detail | low |
+        | Original | 进行中 | confirmed detail | high |
+        """ + "\n"
+        try fingerprintShiftedContent.write(
+            to: fingerprintShiftedURL.appendingPathComponent("tasks.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        XCTAssertThrowsError(
+            try NativeWorkspaceTaskStore.update(
+                request: UpdateWorkspaceTaskRequest(
+                    workspacePath: fingerprintShiftedURL.path,
+                    taskId: "fingerprint-shifted:task-0",
+                    status: "已完成",
+                    confirmed: true,
+                    auditRoot: auditRoot.path,
+                    actor: "Nexus Test"
+                ),
+                expectedTitle: "Original",
+                expectedStatus: "进行中",
+                expectedDetail: "confirmed detail",
+                expectedPriority: "high",
+                expectedSourceLine: 5
+            )
+        )
+        XCTAssertEqual(
+            try String(contentsOf: fingerprintShiftedURL.appendingPathComponent("tasks.md"), encoding: .utf8),
+            fingerprintShiftedContent
+        )
+
+        let duplicateFingerprintContent = """
+        # Tasks
+
+        | 任务 | 状态 | 说明 | 优先级 |
+        | --- | --- | --- | --- |
+        | Original | 进行中 | confirmed detail | high |
+        | Original | 进行中 | confirmed detail | high |
+        """ + "\n"
+        try duplicateFingerprintContent.write(
+            to: duplicateFingerprintURL.appendingPathComponent("tasks.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        XCTAssertThrowsError(
+            try NativeWorkspaceTaskStore.update(
+                request: UpdateWorkspaceTaskRequest(
+                    workspacePath: duplicateFingerprintURL.path,
+                    taskId: "duplicate-fingerprint:task-0",
+                    status: "已完成",
+                    confirmed: true,
+                    auditRoot: auditRoot.path,
+                    actor: "Nexus Test"
+                ),
+                expectedTitle: "Original",
+                expectedStatus: "进行中",
+                expectedDetail: "confirmed detail",
+                expectedPriority: "high",
+                expectedSourceLine: 5
+            )
+        )
+        XCTAssertEqual(
+            try String(contentsOf: duplicateFingerprintURL.appendingPathComponent("tasks.md"), encoding: .utf8),
+            duplicateFingerprintContent
+        )
+
+        let changedEvidenceContent = """
+        # Tasks
+
+        | 任务 | 状态 | 说明 | 优先级 |
+        | --- | --- | --- | --- |
+        | Original | 进行中 | changed detail | low |
+        """ + "\n"
+        try changedEvidenceContent.write(
+            to: changedEvidenceURL.appendingPathComponent("tasks.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        XCTAssertThrowsError(
+            try NativeWorkspaceTaskStore.update(
+                request: UpdateWorkspaceTaskRequest(
+                    workspacePath: changedEvidenceURL.path,
+                    taskId: "changed-evidence:task-0",
+                    status: "已完成",
+                    confirmed: true,
+                    auditRoot: auditRoot.path,
+                    actor: "Nexus Test"
+                ),
+                expectedTitle: "Original",
+                expectedStatus: "进行中",
+                expectedDetail: "confirmed detail",
+                expectedPriority: "high",
+                expectedSourceLine: 5
+            )
+        )
+        XCTAssertEqual(
+            try String(contentsOf: changedEvidenceURL.appendingPathComponent("tasks.md"), encoding: .utf8),
+            changedEvidenceContent
         )
         XCTAssertFalse(FileManager.default.fileExists(
             atPath: auditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path
@@ -2012,6 +2173,8 @@ final class ModelBehaviorTests: XCTestCase {
             ),
             expectedTitle: "Original",
             expectedStatus: "进行中",
+            expectedDetail: "keep",
+            expectedPriority: "medium",
             expectedSourceLine: 5
         )
         let updated = try String(contentsOf: tasksURL, encoding: .utf8)
@@ -2061,6 +2224,8 @@ final class ModelBehaviorTests: XCTestCase {
             ),
             expectedTitle: task.title,
             expectedStatus: task.status,
+            expectedDetail: task.detail,
+            expectedPriority: task.priority,
             expectedSourceLine: task.sourceLine
         )
 
@@ -2088,6 +2253,7 @@ final class ModelBehaviorTests: XCTestCase {
         let workspaceURL = workspacesRoot.appendingPathComponent("workspace")
         let sourceRoot = root.appendingPathComponent("source-repos")
         let docsRoot = root.appendingPathComponent("docs")
+        let applicationSupportRoot = root.appendingPathComponent("app-support")
         let defaultsSuite = "NexusAppTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: defaultsSuite)!
         defer {
@@ -2124,12 +2290,10 @@ final class ModelBehaviorTests: XCTestCase {
             workspaceRoot: workspacesRoot.path,
             sourceReposRoot: sourceRoot.path,
             docsRoot: docsRoot.path,
+            applicationSupportRoot: applicationSupportRoot.path,
             defaults: defaults
         )
-        let auditRoot = try XCTUnwrap(
-            FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-        )
-        .appendingPathComponent("com.ks.nexus/audit")
+        let auditRoot = applicationSupportRoot.appendingPathComponent("audit")
         let auditCountBefore = (try? NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 200).count) ?? 0
         let item = try XCTUnwrap(appState.taskCenterItems.first { $0.task.id == "workspace:task-0" })
 
@@ -2149,6 +2313,7 @@ final class ModelBehaviorTests: XCTestCase {
 
         try originalTasks.write(to: tasksURL, atomically: true, encoding: .utf8)
         await appState.confirmPendingTaskStatusUpdate(confirmed: true)
+        await appState.refreshFromBridge()
 
         XCTAssertNil(appState.pendingTaskStatusUpdate)
         XCTAssertNil(appState.lastError)
@@ -2156,6 +2321,14 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(appState.workspaces.first?.tasks.first?.status, "已完成")
         XCTAssertNotNil(appState.localWriteFeedback)
         XCTAssertEqual(appState.focusedTaskCenterItemID, "workspace:workspace:task-1:L6")
+        XCTAssertNotNil(appState.widgetSnapshot)
+        XCTAssertTrue(appState.widgetSnapshotStoragePaths.contains { $0.hasPrefix(applicationSupportRoot.path) })
+        XCTAssertEqual(
+            try NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 10)
+                .filter { $0.action == "workspace_task.updated" }
+                .count,
+            1
+        )
     }
 
     func testNativeWorkspaceTaskStoreRejectsSymlinkBeforeWriting() throws {
@@ -2183,6 +2356,8 @@ final class ModelBehaviorTests: XCTestCase {
                 ),
                 expectedTitle: "External",
                 expectedStatus: "进行中",
+                expectedDetail: "keep",
+                expectedPriority: "normal",
                 expectedSourceLine: 5
             )
         ) { error in
@@ -2225,6 +2400,8 @@ final class ModelBehaviorTests: XCTestCase {
                 ),
                 expectedTitle: "First",
                 expectedStatus: "进行中",
+                expectedDetail: "event=agent-1",
+                expectedPriority: "normal",
                 expectedSourceLine: 5
             )
         ) { error in
@@ -2259,6 +2436,8 @@ final class ModelBehaviorTests: XCTestCase {
                 ),
                 expectedTitle: "Unknown",
                 expectedStatus: "进行中",
+                expectedDetail: "",
+                expectedPriority: "normal",
                 expectedSourceLine: 5
             )
         ) { error in
@@ -6298,6 +6477,8 @@ final class ModelBehaviorTests: XCTestCase {
                 ),
                 expectedTitle: task.title,
                 expectedStatus: task.status,
+                expectedDetail: task.detail,
+                expectedPriority: task.priority,
                 expectedSourceLine: task.sourceLine
             )
         }

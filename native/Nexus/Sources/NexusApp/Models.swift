@@ -652,9 +652,27 @@ struct TaskCenterItem: Identifiable, Hashable {
     let workspaceName: String
     let workspaceFolder: String
     let task: WorkspaceTask
+    let presentationIndex: Int
+
+    init(
+        workspaceID: WorkspaceSummary.ID,
+        workspaceName: String,
+        workspaceFolder: String,
+        task: WorkspaceTask,
+        presentationIndex: Int = 0
+    ) {
+        self.workspaceID = workspaceID
+        self.workspaceName = workspaceName
+        self.workspaceFolder = workspaceFolder
+        self.task = task
+        self.presentationIndex = presentationIndex
+    }
 
     var id: String {
-        "\(workspaceID):\(task.id):\(task.sourceLineLabel)"
+        if let sourceLine = task.sourceLine {
+            return "\(workspaceID):\(task.id):L\(sourceLine)"
+        }
+        return "\(workspaceID):\(task.id):I\(presentationIndex)"
     }
 }
 

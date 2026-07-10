@@ -765,3 +765,14 @@ Address the final review findings without changing the historical Task 1-3 steps
 - [x] Add a scanner-produced Agent task round trip: update through the store, rescan, and assert stable Agent ID/source event/source line, changed status, and retained fourth-column priority.
 - [x] Run focused task-store, Task Center, AppState, scanner, and lifecycle tests; then run `swift test --disable-sandbox --package-path native/Nexus` with the established temporary cache environment.
 - [x] Append RED/GREEN and full-suite evidence to `.superpowers/sdd/task-write-conflict-final-fixes-report.md`, then commit only tracked changes with `Fix Native task review findings`.
+
+---
+
+## Second Review Fix Addendum
+
+- [x] Extend stale/shifted coverage with a new `task-0` ordinary row that shares title/status but changes detail or fourth-column priority, plus two identical ordinary confirmation fingerprints. Record RED evidence showing both cases wrote an arbitrary first row.
+- [x] Add a compact internal confirmation snapshot for sanitized title/status/detail/priority. Ordinary rows require exactly one full-fingerprint match and it must be the canonical-ID row; Agent rows retain unique event-ID resolution followed by the full comparison. Keep line numbers in stale and ambiguity diagnostics.
+- [x] Add `taskDetail` and `taskPriority` to `TaskStatusUpdate`; capture them at request time and pass them through AppState and every direct store caller without changing the public bridge request.
+- [x] Add an optional internal `applicationSupportRoot` AppState initializer override. Confirm isolated audit output contains exactly one `workspace_task.updated` event and explicitly await a refresh that produces the widget snapshot.
+- [x] Add `TaskCenterItem.presentationIndex` with default `0`; use `L#` when present and `I<presentationIndex>` when absent. Have `AppState.allTaskCenterItems` enumerate workspace tasks and prove real AppState mapping distinguishes duplicate nil-line canonical IDs.
+- [x] Run focused task-store, AppState, Task Center, scanner, and lifecycle tests, then the complete Native Swift suite. Append evidence to the ignored final-fixes report and commit with `Harden Native task confirmation evidence`.

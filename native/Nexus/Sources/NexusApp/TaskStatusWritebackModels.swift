@@ -49,6 +49,8 @@ struct TaskStatusUpdate: Identifiable, Hashable {
     let workspacePath: String
     let taskID: String
     let taskTitle: String
+    let taskDetail: String
+    let taskPriority: String
     let taskSourceLine: Int?
     let currentStatus: String
     let nextStatus: String

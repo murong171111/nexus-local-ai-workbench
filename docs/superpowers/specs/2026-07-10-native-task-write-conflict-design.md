@@ -2,7 +2,7 @@
 
 ## Context
 
-`TaskStatusUpdate` already records the task title, current status, and source line shown in the confirmation sheet. `NativeWorkspaceTaskStore.update` receives only the requested `taskId` and new status. Ordinary task IDs are derived from table order (`task-0`, `task-1`, and so on), so inserting a task row after the sheet opens can make the old ID identify a different task. Agent task IDs derive from `event=` markers; duplicate markers can make the current loop update multiple rows and return only the last one.
+`TaskStatusUpdate` records the task title, status, detail, priority, and source line shown in the confirmation sheet. Ordinary task IDs are derived from table order (`task-0`, `task-1`, and so on), so inserting a task row after the sheet opens can make the old ID identify a different task. Title/status alone are insufficient: a newly inserted ordinary row can share them while differing in detail or priority. Agent task IDs derive from `event=` markers; duplicate markers can make the current loop update multiple rows and return only the last one.
 
 There is also a more basic Native contract mismatch. `NativeWorkspaceTaskStore` and Rust Core use `folder:task-<index>` or `folder:<event-id>`, while `NativeWorkspaceScanner` currently emits `task-<source-line>-<title-slug>`, marks every task as workspace-sourced, and does not expose `event=` identity. A real task loaded by the Native scanner can therefore fail to match the Native write store at all.
 
@@ -30,7 +30,7 @@ This blocks a direct status change but can still update the wrong row when an in
 
 ### 2. Share one parser, then compare the confirmed task identity snapshot
 
-This is the selected approach. A small Native parser becomes the single source for scanner and store task identity, matching the existing Rust/store contract. The internal Swift store then requires expected title, status, and optional source line, proves the ID has exactly one candidate, and compares title/status with the confirmation snapshot before constructing or writing new content. Source line remains locating and diagnostic evidence, not an independent identity or compare-and-swap condition.
+This is the selected approach. A small Native parser becomes the single source for scanner and store task identity, matching the existing Rust/store contract. The internal Swift store then requires expected title, status, detail, priority, and optional source line, proves the ID has exactly one candidate, and compares the complete confirmation snapshot before constructing or writing new content. Source line remains locating and diagnostic evidence, not an independent identity or compare-and-swap condition.
 
 ### 3. Compare a hash of the complete tasks document
 
@@ -64,12 +64,14 @@ static func update(
     request: UpdateWorkspaceTaskRequest,
     expectedTitle: String,
     expectedStatus: String,
+    expectedDetail: String,
+    expectedPriority: String,
     expectedSourceLine: Int?,
     fileManager: FileManager = .default
 ) throws -> UpdateWorkspaceTaskResponse
 ```
 
-`AppState.confirmPendingTaskStatusUpdate` passes `TaskStatusUpdate.taskTitle`, `currentStatus`, and `taskSourceLine`. Direct Native tests and lifecycle proof setup pass values from the task snapshot they just observed. The source line locates the row for rewriting and appears in stale diagnostics, while canonical ID plus title/status provide the write conflict evidence.
+`AppState.confirmPendingTaskStatusUpdate` passes `TaskStatusUpdate.taskTitle`, `currentStatus`, `taskDetail`, `taskPriority`, and `taskSourceLine`. Direct Native tests and lifecycle proof setup pass values from the task snapshot they just observed. The source line locates the row for rewriting and appears in stale diagnostics, while canonical ID plus the four-field snapshot provide the write conflict evidence.
 
 ### Strict document preflight
 
@@ -93,14 +95,16 @@ This prevents duplicate Agent event markers from updating multiple rows and ensu
 
 ### Confirmation snapshot validation
 
-Sanitize the expected title and status through `NativeWorkspaceTaskParser` using the same Markdown-cell rules used for table writes. The unique current candidate must satisfy:
+Sanitize expected title, status, detail, and priority through `NativeWorkspaceTaskParser` using the same Markdown-cell rules used for table writes. The unique current candidate must satisfy:
 
 - title equals `expectedTitle`;
-- status equals `expectedStatus`.
+- status equals `expectedStatus`;
+- detail equals `expectedDetail`;
+- priority equals `expectedPriority`.
 
-Any title/status mismatch throws `staleConfirmation` containing expected and current title, status, and line. Source line is retained in that message to explain where the confirmed and current evidence came from, but non-task line drift alone does not reject a write. An inserted task row that makes an order-based ID identify a different title or status therefore cannot receive the old task's status update.
+For ordinary IDs, scan all current task rows for the complete confirmation snapshot. It must match exactly one row, and that row must be the canonical-ID match; zero or a different row is stale, while multiple rows throw `ambiguousConfirmationEvidence` with their source lines. Agent rows continue to resolve a unique event ID first and then compare the complete snapshot. Source line is retained in errors to explain where the confirmed and current evidence came from, but non-task line drift alone does not reject a write. An inserted task row that shares title/status but has different detail/priority therefore cannot receive the old task's status update.
 
-When the expected source line is nil, title and status still protect bridge-compatible task snapshots that did not carry a line. Changes to task detail alone do not block a status-only update because the store preserves current detail unless `request.detail` explicitly replaces it.
+When the expected source line is nil, the complete title/status/detail/priority snapshot still protects bridge-compatible task snapshots that did not carry a line. Changes to any of those confirmed fields block a status write; after validation, the store still preserves current detail unless `request.detail` explicitly replaces it.
 
 ### Write and audit flow
 
@@ -115,7 +119,8 @@ Add explicit localized errors for:
 - `tasks.md` is not a regular file;
 - `tasks.md` cannot be read as UTF-8;
 - a task ID matches multiple rows;
-- the confirmed title/status no longer matches the unique current row; expected and current source lines remain diagnostic context.
+- the confirmed title/status/detail/priority no longer matches the unique current row; expected and current source lines remain diagnostic context;
+- multiple ordinary rows match the complete confirmation evidence.
 
 Keep explicit confirmation, workspace validation, target-status validation, `taskNotFound`, and updated-row parsing behavior unchanged.
 
@@ -128,17 +133,18 @@ Extend `ModelBehaviorTests` with real temporary task files:
 3. Open confirmation for `task-0`, insert a new first row, then submit the old title/status/line. Assert the new row is not modified and no audit exists.
 4. Create two Agent rows with the same `event=` marker. Assert the ambiguous ID is rejected and neither row changes.
 5. Point `tasks.md` at an external file with a symlink. Assert preflight rejection, unchanged link target and workspace state, and no audit.
-6. Confirm non-task text/blank-line drift accepts the uniquely resolved unchanged task while a newly inserted task row with changed title/status remains stale.
-7. Confirm duplicate canonical Agent IDs at distinct source lines have distinct Task Center presentation IDs without changing their canonical write IDs.
-8. Exercise AppState request/confirm: stale confirmation keeps pending state, file, and audit unchanged; a subsequent valid confirmation refreshes status, clears pending/error/updating state, emits local feedback, and focuses the next active task.
-9. Keep the existing confirmed two-task writeback and real end-to-end lifecycle proof green with explicit expected snapshots from the shared parser.
+6. Confirm non-task text/blank-line drift accepts the uniquely resolved unchanged task while a newly inserted task row with matching title/status but changed detail/priority remains stale; two identical ordinary confirmation fingerprints reject as ambiguous.
+7. Confirm same-row detail or priority changes are stale before writing.
+8. Confirm duplicate canonical Agent IDs at distinct source lines have distinct Task Center presentation IDs without changing their canonical write IDs; nil source lines use their stable workspace-task presentation index.
+9. Exercise AppState request/confirm with an injected Application Support root: stale confirmation keeps pending state, file, and audit unchanged; a subsequent valid confirmation refreshes status, clears pending/error/updating state, writes exactly one task audit event, completes widget refresh, emits local feedback, and focuses the next active task.
+10. Keep the existing confirmed two-task writeback and real end-to-end lifecycle proof green with explicit expected snapshots from the shared parser.
 
 ## Success Criteria
 
 1. Native scanner task IDs, sources, event IDs, priorities, and source lines come from the same parser the write store uses.
 2. A task status changed after confirmation cannot be overwritten by the stale sheet.
-3. Non-task line drift does not reject an unchanged unique task, while inserting or reordering task rows cannot make an old order-based ID update another title/status.
+3. Non-task line drift does not reject an unchanged unique task, while inserting or reordering task rows cannot make an old order-based ID update another title/status/detail/priority; identical ordinary fingerprints are rejected rather than arbitrarily selected.
 4. Duplicate stable-looking Agent IDs cannot update multiple rows.
 5. Non-regular or unreadable `tasks.md` cannot be followed, replaced, or audited as a successful write.
-6. Task Center presentation identity separates duplicate canonical task IDs by source line while preserving canonical task IDs for writes.
-7. A valid confirmed scanned task still updates exactly one row atomically, returns audit feedback, refreshes Task Center, focuses the next active task, and preserves the Native lifecycle proof.
+6. Task Center presentation identity separates duplicate canonical task IDs by source line or stable presentation index while preserving canonical task IDs for writes.
+7. A valid confirmed scanned task still updates exactly one row atomically, returns audit feedback, refreshes Task Center, focuses the next active task, and preserves the Native lifecycle proof without writing global test audit/widget/search state.

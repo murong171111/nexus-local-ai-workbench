@@ -250,6 +250,7 @@ final class AppState: ObservableObject {
     @Published var agentStatus: AgentStatus
     private let bridge: NexusBridge
     private let defaults: UserDefaults
+    private let applicationSupportRootOverride: String?
 
     private enum DefaultsKey {
         static let pinnedWorkspaceIDs = "nexus.native.pinnedWorkspaceIDs"
@@ -296,9 +297,11 @@ final class AppState: ObservableObject {
         ideURL: String = "idea://open?file={path}",
         refreshIntervalSeconds: Int = 10,
         bridgeMode: String = "Preview",
+        applicationSupportRoot: String? = nil,
         defaults: UserDefaults = .standard
     ) {
         self.defaults = defaults
+        self.applicationSupportRootOverride = applicationSupportRoot
         self.workspaces = workspaces
         self.agentStatus = agentStatus
         self.bridge = bridge
@@ -412,12 +415,13 @@ final class AppState: ObservableObject {
     var allTaskCenterItems: [TaskCenterItem] {
         activeSignalWorkspaces
             .flatMap { workspace in
-                workspace.tasks.map { task in
+                workspace.tasks.enumerated().map { presentationIndex, task in
                     TaskCenterItem(
                         workspaceID: workspace.id,
                         workspaceName: workspace.name,
                         workspaceFolder: workspace.folder,
-                        task: task
+                        task: task,
+                        presentationIndex: presentationIndex
                     )
                 }
             }
@@ -523,6 +527,9 @@ final class AppState: ObservableObject {
     }
 
     private var applicationSupportRootPath: String {
+        if let applicationSupportRootOverride {
+            return applicationSupportRootOverride
+        }
         guard let applicationSupport = FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
@@ -726,6 +733,8 @@ final class AppState: ObservableObject {
             workspacePath: workspace.path,
             taskID: task.id,
             taskTitle: task.title,
+            taskDetail: task.detail,
+            taskPriority: task.priority,
             taskSourceLine: task.sourceLine,
             currentStatus: task.status,
             nextStatus: status,
@@ -3907,6 +3916,8 @@ final class AppState: ObservableObject {
                 ),
                 expectedTitle: update.taskTitle,
                 expectedStatus: update.currentStatus,
+                expectedDetail: update.taskDetail,
+                expectedPriority: update.taskPriority,
                 expectedSourceLine: update.taskSourceLine
             )
             if response.updated {
