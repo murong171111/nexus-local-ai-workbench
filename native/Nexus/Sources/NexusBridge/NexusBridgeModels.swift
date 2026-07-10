@@ -325,6 +325,7 @@ public struct SetupWorktreesResponse: Codable, Equatable, Sendable {
     public let failed: [WorktreeSetupResult]
     public let auditEventID: String?
     public let auditEventPath: String?
+    public let auditError: String?
 
     public init(
         workspacePath: String,
@@ -334,7 +335,8 @@ public struct SetupWorktreesResponse: Codable, Equatable, Sendable {
         skipped: [WorktreeSetupResult],
         failed: [WorktreeSetupResult],
         auditEventID: String? = nil,
-        auditEventPath: String? = nil
+        auditEventPath: String? = nil,
+        auditError: String? = nil
     ) {
         self.workspacePath = workspacePath
         self.targetBranch = targetBranch
@@ -344,6 +346,7 @@ public struct SetupWorktreesResponse: Codable, Equatable, Sendable {
         self.failed = failed
         self.auditEventID = auditEventID
         self.auditEventPath = auditEventPath
+        self.auditError = auditError
     }
 }
 

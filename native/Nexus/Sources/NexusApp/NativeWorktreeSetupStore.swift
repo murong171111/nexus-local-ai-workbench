@@ -121,7 +121,15 @@ enum NativeWorktreeSetupStore {
             skipped: skipped,
             failed: failed
         )
-        let audit = appendAuditEvent(request: request, response: response)
+        let audit: AppendAuditEventResponse?
+        let auditError: String?
+        do {
+            audit = try appendAuditEvent(request: request, response: response)
+            auditError = nil
+        } catch {
+            audit = nil
+            auditError = error.localizedDescription
+        }
         return SetupWorktreesResponse(
             workspacePath: response.workspacePath,
             targetBranch: response.targetBranch,
@@ -130,19 +138,20 @@ enum NativeWorktreeSetupStore {
             skipped: response.skipped,
             failed: response.failed,
             auditEventID: audit?.event.id,
-            auditEventPath: audit?.path
+            auditEventPath: audit?.path,
+            auditError: auditError
         )
     }
 
     private static func appendAuditEvent(
         request: SetupWorktreesRequest,
         response: SetupWorktreesResponse
-    ) -> AppendAuditEventResponse? {
+    ) throws -> AppendAuditEventResponse? {
         guard let auditRoot = request.auditRoot?.trimmingCharacters(in: .whitespacesAndNewlines),
               !auditRoot.isEmpty else {
             return nil
         }
-        return try? NativeAuditEventStore.append(
+        return try NativeAuditEventStore.append(
             auditRoot: auditRoot,
             event: AuditEventInput(
                 actor: request.actor ?? "Nexus Native",

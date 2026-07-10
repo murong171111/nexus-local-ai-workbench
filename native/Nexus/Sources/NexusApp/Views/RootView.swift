@@ -2125,6 +2125,17 @@ private struct WorktreeSetupResultView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
+            if let auditError = response.auditError {
+                Label("本地 Git 操作已完成，但审计写入失败：\(auditError)", systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(NexusPalette.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if response.auditEventID != nil {
+                Label("已写入审计 / Audited", systemImage: "checkmark.circle")
+                    .font(.caption)
+                    .foregroundStyle(NexusPalette.success)
+            }
+
             if !response.command.isEmpty {
                 Text(response.command)
                     .font(.system(.caption, design: .monospaced))

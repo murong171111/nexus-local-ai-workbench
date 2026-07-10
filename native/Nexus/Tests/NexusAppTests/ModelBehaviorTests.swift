@@ -7851,6 +7851,52 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(secondEvents.first?.metadata["skippedServices"], "order")
     }
 
+    func testNativeWorktreeSetupStorePreservesGitResultWhenAuditWriteFails() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-worktree-audit-failure-\(UUID().uuidString)")
+        let remote = root.appendingPathComponent("remote-order.git")
+        let sourceRoot = root.appendingPathComponent("source-repos")
+        let source = sourceRoot.appendingPathComponent("order")
+        let workspace = root.appendingPathComponent("workspace")
+        let invalidAuditRoot = root.appendingPathComponent("audit-root-file")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try FileManager.default.createDirectory(at: sourceRoot, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        try runGit(["init", "--bare", remote.path], in: root)
+        try runGit(["clone", remote.path, source.path], in: root)
+        try runGit(["config", "user.email", "nexus@example.com"], in: source)
+        try runGit(["config", "user.name", "Nexus Test"], in: source)
+        try "demo\n".write(to: source.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+        try runGit(["add", "README.md"], in: source)
+        try runGit(["commit", "-m", "init"], in: source)
+        try runGit(["branch", "feature/native-audit-failure"], in: source)
+        try runGit(["push", "origin", "HEAD:main"], in: source)
+        try runGit(["push", "origin", "feature/native-audit-failure"], in: source)
+        try "not a directory\n".write(to: invalidAuditRoot, atomically: true, encoding: .utf8)
+
+        let response = try NativeWorktreeSetupStore.setup(
+            request: SetupWorktreesRequest(
+                workspacePath: workspace.path,
+                sourceReposRoot: sourceRoot.path,
+                services: ["order"],
+                targetBranch: "feature/native-audit-failure",
+                confirmed: true,
+                auditRoot: invalidAuditRoot.path,
+                actor: "Nexus Test"
+            )
+        )
+
+        XCTAssertEqual(response.created.map(\.service), ["order"])
+        XCTAssertTrue(response.skipped.isEmpty)
+        XCTAssertTrue(response.failed.isEmpty)
+        XCTAssertNil(response.auditEventID)
+        XCTAssertNil(response.auditEventPath)
+        XCTAssertTrue(response.auditError?.contains("audit-root-file") == true)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: workspace.appendingPathComponent("repos/order/.git").path))
+    }
+
     func testNativeWorktreeSetupStoreRequiresConfirmation() throws {
         let workspace = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-native-worktree-unconfirmed-\(UUID().uuidString)")

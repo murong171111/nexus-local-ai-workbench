@@ -3600,6 +3600,7 @@ final class AppState: ObservableObject {
             "- Created: \(response.created.count)",
             "- Skipped: \(response.skipped.count)",
             "- Failed: \(response.failed.count)",
+            "- Audit: \(response.auditError.map { "failed: \($0)" } ?? (response.auditEventID == nil ? "not requested" : "written"))",
             "",
             "### Created",
             worktreeSetupResultLines(response.created),
@@ -4112,6 +4113,9 @@ final class AppState: ObservableObject {
             )
             lastWorktreeSetupResponse = response
             await refreshFromBridge()
+            if let auditError = response.auditError {
+                lastError = "worktree 已执行，但审计写入失败：\(auditError)"
+            }
         } catch {
             lastError = error.localizedDescription
         }

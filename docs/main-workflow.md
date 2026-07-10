@@ -491,6 +491,7 @@ Target files:
 
 Plan:
 
+- Preserve completed local-write results while surfacing audit-write failures explicitly; never turn a completed mutation into an ambiguous retry prompt. `[started with NativeWorktreeSetupStore auditError feedback]`
 - Build a single `DeliveryGate` model. `[started with DeliveryGateEvidence and confirmed delivery-record snapshot writes]`
 - Reuse it for delivery and archive. `[started with ArchiveGateEvidence in Command Center and Workflow, plus confirmed archive checklist writes into 交付记录.md]`
 - Keep SQL formal/rollback guard as a hard blocker. `[started through SQL health check evidence]`
