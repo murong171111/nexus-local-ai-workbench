@@ -6106,6 +6106,10 @@ final class ModelBehaviorTests: XCTestCase {
             atomically: true,
             encoding: .utf8
         )
+        try writeBranchPolicyFixture(
+            workspaceRoot: deliveryRoot,
+            branch: "feature/workflow-summary"
+        )
 
         let createdWorkspace = workspaceForWorkflowSummary(
             stage: "scoping",
@@ -6155,6 +6159,10 @@ final class ModelBehaviorTests: XCTestCase {
         }
         let demandDir = deliveryRoot.appendingPathComponent("需求")
         try FileManager.default.createDirectory(at: demandDir, withIntermediateDirectories: true)
+        try writeBranchPolicyFixture(
+            workspaceRoot: deliveryRoot,
+            branch: "feature/workflow-summary"
+        )
         try writeDemandIntakeFixture(
             demandDir: demandDir,
             scope: """
@@ -7155,6 +7163,88 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertNotEqual(stage.id, .serviceBranchConfirm)
     }
 
+    func testServiceBranchEvidenceRequiresRealBranchesDocumentForPolicy() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-service-branch-missing-document-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "service-branch-missing-document",
+            path: root.path,
+            branch: "feature/service-branch",
+            services: [
+                ServiceStatus(
+                    name: "order",
+                    branch: "feature/service-branch",
+                    worktree: "missing",
+                    gitSummary: "target branch available: feature/service-branch",
+                    worktreeExists: false,
+                    sourceExists: true
+                )
+            ]
+        )
+
+        let serviceBranch = ServiceBranchEvidence.resolve(workspace: workspace)
+        let stage = workspace.mainStage(
+            demandReadiness: readyDemandReadiness(),
+            scopeFreeze: readyScopeFreeze(),
+            serviceBranch: serviceBranch
+        )
+
+        XCTAssertFalse(serviceBranch.branchPolicyRecorded)
+        XCTAssertEqual(serviceBranch.status, .review)
+        XCTAssertEqual(serviceBranch.checks.first { $0.id == "branch-policy" }?.status, .review)
+        XCTAssertEqual(stage.id, .serviceBranchConfirm)
+        XCTAssertEqual(stage.primaryAction, .document("branches"))
+    }
+
+    func testServiceBranchEvidenceRejectsLinkedBranchesDocument() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-service-branch-linked-document-\(UUID().uuidString)")
+        let workspaceRoot = root.appendingPathComponent("workspace")
+        let externalBranches = root.appendingPathComponent("external-branches.md")
+        try FileManager.default.createDirectory(at: workspaceRoot, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try """
+        # External branches
+
+        - 目标分支: feature/service-branch
+        - 基线: main
+        - 分支策略: 外部文件不得作为工作区证据。
+        """.write(to: externalBranches, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(
+            at: workspaceRoot.appendingPathComponent("branches.md"),
+            withDestinationURL: externalBranches
+        )
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "service-branch-linked-document",
+            path: workspaceRoot.path,
+            branch: "feature/service-branch",
+            services: [
+                ServiceStatus(
+                    name: "order",
+                    branch: "feature/service-branch",
+                    worktree: "missing",
+                    gitSummary: "target branch available: feature/service-branch",
+                    worktreeExists: false,
+                    sourceExists: true
+                )
+            ]
+        )
+
+        let serviceBranch = ServiceBranchEvidence.resolve(workspace: workspace)
+
+        XCTAssertFalse(serviceBranch.branchPolicyRecorded)
+        XCTAssertEqual(serviceBranch.status, .review)
+        XCTAssertEqual(serviceBranch.primaryAction, .document("branches"))
+    }
+
     func testServiceBranchEvidenceBlocksUnavailableTargetBranch() {
         let workspace = workspaceForWorkflowSummary(
             stage: "developing",
@@ -7185,10 +7275,28 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(stage.primaryAction, .document("branches"))
     }
 
-    func testServiceBranchEvidenceKeepsMissingWorktreeInWorktreeGate() {
+    func testServiceBranchEvidenceKeepsMissingWorktreeInWorktreeGate() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-service-branch-worktree-gate-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try """
+        # Branches
+
+        - 目标分支: feature/service-branch
+        - 基线: main
+        - 分支策略: 使用已存在的目标分支创建 workspace-local worktree。
+        """.write(
+            to: root.appendingPathComponent("branches.md"),
+            atomically: true,
+            encoding: .utf8
+        )
         let workspace = workspaceForWorkflowSummary(
             stage: "developing",
             id: "service-branch-missing-worktree",
+            path: root.path,
             branch: "feature/service-branch",
             services: [
                 ServiceStatus(
@@ -9504,6 +9612,10 @@ final class ModelBehaviorTests: XCTestCase {
             .appendingPathComponent("nexus-demand-task-transfer-\(UUID().uuidString)")
         let demandDir = root.appendingPathComponent("需求")
         try FileManager.default.createDirectory(at: demandDir, withIntermediateDirectories: true)
+        try writeBranchPolicyFixture(
+            workspaceRoot: root,
+            branch: "feature/workflow-summary"
+        )
         defer {
             try? FileManager.default.removeItem(at: root)
         }
@@ -11098,6 +11210,20 @@ final class ModelBehaviorTests: XCTestCase {
         )
         try "# 需求交付\n\n- 预检完成。\n".write(
             to: demandDir.appendingPathComponent("delivery.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+    }
+
+    private func writeBranchPolicyFixture(workspaceRoot: URL, branch: String) throws {
+        try """
+        # Branches
+
+        - 目标分支: \(branch)
+        - 基线: main
+        - 分支策略: 使用已确认目标分支创建 workspace-local worktree。
+        """.write(
+            to: workspaceRoot.appendingPathComponent("branches.md"),
             atomically: true,
             encoding: .utf8
         )

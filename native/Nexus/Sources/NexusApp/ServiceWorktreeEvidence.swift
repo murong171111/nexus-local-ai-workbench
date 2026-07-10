@@ -279,9 +279,10 @@ struct ServiceBranchEvidence: Hashable {
     static func resolve(workspace: WorkspaceSummary) -> ServiceBranchEvidence {
         let servicesPath = workspace.documentLinks["services"] ?? "\(workspace.path)/services.md"
         let branchesPath = workspace.documentLinks["branches"] ?? "\(workspace.path)/branches.md"
-        let servicesText = readText(at: servicesPath)
-        let branchesText = readText(at: branchesPath)
-        let branchesDocumentExists = FileManager.default.fileExists(atPath: branchesPath)
+        let servicesText = readRegularText(at: servicesPath) ?? ""
+        let branchesDocument = readRegularText(at: branchesPath)
+        let branchesText = branchesDocument ?? ""
+        let branchesDocumentExists = branchesDocument != nil
 
         let branchConfirmed = hasConfirmedTargetBranch(workspace.branch)
         let servicesConfirmed = !workspace.services.isEmpty || serviceScopeExplicitlyEmpty(servicesText)
@@ -294,7 +295,8 @@ struct ServiceBranchEvidence: Hashable {
                 .map(\.name)
             : []
         let branchPolicyRecorded = branchConfirmed
-            && (!branchesDocumentExists || hasBranchPolicy(in: branchesText, branch: workspace.branch))
+            && branchesDocumentExists
+            && hasBranchPolicy(in: branchesText, branch: workspace.branch)
 
         let checks = [
             ServiceBranchCheck(
@@ -339,7 +341,7 @@ struct ServiceBranchEvidence: Hashable {
                 id: "branch-policy",
                 label: "分支策略 / Policy",
                 detail: branchPolicyRecorded
-                    ? "分支策略已记录或已从工作区扫描结果继承。"
+                    ? "branches.md 已记录目标分支、基线或分支创建/沿用策略。"
                     : "branches.md 尚未记录目标分支、基线或分支创建/沿用策略。",
                 status: branchPolicyRecorded ? .ready : .review,
                 systemImage: "point.3.connected.trianglepath.dotted",
@@ -377,8 +379,12 @@ struct ServiceBranchEvidence: Hashable {
         )
     }
 
-    private static func readText(at path: String) -> String {
-        (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+    private static func readRegularText(at path: String) -> String? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+              attributes[.type] as? FileAttributeType == .typeRegular else {
+            return nil
+        }
+        return try? String(contentsOfFile: path, encoding: .utf8)
     }
 
     private static func hasConfirmedTargetBranch(_ branch: String) -> Bool {

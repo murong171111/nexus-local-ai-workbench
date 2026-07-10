@@ -378,7 +378,7 @@ The current Native shell already has enough structure to receive the M1 workflow
 - Git/worktree: `WorktreeSetupEvidence` gates the handoff from service/branch confirmation into development, including a service-level create/skip/blocked setup plan, while `ServiceGitStatusSectionView` and `WorktreeSetupSheet` expose service-level status, evidence, and confirmed worktree setup.
 - Development tasks: `DevelopmentTaskEvidence` now gates development after worktree setup, treats root `tasks.md` as the execution source, chooses the next active or blocked task, exposes a task plan for resolve/continue/queued/closed work, and reuses task source locators for main workflow actions.
 - Delivery check: `DeliveryGateEvidence` now gates delivery after development tasks, combining task, risk, service/worktree, delivery-record, SQL, dirty-service, and local-check signals into one Swift-owned next action.
-- Acceptance: `MainWorkflowAcceptanceEvidence` is available from `AppState` and surfaced in the Workspace Detail main workflow summary so M1 gate coverage is visible from current Native evidence.
+- Acceptance: `MainWorkflowAcceptanceEvidence` is available from `AppState` as order-independent global evidence for Native distribution readiness; Workspace Detail shows only the selected workspace's `WorkspaceMainStage`, primary action, and routed evidence.
 
 M1 should refine these surfaces around a single Swift-owned stage model before splitting files aggressively.
 
