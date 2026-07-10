@@ -2670,19 +2670,19 @@ final class AppState: ObservableObject {
         )
     }
 
-    func mainWorkflowAcceptanceEvidence(for workspace: WorkspaceSummary) -> MainWorkflowAcceptanceEvidence {
+    func globalMainWorkflowAcceptanceEvidence() -> MainWorkflowAcceptanceEvidence {
         let worktreeRows = workspaces.flatMap { workspace in
             workspace.services.map { service in
                 ServiceWorktreeRowState.resolve(service: service, targetBranch: workspace.branch)
             }
         }
-        return MainWorkflowAcceptanceEvidence.resolve(
+        return MainWorkflowAcceptanceEvidence.resolveGlobal(
             stages: workspaces.map { mainWorkflowStage(for: $0) },
-            demandReadiness: demandIntakeReadiness(for: workspace),
-            developmentTasks: developmentTaskEvidence(for: workspace),
+            demandReadinessCandidates: workspaces.map { demandIntakeReadiness(for: $0) },
+            developmentTaskCandidates: workspaces.map { developmentTaskEvidence(for: $0) },
             worktreeRows: worktreeRows,
-            deliveryGate: deliveryGateEvidence(for: workspace),
-            archiveGate: archiveGateEvidence(for: workspace),
+            deliveryGateCandidates: workspaces.map { deliveryGateEvidence(for: $0) },
+            archiveGateCandidates: workspaces.map { archiveGateEvidence(for: $0) },
             legacyBoundary: .nativeOnly
         )
     }
@@ -2721,7 +2721,7 @@ final class AppState: ObservableObject {
     ) -> NativeDistributionReadinessEvidence {
         NativeDistributionReadinessEvidence.resolve(
             repositoryRoot: repositoryRoot,
-            m1Ready: workspaces.first.map { mainWorkflowAcceptanceEvidence(for: $0).ready } ?? false,
+            m1Ready: globalMainWorkflowAcceptanceEvidence().ready,
             m2Ready: nativeLocalCoreEvidence().ready,
             realLifecycleProven: nativeLifecycleProofBundleAvailable(auditEvents: auditEvents)
         )

@@ -72,6 +72,60 @@ struct MainWorkflowAcceptanceEvidence: Hashable {
         archiveGate: ArchiveGateEvidence? = nil,
         legacyBoundary: MainWorkflowLegacyBoundary? = nil
     ) -> MainWorkflowAcceptanceEvidence {
+        resolveWithChecks(
+            stages: stages,
+            worktreeRows: worktreeRows ?? [],
+            demandCheck: demandGateCheck(demandReadiness),
+            taskSourceCheck: taskSourceCheck(developmentTasks),
+            deliveryArchiveCheck: deliveryArchiveCheck(
+                deliveryGate: deliveryGate,
+                archiveGate: archiveGate
+            ),
+            legacyCheck: legacyBoundaryCheck(legacyBoundary)
+        )
+    }
+
+    static func resolveGlobal(
+        stages: [WorkspaceMainStage],
+        demandReadinessCandidates: [DemandIntakeReadinessEvidence],
+        developmentTaskCandidates: [DevelopmentTaskEvidence],
+        worktreeRows: [ServiceWorktreeRowState],
+        deliveryGateCandidates: [DeliveryGateEvidence],
+        archiveGateCandidates: [ArchiveGateEvidence],
+        legacyBoundary: MainWorkflowLegacyBoundary
+    ) -> MainWorkflowAcceptanceEvidence {
+        let deliveryArchiveCandidates = deliveryGateCandidates.flatMap { deliveryGate in
+            archiveGateCandidates.map { archiveGate in
+                deliveryArchiveCheck(deliveryGate: deliveryGate, archiveGate: archiveGate)
+            }
+        }
+        return resolveWithChecks(
+            stages: stages,
+            worktreeRows: worktreeRows,
+            demandCheck: strongestCheck(
+                demandReadinessCandidates.map(demandGateCheck),
+                missing: demandGateCheck(nil)
+            ),
+            taskSourceCheck: strongestCheck(
+                developmentTaskCandidates.map(taskSourceCheck),
+                missing: taskSourceCheck(nil)
+            ),
+            deliveryArchiveCheck: strongestCheck(
+                deliveryArchiveCandidates,
+                missing: deliveryArchiveCheck(deliveryGate: nil, archiveGate: nil)
+            ),
+            legacyCheck: legacyBoundaryCheck(legacyBoundary)
+        )
+    }
+
+    private static func resolveWithChecks(
+        stages: [WorkspaceMainStage],
+        worktreeRows: [ServiceWorktreeRowState],
+        demandCheck: MainWorkflowAcceptanceCheck,
+        taskSourceCheck: MainWorkflowAcceptanceCheck,
+        deliveryArchiveCheck: MainWorkflowAcceptanceCheck,
+        legacyCheck: MainWorkflowAcceptanceCheck
+    ) -> MainWorkflowAcceptanceEvidence {
         let observedStages = orderedObservedStages(stages)
         let observedSet = Set(observedStages)
         let missingStages = WorkspaceMainStageID.allCases.filter { !observedSet.contains($0) }
@@ -87,7 +141,7 @@ struct MainWorkflowAcceptanceEvidence: Hashable {
         let stagesMissingCurrentStateAnswer = orderedObservedStages(
             stages.filter { !$0.answer.canAnswerCurrentState }
         )
-        let coveredWorktreeStates = orderedWorktreeStates(worktreeRows ?? [])
+        let coveredWorktreeStates = orderedWorktreeStates(worktreeRows)
         let coveredWorktreeSet = Set(coveredWorktreeStates)
         let missingWorktreeStates = ServiceWorktreeRowStateKind.allCases.filter { !coveredWorktreeSet.contains($0) }
 
@@ -115,14 +169,10 @@ struct MainWorkflowAcceptanceEvidence: Hashable {
             evidence: stages.compactMap { $0.answer.primaryEvidenceLink?.label }
         )
 
-        let demandCheck = demandGateCheck(demandReadiness)
-        let taskSourceCheck = taskSourceCheck(developmentTasks)
         let worktreeCheck = worktreeStateCheck(
             covered: coveredWorktreeStates,
             missing: missingWorktreeStates
         )
-        let deliveryArchiveCheck = deliveryArchiveCheck(deliveryGate: deliveryGate, archiveGate: archiveGate)
-        let legacyCheck = legacyBoundaryCheck(legacyBoundary)
         let checks = [
             coverageCheck,
             actionEvidenceCheck,
@@ -152,8 +202,18 @@ struct MainWorkflowAcceptanceEvidence: Hashable {
         )
     }
 
-    static func resolve(workspaces: [WorkspaceSummary]) -> MainWorkflowAcceptanceEvidence {
-        resolve(stages: workspaces.map { $0.mainStage() })
+    private static func strongestCheck(
+        _ candidates: [MainWorkflowAcceptanceCheck],
+        missing: MainWorkflowAcceptanceCheck
+    ) -> MainWorkflowAcceptanceCheck {
+        guard !candidates.isEmpty else { return missing }
+        let readyCandidates = candidates.filter { $0.status == .ready }
+        let eligible = readyCandidates.isEmpty ? candidates : readyCandidates
+        return eligible.sorted { lhs, rhs in
+            let lhsSignature = (lhs.evidence + [lhs.detail]).joined(separator: "\n")
+            let rhsSignature = (rhs.evidence + [rhs.detail]).joined(separator: "\n")
+            return lhsSignature < rhsSignature
+        }.first ?? missing
     }
 
     private static func orderedObservedStages(_ stages: [WorkspaceMainStage]) -> [WorkspaceMainStageID] {

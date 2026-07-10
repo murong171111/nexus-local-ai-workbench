@@ -1651,7 +1651,7 @@ final class ModelBehaviorTests: XCTestCase {
     }
 
     @MainActor
-    func testAppStateBuildsMainWorkflowAcceptanceEvidenceFromCurrentWorkspace() {
+    func testAppStateBuildsGlobalMainWorkflowAcceptanceEvidence() {
         let workspace = workspaceForWorkflowSummary(
             stage: "developing",
             id: "appstate-main-acceptance",
@@ -1701,7 +1701,7 @@ final class ModelBehaviorTests: XCTestCase {
         )
         let appState = appStateForAutomationTests(workspaces: [workspace])
 
-        let acceptance = appState.mainWorkflowAcceptanceEvidence(for: workspace)
+        let acceptance = appState.globalMainWorkflowAcceptanceEvidence()
 
         XCTAssertEqual(acceptance.checks.map(\.id), MainWorkflowAcceptanceRequirement.allCases)
         XCTAssertEqual(acceptance.coveredWorktreeStates, ServiceWorktreeRowStateKind.allCases)
@@ -1709,6 +1709,45 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(acceptance.checks.first { $0.id == .legacyBoundary }?.status, .ready)
         XCTAssertEqual(acceptance.checks.first { $0.id == .worktreeStateCoverage }?.status, .ready)
         XCTAssertEqual(acceptance.checks.first { $0.id == .stageCoverage }?.status, .blocked)
+    }
+
+    func testMainWorkflowAcceptanceEvidenceAggregatesCandidateGatesOrderIndependently() {
+        let blockedDemand = DemandIntakeReadinessEvidence(
+            status: .blocked,
+            reason: "P0 remains unresolved.",
+            evidence: ["/tmp/blocked/需求/questions.md"],
+            checks: [],
+            unresolvedP0Count: 1,
+            requirementHasContent: true,
+            scopeFrozen: false,
+            requirementTasksReady: true
+        )
+        let readyDemand = readyDemandReadiness()
+
+        let forward = MainWorkflowAcceptanceEvidence.resolveGlobal(
+            stages: [],
+            demandReadinessCandidates: [blockedDemand, readyDemand],
+            developmentTaskCandidates: [],
+            worktreeRows: [],
+            deliveryGateCandidates: [],
+            archiveGateCandidates: [],
+            legacyBoundary: .nativeOnly
+        )
+        let reversed = MainWorkflowAcceptanceEvidence.resolveGlobal(
+            stages: [],
+            demandReadinessCandidates: [readyDemand, blockedDemand],
+            developmentTaskCandidates: [],
+            worktreeRows: [],
+            deliveryGateCandidates: [],
+            archiveGateCandidates: [],
+            legacyBoundary: .nativeOnly
+        )
+
+        let forwardDemand = forward.checks.first { $0.id == .demandBlocksDevelopment }
+        let reversedDemand = reversed.checks.first { $0.id == .demandBlocksDevelopment }
+        XCTAssertEqual(forwardDemand, reversedDemand)
+        XCTAssertEqual(forwardDemand?.status, .ready)
+        XCTAssertTrue(forwardDemand?.evidence.contains("需求/") == true)
     }
 
     func testNativeLocalCoreEvidenceTracksM2BridgeDependencies() {
