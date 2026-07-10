@@ -209,6 +209,7 @@ struct NativeLifecycleProofBundleWriteResponse: Hashable {
     let ready: Bool
     let auditEventID: String?
     let auditEventPath: String?
+    let auditError: String?
 }
 
 struct NativeLifecycleProofBundleExportPlan: Identifiable {
@@ -288,8 +289,9 @@ enum NativeLifecycleProofBundleStore {
         return NativeLifecycleProofBundleWriteResponse(
             path: outputURL.path,
             ready: bundle.ready,
-            auditEventID: audit?.event.id,
-            auditEventPath: audit?.path
+            auditEventID: audit.response?.event.id,
+            auditEventPath: audit.response?.path,
+            auditError: audit.error
         )
     }
 
@@ -300,12 +302,8 @@ enum NativeLifecycleProofBundleStore {
         bundleSHA256: String,
         auditRoot: String?,
         actor: String?
-    ) -> AppendAuditEventResponse? {
-        guard let auditRoot = auditRoot?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !auditRoot.isEmpty else {
-            return nil
-        }
-        return try? NativeAuditEventStore.append(
+    ) -> NativeAuditAppendFeedback {
+        NativeAuditEventStore.appendFeedback(
             auditRoot: auditRoot,
             event: AuditEventInput(
                 actor: actor ?? "Nexus Native",

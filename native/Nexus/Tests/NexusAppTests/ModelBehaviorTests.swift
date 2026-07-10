@@ -2016,6 +2016,24 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(events.first?.action, "workspace.created")
         XCTAssertEqual(events.first?.actor, "Nexus Test")
         XCTAssertEqual(events.first?.metadata["services"], "order,store-cashier")
+
+        let invalidAuditRoot = root.appendingPathComponent("invalid-audit")
+        try "not a directory".write(to: invalidAuditRoot, atomically: true, encoding: .utf8)
+        let auditFailure = try NativeWorkspaceCreationStore.create(
+            request: CreateWorkspaceRequest(
+                name: "Audit Failure Demo",
+                folder: "2026-06-29-audit-failure-demo",
+                workspacesRoot: root.path,
+                sourceReposRoot: "~/source-repos",
+                services: [],
+                targetBranch: "待确认",
+                confirmed: true,
+                auditRoot: invalidAuditRoot.path,
+                actor: "Nexus Test"
+            )
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: auditFailure.path))
+        XCTAssertNotNil(auditFailure.auditError)
     }
 
     func testNativeWorkspaceCreationStoreRequiresConfirmationAndSafeFolder() throws {
@@ -3741,6 +3759,21 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(events.first?.actor, "Nexus Test")
         XCTAssertEqual(events.first?.metadata["previousState"], "developing")
         XCTAssertEqual(events.first?.metadata["state"], "archived")
+
+        let invalidAuditRoot = root.appendingPathComponent("invalid-audit")
+        try "not a directory".write(to: invalidAuditRoot, atomically: true, encoding: .utf8)
+        let auditFailure = try NativeWorkspaceLifecycleStore.update(
+            request: UpdateWorkspaceLifecycleRequest(
+                workspacePath: workspaceURL.path,
+                state: "developing",
+                confirmed: true,
+                auditRoot: invalidAuditRoot.path,
+                actor: "Nexus Test"
+            ),
+            expectedState: "archived"
+        )
+        XCTAssertEqual(auditFailure.state, "developing")
+        XCTAssertNotNil(auditFailure.auditError)
     }
 
     func testNativeDocumentStoreReadsLocalSnapshots() throws {
@@ -4188,6 +4221,27 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(events.first?.actor, "Nexus Test")
         XCTAssertEqual(events.first?.metadata["workspacePath"], workspaceURL.path)
         XCTAssertEqual(events.first?.metadata["createdFiles"], "requirement.md,scope.md,tasks.md,delivery.md")
+
+        let auditFailureWorkspace = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-demand-audit-failure-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: auditFailureWorkspace) }
+        try FileManager.default.createDirectory(at: auditFailureWorkspace, withIntermediateDirectories: true)
+        let invalidAuditRoot = auditFailureWorkspace.appendingPathComponent("audit")
+        try "not a directory".write(to: invalidAuditRoot, atomically: true, encoding: .utf8)
+        let auditFailurePlan = NativeDemandIntakeStore.makeInitializationPlan(
+            workspacePath: auditFailureWorkspace.path,
+            demandName: "审计失败仍保留需求文件",
+            lanhuLink: "",
+            notes: ""
+        )
+        let auditFailure = try NativeDemandIntakeStore.initialize(
+            plan: auditFailurePlan,
+            confirmed: true,
+            auditRoot: invalidAuditRoot.path,
+            actor: "Nexus Test"
+        )
+        XCTAssertTrue(auditFailure.status.ready)
+        XCTAssertNotNil(auditFailure.auditError)
     }
 
     func testNativeDemandIntakeStoreRejectsChangedEntriesBeforeMutation() throws {
@@ -8535,6 +8589,17 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(actionsAfterProofExport.contains("native_lifecycle_proof.exported"))
         XCTAssertEqual(proofExportEvent?.metadata["bundleSHA256"], NativeLifecycleProofBundle.sha256Hex(data: proofBundleData))
         XCTAssertEqual(proofExportEvent?.metadata["unverifiedEvidenceFileCount"], "0")
+        let invalidProofAuditRoot = root.appendingPathComponent("invalid-proof-audit")
+        try "not a directory".write(to: invalidProofAuditRoot, atomically: true, encoding: .utf8)
+        let proofAuditFailure = try NativeLifecycleProofBundleStore.write(
+            workspace: archived,
+            auditEvents: proofEvents,
+            confirmed: true,
+            auditRoot: invalidProofAuditRoot.path,
+            actor: "Nexus Test"
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: proofAuditFailure.path))
+        XCTAssertNotNil(proofAuditFailure.auditError)
         let proofAppState = appStateForAutomationTests(workspaces: [archived])
         XCTAssertTrue(proofAppState.nativeLifecycleProofBundleAvailable(auditEvents: proofEvents))
         let distributionEvidence = proofAppState.nativeDistributionReadinessEvidence(

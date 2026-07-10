@@ -10983,6 +10983,13 @@ private struct WorkspaceCreationNextStepsView: View {
                     .help("Dismiss")
                 }
 
+                if let auditError = creationReceipt?.auditError {
+                    Label("工作区已创建，但审计未记录：\(auditError)", systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(NexusPalette.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 if let creationReceipt {
                     InitializationReceiptView(receipt: creationReceipt)
                 }

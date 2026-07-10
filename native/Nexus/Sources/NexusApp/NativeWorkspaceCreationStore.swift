@@ -67,8 +67,9 @@ enum NativeWorkspaceCreationStore {
             folder: response.folder,
             generatedFiles: response.generatedFiles,
             initializationChecks: response.initializationChecks,
-            auditEventID: audit?.event.id,
-            auditEventPath: audit?.path
+            auditEventID: audit.response?.event.id,
+            auditEventPath: audit.response?.path,
+            auditError: audit.error
         )
     }
 
@@ -224,13 +225,9 @@ enum NativeWorkspaceCreationStore {
         response: CreateWorkspaceResponse,
         services: [String],
         targetBranch: String
-    ) -> AppendAuditEventResponse? {
-        guard let auditRoot = request.auditRoot?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !auditRoot.isEmpty else {
-            return nil
-        }
-        return try? NativeAuditEventStore.append(
-            auditRoot: auditRoot,
+    ) -> NativeAuditAppendFeedback {
+        NativeAuditEventStore.appendFeedback(
+            auditRoot: request.auditRoot,
             event: AuditEventInput(
                 actor: request.actor ?? "Nexus Native",
                 action: "workspace.created",

@@ -321,8 +321,9 @@ enum NativeDemandIntakeStore {
             return InitializeDemandIntakeResponse(
                 status: response.status,
                 createdFiles: response.createdFiles,
-                auditEventID: audit?.event.id,
-                auditEventPath: audit?.path
+                auditEventID: audit.response?.event.id,
+                auditEventPath: audit.response?.path,
+                auditError: audit.error
             )
         } catch {
             let remainingPaths = rollback(
@@ -439,12 +440,8 @@ enum NativeDemandIntakeStore {
         response: InitializeDemandIntakeResponse,
         auditRoot: String?,
         actor: String?
-    ) -> AppendAuditEventResponse? {
-        guard let auditRoot = auditRoot?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !auditRoot.isEmpty else {
-            return nil
-        }
-        return try? NativeAuditEventStore.append(
+    ) -> NativeAuditAppendFeedback {
+        NativeAuditEventStore.appendFeedback(
             auditRoot: auditRoot,
             event: AuditEventInput(
                 actor: actor ?? "Nexus Native",

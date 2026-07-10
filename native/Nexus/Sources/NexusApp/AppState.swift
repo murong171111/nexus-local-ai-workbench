@@ -2836,7 +2836,8 @@ final class AppState: ObservableObject {
                 workspaceName: plan.workspace.name,
                 documentPath: response.path,
                 documentLabel: "打开证据包",
-                systemImage: "checkmark.seal"
+                systemImage: "checkmark.seal",
+                auditError: response.auditError
             )
         } catch {
             lastError = error.localizedDescription
@@ -2877,7 +2878,8 @@ final class AppState: ObservableObject {
                 workspaceName: workspace.name,
                 documentPath: response.path,
                 documentLabel: "打开证据包",
-                systemImage: "checkmark.seal"
+                systemImage: "checkmark.seal",
+                auditError: response.auditError
             )
         } catch {
             lastError = error.localizedDescription
@@ -3230,7 +3232,8 @@ final class AppState: ObservableObject {
                 workspaceName: workspace.name,
                 documentPath: response.status.files.first?.path ?? response.status.directoryPath,
                 documentLabel: "打开需求确认卡",
-                systemImage: "text.badge.checkmark"
+                systemImage: "text.badge.checkmark",
+                auditError: response.auditError
             )
             return response
         } catch {
@@ -3967,7 +3970,8 @@ final class AppState: ObservableObject {
                         workspaceName: update.workspaceName,
                         documentPath: response.statusDocumentPath,
                         documentLabel: "打开 STATUS.md",
-                        systemImage: "arrow.triangle.2.circlepath.circle"
+                        systemImage: "arrow.triangle.2.circlepath.circle",
+                        auditError: response.auditError
                     )
                 }
             }
@@ -4033,7 +4037,8 @@ final class AppState: ObservableObject {
             generatedFiles: response.generatedFiles,
             initializationChecks: checks,
             auditEventID: response.auditEventID,
-            auditEventPath: response.auditEventPath
+            auditEventPath: response.auditEventPath,
+            auditError: response.auditError
         )
     }
 

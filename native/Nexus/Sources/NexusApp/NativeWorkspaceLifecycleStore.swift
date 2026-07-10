@@ -110,8 +110,9 @@ enum NativeWorkspaceLifecycleStore {
             focus: response.focus,
             nextAction: response.nextAction,
             updated: response.updated,
-            auditEventID: audit?.event.id,
-            auditEventPath: audit?.path
+            auditEventID: audit.response?.event.id,
+            auditEventPath: audit.response?.path,
+            auditError: audit.error
         )
     }
 
@@ -395,13 +396,9 @@ enum NativeWorkspaceLifecycleStore {
     private static func appendAuditEvent(
         request: UpdateWorkspaceLifecycleRequest,
         response: UpdateWorkspaceLifecycleResponse
-    ) -> AppendAuditEventResponse? {
-        guard let auditRoot = request.auditRoot?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !auditRoot.isEmpty else {
-            return nil
-        }
-        return try? NativeAuditEventStore.append(
-            auditRoot: auditRoot,
+    ) -> NativeAuditAppendFeedback {
+        NativeAuditEventStore.appendFeedback(
+            auditRoot: request.auditRoot,
             event: AuditEventInput(
                 actor: request.actor ?? "Nexus Native",
                 action: "workspace_lifecycle.updated",
