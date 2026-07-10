@@ -8749,6 +8749,274 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(events.first?.metadata["duplicateCount"], "1")
     }
 
+    func testNativeDemandTaskTransferStoreRejectsChangedDeletedAndUnsafeEvidence() throws {
+        enum Mutation: CaseIterable {
+            case intakeChanged
+            case intakeDeleted
+            case intakeSymlink
+            case intakeInvalidUTF8
+            case executionChanged
+            case executionDeleted
+            case executionSymlink
+            case executionInvalidUTF8
+            case missingExecutionCreated
+
+            var subject: String {
+                switch self {
+                case .intakeChanged, .intakeDeleted, .intakeSymlink, .intakeInvalidUTF8:
+                    return "intake"
+                case .executionChanged, .executionDeleted, .executionSymlink,
+                     .executionInvalidUTF8, .missingExecutionCreated:
+                    return "execution"
+                }
+            }
+
+            var reason: String {
+                switch self {
+                case .intakeSymlink, .executionSymlink:
+                    return "not a regular file"
+                case .intakeInvalidUTF8, .executionInvalidUTF8:
+                    return "not valid UTF-8"
+                default:
+                    return "changed since confirmation"
+                }
+            }
+        }
+
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-demand-task-transfer-safety-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let intake = """
+        # 需求列表
+
+        | 需求点 | 状态 | 优先级 | 来源 | 说明 |
+        | --- | --- | --- | --- | --- |
+        | 新增交易快照写入 | 待办 | P0 | 蓝湖 | 保存订单时记录快照 |
+        """ + "\n"
+        let execution = """
+        # Tasks
+
+        | 任务 | 状态 | 说明 |
+        | --- | --- | --- |
+        | 已有执行任务 | 待办 | priority=medium |
+        """ + "\n"
+        let invalidBytes = Data([0x23, 0x20, 0xC3, 0x28, 0x0A])
+
+        for mutation in Mutation.allCases {
+            let caseRoot = root.appendingPathComponent(String(describing: mutation))
+            let demandDir = caseRoot.appendingPathComponent("需求")
+            let intakeURL = demandDir.appendingPathComponent("tasks.md")
+            let executionURL = caseRoot.appendingPathComponent("tasks.md")
+            let auditRoot = caseRoot.appendingPathComponent("audit")
+            let externalURL = root.appendingPathComponent("external-\(String(describing: mutation)).md")
+            try FileManager.default.createDirectory(at: demandDir, withIntermediateDirectories: true)
+            try intake.write(to: intakeURL, atomically: true, encoding: .utf8)
+            if mutation != .missingExecutionCreated {
+                try execution.write(to: executionURL, atomically: true, encoding: .utf8)
+            }
+
+            let workspace = workspaceForWorkflowSummary(
+                stage: "developing",
+                id: "demand-transfer-safety-\(String(describing: mutation))",
+                path: caseRoot.path
+            )
+            let plan = DemandTaskTransferPlan.resolve(
+                workspace: workspace,
+                status: demandIntakeStatus(at: demandDir)
+            )
+            XCTAssertFalse(plan.isBlocked, "\(mutation)")
+            XCTAssertTrue(plan.hasTransferableItems, "\(mutation)")
+
+            let changedIntake = intake + "\n<!-- external intake edit -->\n"
+            let changedExecution = execution + "\n<!-- external execution edit -->\n"
+            let externalContent = "# External evidence\n\nDo not modify.\n"
+            switch mutation {
+            case .intakeChanged:
+                try changedIntake.write(to: intakeURL, atomically: true, encoding: .utf8)
+            case .intakeDeleted:
+                try FileManager.default.removeItem(at: intakeURL)
+            case .intakeSymlink:
+                try externalContent.write(to: externalURL, atomically: true, encoding: .utf8)
+                try FileManager.default.removeItem(at: intakeURL)
+                try FileManager.default.createSymbolicLink(at: intakeURL, withDestinationURL: externalURL)
+            case .intakeInvalidUTF8:
+                try invalidBytes.write(to: intakeURL)
+            case .executionChanged:
+                try changedExecution.write(to: executionURL, atomically: true, encoding: .utf8)
+            case .executionDeleted:
+                try FileManager.default.removeItem(at: executionURL)
+            case .executionSymlink:
+                try externalContent.write(to: externalURL, atomically: true, encoding: .utf8)
+                try FileManager.default.removeItem(at: executionURL)
+                try FileManager.default.createSymbolicLink(at: executionURL, withDestinationURL: externalURL)
+            case .executionInvalidUTF8:
+                try invalidBytes.write(to: executionURL)
+            case .missingExecutionCreated:
+                try changedExecution.write(to: executionURL, atomically: true, encoding: .utf8)
+            }
+
+            XCTAssertThrowsError(
+                try NativeDemandTaskTransferStore.transfer(
+                    plan: plan,
+                    confirmed: true,
+                    auditRoot: auditRoot.path,
+                    actor: "Nexus Test"
+                ),
+                "\(mutation)"
+            ) { error in
+                XCTAssertTrue(error.localizedDescription.contains(mutation.subject), "\(mutation): \(error)")
+                XCTAssertTrue(error.localizedDescription.contains(mutation.reason), "\(mutation): \(error)")
+            }
+
+            switch mutation {
+            case .intakeChanged:
+                XCTAssertEqual(try Data(contentsOf: intakeURL), Data(changedIntake.utf8))
+                XCTAssertEqual(try Data(contentsOf: executionURL), Data(execution.utf8))
+            case .intakeDeleted:
+                XCTAssertFalse(FileManager.default.fileExists(atPath: intakeURL.path))
+                XCTAssertEqual(try Data(contentsOf: executionURL), Data(execution.utf8))
+            case .intakeSymlink:
+                XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: intakeURL.path), externalURL.path)
+                XCTAssertEqual(try Data(contentsOf: externalURL), Data(externalContent.utf8))
+                XCTAssertEqual(try Data(contentsOf: executionURL), Data(execution.utf8))
+            case .intakeInvalidUTF8:
+                XCTAssertEqual(try Data(contentsOf: intakeURL), invalidBytes)
+                XCTAssertEqual(try Data(contentsOf: executionURL), Data(execution.utf8))
+            case .executionChanged:
+                XCTAssertEqual(try Data(contentsOf: intakeURL), Data(intake.utf8))
+                XCTAssertEqual(try Data(contentsOf: executionURL), Data(changedExecution.utf8))
+            case .executionDeleted:
+                XCTAssertEqual(try Data(contentsOf: intakeURL), Data(intake.utf8))
+                XCTAssertFalse(FileManager.default.fileExists(atPath: executionURL.path))
+            case .executionSymlink:
+                XCTAssertEqual(try Data(contentsOf: intakeURL), Data(intake.utf8))
+                XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: executionURL.path), externalURL.path)
+                XCTAssertEqual(try Data(contentsOf: externalURL), Data(externalContent.utf8))
+            case .executionInvalidUTF8:
+                XCTAssertEqual(try Data(contentsOf: intakeURL), Data(intake.utf8))
+                XCTAssertEqual(try Data(contentsOf: executionURL), invalidBytes)
+            case .missingExecutionCreated:
+                XCTAssertEqual(try Data(contentsOf: intakeURL), Data(intake.utf8))
+                XCTAssertEqual(try Data(contentsOf: executionURL), Data(changedExecution.utf8))
+            }
+            XCTAssertFalse(FileManager.default.fileExists(
+                atPath: auditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path
+            ))
+        }
+    }
+
+    func testNativeDemandTaskTransferStoreCreatesMissingOutputWhenStillMissing() throws {
+        let workspacePath = "~/../../private/tmp/nexus-demand-task-transfer-missing-\(UUID().uuidString)"
+        let root = URL(
+            fileURLWithPath: (workspacePath as NSString).expandingTildeInPath,
+            isDirectory: true
+        ).standardizedFileURL
+        let demandDir = root.appendingPathComponent("需求")
+        let outputURL = root.appendingPathComponent("tasks.md")
+        let auditRoot = root.appendingPathComponent("audit")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: demandDir, withIntermediateDirectories: true)
+        try """
+        # 需求列表
+
+        | 需求点 | 状态 | 优先级 | 来源 | 说明 |
+        | --- | --- | --- | --- | --- |
+        | 新增交易快照写入 | 待办 | P0 | 蓝湖 | 保存订单时记录快照 |
+        """.write(
+            to: demandDir.appendingPathComponent("tasks.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "demand-transfer-missing-output",
+            path: workspacePath
+        )
+        let plan = DemandTaskTransferPlan.resolve(
+            workspace: workspace,
+            status: demandIntakeStatus(at: demandDir)
+        )
+
+        XCTAssertEqual(plan.expectedExecutionRevision, .missing)
+        let response = try NativeDemandTaskTransferStore.transfer(
+            plan: plan,
+            confirmed: true,
+            auditRoot: auditRoot.path,
+            actor: "Nexus Test"
+        )
+
+        let content = try String(contentsOf: outputURL, encoding: .utf8)
+        let events = try NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 10)
+        let candidateRow = plan.transferableItems[0].markdownRow
+        XCTAssertTrue(content.hasPrefix("# Tasks\n\n| 任务 | 状态 | 说明 |\n| --- | --- | --- |\n"))
+        XCTAssertEqual(content.components(separatedBy: "## Requirement Tasks").count - 1, 1)
+        XCTAssertEqual(content.components(separatedBy: candidateRow).count - 1, 1)
+        XCTAssertEqual(events.filter { $0.action == "demand_tasks.transferred" }.count, 1)
+        XCTAssertEqual(response.auditEventID, events.first?.id)
+        XCTAssertEqual(response.auditEventPath, auditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path)
+    }
+
+    func testNativeDemandTaskTransferStoreRejectsSecondSubmissionWithoutDuplicateAudit() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-demand-task-transfer-duplicate-\(UUID().uuidString)")
+        let demandDir = root.appendingPathComponent("需求")
+        let outputURL = root.appendingPathComponent("tasks.md")
+        let auditRoot = root.appendingPathComponent("audit")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: demandDir, withIntermediateDirectories: true)
+        try """
+        # 需求列表
+
+        | 需求点 | 状态 | 优先级 | 来源 | 说明 |
+        | --- | --- | --- | --- | --- |
+        | 新增交易快照写入 | 待办 | P0 | 蓝湖 | 保存订单时记录快照 |
+        """.write(
+            to: demandDir.appendingPathComponent("tasks.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try """
+        # Tasks
+
+        | 任务 | 状态 | 说明 |
+        | --- | --- | --- |
+        """.write(to: outputURL, atomically: true, encoding: .utf8)
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "demand-transfer-duplicate",
+            path: root.path
+        )
+        let plan = DemandTaskTransferPlan.resolve(
+            workspace: workspace,
+            status: demandIntakeStatus(at: demandDir)
+        )
+
+        let first = try NativeDemandTaskTransferStore.transfer(
+            plan: plan,
+            confirmed: true,
+            auditRoot: auditRoot.path,
+            actor: "Nexus Test"
+        )
+        XCTAssertThrowsError(
+            try NativeDemandTaskTransferStore.transfer(
+                plan: plan,
+                confirmed: true,
+                auditRoot: auditRoot.path,
+                actor: "Nexus Test"
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("execution"))
+            XCTAssertTrue(error.localizedDescription.contains("changed since confirmation"))
+        }
+
+        let content = try String(contentsOf: outputURL, encoding: .utf8)
+        let events = try NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 10)
+        XCTAssertEqual(content.components(separatedBy: plan.transferableItems[0].markdownRow).count - 1, 1)
+        XCTAssertEqual(events.filter { $0.action == "demand_tasks.transferred" }.count, 1)
+        XCTAssertNotNil(first.auditEventID)
+    }
+
     func testDemandTaskTransferPlanCapturesStrictInputAndOutputSnapshots() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-demand-task-transfer-revisions-\(UUID().uuidString)")

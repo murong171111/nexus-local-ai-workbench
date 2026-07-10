@@ -42,7 +42,13 @@ enum NativeDemandTaskTransferStore {
         at path: String,
         fileManager: FileManager = .default
     ) -> NativeDemandTaskDocumentSnapshot {
-        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        inspectDocument(at: expandedURL(for: path), fileManager: fileManager)
+    }
+
+    private static func inspectDocument(
+        at url: URL,
+        fileManager: FileManager
+    ) -> NativeDemandTaskDocumentSnapshot {
         let attributes: [FileAttributeKey: Any]
         do {
             attributes = try fileManager.attributesOfItem(atPath: url.path)
@@ -97,14 +103,59 @@ enum NativeDemandTaskTransferStore {
         guard confirmed else {
             throw NativeDemandTaskTransferStoreError.unconfirmed
         }
-        guard plan.hasTransferableItems else {
+        guard case .regularUTF8 = plan.expectedIntakeRevision else {
+            throw NativeDemandTaskTransferStoreError.invalidExpectedIntakeDocument(
+                plan.expectedIntakeRevision.label
+            )
+        }
+        switch plan.expectedExecutionRevision {
+        case .regularUTF8, .missing:
+            break
+        case .invalid:
+            throw NativeDemandTaskTransferStoreError.invalidExpectedExecutionDocument(
+                plan.expectedExecutionRevision.label
+            )
+        }
+        guard !plan.isBlocked, plan.hasTransferableItems else {
             throw NativeDemandTaskTransferStoreError.noTransferableItems
         }
 
-        var content = try readOrCreateExecutionTasksDocument(
-            at: plan.executionTasksPath,
-            fileManager: fileManager
-        )
+        let intakeURL = expandedURL(for: plan.intakeTasksPath)
+        let executionURL = expandedURL(for: plan.executionTasksPath)
+        let currentIntake = inspectDocument(at: intakeURL, fileManager: fileManager)
+        let currentExecution = inspectDocument(at: executionURL, fileManager: fileManager)
+        if case .invalid(let reason) = currentIntake.revision {
+            throw NativeDemandTaskTransferStoreError.invalidCurrentIntakeDocument(reason)
+        }
+        if case .invalid(let reason) = currentExecution.revision {
+            throw NativeDemandTaskTransferStoreError.invalidCurrentExecutionDocument(reason)
+        }
+        guard currentIntake.revision == plan.expectedIntakeRevision else {
+            throw NativeDemandTaskTransferStoreError.staleDocument(
+                document: "intake",
+                path: intakeURL.path,
+                expected: plan.expectedIntakeRevision.label,
+                current: currentIntake.revision.label
+            )
+        }
+        guard currentExecution.revision == plan.expectedExecutionRevision else {
+            throw NativeDemandTaskTransferStoreError.staleDocument(
+                document: "execution",
+                path: executionURL.path,
+                expected: plan.expectedExecutionRevision.label,
+                current: currentExecution.revision.label
+            )
+        }
+
+        var content: String
+        switch currentExecution.revision {
+        case .regularUTF8:
+            content = currentExecution.content!
+        case .missing:
+            content = "# Tasks\n\n| 任务 | 状态 | 说明 |\n| --- | --- | --- |\n"
+        case .invalid:
+            preconditionFailure("invalid execution revisions are rejected before output is built")
+        }
         if !content.contains("## Requirement Tasks") {
             if !content.hasSuffix("\n") {
                 content.append("\n")
@@ -119,7 +170,7 @@ enum NativeDemandTaskTransferStore {
             content.append("\n")
         }
 
-        try content.write(toFile: plan.executionTasksPath, atomically: true, encoding: .utf8)
+        try content.write(to: executionURL, atomically: true, encoding: .utf8)
         let response = NativeDemandTaskTransferResponse(
             path: plan.executionTasksPath,
             transferredItems: plan.transferableItems,
@@ -139,17 +190,8 @@ enum NativeDemandTaskTransferStore {
         )
     }
 
-    private static func readOrCreateExecutionTasksDocument(
-        at path: String,
-        fileManager: FileManager
-    ) throws -> String {
-        let fileURL = URL(fileURLWithPath: path)
-        let parentURL = fileURL.deletingLastPathComponent()
-        try fileManager.createDirectory(at: parentURL, withIntermediateDirectories: true)
-        if fileManager.fileExists(atPath: path) {
-            return try String(contentsOfFile: path, encoding: .utf8)
-        }
-        return "# Tasks\n\n| 任务 | 状态 | 说明 |\n| --- | --- | --- |\n"
+    private static func expandedURL(for path: String) -> URL {
+        URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL
     }
 
     private static func appendAuditEvent(
@@ -185,6 +227,11 @@ enum NativeDemandTaskTransferStore {
 private enum NativeDemandTaskTransferStoreError: LocalizedError {
     case unconfirmed
     case noTransferableItems
+    case invalidExpectedIntakeDocument(String)
+    case invalidExpectedExecutionDocument(String)
+    case invalidCurrentIntakeDocument(String)
+    case invalidCurrentExecutionDocument(String)
+    case staleDocument(document: String, path: String, expected: String, current: String)
 
     var errorDescription: String? {
         switch self {
@@ -192,6 +239,16 @@ private enum NativeDemandTaskTransferStoreError: LocalizedError {
             return "demand task transfer requires explicit confirmation"
         case .noTransferableItems:
             return "no new demand tasks can be transferred into root tasks.md"
+        case .invalidExpectedIntakeDocument(let reason):
+            return "expected intake demand task document is unsafe: \(reason)"
+        case .invalidExpectedExecutionDocument(let reason):
+            return "expected execution demand task document is unsafe: \(reason)"
+        case .invalidCurrentIntakeDocument(let reason):
+            return "current intake demand task document is unsafe: \(reason)"
+        case .invalidCurrentExecutionDocument(let reason):
+            return "current execution demand task document is unsafe: \(reason)"
+        case .staleDocument(let document, let path, let expected, let current):
+            return "\(document) demand task document changed since confirmation: \(path); expected \(expected); current \(current)"
         }
     }
 }
