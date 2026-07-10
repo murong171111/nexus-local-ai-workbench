@@ -3955,7 +3955,8 @@ final class AppState: ObservableObject {
                     confirmed: confirmed,
                     auditRoot: auditRootPath,
                     actor: "Nexus Native"
-                )
+                ),
+                expectedState: update.currentStage
             )
             if response.updated {
                 pendingLifecycleStatusUpdate = nil

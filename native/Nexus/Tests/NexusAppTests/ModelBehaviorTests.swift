@@ -1827,6 +1827,99 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(events.first?.metadata["status"], "延期")
     }
 
+    func testNativeWorkspaceLifecycleStoreRejectsInvalidStatusBeforeChangingWorkspace() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-lifecycle-invalid-status-\(UUID().uuidString)")
+        let workspaceURL = root.appendingPathComponent("workspace")
+        let workspaceDocumentURL = workspaceURL.appendingPathComponent("workspace.md")
+        let statusDocumentURL = workspaceURL.appendingPathComponent("STATUS.md")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        let originalWorkspace = "# Workspace\n\n- 当前状态: developing\n"
+        try originalWorkspace.write(to: workspaceDocumentURL, atomically: true, encoding: .utf8)
+        try FileManager.default.createDirectory(at: statusDocumentURL, withIntermediateDirectories: true)
+
+        XCTAssertThrowsError(
+            try NativeWorkspaceLifecycleStore.update(
+                request: UpdateWorkspaceLifecycleRequest(
+                    workspacePath: workspaceURL.path,
+                    state: "archived",
+                    confirmed: true
+                ),
+                expectedState: "developing"
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("lifecycle document is not a file"))
+        }
+
+        XCTAssertEqual(try String(contentsOf: workspaceDocumentURL, encoding: .utf8), originalWorkspace)
+    }
+
+    func testNativeWorkspaceLifecycleStoreRejectsStaleAndConflictingEvidenceBeforeWriting() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-lifecycle-conflicts-\(UUID().uuidString)")
+        let staleURL = root.appendingPathComponent("stale")
+        let conflictURL = root.appendingPathComponent("conflict")
+        let auditRoot = root.appendingPathComponent("audit")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        for directory in [staleURL, conflictURL] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+
+        let staleWorkspace = "# Workspace\n\n- 当前状态: delivery\n"
+        let staleStatus = "# STATUS\n\n- 状态: delivery\n- 当前焦点: External edit\n"
+        try staleWorkspace.write(to: staleURL.appendingPathComponent("workspace.md"), atomically: true, encoding: .utf8)
+        try staleStatus.write(to: staleURL.appendingPathComponent("STATUS.md"), atomically: true, encoding: .utf8)
+
+        XCTAssertThrowsError(
+            try NativeWorkspaceLifecycleStore.update(
+                request: UpdateWorkspaceLifecycleRequest(
+                    workspacePath: staleURL.path,
+                    state: "archived",
+                    confirmed: true,
+                    auditRoot: auditRoot.path,
+                    actor: "Nexus Test"
+                ),
+                expectedState: "developing"
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("expected developing, found delivery"))
+        }
+        XCTAssertEqual(try String(contentsOf: staleURL.appendingPathComponent("workspace.md"), encoding: .utf8), staleWorkspace)
+        XCTAssertEqual(try String(contentsOf: staleURL.appendingPathComponent("STATUS.md"), encoding: .utf8), staleStatus)
+
+        let conflictWorkspace = "# Workspace\n\n- 当前状态: developing\n"
+        let conflictStatus = "# STATUS\n\n- 状态: archived\n"
+        try conflictWorkspace.write(to: conflictURL.appendingPathComponent("workspace.md"), atomically: true, encoding: .utf8)
+        try conflictStatus.write(to: conflictURL.appendingPathComponent("STATUS.md"), atomically: true, encoding: .utf8)
+
+        XCTAssertThrowsError(
+            try NativeWorkspaceLifecycleStore.update(
+                request: UpdateWorkspaceLifecycleRequest(
+                    workspacePath: conflictURL.path,
+                    state: "delivery",
+                    confirmed: true,
+                    auditRoot: auditRoot.path,
+                    actor: "Nexus Test"
+                ),
+                expectedState: "blocked"
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("workspace.md=developing"))
+            XCTAssertTrue(error.localizedDescription.contains("STATUS.md=archived"))
+        }
+
+        XCTAssertEqual(try String(contentsOf: conflictURL.appendingPathComponent("workspace.md"), encoding: .utf8), conflictWorkspace)
+        XCTAssertEqual(try String(contentsOf: conflictURL.appendingPathComponent("STATUS.md"), encoding: .utf8), conflictStatus)
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: auditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path
+        ))
+    }
+
     func testNativeWorkspaceLifecycleStoreRequiresConfirmationAndRewritesStatusDocuments() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-native-lifecycle-\(UUID().uuidString)")
@@ -1860,7 +1953,8 @@ final class ModelBehaviorTests: XCTestCase {
                     workspacePath: workspaceURL.path,
                     state: "archived",
                     confirmed: false
-                )
+                ),
+                expectedState: "developing"
             )
         ) { error in
             XCTAssertTrue(error.localizedDescription.contains("explicit confirmation"))
@@ -1875,7 +1969,8 @@ final class ModelBehaviorTests: XCTestCase {
                 confirmed: true,
                 auditRoot: auditRoot.path,
                 actor: "Nexus Test"
-            )
+            ),
+            expectedState: "developing"
         )
         let workspaceContent = try String(contentsOf: workspaceURL.appendingPathComponent("workspace.md"), encoding: .utf8)
         let statusContent = try String(contentsOf: workspaceURL.appendingPathComponent("STATUS.md"), encoding: .utf8)
@@ -5358,7 +5453,8 @@ final class ModelBehaviorTests: XCTestCase {
                 confirmed: true,
                 auditRoot: auditRoot.path,
                 actor: "Nexus Test"
-            )
+            ),
+            expectedState: workspace.lifecycle.stage
         )
 
         let archived = try scannedWorkspace(folder: folder, workspacesRoot: workspacesRoot, sourceRoot: sourceRoot)
@@ -5473,7 +5569,8 @@ final class ModelBehaviorTests: XCTestCase {
                 confirmed: true,
                 auditRoot: auditRoot.path,
                 actor: "Nexus Test"
-            )
+            ),
+            expectedState: "archived"
         )
 
         let restored = try scannedWorkspace(folder: folder, workspacesRoot: workspacesRoot, sourceRoot: sourceRoot)

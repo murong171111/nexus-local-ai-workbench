@@ -2,8 +2,18 @@ import Foundation
 import NexusBridge
 
 enum NativeWorkspaceLifecycleStore {
+    private struct LifecycleDocumentSnapshot {
+        let url: URL
+        let content: String?
+
+        func contentOrFallback(_ fallback: String) -> String {
+            content ?? fallback
+        }
+    }
+
     static func update(
         request: UpdateWorkspaceLifecycleRequest,
+        expectedState: String,
         fileManager: FileManager = .default
     ) throws -> UpdateWorkspaceLifecycleResponse {
         guard request.confirmed else {
@@ -22,8 +32,22 @@ enum NativeWorkspaceLifecycleStore {
 
         let workspaceDocumentURL = workspaceURL.appendingPathComponent("workspace.md", isDirectory: false)
         let statusDocumentURL = workspaceURL.appendingPathComponent("STATUS.md", isDirectory: false)
-        let workspaceContent = (try? String(contentsOf: workspaceDocumentURL, encoding: .utf8)) ?? "# Workspace\n\n"
-        let previousState = extractBulletValue(in: workspaceContent, label: "当前状态") ?? "unknown"
+        let workspaceSnapshot = try documentSnapshot(at: workspaceDocumentURL, fileManager: fileManager)
+        let statusSnapshot = try documentSnapshot(at: statusDocumentURL, fileManager: fileManager)
+        let workspaceContent = workspaceSnapshot.contentOrFallback("# Workspace\n\n")
+        let statusContent = statusSnapshot.contentOrFallback("# STATUS\n\n")
+        let currentState = try currentLifecycleState(
+            workspaceContent: workspaceSnapshot.content,
+            statusContent: statusSnapshot.content
+        )
+        let normalizedExpected = try normalizedExpectedState(expectedState)
+        guard currentState == normalizedExpected else {
+            throw NativeWorkspaceLifecycleStoreError.staleConfirmation(
+                expected: normalizedExpected,
+                current: currentState
+            )
+        }
+        let previousState = currentState
 
         let focus = sanitizedCell(request.focus).flatMap { $0.isEmpty ? nil : $0 }
             ?? defaultFocus(for: state)
@@ -31,10 +55,6 @@ enum NativeWorkspaceLifecycleStore {
             ?? defaultNextAction(for: state)
         let updatedAt = isoTimestamp()
 
-        let nextWorkspaceContent = upsertBulletValue(in: workspaceContent, label: "当前状态", value: state)
-        try nextWorkspaceContent.write(to: workspaceDocumentURL, atomically: true, encoding: .utf8)
-
-        let statusContent = (try? String(contentsOf: statusDocumentURL, encoding: .utf8)) ?? "# STATUS\n\n"
         let nextStatusContent = updateStatusDocument(
             statusContent,
             state: state,
@@ -42,6 +62,8 @@ enum NativeWorkspaceLifecycleStore {
             nextAction: nextAction,
             updatedAt: updatedAt
         )
+        let nextWorkspaceContent = upsertBulletValue(in: workspaceContent, label: "当前状态", value: state)
+        try nextWorkspaceContent.write(to: workspaceDocumentURL, atomically: true, encoding: .utf8)
         try nextStatusContent.write(to: statusDocumentURL, atomically: true, encoding: .utf8)
 
         let response = UpdateWorkspaceLifecycleResponse(
@@ -82,6 +104,30 @@ enum NativeWorkspaceLifecycleStore {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private static func documentSnapshot(
+        at url: URL,
+        fileManager: FileManager
+    ) throws -> LifecycleDocumentSnapshot {
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
+            return LifecycleDocumentSnapshot(url: url, content: nil)
+        }
+        guard !isDirectory.boolValue else {
+            throw NativeWorkspaceLifecycleStoreError.documentNotFile(url.path)
+        }
+        do {
+            return LifecycleDocumentSnapshot(
+                url: url,
+                content: try String(contentsOf: url, encoding: .utf8)
+            )
+        } catch {
+            throw NativeWorkspaceLifecycleStoreError.documentUnreadable(
+                url.path,
+                error.localizedDescription
+            )
+        }
+    }
+
     private static func extractBulletValue(in text: String, label: String) -> String? {
         for line in text.components(separatedBy: .newlines) {
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -93,6 +139,59 @@ enum NativeWorkspaceLifecycleStore {
             }
         }
         return nil
+    }
+
+    private static func firstBulletValue(in text: String?, labels: [String]) -> String? {
+        guard let text else { return nil }
+        return labels.lazy.compactMap { extractBulletValue(in: text, label: $0) }.first
+    }
+
+    private static func normalizedCurrentState(_ raw: String, source: String) throws -> String {
+        do {
+            return try normalizedLifecycleState(raw)
+        } catch {
+            throw NativeWorkspaceLifecycleStoreError.unsupportedCurrentState(source, raw)
+        }
+    }
+
+    private static func currentLifecycleState(
+        workspaceContent: String?,
+        statusContent: String?
+    ) throws -> String {
+        let workspaceRaw = firstBulletValue(
+            in: workspaceContent,
+            labels: ["当前状态", "状态"]
+        )
+        let statusRaw = firstBulletValue(
+            in: statusContent,
+            labels: ["当前状态", "状态"]
+        )
+        let workspaceState = try workspaceRaw.map {
+            try normalizedCurrentState($0, source: "workspace.md")
+        }
+        let statusState = try statusRaw.map {
+            try normalizedCurrentState($0, source: "STATUS.md")
+        }
+
+        if let workspaceState, let statusState, workspaceState != statusState {
+            throw NativeWorkspaceLifecycleStoreError.conflictingCurrentStates(
+                workspaceRaw ?? workspaceState,
+                statusRaw ?? statusState
+            )
+        }
+        return workspaceState ?? statusState ?? "unknown"
+    }
+
+    private static func normalizedExpectedState(_ value: String) throws -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.lowercased() == "unknown" {
+            return "unknown"
+        }
+        do {
+            return try normalizedLifecycleState(trimmed)
+        } catch {
+            throw NativeWorkspaceLifecycleStoreError.unsupportedExpectedState(trimmed)
+        }
     }
 
     private static func upsertBulletValue(in text: String, label: String, value: String) -> String {
@@ -240,6 +339,12 @@ private enum NativeWorkspaceLifecycleStoreError: LocalizedError {
     case workspaceMissing(String)
     case workspaceNotDirectory(String)
     case unsupportedState(String)
+    case documentNotFile(String)
+    case documentUnreadable(String, String)
+    case unsupportedCurrentState(String, String)
+    case unsupportedExpectedState(String)
+    case conflictingCurrentStates(String, String)
+    case staleConfirmation(expected: String, current: String)
 
     var errorDescription: String? {
         switch self {
@@ -251,6 +356,18 @@ private enum NativeWorkspaceLifecycleStoreError: LocalizedError {
             return "workspace is not a directory: \(path)"
         case .unsupportedState(let state):
             return "unsupported lifecycle state: \(state)"
+        case .documentNotFile(let path):
+            return "lifecycle document is not a file: \(path)"
+        case .documentUnreadable(let path, let reason):
+            return "lifecycle document is unreadable: \(path): \(reason)"
+        case .unsupportedCurrentState(let source, let state):
+            return "unsupported current lifecycle state: \(source)=\(state)"
+        case .unsupportedExpectedState(let state):
+            return "unsupported expected lifecycle state: \(state)"
+        case .conflictingCurrentStates(let workspaceState, let statusState):
+            return "workspace lifecycle files conflict: workspace.md=\(workspaceState), STATUS.md=\(statusState)"
+        case .staleConfirmation(let expected, let current):
+            return "workspace lifecycle changed since confirmation: expected \(expected), found \(current)"
         }
     }
 }
