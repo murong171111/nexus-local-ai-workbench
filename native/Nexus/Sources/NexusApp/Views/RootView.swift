@@ -2515,106 +2515,124 @@ private struct WorkspaceConsoleView: View {
     @EnvironmentObject private var appState: AppState
     @Binding var isCreateWorkspacePresented: Bool
     @Binding var isSettingsPresented: Bool
+    @State private var navigationTarget: WorkspaceConsoleTarget?
+    @FocusState private var demandInputFocused: Bool
 
     var body: some View {
-        ScrollView {
-            if let workspace = appState.selectedWorkspace {
-                let stage = mainStage(for: workspace)
+        ScrollViewReader { proxy in
+            ScrollView {
+                if let workspace = appState.selectedWorkspace {
+                    let stage = mainStage(for: workspace)
 
-                VStack(alignment: .leading, spacing: 16) {
-                    WorkspaceConsoleHeader(workspace: workspace)
+                    VStack(alignment: .leading, spacing: 16) {
+                        WorkspaceConsoleHeader(workspace: workspace)
+                        WorkspaceConsoleStageRail(stage: stage)
+                        WorkspaceConsoleFocusBand(
+                            stage: stage,
+                            action: { run(stage.primaryAction, in: workspace, proxy: proxy) }
+                        )
 
-                    WorkspaceConsolePrimaryPanel(
-                        workspace: workspace,
-                        stage: stage,
-                        action: { run(stage.primaryAction, in: workspace) },
-                        evidenceAction: { link in
-                            if let action = link.action {
-                                run(action, in: workspace)
+                        ViewThatFits(in: .horizontal) {
+                            HStack(alignment: .top, spacing: 16) {
+                                demandInput(for: workspace)
+                                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                                WorkspaceConsoleCurrentSignals(stage: stage)
+                                    .frame(width: 280, alignment: .topLeading)
+                            }
+
+                            VStack(alignment: .leading, spacing: 16) {
+                                demandInput(for: workspace)
+                                WorkspaceConsoleCurrentSignals(stage: stage)
                             }
                         }
-                    )
 
-                    WorkspaceConsoleWorkArea(
-                        workspace: workspace,
-                        stage: stage,
-                        openDocument: { key, fallback in
-                            Task {
-                                await appState.loadDocument(path: documentPath(for: key, fallback: fallback, in: workspace))
+                        WorkspaceConsoleEvidenceDisclosure(
+                            workspace: workspace,
+                            stage: stage,
+                            openDocument: { key, fallback in
+                                Task {
+                                    await appState.loadDocument(path: documentPath(for: key, fallback: fallback, in: workspace))
+                                }
+                            },
+                            openSql: {
+                                Task {
+                                    await appState.openSqlReviewDocument(in: workspace)
+                                }
                             }
-                        },
-                        openSql: {
-                            Task {
-                                await appState.openSqlReviewDocument(in: workspace)
-                            }
-                        }
-                    )
+                        )
                         .environmentObject(appState)
 
-                    DisclosureGroup("更多状态 / More status") {
-                        VStack(alignment: .leading, spacing: 12) {
-                            WorkspaceConsoleSummaryStrip(workspace: workspace)
+                        DisclosureGroup("更多状态 / More status") {
+                            VStack(alignment: .leading, spacing: 12) {
+                                WorkspaceConsoleSummaryStrip(workspace: workspace)
 
-                            NextStepQueueView(actions: workspace.sessionActions) { action in
-                                run(action, in: workspace)
-                            }
-
-                            WorkflowStatusView(
-                                workspace: workspace,
-                                completeTaskAction: { task in
-                                    appState.requestTaskStatusUpdate(task, in: workspace, status: "已完成")
-                                },
-                                deferTaskAction: { task in
-                                    appState.requestTaskStatusUpdate(task, in: workspace, status: "延期")
-                                },
-                                openTaskDocumentAction: { task in
-                                    Task {
-                                        await appState.openTaskSource(task, in: workspace)
-                                    }
-                                },
-                                taskCodexAction: { task in
-                                    Task {
-                                        await appState.openTaskInCodex(task, in: workspace)
-                                    }
-                                },
-                                lifecycleAction: { transition in
-                                    appState.requestLifecycleStatusUpdate(transition, in: workspace)
+                                NextStepQueueView(actions: workspace.sessionActions) { action in
+                                    run(action, in: workspace, proxy: proxy)
                                 }
-                            )
-                            .environmentObject(appState)
+
+                                WorkflowStatusView(
+                                    workspace: workspace,
+                                    completeTaskAction: { task in
+                                        appState.requestTaskStatusUpdate(task, in: workspace, status: "已完成")
+                                    },
+                                    deferTaskAction: { task in
+                                        appState.requestTaskStatusUpdate(task, in: workspace, status: "延期")
+                                    },
+                                    openTaskDocumentAction: { task in
+                                        Task {
+                                            await appState.openTaskSource(task, in: workspace)
+                                        }
+                                    },
+                                    taskCodexAction: { task in
+                                        Task {
+                                            await appState.openTaskInCodex(task, in: workspace)
+                                        }
+                                    },
+                                    lifecycleAction: { transition in
+                                        appState.requestLifecycleStatusUpdate(transition, in: workspace)
+                                    }
+                                )
+                                .environmentObject(appState)
+                            }
+                            .padding(.top, 8)
                         }
-                        .padding(.top, 8)
+                        .padding(12)
+                        .background(NexusPalette.panel)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     }
-                    .padding(12)
-                    .background(NexusPalette.panel)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .padding(18)
+                } else {
+                    WorkspaceConsoleEmptyStateView(
+                        isCreateWorkspacePresented: $isCreateWorkspacePresented,
+                        isSettingsPresented: $isSettingsPresented
+                    )
+                    .padding(18)
                 }
-                .padding(18)
-            } else {
-                WorkspaceConsoleEmptyStateView(
-                    isCreateWorkspacePresented: $isCreateWorkspacePresented,
-                    isSettingsPresented: $isSettingsPresented
-                )
-                .padding(18)
             }
+            .background(NexusPalette.background)
         }
-        .background(NexusPalette.background)
     }
 
     private func mainStage(for workspace: WorkspaceSummary) -> WorkspaceMainStage {
         appState.mainWorkflowStage(for: workspace)
     }
 
-    private func run(_ action: WorkspaceSessionAction, in workspace: WorkspaceSummary) {
+    private func demandInput(for workspace: WorkspaceSummary) -> some View {
+        WorkspaceDemandIntakeView(workspace: workspace)
+            .environmentObject(appState)
+            .id(WorkspaceConsoleTarget.demandInput)
+            .focusable()
+            .focused($demandInputFocused)
+    }
+
+    private func run(_ action: WorkspaceSessionAction, in workspace: WorkspaceSummary, proxy: ScrollViewProxy) {
         if action.instructionType == "worktree" {
             appState.presentWorktreeSetup(for: workspace)
             return
         }
 
         if action.instructionType == "demand" || action.documentKey == "demandIntake" {
-            Task {
-                await appState.loadDocument(path: "\(workspace.path)/需求/requirement.md")
-            }
+            routeToDemandInput(proxy)
             return
         }
 
@@ -2630,14 +2648,12 @@ private struct WorkspaceConsoleView: View {
         }
     }
 
-    private func run(_ action: WorkspaceMainStageAction, in workspace: WorkspaceSummary) {
+    private func run(_ action: WorkspaceMainStageAction, in workspace: WorkspaceSummary, proxy: ScrollViewProxy) {
         switch action {
         case .lifecycle(let transition):
             appState.requestLifecycleStatusUpdate(transition, in: workspace)
         case .demandIntake:
-            Task {
-                await appState.loadDocument(path: documentPath(for: "requirement", fallback: "需求/requirement.md", in: workspace))
-            }
+            routeToDemandInput(proxy)
         case .document(let key):
             if key == "sql" {
                 Task {
@@ -2663,7 +2679,7 @@ private struct WorkspaceConsoleView: View {
                 }
             }
         case .transferDemandTasks:
-            appState.requestDemandTaskTransfer(in: workspace)
+            routeToDemandInput(proxy)
         case .worktree:
             appState.presentWorktreeSetup(for: workspace)
         case .riskPrompt:
@@ -2688,6 +2704,14 @@ private struct WorkspaceConsoleView: View {
                 await appState.openWorkspaceInCodex(workspace)
             }
         }
+    }
+
+    private func routeToDemandInput(_ proxy: ScrollViewProxy) {
+        navigationTarget = .demandInput
+        withAnimation(.easeInOut(duration: 0.2)) {
+            proxy.scrollTo(WorkspaceConsoleTarget.demandInput, anchor: .top)
+        }
+        demandInputFocused = true
     }
 
     private func documentPath(for key: String, fallback: String, in workspace: WorkspaceSummary) -> String {
@@ -2729,10 +2753,6 @@ private struct WorkspaceConsoleView: View {
 private struct WorkspaceConsoleHeader: View {
     let workspace: WorkspaceSummary
 
-    private var stage: WorkspaceMainStage {
-        workspace.mainStage()
-    }
-
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 5) {
@@ -2752,26 +2772,83 @@ private struct WorkspaceConsoleHeader: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 8) {
-                HStack(spacing: 7) {
-                    Pill(label: workspace.branch, systemImage: "arrow.triangle.branch")
-                    RiskBadge(level: workspace.riskLevel)
-                    if workspace.isArchived {
-                        ArchivedBadge()
-                    }
+                Pill(label: workspace.branch, systemImage: "arrow.triangle.branch")
+                RiskBadge(level: workspace.riskLevel)
+                if workspace.isArchived {
+                    ArchivedBadge()
                 }
-                Label(stage.id.shortLabel, systemImage: stage.id.systemImage)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(stage.status.color)
             }
         }
     }
 }
 
-private struct WorkspaceConsolePrimaryPanel: View {
-    let workspace: WorkspaceSummary
+private struct WorkspaceConsoleStageRail: View {
+    let stage: WorkspaceMainStage
+
+    private var activeGroup: WorkspaceConsoleStageGroup {
+        WorkspaceConsoleStageGroup(stage: stage.id)
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(WorkspaceConsoleStageGroup.allCases, id: \.self) { group in
+                let isActive = group == activeGroup
+
+                VStack(spacing: 4) {
+                    Image(systemName: systemImage(for: group))
+                        .font(.caption.weight(.semibold))
+                    Text(label(for: group))
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
+                }
+                .foregroundStyle(isActive ? stage.status.color : .secondary)
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .background(isActive ? stage.status.color.opacity(0.10) : NexusPalette.panel)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(isActive ? stage.status.color.opacity(0.25) : .clear)
+                }
+                .accessibilityLabel(label(for: group))
+                .accessibilityValue(isActive ? "当前阶段" : "")
+            }
+        }
+    }
+
+    private func label(for group: WorkspaceConsoleStageGroup) -> String {
+        switch group {
+        case .created:
+            "已建档"
+        case .demandAndFeatures:
+            "需求与功能点"
+        case .development:
+            "开发"
+        case .delivery:
+            "交付"
+        case .archive:
+            "归档"
+        }
+    }
+
+    private func systemImage(for group: WorkspaceConsoleStageGroup) -> String {
+        switch group {
+        case .created:
+            "folder.badge.plus"
+        case .demandAndFeatures:
+            "text.badge.checkmark"
+        case .development:
+            "hammer"
+        case .delivery:
+            "shippingbox"
+        case .archive:
+            "archivebox"
+        }
+    }
+}
+
+private struct WorkspaceConsoleFocusBand: View {
     let stage: WorkspaceMainStage
     let action: () -> Void
-    let evidenceAction: (WorkspaceMainStageEvidenceLink) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -2791,6 +2868,10 @@ private struct WorkspaceConsolePrimaryPanel: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+
+                    Text("激活后将进入下一步所需的工作区操作。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 Spacer()
@@ -2800,30 +2881,6 @@ private struct WorkspaceConsolePrimaryPanel: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
-            }
-
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
-                ConsoleFocusRow(label: "当前阶段", value: stage.id.label, systemImage: stage.id.systemImage, tone: stage.status.color)
-                ConsoleFocusRow(label: "为什么卡住", value: stage.blockerSummary, systemImage: stage.status == .blocked ? "xmark.octagon" : "info.circle", tone: stage.status.color)
-                ConsoleFocusRow(label: "下一步", value: stage.primaryActionLabel, systemImage: stage.primaryActionSystemImage, tone: NexusPalette.accent)
-                ConsoleFocusRow(label: "主证据文件", value: stage.answer.primaryEvidenceLink?.label ?? "暂无主证据", systemImage: "doc.text.magnifyingglass", tone: .secondary)
-            }
-
-            if !stage.evidenceLinks.isEmpty {
-                HStack(spacing: 8) {
-                    ForEach(stage.evidenceLinks.prefix(3)) { link in
-                        Button {
-                            evidenceAction(link)
-                        } label: {
-                            Label(link.label, systemImage: link.systemImage)
-                                .font(.system(.caption, design: .monospaced))
-                                .lineLimit(1)
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .disabled(link.action == nil)
-                    }
-                }
             }
         }
         .padding(14)
@@ -2835,18 +2892,40 @@ private struct WorkspaceConsolePrimaryPanel: View {
         }
     }
 
-    private var columns: [GridItem] {
-        [GridItem(.adaptive(minimum: 164), spacing: 8, alignment: .leading)]
-    }
 }
 
-private struct ConsoleFocusRow: View {
-    let label: String
-    let value: String
-    let systemImage: String
-    let tone: Color
+private struct WorkspaceConsoleCurrentSignals: View {
+    let stage: WorkspaceMainStage
 
     var body: some View {
+        SectionBlock(title: "当前信号 / Current signals") {
+            VStack(alignment: .leading, spacing: 10) {
+                signalRow(
+                    label: "当前动作",
+                    value: stage.primaryActionLabel,
+                    systemImage: stage.primaryActionSystemImage,
+                    tone: NexusPalette.accent
+                )
+                if stage.status == .blocked {
+                    signalRow(
+                        label: "阻塞原因",
+                        value: stage.blockerSummary,
+                        systemImage: "xmark.octagon",
+                        tone: stage.status.color
+                    )
+                } else if stage.status != .ready {
+                    signalRow(
+                        label: "注意信号",
+                        value: stage.status.displayLabel,
+                        systemImage: stage.id.systemImage,
+                        tone: stage.status.color
+                    )
+                }
+            }
+        }
+    }
+
+    private func signalRow(label: String, value: String, systemImage: String, tone: Color) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: systemImage)
                 .font(.caption)
@@ -2858,47 +2937,46 @@ private struct ConsoleFocusRow: View {
                     .foregroundStyle(.secondary)
                 Text(value)
                     .font(.caption.weight(.medium))
-                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(9)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(NexusPalette.panel)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
-private struct WorkspaceConsoleWorkArea: View {
+private struct WorkspaceConsoleEvidenceDisclosure: View {
+    @State private var isExpanded = false
     let workspace: WorkspaceSummary
     let stage: WorkspaceMainStage
     let openDocument: (String, String) -> Void
     let openSql: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 12) {
-                WorkspaceConsoleFileDock(
+        DisclosureGroup(isExpanded: $isExpanded) {
+            VStack(alignment: .leading, spacing: 16) {
+                WorkspaceConsoleEvidenceGroups(
                     workspace: workspace,
                     stage: stage,
                     openDocument: openDocument,
                     openSql: openSql
                 )
-
-                WorkspaceConsoleSummaryStrip(workspace: workspace)
+                WorkspaceConsoleDocumentPanel(
+                    workspace: workspace,
+                    openDocument: openDocument,
+                    openSql: openSql
+                )
             }
-            .frame(width: 380, alignment: .topLeading)
-
-            WorkspaceConsoleDocumentPanel(
-                workspace: workspace,
-                openDocument: openDocument,
-                openSql: openSql
-            )
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .padding(.top, 8)
+        } label: {
+            Label("证据与文件 / Evidence & files", systemImage: "folder")
+                .font(.subheadline.weight(.semibold))
         }
+        .padding(12)
+        .background(NexusPalette.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
-private struct WorkspaceConsoleFileDock: View {
+private struct WorkspaceConsoleEvidenceGroups: View {
     let workspace: WorkspaceSummary
     let stage: WorkspaceMainStage
     let openDocument: (String, String) -> Void
@@ -2951,35 +3029,33 @@ private struct WorkspaceConsoleFileDock: View {
     }
 
     var body: some View {
-        SectionBlock(title: "需要的文件 / Files you need") {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("先看当前阶段文件；常用、需求和 SQL/scripts 永远在这里，不再藏在详情深处。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 12) {
+            Text("当前阶段、常用、需求和 SQL/scripts 的证据都在这里按需展开。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
-                ForEach(groups) { group in
-                    VStack(alignment: .leading, spacing: 7) {
-                        Text(group.title)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
+            ForEach(groups) { group in
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(group.title)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
 
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 136), spacing: 8)], alignment: .leading, spacing: 8) {
-                            ForEach(group.files) { file in
-                                Button {
-                                    if file.opensSqlReview {
-                                        openSql()
-                                    } else {
-                                        openDocument(file.key, file.fallback)
-                                    }
-                                } label: {
-                                    Label(file.label, systemImage: file.systemImage)
-                                        .font(.caption.weight(.medium))
-                                        .lineLimit(1)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 136), spacing: 8)], alignment: .leading, spacing: 8) {
+                        ForEach(group.files) { file in
+                            Button {
+                                if file.opensSqlReview {
+                                    openSql()
+                                } else {
+                                    openDocument(file.key, file.fallback)
                                 }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
+                            } label: {
+                                Label(file.label, systemImage: file.systemImage)
+                                    .font(.caption.weight(.medium))
+                                    .lineLimit(1)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                             }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
                         }
                     }
                 }
