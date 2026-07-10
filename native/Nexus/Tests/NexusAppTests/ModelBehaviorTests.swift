@@ -2764,7 +2764,7 @@ final class ModelBehaviorTests: XCTestCase {
         | 任务 | 状态 | 说明 | 优先级 |
         | --- | --- | --- | --- |
         | 接入 Native scanner | 进行中 | AppState Native-first | high |
-        | 删除 bridge 兜底 | 待办 | 等 Git/worktree 规则补齐 | medium |
+        | 删除 bridge 兜底 | 待办 | 等 Git/worktree 规则补齐 event=agent-1 | medium |
         """.write(to: workspace.appendingPathComponent("tasks.md"), atomically: true, encoding: .utf8)
         try """
         | 服务 | 范围 |
@@ -2799,7 +2799,17 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(snapshot.links["workspace"]?.hasSuffix("/2026-06-23-native-dashboard/workspace.md"), true)
         XCTAssertEqual(snapshot.sqlFiles?.map(\.relativePath), ["sql/change.sql"])
         XCTAssertEqual(snapshot.sqlDocuments?.map(\.relativePath), ["sql/README.md"])
-        XCTAssertEqual(snapshot.tasks?.map(\.source), ["workspace", "workspace"])
+        XCTAssertEqual(
+            snapshot.tasks?.map(\.id),
+            [
+                "2026-06-23-native-dashboard:task-0",
+                "2026-06-23-native-dashboard:agent-1"
+            ]
+        )
+        XCTAssertEqual(snapshot.tasks?.map(\.source), ["workspace", "agent"])
+        XCTAssertEqual(snapshot.tasks?.map(\.sourceEventId), [nil, "agent-1"])
+        XCTAssertEqual(snapshot.tasks?.map(\.sourceLine), [5, 6])
+        XCTAssertEqual(snapshot.tasks?.map(\.priority), ["high", "medium"])
     }
 
     func testNativeWorkspaceScannerBuildsConservativeLifecycleFromMarkdownEvidence() throws {

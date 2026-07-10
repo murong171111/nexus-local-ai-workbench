@@ -94,7 +94,10 @@ enum NativeWorkspaceScanner {
         let workspaceContent = read(root.appendingPathComponent("workspace.md", isDirectory: false))
         let statusContent = read(root.appendingPathComponent("STATUS.md", isDirectory: false))
         let branchesContent = read(root.appendingPathComponent("branches.md", isDirectory: false))
-        let tasks = taskSnapshots(from: read(root.appendingPathComponent("tasks.md", isDirectory: false)))
+        let tasks = NativeWorkspaceTaskParser.snapshots(
+            from: read(root.appendingPathComponent("tasks.md", isDirectory: false)),
+            folder: root.lastPathComponent
+        )
         let services = serviceNames(from: read(root.appendingPathComponent("services.md", isDirectory: false)))
         let lifecycle = lifecycleResolution(
             workspaceContent: workspaceContent,
@@ -279,40 +282,6 @@ enum NativeWorkspaceScanner {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .first { $0.hasPrefix("# ") }
             .map { String($0.dropFirst(2)).trimmingCharacters(in: .whitespacesAndNewlines) }
-    }
-
-    private static func taskSnapshots(from content: String) -> [WorkspaceTaskSnapshot] {
-        let rows = content.split(separator: "\n", omittingEmptySubsequences: false).enumerated()
-        return rows.compactMap { lineNumber, rawLine in
-            let line = String(rawLine).trimmingCharacters(in: .whitespacesAndNewlines)
-            guard line.hasPrefix("|"), line.hasSuffix("|") else { return nil }
-            let columns = line.split(separator: "|", omittingEmptySubsequences: false)
-                .dropFirst()
-                .dropLast()
-                .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
-            guard columns.count >= 2,
-                  !columns[0].isEmpty,
-                  !columns[0].contains("---"),
-                  !columns[0].localizedCaseInsensitiveContains("任务") else {
-                return nil
-            }
-            let title = stripCheckbox(columns[0])
-            return WorkspaceTaskSnapshot(
-                id: "task-\(lineNumber + 1)-\(slug(title))",
-                title: title,
-                status: columns[1],
-                detail: columns.count > 2 ? columns[2] : "",
-                priority: columns.count > 3 ? columns[3] : "normal",
-                source: "workspace",
-                sourceLine: lineNumber + 1
-            )
-        }
-    }
-
-    private static func stripCheckbox(_ value: String) -> String {
-        value.replacingOccurrences(of: "[ ]", with: "")
-            .replacingOccurrences(of: "[x]", with: "", options: .caseInsensitive)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func taskCounts(from tasks: [WorkspaceTaskSnapshot]) -> TaskCountsSnapshot {
@@ -731,14 +700,5 @@ enum NativeWorkspaceScanner {
 
     private static func read(_ url: URL) -> String {
         (try? String(contentsOf: url, encoding: .utf8)) ?? ""
-    }
-
-    private static func slug(_ value: String) -> String {
-        let allowed = CharacterSet.alphanumerics
-        let scalars = value.unicodeScalars.map { scalar -> Character in
-            allowed.contains(scalar) ? Character(scalar) : "-"
-        }
-        let collapsed = String(scalars).split(separator: "-").joined(separator: "-")
-        return collapsed.isEmpty ? "item" : collapsed.lowercased()
     }
 }
