@@ -5327,6 +5327,17 @@ final class ModelBehaviorTests: XCTestCase {
             - [x] 本文件已冻结本次开发范围。
             """
         )
+        try """
+        # Tasks
+
+        | 任务 | 状态 | 说明 |
+        | --- | --- | --- |
+        | 新增交易快照写入 | 已完成 | priority=high; 需求任务已转入并完成。 |
+        """.write(
+            to: deliveryRoot.appendingPathComponent("tasks.md"),
+            atomically: true,
+            encoding: .utf8
+        )
 
         let createdWorkspace = workspaceForWorkflowSummary(
             stage: "scoping",
@@ -5397,6 +5408,17 @@ final class ModelBehaviorTests: XCTestCase {
 
             - [x] 本文件已冻结本次开发范围。
             """
+        )
+        try """
+        # Tasks
+
+        | 任务 | 状态 | 说明 |
+        | --- | --- | --- |
+        | 新增交易快照写入 | 已完成 | priority=high; 需求任务已转入并完成。 |
+        """.write(
+            to: deliveryRoot.appendingPathComponent("tasks.md"),
+            atomically: true,
+            encoding: .utf8
         )
 
         let createdWorkspace = workspaceForWorkflowSummary(
