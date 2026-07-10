@@ -13,22 +13,26 @@ enum NativeWorktreeSetupStore {
         guard isConfirmedTargetBranch(targetBranch) else {
             throw NativeWorktreeSetupError.unconfirmedBranch
         }
+        let services = normalizedServices(request.services)
+        guard !services.isEmpty else {
+            throw NativeWorktreeSetupError.noServices
+        }
 
         let workspaceURL = URL(fileURLWithPath: (request.workspacePath as NSString).expandingTildeInPath)
-        var isDirectory: ObjCBool = false
-        guard fileManager.fileExists(atPath: workspaceURL.path, isDirectory: &isDirectory) else {
+        guard let workspaceType = fileType(at: workspaceURL, fileManager: fileManager) else {
             throw NativeWorktreeSetupError.workspaceMissing(workspaceURL.path)
         }
-        guard isDirectory.boolValue else {
+        guard workspaceType != .typeSymbolicLink else {
+            throw NativeWorktreeSetupError.workspaceSymbolicLink(workspaceURL.path)
+        }
+        guard workspaceType == .typeDirectory else {
             throw NativeWorktreeSetupError.workspaceNotDirectory(workspaceURL.path)
         }
 
         let reposURL = workspaceURL.appendingPathComponent("repos", isDirectory: true)
-        try fileManager.createDirectory(at: reposURL, withIntermediateDirectories: true)
-
-        let services = normalizedServices(request.services)
-        guard !services.isEmpty else {
-            throw NativeWorktreeSetupError.noServices
+        if let reposType = fileType(at: reposURL, fileManager: fileManager),
+           reposType != .typeDirectory {
+            throw NativeWorktreeSetupError.worktreeRootNotDirectory(reposURL.path)
         }
 
         let sourceRootURL = URL(fileURLWithPath: (request.sourceReposRoot as NSString).expandingTildeInPath)
@@ -43,7 +47,17 @@ enum NativeWorktreeSetupStore {
                 failed.append(result(service: service, sourceURL: sourceURL, worktreeURL: worktreeURL, status: "failed", detail: "service name must be a single safe path segment"))
                 continue
             }
-            if fileManager.fileExists(atPath: worktreeURL.path) {
+            if let worktreeType = fileType(at: worktreeURL, fileManager: fileManager) {
+                guard worktreeType == .typeDirectory else {
+                    failed.append(result(
+                        service: service,
+                        sourceURL: sourceURL,
+                        worktreeURL: worktreeURL,
+                        status: "failed",
+                        detail: "worktree path is not a real directory; symbolic links and files are not trusted"
+                    ))
+                    continue
+                }
                 skipped.append(result(service: service, sourceURL: sourceURL, worktreeURL: worktreeURL, status: "skipped", detail: "worktree path already exists"))
                 continue
             }
@@ -61,6 +75,27 @@ enum NativeWorktreeSetupStore {
                 break
             case .failure(let detail):
                 failed.append(result(service: service, sourceURL: sourceURL, worktreeURL: worktreeURL, status: "failed", detail: "git fetch failed: \(detail)"))
+                continue
+            }
+
+            if fileType(at: reposURL, fileManager: fileManager) == nil {
+                try fileManager.createDirectory(at: reposURL, withIntermediateDirectories: false)
+            }
+            guard fileType(at: reposURL, fileManager: fileManager) == .typeDirectory else {
+                throw NativeWorktreeSetupError.worktreeRootNotDirectory(reposURL.path)
+            }
+            if let currentTargetType = fileType(at: worktreeURL, fileManager: fileManager) {
+                if currentTargetType == .typeDirectory {
+                    skipped.append(result(service: service, sourceURL: sourceURL, worktreeURL: worktreeURL, status: "skipped", detail: "worktree path appeared before creation"))
+                } else {
+                    failed.append(result(
+                        service: service,
+                        sourceURL: sourceURL,
+                        worktreeURL: worktreeURL,
+                        status: "failed",
+                        detail: "worktree path changed before creation; symbolic links and files are not trusted"
+                    ))
+                }
                 continue
             }
 
@@ -130,6 +165,13 @@ enum NativeWorktreeSetupStore {
 
     private static func normalizedServices(_ services: [String]) -> [String] {
         Array(Set(services.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })).sorted()
+    }
+
+    private static func fileType(at url: URL, fileManager: FileManager) -> FileAttributeType? {
+        guard let attributes = try? fileManager.attributesOfItem(atPath: url.path) else {
+            return nil
+        }
+        return attributes[.type] as? FileAttributeType
     }
 
     private static func isSafeServiceName(_ service: String) -> Bool {
@@ -229,7 +271,9 @@ private enum NativeWorktreeSetupError: LocalizedError {
     case unconfirmed
     case unconfirmedBranch
     case workspaceMissing(String)
+    case workspaceSymbolicLink(String)
     case workspaceNotDirectory(String)
+    case worktreeRootNotDirectory(String)
     case noServices
 
     var errorDescription: String? {
@@ -240,8 +284,12 @@ private enum NativeWorktreeSetupError: LocalizedError {
             return "target branch must be confirmed before creating worktrees"
         case .workspaceMissing(let path):
             return "workspace does not exist: \(path)"
+        case .workspaceSymbolicLink(let path):
+            return "workspace must be a real directory; symbolic links are not allowed: \(path)"
         case .workspaceNotDirectory(let path):
             return "workspace is not a directory: \(path)"
+        case .worktreeRootNotDirectory(let path):
+            return "worktree root must be a real directory; symbolic links and files are not allowed: \(path)"
         case .noServices:
             return "no services selected for worktree setup"
         }

@@ -7874,6 +7874,101 @@ final class ModelBehaviorTests: XCTestCase {
         }
     }
 
+    func testNativeWorktreeSetupStoreRejectsNoServicesBeforeCreatingReposDirectory() throws {
+        let workspace = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-worktree-empty-\(UUID().uuidString)")
+        defer {
+            try? FileManager.default.removeItem(at: workspace)
+        }
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+
+        XCTAssertThrowsError(
+            try NativeWorktreeSetupStore.setup(
+                request: SetupWorktreesRequest(
+                    workspacePath: workspace.path,
+                    sourceReposRoot: "/tmp/source-repos",
+                    services: [],
+                    targetBranch: "feature/native-setup",
+                    confirmed: true
+                )
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("no services"))
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: workspace.appendingPathComponent("repos").path))
+    }
+
+    func testNativeWorktreeSetupStoreRejectsLinkedWorkspaceAndReposRoots() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-worktree-linked-roots-\(UUID().uuidString)")
+        let realWorkspace = root.appendingPathComponent("real-workspace")
+        let linkedWorkspace = root.appendingPathComponent("linked-workspace")
+        let workspaceWithLinkedRepos = root.appendingPathComponent("workspace-linked-repos")
+        let externalRepos = root.appendingPathComponent("external-repos")
+        let sourceRoot = root.appendingPathComponent("source-repos")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        for directory in [realWorkspace, workspaceWithLinkedRepos, externalRepos, sourceRoot] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        try FileManager.default.createSymbolicLink(at: linkedWorkspace, withDestinationURL: realWorkspace)
+        try FileManager.default.createSymbolicLink(
+            at: workspaceWithLinkedRepos.appendingPathComponent("repos"),
+            withDestinationURL: externalRepos
+        )
+
+        for workspacePath in [linkedWorkspace.path, workspaceWithLinkedRepos.path] {
+            XCTAssertThrowsError(
+                try NativeWorktreeSetupStore.setup(
+                    request: SetupWorktreesRequest(
+                        workspacePath: workspacePath,
+                        sourceReposRoot: sourceRoot.path,
+                        services: ["order"],
+                        targetBranch: "feature/native-setup",
+                        confirmed: true
+                    )
+                )
+            ) { error in
+                XCTAssertTrue(error.localizedDescription.contains("symbolic links"))
+            }
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: realWorkspace.appendingPathComponent("repos").path))
+        XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: externalRepos.path).isEmpty)
+    }
+
+    func testNativeWorktreeSetupStoreRejectsLinkedTargetInsteadOfSkippingIt() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-worktree-linked-target-\(UUID().uuidString)")
+        let workspace = root.appendingPathComponent("workspace")
+        let repos = workspace.appendingPathComponent("repos")
+        let externalTarget = root.appendingPathComponent("external-order")
+        let linkedTarget = repos.appendingPathComponent("order")
+        let sourceRoot = root.appendingPathComponent("source-repos")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        for directory in [repos, externalTarget, sourceRoot] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        try FileManager.default.createSymbolicLink(at: linkedTarget, withDestinationURL: externalTarget)
+
+        let response = try NativeWorktreeSetupStore.setup(
+            request: SetupWorktreesRequest(
+                workspacePath: workspace.path,
+                sourceReposRoot: sourceRoot.path,
+                services: ["order"],
+                targetBranch: "feature/native-setup",
+                confirmed: true
+            )
+        )
+
+        XCTAssertTrue(response.created.isEmpty)
+        XCTAssertTrue(response.skipped.isEmpty)
+        XCTAssertEqual(response.failed.map(\.service), ["order"])
+        XCTAssertTrue(response.failed.first?.detail.contains("symbolic link") == true)
+    }
+
     @MainActor
     func testNativeStoresCanProveEndToEndWorkspaceLifecycle() async throws {
         let root = FileManager.default.temporaryDirectory

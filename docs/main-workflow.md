@@ -478,6 +478,7 @@ Plan:
   - dirty
   - clean
 - Keep all mutation behind confirmation. `[started with WorktreeSetupMutationPolicy]`
+- Reject symbolic-link workspace, `repos/`, and service-target paths before Git mutation, and validate empty requests before creating directories. `[started with NativeWorktreeSetupStore strict path preflight]`
 - Keep source repositories read-only unless the user explicitly opens them outside Nexus. `[started with SourceRepositoryAccess]`
 
 ### Audit / Delivery
