@@ -8375,6 +8375,9 @@ private struct DemandTaskTransferPreview: View {
     let openExecutionTasksAction: () -> Void
 
     private var tone: Color {
+        if plan.isBlocked {
+            return NexusPalette.danger
+        }
         if plan.hasTransferableItems {
             return NexusPalette.accent
         }
@@ -8382,16 +8385,26 @@ private struct DemandTaskTransferPreview: View {
     }
 
     private var title: String {
+        if plan.isBlocked {
+            return "需求任务证据不可用 / Evidence blocked"
+        }
         if plan.hasTransferableItems {
             return "待转入执行任务 / Ready to transfer"
         }
         return plan.candidates.isEmpty ? "需求任务待整理 / No intake tasks" : "执行任务已同步 / Already transferred"
     }
 
+    private var systemImage: String {
+        if plan.isBlocked {
+            return "doc.badge.ellipsis"
+        }
+        return plan.hasTransferableItems ? "arrow.down.doc" : "checklist"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 9) {
-                Image(systemName: plan.hasTransferableItems ? "arrow.down.doc" : "checklist")
+                Image(systemName: systemImage)
                     .foregroundStyle(tone)
                     .frame(width: 15)
 

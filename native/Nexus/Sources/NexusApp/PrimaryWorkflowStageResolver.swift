@@ -128,6 +128,20 @@ extension WorkspaceSummary {
             )
         }
 
+        if let plan = resolvedDemandTaskTransfer, plan.isBlocked {
+            return WorkspaceMainStage(
+                id: .development,
+                status: .blocked,
+                title: "需求任务证据不可用 / Task evidence unavailable",
+                reason: plan.blockerSummary ?? "需求任务文档不可安全读取。",
+                primaryActionLabel: plan.blockerPath == plan.executionTasksPath ? "打开执行任务" : "打开需求任务",
+                primaryActionSystemImage: "doc.badge.ellipsis",
+                primaryAction: .path(plan.blockerPath ?? plan.intakeTasksPath),
+                evidence: compactEvidence("需求/tasks.md", "tasks.md"),
+                nextStageAllowed: false
+            )
+        }
+
         if let resolvedDemandTaskTransfer, resolvedDemandTaskTransfer.hasTransferableItems {
             return WorkspaceMainStage(
                 id: .development,

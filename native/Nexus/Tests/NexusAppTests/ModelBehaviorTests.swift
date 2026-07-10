@@ -8570,6 +8570,45 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(validation.checks.first(where: { $0.id == "lifecycle" })?.status, .next)
     }
 
+    func testMainStageBlocksUnsafeDemandTaskTransferEvidence() {
+        let workspace = workspaceForWorkflowSummary(
+            stage: "developing",
+            id: "demand-transfer-evidence-blocked",
+            path: "/tmp/demand-transfer-evidence-blocked"
+        )
+        let intakeTasksPath = "\(workspace.path)/需求/tasks.md"
+        let plan = DemandTaskTransferPlan(
+            workspaceID: workspace.id,
+            workspaceName: workspace.name,
+            workspacePath: workspace.path,
+            intakeTasksPath: intakeTasksPath,
+            executionTasksPath: "\(workspace.path)/tasks.md",
+            candidates: [],
+            existingTitles: [],
+            expectedIntakeRevision: .invalid(reason: "intake tasks.md is not valid UTF-8"),
+            expectedExecutionRevision: .missing,
+            blockerSummary: "intake tasks.md is not valid UTF-8",
+            blockerPath: intakeTasksPath
+        )
+        let worktree = WorktreeSetupEvidence.resolve(workspace: workspace)
+        let stage = workspace.mainStage(
+            demandReadiness: readyDemandReadiness(),
+            scopeFreeze: readyScopeFreeze(),
+            serviceBranch: readyServiceBranch(for: workspace),
+            worktreeSetup: worktree,
+            demandTaskTransfer: plan
+        )
+
+        XCTAssertTrue(worktree.ready)
+        XCTAssertEqual(stage.id, .development)
+        XCTAssertEqual(stage.status, .blocked)
+        XCTAssertEqual(stage.title, "需求任务证据不可用 / Task evidence unavailable")
+        XCTAssertEqual(stage.reason, plan.blockerSummary)
+        XCTAssertEqual(stage.primaryActionLabel, "打开需求任务")
+        XCTAssertEqual(stage.primaryAction, .path(plan.intakeTasksPath))
+        XCTAssertFalse(stage.nextStageAllowed)
+    }
+
     func testDemandTaskTransferPlanFindsNewIntakeTasksAndUpdatesMainStage() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-demand-task-transfer-\(UUID().uuidString)")
