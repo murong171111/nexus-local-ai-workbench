@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Added
 
+- Native environment diagnostics now inspect configured directory permissions without creating `.nexus-write-check`, preserving any pre-existing user file at that path.
 - Native standard-document recovery now requires real workspace and parent directories, rejects symbolic links, creates only fixed missing paths without overwrite, and preserves Native safety errors instead of retrying through the legacy bridge.
 - Native demand-intake initialization now freezes a strict workspace/directory/file plan at confirmation, rejects symlinks and external changes, creates fixed Markdown files without overwrite, rolls back partial writes, and never retries Native safety failures through the legacy bridge.
 - Native demand-task transfer now binds the reviewed `需求/tasks.md` candidates and root `tasks.md` duplicate set to exact regular UTF-8 revisions, blocking unsafe evidence and rejecting either document changing before atomic append and success audit.

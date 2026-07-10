@@ -4662,7 +4662,9 @@ final class AppState: ObservableObject {
         let url = localFileURL(for: rawPath)
         var isDirectory: ObjCBool = false
         let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
-        let writable = exists && isDirectory.boolValue && canWriteMarker(in: url)
+        let writable = exists
+            && isDirectory.boolValue
+            && FileManager.default.isWritableFile(atPath: url.path)
         let summary: String
         if !exists {
             summary = "目录不存在"
@@ -4683,17 +4685,6 @@ final class AppState: ObservableObject {
             writable: writable,
             summary: summary
         )
-    }
-
-    private static func canWriteMarker(in directoryURL: URL) -> Bool {
-        let markerURL = directoryURL.appendingPathComponent(".nexus-write-check")
-        do {
-            try "ok".write(to: markerURL, atomically: true, encoding: .utf8)
-            try? FileManager.default.removeItem(at: markerURL)
-            return true
-        } catch {
-            return false
-        }
     }
 
     private static func environmentToolCheck(

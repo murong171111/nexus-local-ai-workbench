@@ -4566,6 +4566,51 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(appState.nativeEnvironmentHealth?.workspaceCount, dashboard.workspaces.count)
     }
 
+    @MainActor
+    func testNativeEnvironmentHealthPreservesExistingWriteMarkerFiles() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-read-only-environment-\(UUID().uuidString)")
+        let workspacesRoot = root.appendingPathComponent("workspaces")
+        let sourceRoot = root.appendingPathComponent("source-repos")
+        let docsRoot = root.appendingPathComponent("docs")
+        let configuredRoots = [workspacesRoot, sourceRoot, docsRoot]
+        let markerName = ".nexus-write-check"
+        let markerContent = "user-owned diagnostic sentinel\n"
+        let defaultsSuite = "NexusAppTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: defaultsSuite)!
+        defer {
+            defaults.removePersistentDomain(forName: defaultsSuite)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        for directory in configuredRoots {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try markerContent.write(
+                to: directory.appendingPathComponent(markerName),
+                atomically: true,
+                encoding: .utf8
+            )
+        }
+
+        let appState = AppState(
+            workspaces: [],
+            agentStatus: AgentStatus(title: "Loading", detail: "Tests", connectedTools: []),
+            bridge: PreviewNexusBridge(),
+            workspaceRoot: workspacesRoot.path,
+            sourceReposRoot: sourceRoot.path,
+            docsRoot: docsRoot.path,
+            defaults: defaults
+        )
+
+        await appState.checkNativeEnvironment()
+
+        for directory in configuredRoots {
+            let markerURL = directory.appendingPathComponent(markerName)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: markerURL.path))
+            XCTAssertEqual(try String(contentsOf: markerURL, encoding: .utf8), markerContent)
+        }
+    }
+
     func testNativeWorkspaceScannerBuildsGitRowsForWorkspaceWorktrees() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-native-workspace-git-\(UUID().uuidString)")
