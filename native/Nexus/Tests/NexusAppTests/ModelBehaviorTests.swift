@@ -2402,6 +2402,117 @@ final class ModelBehaviorTests: XCTestCase {
         ))
     }
 
+    @MainActor
+    func testAppStateScopeFreezeConfirmationKeepsStalePendingEvidence() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-app-state-scope-freeze-confirmation-\(UUID().uuidString)")
+        let workspacesRoot = root.appendingPathComponent("workspaces")
+        let workspaceURL = workspacesRoot.appendingPathComponent("workspace")
+        let sourceRoot = root.appendingPathComponent("source-repos")
+        let docsRoot = root.appendingPathComponent("docs")
+        let applicationSupportRoot = root.appendingPathComponent("app-support")
+        let defaultsSuite = "NexusAppTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: defaultsSuite)!
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            defaults.removePersistentDomain(forName: defaultsSuite)
+        }
+        for directory in [workspaceURL, sourceRoot, docsRoot] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        try "# Workspace\n\n- 需求名称: Scope freeze conflict\n- 当前状态: scoping\n".write(
+            to: workspaceURL.appendingPathComponent("workspace.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# STATUS\n\n- 当前状态: scoping\n- 当前焦点: Confirm scope freeze\n".write(
+            to: workspaceURL.appendingPathComponent("STATUS.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# Tasks\n\n| 任务 | 状态 | 说明 |\n| --- | --- | --- |\n| Freeze scope | 待办 | waiting for confirmation |\n".write(
+            to: workspaceURL.appendingPathComponent("tasks.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let demandURL = workspaceURL.appendingPathComponent("需求")
+        try FileManager.default.createDirectory(at: demandURL, withIntermediateDirectories: true)
+        try "# 需求确认卡\n\n- 真实需求目标：验证范围冻结冲突反馈。\n".write(
+            to: demandURL.appendingPathComponent("requirement.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# 待确认问题\n\n## P0 阻塞开发\n\n- [x] 无 P0 待确认项。\n".write(
+            to: demandURL.appendingPathComponent("questions.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let scopeURL = demandURL.appendingPathComponent("scope.md")
+        let original = """
+        # 本次开发范围
+
+        ## 已确认并实现
+
+        - 验证范围冻结的外部编辑保护。
+
+        ## 暂不实现
+
+        - 不覆盖确认后的人工修改。
+
+        ## 仍待确认
+
+        - 无 P0 待确认项。
+
+        ## 进入开发条件
+
+        - [ ] 本文件已冻结本次开发范围。
+        """ + "\n"
+        try original.write(to: scopeURL, atomically: true, encoding: .utf8)
+        try "# 需求列表\n\n| 需求点 | 状态 | 优先级 | 来源 | 说明 |\n| --- | --- | --- | --- | --- |\n| 范围冻结保护 | 待办 | P0 | 测试 | 验证冲突反馈 |\n".write(
+            to: demandURL.appendingPathComponent("tasks.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# 需求交付\n\n- 验证范围冻结确认后的外部修改保护。\n".write(
+            to: demandURL.appendingPathComponent("delivery.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let workspace = try scannedWorkspace(
+            folder: "workspace",
+            workspacesRoot: workspacesRoot,
+            sourceRoot: sourceRoot
+        )
+        let appState = AppState(
+            workspaces: [workspace],
+            agentStatus: AgentStatus(title: "Ready", detail: "Tests", connectedTools: []),
+            bridge: PreviewNexusBridge(),
+            workspaceRoot: workspacesRoot.path,
+            sourceReposRoot: sourceRoot.path,
+            docsRoot: docsRoot.path,
+            applicationSupportRoot: applicationSupportRoot.path,
+            defaults: defaults
+        )
+
+        appState.requestScopeFreezeWrite(in: workspace)
+        let pending = try XCTUnwrap(appState.pendingScopeFreezeWrite)
+        XCTAssertTrue(pending.canWrite)
+        let externallyEdited = original + "\n- 外部人工备注：不要覆盖。\n"
+        try externallyEdited.write(to: scopeURL, atomically: true, encoding: .utf8)
+
+        await appState.confirmPendingScopeFreezeWrite(confirmed: true)
+
+        XCTAssertEqual(appState.pendingScopeFreezeWrite, pending)
+        XCTAssertTrue(appState.lastError?.contains("changed since confirmation") == true)
+        XCTAssertFalse(appState.isInitializingDemandIntake)
+        XCTAssertEqual(try String(contentsOf: scopeURL, encoding: .utf8), externallyEdited)
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: applicationSupportRoot
+                .appendingPathComponent("audit/\(NativeAuditEventStore.fileName)").path
+        ))
+    }
+
     func testNativeWorkspaceTaskStoreRejectsSymlinkBeforeWriting() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-native-task-symlink-\(UUID().uuidString)")

@@ -8,6 +8,7 @@ The format follows Keep a Changelog, and versions should follow semantic version
 
 ### Added
 
+- Native scope-freeze confirmation now captures the exact regular UTF-8 `需求/scope.md` revision shown to the user, rejecting unsafe files, external edits, deletion, and duplicate submission before atomic append and success audit.
 - Native delivery, validation/PR, and archive-checklist writes now capture the exact regular UTF-8 delivery-record revision shown at confirmation, rejecting unsafe files, external edits, and duplicate submissions before atomic append and success audit.
 - Native task scanning and writeback now share one Markdown identity parser, rejecting non-regular, ambiguous, or stale task evidence before atomic status updates and success audit feedback.
 - Native lifecycle writeback now rejects stale or contradictory Markdown state and restores both lifecycle documents after an in-process write failure before emitting success audit feedback.
