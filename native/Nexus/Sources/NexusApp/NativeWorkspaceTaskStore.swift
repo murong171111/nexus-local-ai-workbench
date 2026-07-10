@@ -4,6 +4,9 @@ import NexusBridge
 enum NativeWorkspaceTaskStore {
     static func update(
         request: UpdateWorkspaceTaskRequest,
+        expectedTitle: String,
+        expectedStatus: String,
+        expectedSourceLine: Int?,
         fileManager: FileManager = .default
     ) throws -> UpdateWorkspaceTaskResponse {
         guard request.confirmed else {
@@ -38,6 +41,28 @@ enum NativeWorkspaceTaskStore {
         }
         guard matches.count == 1, let matchedRow = matches.first else {
             throw NativeWorkspaceTaskStoreError.ambiguousTaskID(taskID, matches.count)
+        }
+
+        let normalizedExpectedTitle = NativeWorkspaceTaskParser.sanitizedCell(expectedTitle)
+        let normalizedExpectedStatus = NativeWorkspaceTaskParser.sanitizedCell(expectedStatus)
+        let currentTask = matchedRow.snapshot
+        let sourceLineMatches = expectedSourceLine.map { $0 == currentTask.sourceLine } ?? true
+        guard currentTask.title == normalizedExpectedTitle,
+              currentTask.status == normalizedExpectedStatus,
+              sourceLineMatches else {
+            throw NativeWorkspaceTaskStoreError.staleConfirmation(
+                taskID: taskID,
+                expected: taskSnapshotSummary(
+                    title: normalizedExpectedTitle,
+                    status: normalizedExpectedStatus,
+                    sourceLine: expectedSourceLine
+                ),
+                current: taskSnapshotSummary(
+                    title: currentTask.title,
+                    status: currentTask.status,
+                    sourceLine: currentTask.sourceLine
+                )
+            )
         }
 
         var rawLines = content.components(separatedBy: "\n")
@@ -95,6 +120,14 @@ enum NativeWorkspaceTaskStore {
 
     private static func expandedURL(for path: String) -> URL {
         URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+    }
+
+    private static func taskSnapshotSummary(
+        title: String,
+        status: String,
+        sourceLine: Int?
+    ) -> String {
+        "\(title) [\(status)] at L\(sourceLine.map(String.init) ?? "?")"
     }
 
     private static func readTasksDocument(
@@ -160,6 +193,7 @@ private enum NativeWorkspaceTaskStoreError: LocalizedError {
     case updatedTaskUnparseable
     case taskNotFound(String)
     case ambiguousTaskID(String, Int)
+    case staleConfirmation(taskID: String, expected: String, current: String)
 
     var errorDescription: String? {
         switch self {
@@ -185,6 +219,8 @@ private enum NativeWorkspaceTaskStoreError: LocalizedError {
             return "task not found: \(taskID)"
         case .ambiguousTaskID(let taskID, let count):
             return "task id \(taskID) matches \(count) rows"
+        case .staleConfirmation(let taskID, let expected, let current):
+            return "task \(taskID) changed since confirmation: expected \(expected), found \(current)"
         }
     }
 }

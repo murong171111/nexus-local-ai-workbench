@@ -3904,7 +3904,10 @@ final class AppState: ObservableObject {
                     confirmed: confirmed,
                     auditRoot: auditRootPath,
                     actor: "Nexus Native"
-                )
+                ),
+                expectedTitle: update.taskTitle,
+                expectedStatus: update.currentStatus,
+                expectedSourceLine: update.taskSourceLine
             )
             if response.updated {
                 pendingTaskStatusUpdate = nil

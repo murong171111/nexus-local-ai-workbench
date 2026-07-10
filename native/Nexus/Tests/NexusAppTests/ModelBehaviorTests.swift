@@ -1775,7 +1775,10 @@ final class ModelBehaviorTests: XCTestCase {
                     taskId: "2026-05-28-task-status:task-0",
                     status: "已完成",
                     confirmed: false
-                )
+                ),
+                expectedTitle: "核对任务中心",
+                expectedStatus: "进行中",
+                expectedSourceLine: 5
             )
         ) { error in
             XCTAssertTrue(error.localizedDescription.contains("explicit confirmation"))
@@ -1789,7 +1792,10 @@ final class ModelBehaviorTests: XCTestCase {
                 confirmed: true,
                 auditRoot: auditRoot.path,
                 actor: "Nexus Test"
-            )
+            ),
+            expectedTitle: "核对任务中心",
+            expectedStatus: "进行中",
+            expectedSourceLine: 5
         )
         let deferred = try NativeWorkspaceTaskStore.update(
             request: UpdateWorkspaceTaskRequest(
@@ -1800,7 +1806,10 @@ final class ModelBehaviorTests: XCTestCase {
                 confirmed: true,
                 auditRoot: auditRoot.path,
                 actor: "Nexus Test"
-            )
+            ),
+            expectedTitle: "Review permission request",
+            expectedStatus: "待办",
+            expectedSourceLine: 6
         )
         let content = try String(contentsOf: tasksURL, encoding: .utf8)
         let events = try NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 5)
@@ -1827,6 +1836,90 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(events.first?.metadata["status"], "延期")
     }
 
+    func testNativeWorkspaceTaskStoreRejectsStaleStatusAndShiftedTaskID() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-task-stale-\(UUID().uuidString)")
+        let staleURL = root.appendingPathComponent("stale")
+        let shiftedURL = root.appendingPathComponent("shifted")
+        let auditRoot = root.appendingPathComponent("audit")
+        defer { try? FileManager.default.removeItem(at: root) }
+        for directory in [staleURL, shiftedURL] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+
+        let staleContent = "# Tasks\n\n| 任务 | 状态 | 说明 |\n| --- | --- | --- |\n| Original | 阻塞 | externally changed |\n"
+        try staleContent.write(
+            to: staleURL.appendingPathComponent("tasks.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        XCTAssertThrowsError(
+            try NativeWorkspaceTaskStore.update(
+                request: UpdateWorkspaceTaskRequest(
+                    workspacePath: staleURL.path,
+                    taskId: "stale:task-0",
+                    status: "已完成",
+                    confirmed: true,
+                    auditRoot: auditRoot.path,
+                    actor: "Nexus Test"
+                ),
+                expectedTitle: "Original",
+                expectedStatus: "进行中",
+                expectedSourceLine: 5
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("changed since confirmation"))
+            XCTAssertTrue(error.localizedDescription.contains("Original"))
+            XCTAssertTrue(error.localizedDescription.contains("进行中"))
+            XCTAssertTrue(error.localizedDescription.contains("阻塞"))
+        }
+        XCTAssertEqual(
+            try String(contentsOf: staleURL.appendingPathComponent("tasks.md"), encoding: .utf8),
+            staleContent
+        )
+
+        let shiftedContent = """
+        # Tasks
+
+        | 任务 | 状态 | 说明 |
+        | --- | --- | --- |
+        | Inserted | 进行中 | new first row |
+        | Original | 进行中 | expected task moved |
+        """ + "\n"
+        try shiftedContent.write(
+            to: shiftedURL.appendingPathComponent("tasks.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        XCTAssertThrowsError(
+            try NativeWorkspaceTaskStore.update(
+                request: UpdateWorkspaceTaskRequest(
+                    workspacePath: shiftedURL.path,
+                    taskId: "shifted:task-0",
+                    status: "已完成",
+                    confirmed: true,
+                    auditRoot: auditRoot.path,
+                    actor: "Nexus Test"
+                ),
+                expectedTitle: "Original",
+                expectedStatus: "进行中",
+                expectedSourceLine: 5
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("Original"))
+            XCTAssertTrue(error.localizedDescription.contains("Inserted"))
+        }
+        XCTAssertEqual(
+            try String(contentsOf: shiftedURL.appendingPathComponent("tasks.md"), encoding: .utf8),
+            shiftedContent
+        )
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: auditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path
+        ))
+    }
+
     func testNativeWorkspaceTaskStoreRejectsSymlinkBeforeWriting() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-native-task-symlink-\(UUID().uuidString)")
@@ -1849,7 +1942,10 @@ final class ModelBehaviorTests: XCTestCase {
                     confirmed: true,
                     auditRoot: auditRoot.path,
                     actor: "Nexus Test"
-                )
+                ),
+                expectedTitle: "External",
+                expectedStatus: "进行中",
+                expectedSourceLine: 5
             )
         ) { error in
             XCTAssertTrue(error.localizedDescription.contains("tasks.md is not a file"))
@@ -1888,7 +1984,10 @@ final class ModelBehaviorTests: XCTestCase {
                     confirmed: true,
                     auditRoot: auditRoot.path,
                     actor: "Nexus Test"
-                )
+                ),
+                expectedTitle: "First",
+                expectedStatus: "进行中",
+                expectedSourceLine: 5
             )
         ) { error in
             XCTAssertTrue(error.localizedDescription.contains("matches 2 rows"))
@@ -1919,7 +2018,10 @@ final class ModelBehaviorTests: XCTestCase {
                     confirmed: true,
                     auditRoot: auditRoot.path,
                     actor: "Nexus Test"
-                )
+                ),
+                expectedTitle: "Unknown",
+                expectedStatus: "进行中",
+                expectedSourceLine: 5
             )
         ) { error in
             XCTAssertTrue(error.localizedDescription.contains("tasks.md is unreadable"))
@@ -5939,17 +6041,26 @@ final class ModelBehaviorTests: XCTestCase {
         )
         XCTAssertEqual(worktree.created.map(\.service), ["order"])
 
-        for index in 0..<(7 + transferred.transferredCount) {
+        workspace = try scannedWorkspace(
+            folder: folder,
+            workspacesRoot: workspacesRoot,
+            sourceRoot: sourceRoot
+        )
+        XCTAssertEqual(workspace.tasks.count, 7 + transferred.transferredCount)
+        for task in workspace.tasks {
             _ = try NativeWorkspaceTaskStore.update(
                 request: UpdateWorkspaceTaskRequest(
                     workspacePath: workspaceURL.path,
-                    taskId: "\(folder):task-\(index)",
+                    taskId: task.id,
                     status: "已完成",
                     detail: "Native E2E proof completed.",
                     confirmed: true,
                     auditRoot: auditRoot.path,
                     actor: "Nexus Test"
-                )
+                ),
+                expectedTitle: task.title,
+                expectedStatus: task.status,
+                expectedSourceLine: task.sourceLine
             )
         }
 
