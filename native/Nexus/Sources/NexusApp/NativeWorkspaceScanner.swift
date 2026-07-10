@@ -96,6 +96,10 @@ enum NativeWorkspaceScanner {
         let branchesContent = read(root.appendingPathComponent("branches.md", isDirectory: false))
         let tasks = taskSnapshots(from: read(root.appendingPathComponent("tasks.md", isDirectory: false)))
         let services = serviceNames(from: read(root.appendingPathComponent("services.md", isDirectory: false)))
+        let lifecycle = lifecycleResolution(
+            workspaceContent: workspaceContent,
+            statusContent: statusContent
+        )
         let targetBranch = firstValue(in: workspaceContent, labels: ["目标分支", "建议目标分支", "分支", "target branch"])
             ?? firstValue(in: branchesContent, labels: ["目标分支", "建议目标分支", "target branch"])
             ?? "待确认"
@@ -106,7 +110,8 @@ enum NativeWorkspaceScanner {
             sourceRoot: sourceRoot,
             fileManager: fileManager
         )
-        let risks = riskLines(from: statusContent) + gitRisks(
+        let lifecycleRisks = lifecycle.risk.map { [$0] } ?? []
+        let risks = riskLines(from: statusContent) + lifecycleRisks + gitRisks(
             targetBranch: targetBranch,
             services: services.confirmed,
             gitRows: gitRows
@@ -117,9 +122,7 @@ enum NativeWorkspaceScanner {
             name: workspaceName(folder: root.lastPathComponent, workspaceContent: workspaceContent),
             folder: root.lastPathComponent,
             path: root.path,
-            state: firstValue(in: workspaceContent, labels: ["当前状态", "状态", "state"])
-                ?? firstValue(in: statusContent, labels: ["当前状态", "状态", "state"])
-                ?? "developing",
+            state: lifecycle.state,
             targetBranch: targetBranch,
             sourceRoot: sourceRoot,
             confirmedServices: services.confirmed,
@@ -129,7 +132,7 @@ enum NativeWorkspaceScanner {
             gitRows: gitRows,
             risks: risks,
             riskCount: risks.count,
-            lifecycle: nil,
+            lifecycle: lifecycle.snapshot,
             updated: updated,
             links: documentLinks(at: root, fileManager: fileManager),
             sqlFiles: sqlFiles(at: root, fileManager: fileManager),
@@ -146,6 +149,109 @@ enum NativeWorkspaceScanner {
             healthChecks: nil,
             sessionActions: nil
         )
+    }
+
+    private struct LifecycleResolution {
+        let state: String
+        let snapshot: WorkspaceLifecycleSnapshot
+        let risk: String?
+    }
+
+    private static func lifecycleResolution(
+        workspaceContent: String,
+        statusContent: String
+    ) -> LifecycleResolution {
+        let workspaceRaw = firstValue(in: workspaceContent, labels: ["当前状态", "状态", "state"])
+        let statusRaw = firstValue(in: statusContent, labels: ["当前状态", "状态", "state"])
+        let focus = firstValue(in: statusContent, labels: ["当前焦点", "focus"])
+        let requestedNextAction = firstValue(in: statusContent, labels: ["下一步", "next action"])
+        let workspaceState = workspaceRaw.flatMap(normalizedLifecycleState)
+        let statusState = statusRaw.flatMap(normalizedLifecycleState)
+
+        let evidence = [
+            workspaceRaw.map { "workspace.md=\($0)" },
+            statusRaw.map { "STATUS.md=\($0)" }
+        ].compactMap { $0 }.joined(separator: ", ")
+
+        let state: String
+        let detail: String
+        let risk: String?
+
+        if (workspaceRaw != nil && workspaceState == nil) || (statusRaw != nil && statusState == nil) {
+            state = "unknown"
+            detail = "生命周期状态无法识别: \(evidence)"
+            risk = detail
+        } else if let workspaceState, let statusState, workspaceState != statusState {
+            state = "blocked"
+            detail = "生命周期状态冲突: \(evidence)"
+            risk = detail
+        } else if let resolved = workspaceState ?? statusState {
+            state = resolved
+            detail = focus ?? "已从本地 Markdown 读取生命周期状态: \(resolved)。"
+            risk = nil
+        } else {
+            state = "unknown"
+            detail = "workspace.md 和 STATUS.md 尚未记录生命周期状态。"
+            risk = nil
+        }
+
+        let presentation = lifecyclePresentation(for: state)
+        return LifecycleResolution(
+            state: state,
+            snapshot: WorkspaceLifecycleSnapshot(
+                stage: state,
+                label: presentation.label,
+                detail: detail,
+                progress: presentation.progress,
+                nextAction: requestedNextAction ?? presentation.nextAction,
+                documentKey: "status"
+            ),
+            risk: risk
+        )
+    }
+
+    private static func normalizedLifecycleState(_ value: String) -> String? {
+        switch value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "analyzing", "analysis", "scoping", "scope", "范围确认", "分析中":
+            return "scoping"
+        case "setup", "environment", "环境准备", "准备中":
+            return "setup"
+        case "developing", "development", "dev", "开发中":
+            return "developing"
+        case "delivery", "delivering", "交付", "交付整理":
+            return "delivery"
+        case "done", "ready", "completed", "complete", "完成", "已完成":
+            return "done"
+        case "blocked", "block", "阻塞":
+            return "blocked"
+        case "archived", "archive", "归档", "已归档":
+            return "archived"
+        default:
+            return nil
+        }
+    }
+
+    private static func lifecyclePresentation(
+        for state: String
+    ) -> (label: String, progress: Int, nextAction: String) {
+        switch state {
+        case "scoping":
+            return ("范围确认 / Scoping", 15, "补齐服务范围和目标分支。")
+        case "setup":
+            return ("环境准备 / Setup", 35, "创建缺失 worktree 后再进入开发。")
+        case "developing":
+            return ("开发中 / Developing", 60, "继续编码、验证，并保持交付记录同步。")
+        case "delivery":
+            return ("交付整理 / Delivery", 80, "补齐交付记录、SQL、验证和风险说明。")
+        case "done":
+            return ("待归档 / Done", 95, "确认 PR/发布状态后归档工作区。")
+        case "blocked":
+            return ("阻塞 / Blocked", 25, "先处理阻塞项。")
+        case "archived":
+            return ("已归档 / Archived", 100, "需要再次开发时从 handoff 恢复上下文。")
+        default:
+            return ("状态待确认 / Unknown", 0, "在 workspace.md 或 STATUS.md 记录当前状态。")
+        }
     }
 
     private static func workspaceName(folder: String, workspaceContent: String) -> String {

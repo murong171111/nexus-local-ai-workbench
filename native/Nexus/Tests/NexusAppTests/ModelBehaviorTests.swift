@@ -2276,6 +2276,105 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(snapshot.tasks?.map(\.source), ["workspace", "workspace"])
     }
 
+    func testNativeWorkspaceScannerBuildsConservativeLifecycleFromMarkdownEvidence() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-lifecycle-scan-\(UUID().uuidString)")
+        let explicit = root.appendingPathComponent("2026-07-10-explicit-lifecycle")
+        let missing = root.appendingPathComponent("2026-07-10-missing-lifecycle")
+        let conflict = root.appendingPathComponent("2026-07-10-conflicting-lifecycle")
+        let unsupported = root.appendingPathComponent("2026-07-10-unsupported-lifecycle")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        for directory in [explicit, missing, conflict, unsupported] {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+
+        try """
+        # Explicit Lifecycle
+
+        - 需求名称: Explicit Lifecycle
+        - 当前状态: developing
+        - 目标分支: feature/lifecycle-scan
+        """.write(to: explicit.appendingPathComponent("workspace.md"), atomically: true, encoding: .utf8)
+        try """
+        # STATUS
+
+        - 状态: development
+        - 当前焦点: Verify file-backed lifecycle
+        - 下一步: Run lifecycle scan tests
+        """.write(to: explicit.appendingPathComponent("STATUS.md"), atomically: true, encoding: .utf8)
+        try """
+        | 服务 | 范围 |
+        | --- | --- |
+        | order | confirmed |
+        """.write(to: explicit.appendingPathComponent("services.md"), atomically: true, encoding: .utf8)
+
+        try """
+        # Missing Lifecycle
+
+        - 需求名称: Missing Lifecycle
+        """.write(to: missing.appendingPathComponent("workspace.md"), atomically: true, encoding: .utf8)
+
+        try """
+        # Conflicting Lifecycle
+
+        - 需求名称: Conflicting Lifecycle
+        - 当前状态: developing
+        """.write(to: conflict.appendingPathComponent("workspace.md"), atomically: true, encoding: .utf8)
+        try """
+        # STATUS
+
+        - 状态: archived
+        """.write(to: conflict.appendingPathComponent("STATUS.md"), atomically: true, encoding: .utf8)
+
+        try """
+        # Unsupported Lifecycle
+
+        - 需求名称: Unsupported Lifecycle
+        - 当前状态: waiting-for-magic
+        """.write(to: unsupported.appendingPathComponent("workspace.md"), atomically: true, encoding: .utf8)
+
+        let dashboard = try NativeWorkspaceScanner.scan(
+            workspacesRoot: root.path,
+            sourceReposRoot: root.appendingPathComponent("source-repos").path,
+            docsRoot: root.appendingPathComponent("docs").path,
+            now: Date(timeIntervalSince1970: 0)
+        )
+        let snapshots = Dictionary(uniqueKeysWithValues: dashboard.workspaces.map { ($0.folder, $0) })
+
+        let explicitSnapshot = try XCTUnwrap(snapshots[explicit.lastPathComponent])
+        XCTAssertEqual(explicitSnapshot.state, "developing")
+        XCTAssertEqual(explicitSnapshot.lifecycle?.stage, "developing")
+        XCTAssertEqual(explicitSnapshot.lifecycle?.detail, "Verify file-backed lifecycle")
+        XCTAssertEqual(explicitSnapshot.lifecycle?.nextAction, "Run lifecycle scan tests")
+        XCTAssertEqual(explicitSnapshot.lifecycle?.documentKey, "status")
+        XCTAssertEqual(WorkspaceSummary(snapshot: explicitSnapshot).lifecycle.stage, "developing")
+
+        let missingSnapshot = try XCTUnwrap(snapshots[missing.lastPathComponent])
+        XCTAssertEqual(missingSnapshot.state, "unknown")
+        XCTAssertEqual(missingSnapshot.lifecycle?.stage, "unknown")
+        XCTAssertEqual(missingSnapshot.lifecycle?.progress, 0)
+
+        let conflictSnapshot = try XCTUnwrap(snapshots[conflict.lastPathComponent])
+        XCTAssertEqual(conflictSnapshot.state, "blocked")
+        XCTAssertEqual(conflictSnapshot.lifecycle?.stage, "blocked")
+        XCTAssertTrue(conflictSnapshot.lifecycle?.detail.contains("developing") == true)
+        XCTAssertTrue(conflictSnapshot.lifecycle?.detail.contains("archived") == true)
+        XCTAssertTrue(conflictSnapshot.risks.contains {
+            $0.contains("生命周期状态冲突") && $0.contains("workspace.md=developing") && $0.contains("STATUS.md=archived")
+        })
+
+        let unsupportedSnapshot = try XCTUnwrap(snapshots[unsupported.lastPathComponent])
+        XCTAssertEqual(unsupportedSnapshot.state, "unknown")
+        XCTAssertEqual(unsupportedSnapshot.lifecycle?.stage, "unknown")
+        XCTAssertTrue(unsupportedSnapshot.lifecycle?.detail.contains("waiting-for-magic") == true)
+        XCTAssertTrue(unsupportedSnapshot.risks.contains {
+            $0.contains("生命周期状态无法识别") && $0.contains("workspace.md=waiting-for-magic")
+        })
+    }
+
     @MainActor
     func testNativeWorkspaceRecognitionAlignsDashboardAndEnvironmentCounts() async throws {
         let root = FileManager.default.temporaryDirectory
