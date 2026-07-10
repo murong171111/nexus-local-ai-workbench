@@ -187,24 +187,42 @@ enum NativeWorkspaceLifecycleStore {
         }
     }
 
-    private static func extractBulletValue(in text: String, label: String) -> String? {
-        for line in text.components(separatedBy: .newlines) {
+    private static func acceptedBulletValues(in text: String?, labels: [String]) -> [String] {
+        guard let text else { return [] }
+        return text.components(separatedBy: .newlines).compactMap { line in
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            for prefix in ["- \(label):", "- \(label)："] where trimmed.hasPrefix(prefix) {
-                return trimmed
-                    .dropFirst(prefix.count)
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                    .replacingOccurrences(of: "`", with: "")
+            for label in labels {
+                for prefix in ["- \(label):", "- \(label)："] where trimmed.hasPrefix(prefix) {
+                    let value = trimmed
+                        .dropFirst(prefix.count)
+                        .replacingOccurrences(of: "`", with: "")
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    return value.isEmpty ? nil : value
+                }
             }
+            return nil
         }
-        return nil
     }
 
-    private static func firstBulletValue(in text: String?, labels: [String]) -> String? {
-        guard let text else { return nil }
-        return labels.lazy
-            .compactMap { extractBulletValue(in: text, label: $0) }
-            .first { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private static func normalizedDocumentState(
+        in text: String?,
+        source: String
+    ) throws -> String? {
+        let values = acceptedBulletValues(in: text, labels: ["当前状态", "状态"])
+        guard !values.isEmpty else { return nil }
+
+        let normalizedStates = try values.map { try normalizedCurrentState($0, source: source) }
+        var distinctStates: [String] = []
+        for state in normalizedStates where !distinctStates.contains(state) {
+            distinctStates.append(state)
+        }
+        if distinctStates.count > 1 {
+            throw NativeWorkspaceLifecycleStoreError.conflictingStatesWithinDocument(
+                source,
+                distinctStates
+            )
+        }
+        return distinctStates.first
     }
 
     private static func normalizedCurrentState(_ raw: String, source: String) throws -> String {
@@ -219,25 +237,19 @@ enum NativeWorkspaceLifecycleStore {
         workspaceContent: String?,
         statusContent: String?
     ) throws -> String {
-        let workspaceRaw = firstBulletValue(
+        let workspaceState = try normalizedDocumentState(
             in: workspaceContent,
-            labels: ["当前状态", "状态"]
+            source: "workspace.md"
         )
-        let statusRaw = firstBulletValue(
+        let statusState = try normalizedDocumentState(
             in: statusContent,
-            labels: ["当前状态", "状态"]
+            source: "STATUS.md"
         )
-        let workspaceState = try workspaceRaw.map {
-            try normalizedCurrentState($0, source: "workspace.md")
-        }
-        let statusState = try statusRaw.map {
-            try normalizedCurrentState($0, source: "STATUS.md")
-        }
 
         if let workspaceState, let statusState, workspaceState != statusState {
             throw NativeWorkspaceLifecycleStoreError.conflictingCurrentStates(
-                workspaceRaw ?? workspaceState,
-                statusRaw ?? statusState
+                workspaceState,
+                statusState
             )
         }
         return workspaceState ?? statusState ?? "unknown"
@@ -418,6 +430,7 @@ private enum NativeWorkspaceLifecycleStoreError: LocalizedError {
     case documentUnreadable(String, String)
     case unsupportedCurrentState(String, String)
     case unsupportedExpectedState(String)
+    case conflictingStatesWithinDocument(String, [String])
     case conflictingCurrentStates(String, String)
     case staleConfirmation(expected: String, current: String)
     case writeFailed(String)
@@ -441,6 +454,8 @@ private enum NativeWorkspaceLifecycleStoreError: LocalizedError {
             return "unsupported current lifecycle state: \(source)=\(state)"
         case .unsupportedExpectedState(let state):
             return "unsupported expected lifecycle state: \(state)"
+        case .conflictingStatesWithinDocument(let source, let states):
+            return "workspace lifecycle file contains conflicting states: \(source)=\(states.joined(separator: ", "))"
         case .conflictingCurrentStates(let workspaceState, let statusState):
             return "workspace lifecycle files conflict: workspace.md=\(workspaceState), STATUS.md=\(statusState)"
         case .staleConfirmation(let expected, let current):

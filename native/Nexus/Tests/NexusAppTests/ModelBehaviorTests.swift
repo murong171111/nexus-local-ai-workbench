@@ -2094,6 +2094,102 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(response.state, "developing")
     }
 
+    func testNativeWorkspaceLifecycleStoreRejectsConflictingAliasesWithinOneDocument() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-lifecycle-single-doc-conflict-\(UUID().uuidString)")
+        let workspaceURL = root.appendingPathComponent("workspace")
+        let workspaceDocumentURL = workspaceURL.appendingPathComponent("workspace.md")
+        let statusDocumentURL = workspaceURL.appendingPathComponent("STATUS.md")
+        let auditRoot = root.appendingPathComponent("audit")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        let originalWorkspace = """
+        # Workspace
+
+        - 当前状态: developing
+        - 状态: archived
+        - 需求名称: Single doc conflict
+        """ + "\n"
+        let originalStatus = """
+        # STATUS
+
+        - 状态: developing
+        - 当前焦点: Hold steady
+        """ + "\n"
+        try originalWorkspace.write(to: workspaceDocumentURL, atomically: true, encoding: .utf8)
+        try originalStatus.write(to: statusDocumentURL, atomically: true, encoding: .utf8)
+
+        XCTAssertThrowsError(
+            try NativeWorkspaceLifecycleStore.update(
+                request: UpdateWorkspaceLifecycleRequest(
+                    workspacePath: workspaceURL.path,
+                    state: "delivery",
+                    confirmed: true,
+                    auditRoot: auditRoot.path,
+                    actor: "Nexus Test"
+                ),
+                expectedState: "developing"
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("workspace.md"))
+            XCTAssertTrue(error.localizedDescription.contains("developing"))
+            XCTAssertTrue(error.localizedDescription.contains("archived"))
+        }
+
+        XCTAssertEqual(try String(contentsOf: workspaceDocumentURL, encoding: .utf8), originalWorkspace)
+        XCTAssertEqual(try String(contentsOf: statusDocumentURL, encoding: .utf8), originalStatus)
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: auditRoot.appendingPathComponent(NativeAuditEventStore.fileName).path
+        ))
+    }
+
+    func testNativeWorkspaceLifecycleStoreUsesRecognizedAliasAfterEmptyFirstAliasInSameDocument() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-native-lifecycle-same-doc-empty-first-\(UUID().uuidString)")
+        let workspaceURL = root.appendingPathComponent("workspace")
+        let workspaceDocumentURL = workspaceURL.appendingPathComponent("workspace.md")
+        let statusDocumentURL = workspaceURL.appendingPathComponent("STATUS.md")
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+        try FileManager.default.createDirectory(at: workspaceURL, withIntermediateDirectories: true)
+        try """
+        # Workspace
+
+        - 当前状态:
+        - 状态: developing
+        - 需求名称: Empty first alias
+        """.write(
+            to: workspaceDocumentURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# STATUS\n\n".write(
+            to: statusDocumentURL,
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let response = try NativeWorkspaceLifecycleStore.update(
+            request: UpdateWorkspaceLifecycleRequest(
+                workspacePath: workspaceURL.path,
+                state: "archived",
+                confirmed: true
+            ),
+            expectedState: "developing"
+        )
+        let workspaceContent = try String(contentsOf: workspaceDocumentURL, encoding: .utf8)
+        let statusContent = try String(contentsOf: statusDocumentURL, encoding: .utf8)
+
+        XCTAssertEqual(response.previousState, "developing")
+        XCTAssertEqual(response.state, "archived")
+        XCTAssertEqual(workspaceContent.components(separatedBy: "- 当前状态:").count - 1, 1)
+        XCTAssertFalse(workspaceContent.contains("- 状态:"))
+        XCTAssertEqual(statusContent.components(separatedBy: "- 状态:").count - 1, 1)
+    }
+
     func testNativeWorkspaceLifecycleStoreRollsBackBothDocumentsWhenSecondWriteFails() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-native-lifecycle-rollback-\(UUID().uuidString)")
