@@ -2857,6 +2857,234 @@ final class FeatureWorkflowTests: XCTestCase {
         )
     }
 
+    func testContextPackFitsUnicodeBudgetWithoutSplittingLines() {
+        var input = contextPackInput()
+        input.confirmedChanges = (1...8).map { index in
+            "## 2026-07-\(String(format: "%02d", index))\n- 变化 \(index) 中文 emoji 🚀 "
+                + String(repeating: "内容", count: 240)
+        }
+
+        let pack = NativeContextPackBuilder.build(input: input, maximumUTF8Bytes: 6_144)
+
+        XCTAssertEqual(pack.status, .ready)
+        XCTAssertLessThanOrEqual(pack.markdown.utf8.count, 6_144)
+        XCTAssertTrue(pack.markdown.contains("F-003"))
+        XCTAssertTrue(pack.markdown.contains("按需读取"))
+        XCTAssertFalse(pack.markdown.contains("FULL DELIVERY BODY"))
+        XCTAssertEqual(String(data: Data(pack.markdown.utf8), encoding: .utf8), pack.markdown)
+        XCTAssertTrue(pack.markdown.hasSuffix("\n"))
+    }
+
+    func testContextPackRetainsSelectedFeatureAndOmitsOldestChangesFirst() {
+        var input = contextPackInput()
+        input.confirmedChanges = [
+            "## newest\n- newest change",
+            "## middle\n- middle change",
+            "## oldest\n- oldest change " + String(repeating: "old ", count: 600)
+        ]
+
+        let pack = NativeContextPackBuilder.build(input: input, maximumUTF8Bytes: 1_700)
+
+        XCTAssertEqual(pack.status, .ready)
+        XCTAssertTrue(pack.markdown.contains("F-003"))
+        XCTAssertTrue(pack.markdown.contains("T-003"))
+        XCTAssertTrue(pack.markdown.contains("newest change"))
+        XCTAssertFalse(pack.markdown.contains("oldest change"))
+        XCTAssertTrue(pack.omittedSections.contains("confirmed-change:oldest"))
+    }
+
+    func testContextPackReportsRequiredOverflowWithoutProducingOversizeText() {
+        var input = contextPackInput()
+        input.selectedFeature = NativeContextFeature(
+            id: "F-003",
+            title: String(repeating: "必须保留", count: 300),
+            status: "blocked",
+            detail: "required"
+        )
+
+        let pack = NativeContextPackBuilder.build(input: input, maximumUTF8Bytes: 256)
+
+        guard case .overflow = pack.status else { return XCTFail("expected overflow") }
+        XCTAssertLessThanOrEqual(pack.markdown.utf8.count, 256)
+        XCTAssertTrue(pack.markdown.isEmpty)
+        XCTAssertTrue(pack.omittedSections.contains("required-content-overflow"))
+    }
+
+    func testHandoffWriteRejectsStaleSourceRevisionAndPreservesProjection() throws {
+        let root = try sessionChangeWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let original = "external handoff\n"
+        try original.write(to: root.appendingPathComponent("handoff.md"), atomically: true, encoding: .utf8)
+        let plan = try NativeSessionChangeStore.makeHandoffPlan(
+            workspacePath: root.path,
+            input: contextPackInput(workspacePath: root.path)
+        )
+        try "# Tasks\n\nexternal\n".write(
+            to: root.appendingPathComponent("tasks.md"), atomically: true, encoding: .utf8
+        )
+
+        XCTAssertThrowsError(try NativeSessionChangeStore.writeHandoff(plan: plan))
+        XCTAssertEqual(try String(contentsOf: root.appendingPathComponent("handoff.md"), encoding: .utf8), original)
+    }
+
+    func testHandoffWriteIncludesGeneratedMetadataAndExactSourceRevisions() throws {
+        let root = try sessionChangeWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let plan = try NativeSessionChangeStore.makeHandoffPlan(
+            workspacePath: root.path,
+            input: contextPackInput(workspacePath: root.path)
+        )
+
+        let response = try NativeSessionChangeStore.writeHandoff(plan: plan)
+        let written = try String(contentsOfFile: response.path, encoding: .utf8)
+
+        XCTAssertTrue(written.contains("<!-- generated-by: Nexus Native -->"))
+        XCTAssertTrue(written.contains("<!-- selected-feature: F-003 -->"))
+        XCTAssertTrue(written.contains("FEATURES.md="))
+        XCTAssertTrue(written.contains("tasks.md="))
+        XCTAssertTrue(written.contains("changes.md="))
+        XCTAssertEqual(response.pack.markdown.utf8.count <= 6_144, true)
+    }
+
+    func testSessionChangeBaselineCodableAndMissingBaselineCannotClaimPriorDiff() throws {
+        let root = try sessionChangeWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let baseline = SessionChangeBaseline(
+            sessionID: "session-1",
+            workspacePath: root.path,
+            startedAt: "2026-07-11T01:02:03Z",
+            repositoryHeads: ["order-service": "abc123"],
+            featureRevision: "feature-rev",
+            taskRevision: "task-rev"
+        )
+        XCTAssertEqual(try JSONDecoder().decode(SessionChangeBaseline.self, from: JSONEncoder().encode(baseline)), baseline)
+
+        let result = try NativeSessionChangeStore.loadOrCreateBaseline(
+            workspacePath: root.path,
+            current: baseline
+        )
+
+        XCTAssertFalse(result.canClaimPriorDiff)
+        XCTAssertTrue(result.notice.contains("不能声称此前差异"))
+        XCTAssertEqual(try NativeSessionChangeStore.loadBaseline(workspacePath: root.path), baseline)
+    }
+
+    func testSessionChangeAppendRejectsChangedChangesOrDraftRevision() throws {
+        for changedName in ["changes.md", "changes.draft.md"] {
+            let fixture = try sessionChangeDraftFixture()
+            defer { try? FileManager.default.removeItem(at: fixture.root) }
+            let plan = try NativeSessionChangeStore.makeWritePlan(draft: fixture.draft)
+            let changesBefore = try Data(contentsOf: fixture.root.appendingPathComponent("changes.md"))
+            try Data("external \(changedName)\n".utf8).write(
+                to: fixture.root.appendingPathComponent(changedName), options: .atomic
+            )
+
+            XCTAssertThrowsError(try NativeSessionChangeStore.append(plan: plan, confirmed: true))
+            if changedName == "changes.draft.md" {
+                XCTAssertEqual(try Data(contentsOf: fixture.root.appendingPathComponent("changes.md")), changesBefore)
+            }
+        }
+    }
+
+    func testSessionChangeAppendRejectsSymlinkDirectoryAndInvalidUTF8WithoutMutation() throws {
+        for unsafeName in ["changes.md", "changes.draft.md"] {
+            for kind in ["symlink", "directory", "invalid-utf8"] {
+                let fixture = try sessionChangeDraftFixture()
+                let target = fixture.root.appendingPathComponent(unsafeName)
+                try FileManager.default.removeItem(at: target)
+                if kind == "symlink" {
+                    let external = fixture.root.appendingPathComponent("external")
+                    try Data("external".utf8).write(to: external)
+                    try FileManager.default.createSymbolicLink(at: target, withDestinationURL: external)
+                } else if kind == "directory" {
+                    try FileManager.default.createDirectory(at: target, withIntermediateDirectories: false)
+                } else {
+                    try Data([0xFF, 0xFE]).write(to: target)
+                }
+                let untouched = unsafeName == "changes.md"
+                    ? nil
+                    : try Data(contentsOf: fixture.root.appendingPathComponent("changes.md"))
+
+                XCTAssertThrowsError(try NativeSessionChangeStore.makeWritePlan(draft: fixture.draft), "\(unsafeName) \(kind)")
+                if let untouched {
+                    XCTAssertEqual(try Data(contentsOf: fixture.root.appendingPathComponent("changes.md")), untouched)
+                }
+                try? FileManager.default.removeItem(at: fixture.root)
+            }
+        }
+    }
+
+    func testSessionChangeAppendRejectsFinalCheckRaceAndPreservesUnknownProse() throws {
+        let fixture = try sessionChangeDraftFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let plan = try NativeSessionChangeStore.makeWritePlan(draft: fixture.draft)
+        let changesURL = fixture.root.appendingPathComponent("changes.md")
+        let external = "# Changes\n\n人工未知说明。\n\nexternal race\n"
+
+        XCTAssertThrowsError(
+            try NativeSessionChangeStore.append(
+                plan: plan,
+                confirmed: true,
+                beforeFinalRevisionCheck: {
+                    try external.write(to: changesURL, atomically: true, encoding: .utf8)
+                }
+            )
+        )
+        XCTAssertEqual(try String(contentsOf: changesURL, encoding: .utf8), external)
+    }
+
+    func testSessionChangeConfirmedAppendPreservesUnknownProseAndSeparatesAuditFailure() throws {
+        let fixture = try sessionChangeDraftFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let plan = try NativeSessionChangeStore.makeWritePlan(draft: fixture.draft)
+        let auditFile = fixture.root.appendingPathComponent("audit-blocker")
+        try Data("not a directory".utf8).write(to: auditFile)
+
+        let response = try NativeSessionChangeStore.append(
+            plan: plan,
+            confirmed: true,
+            timestamp: "2026-07-11T02:03:04Z",
+            auditRoot: auditFile.path
+        )
+        let changes = try String(contentsOfFile: response.path, encoding: .utf8)
+
+        XCTAssertTrue(changes.contains("人工未知说明。"))
+        XCTAssertTrue(changes.contains("## 2026-07-11T02:03:04Z"))
+        XCTAssertTrue(changes.contains("head abc123 -> def456"))
+        XCTAssertNotNil(response.auditError)
+        XCTAssertNotNil(response.archivedDraftPath)
+    }
+
+    @MainActor
+    func testSessionChangePendingPlanIsWorkspaceBoundAndConsumedOnceAcrossDismissal() throws {
+        let rootA = try sessionChangeWorkspace()
+        let rootB = try sessionChangeWorkspace()
+        defer {
+            try? FileManager.default.removeItem(at: rootA)
+            try? FileManager.default.removeItem(at: rootB)
+        }
+        let workspaceA = demandInputWorkspace(id: "workspace-a", path: rootA.path)
+        let workspaceB = demandInputWorkspace(id: "workspace-b", path: rootB.path)
+        let appState = makeAppState(workspaces: [workspaceA, workspaceB], root: rootA)
+        appState.selectedWorkspaceID = workspaceA.id
+        let planA = try NativeSessionChangeStore.makeWritePlan(draft: try writeSessionChangeDraft(at: rootA))
+        appState.requestSessionChangeWrite(planA, in: workspaceA)
+
+        let operation = try XCTUnwrap(appState.takePendingSessionChangeWrite())
+        appState.cancelPendingSessionChangeWrite()
+        XCTAssertNil(appState.takePendingSessionChangeWrite())
+        XCTAssertEqual(operation.plan.workspacePath, rootA.path)
+
+        let planB = try NativeSessionChangeStore.makeWritePlan(draft: try writeSessionChangeDraft(at: rootB))
+        appState.requestSessionChangeWrite(planB, in: workspaceB)
+        XCTAssertNil(appState.pendingSessionChangeWrite(for: workspaceB))
+        appState.selectedWorkspaceID = workspaceB.id
+        appState.requestSessionChangeWrite(planB, in: workspaceB)
+        XCTAssertNotNil(appState.pendingSessionChangeWrite(for: workspaceB))
+        appState.selectedWorkspaceID = workspaceA.id
+        XCTAssertNil(appState.pendingSessionChangeWrite(for: workspaceB))
+    }
+
     func testConsoleLayoutKeepsOnePrimaryActionAndFilesCollapsed() {
         let summary = WorkspaceConsoleLayoutPolicy().auditSummary
 
@@ -2952,6 +3180,68 @@ final class FeatureWorkflowTests: XCTestCase {
             .appendingPathComponent("nexus-demand-input-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         return root
+    }
+
+    private func contextPackInput(workspacePath: String = "/tmp/nexus-context") -> NativeContextPackInput {
+        NativeContextPackInput(
+            generatedAt: "2026-07-11T01:02:03Z",
+            workspaceName: "订单工作区",
+            workspacePath: workspacePath,
+            selectedFeature: NativeContextFeature(id: "F-003", title: "订单快照 🚀", status: "blocked", detail: "保留 Unicode"),
+            activeLinkedTasks: [NativeContextTask(id: "T-003", title: "实现快照", status: "blocked", detail: "等待 schema")],
+            blockers: ["schema 尚未确认"],
+            nextAction: "确认 schema 后实现",
+            services: [NativeContextService(name: "order-service", branch: "feature/order", gitSummary: "clean")],
+            gitSummary: ["order-service: clean @ abc123"],
+            latestRelevantCheck: "PASS 337 tests",
+            confirmedChanges: ["## latest\n- confirmed change"],
+            evidence: [
+                NativeContextEvidence(path: "FEATURES.md", summary: "confirmed scope"),
+                NativeContextEvidence(path: "tasks.md", summary: "active tasks"),
+                NativeContextEvidence(
+                    path: "交付记录.md",
+                    summary: "FULL DELIVERY BODY " + String(repeating: "delivery content ", count: 40)
+                )
+            ],
+            sourceRevisions: ["FEATURES.md": "feature-rev", "tasks.md": "task-rev", "changes.md": "changes-rev"]
+        )
+    }
+
+    private func sessionChangeWorkspace() throws -> URL {
+        let root = try temporaryDemandWorkspace()
+        try "# Features\n".write(to: root.appendingPathComponent("FEATURES.md"), atomically: true, encoding: .utf8)
+        try "# Tasks\n".write(to: root.appendingPathComponent("tasks.md"), atomically: true, encoding: .utf8)
+        try "# Changes\n\n人工未知说明。\n".write(to: root.appendingPathComponent("changes.md"), atomically: true, encoding: .utf8)
+        return root
+    }
+
+    private func writeSessionChangeDraft(at root: URL) throws -> SessionChangeDraft {
+        let baseline = SessionChangeBaseline(
+            sessionID: "session-1",
+            workspacePath: root.path,
+            startedAt: "2026-07-11T01:02:03Z",
+            repositoryHeads: ["order-service": "abc123"],
+            featureRevision: "feature-old",
+            taskRevision: "task-old"
+        )
+        return try NativeSessionChangeStore.writeDraft(
+            input: SessionChangeDraftInput(
+                workspacePath: root.path,
+                baseline: baseline,
+                currentRepositoryHeads: ["order-service": "def456"],
+                repositoryDiffs: ["order-service": "M Sources/Order.swift"],
+                featureRevision: "feature-new",
+                taskRevision: "task-new",
+                latestTest: "PASS FeatureWorkflowTests",
+                sqlAndDeliveryRevisions: ["sql/order.sql": "sql-rev", "交付记录.md": "delivery-rev"],
+                codexSummary: "Added bounded context"
+            )
+        )
+    }
+
+    private func sessionChangeDraftFixture() throws -> (root: URL, draft: SessionChangeDraft) {
+        let root = try sessionChangeWorkspace()
+        return (root, try writeSessionChangeDraft(at: root))
     }
 
     private func featureProposalWorkspace() throws -> URL {

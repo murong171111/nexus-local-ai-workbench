@@ -173,6 +173,11 @@ struct ConfirmedFeatureWrite: Sendable {
     fileprivate let token: Int
 }
 
+struct ConfirmedSessionChangeWrite: Sendable {
+    let plan: SessionChangeWritePlan
+    fileprivate let token: Int
+}
+
 @MainActor
 final class AppState: ObservableObject {
     @Published var query = ""
@@ -190,6 +195,11 @@ final class AppState: ObservableObject {
             pendingFeatureProposalMergeToken = nil
             activeFeatureProposalMergeToken = nil
             featureProposalMergeWorkspaceID = nil
+            sessionChangePlanGeneration += 1
+            pendingSessionChangeWrite = nil
+            pendingSessionChangeWriteToken = nil
+            activeSessionChangeWriteToken = nil
+            sessionChangeWriteWorkspaceID = nil
         }
     }
     @Published var workspaces: [WorkspaceSummary]
@@ -225,6 +235,11 @@ final class AppState: ObservableObject {
     @Published var pendingFeatureProposalMerge: FeatureProposalMergePlan?
     @Published var featureProposalLoadingWorkspaceID: WorkspaceSummary.ID?
     @Published var featureProposalMergeWorkspaceID: WorkspaceSummary.ID?
+    @Published var sessionChangeDraftsByWorkspace: [WorkspaceSummary.ID: SessionChangeDraft] = [:]
+    @Published var pendingSessionChangeWrite: SessionChangeWritePlan?
+    @Published var sessionChangeWriteWorkspaceID: WorkspaceSummary.ID?
+    @Published var sessionChangeLoadingWorkspaceID: WorkspaceSummary.ID?
+    @Published var selectedContextFeatureIDsByWorkspace: [WorkspaceSummary.ID: String] = [:]
     private var featurePlanGeneration = 0
     private var pendingFeatureWriteToken: Int?
     private var activeFeatureWriteToken: Int?
@@ -232,6 +247,10 @@ final class AppState: ObservableObject {
     private var pendingFeatureProposalMergeToken: Int?
     private var activeFeatureProposalMergeToken: Int?
     private var featureProposalRefreshGenerationsByWorkspace: [WorkspaceSummary.ID: Int] = [:]
+    private var sessionChangePlanGeneration = 0
+    private var pendingSessionChangeWriteToken: Int?
+    private var activeSessionChangeWriteToken: Int?
+    private var sessionChangeDraftGenerationsByWorkspace: [WorkspaceSummary.ID: Int] = [:]
     private var demandInputRecoveryWorkspaceIDs = Set<WorkspaceSummary.ID>()
     private var demandAttachmentOperationWorkspaceIDs = Set<WorkspaceSummary.ID>()
     private var demandInputSaveTailsByWorkspace: [WorkspaceSummary.ID: Task<DemandInputSaveResult, Never>] = [:]
@@ -3648,6 +3667,39 @@ final class AppState: ObservableObject {
         if activeFeatureWriteToken == token {
             activeFeatureWriteToken = nil
             featureWriteWorkspaceID = nil
+        }
+    }
+
+    func requestSessionChangeWrite(_ plan: SessionChangeWritePlan, in workspace: WorkspaceSummary) {
+        guard selectedWorkspaceID == workspace.id, plan.workspacePath == workspace.path else { return }
+        sessionChangePlanGeneration += 1
+        let token = sessionChangePlanGeneration
+        pendingSessionChangeWrite = plan
+        pendingSessionChangeWriteToken = token
+        activeSessionChangeWriteToken = token
+        sessionChangeWriteWorkspaceID = workspace.id
+    }
+
+    func pendingSessionChangeWrite(for workspace: WorkspaceSummary) -> SessionChangeWritePlan? {
+        guard selectedWorkspaceID == workspace.id,
+              pendingSessionChangeWrite?.workspacePath == workspace.path else { return nil }
+        return pendingSessionChangeWrite
+    }
+
+    func takePendingSessionChangeWrite() -> ConfirmedSessionChangeWrite? {
+        guard let plan = pendingSessionChangeWrite, let token = pendingSessionChangeWriteToken else { return nil }
+        pendingSessionChangeWrite = nil
+        pendingSessionChangeWriteToken = nil
+        return ConfirmedSessionChangeWrite(plan: plan, token: token)
+    }
+
+    func cancelPendingSessionChangeWrite() {
+        guard pendingSessionChangeWrite != nil, let token = pendingSessionChangeWriteToken else { return }
+        pendingSessionChangeWrite = nil
+        pendingSessionChangeWriteToken = nil
+        if activeSessionChangeWriteToken == token {
+            activeSessionChangeWriteToken = nil
+            sessionChangeWriteWorkspaceID = nil
         }
     }
 
