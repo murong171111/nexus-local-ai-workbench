@@ -3,6 +3,48 @@ import XCTest
 import NexusBridge
 
 final class FeatureWorkflowTests: XCTestCase {
+    @MainActor
+    func testFeatureWorkspaceAutosavePolicySuppressesOnlyProgrammaticChangeAndCapturesWorkspaceDraft() async throws {
+        let policy = FeatureWorkspaceAutosavePolicy(delayNanoseconds: 20_000_000)
+        let loaded = DemandInputDraft(requirement: "loaded", links: [], attachments: [])
+        var saves: [(String, DemandInputDraft)] = []
+
+        policy.prepareProgrammaticUpdate(loaded)
+        policy.draftChanged(loaded, workspaceID: "workspace-a") { workspaceID, draft in
+            saves.append((workspaceID, draft))
+        }
+        try await Task.sleep(nanoseconds: 40_000_000)
+        XCTAssertTrue(saves.isEmpty)
+
+        let edited = DemandInputDraft(requirement: "edited", links: [], attachments: [])
+        policy.draftChanged(edited, workspaceID: "workspace-a") { workspaceID, draft in
+            saves.append((workspaceID, draft))
+        }
+        policy.cancel()
+        policy.draftChanged(
+            DemandInputDraft(requirement: "workspace b", links: [], attachments: []),
+            workspaceID: "workspace-b"
+        ) { workspaceID, draft in
+            saves.append((workspaceID, draft))
+        }
+        try await Task.sleep(nanoseconds: 40_000_000)
+
+        XCTAssertEqual(saves.map(\.0), ["workspace-b"])
+        XCTAssertEqual(saves.map(\.1.requirement), ["workspace b"])
+
+        policy.prepareProgrammaticUpdate(loaded)
+        let realEditWithoutProgrammaticOnChange = DemandInputDraft(
+            requirement: "real edit after equal assignment",
+            links: [],
+            attachments: []
+        )
+        policy.draftChanged(realEditWithoutProgrammaticOnChange, workspaceID: "workspace-b") { workspaceID, draft in
+            saves.append((workspaceID, draft))
+        }
+        try await Task.sleep(nanoseconds: 40_000_000)
+        XCTAssertEqual(saves.last?.1, realEditWithoutProgrammaticOnChange)
+    }
+
     func testDemandInputDraftRoundTripsWithoutCreatingLegacyTemplates() throws {
         let root = try temporaryDemandWorkspace()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -21,6 +63,76 @@ final class FeatureWorkflowTests: XCTestCase {
         XCTAssertEqual(try NativeDemandInputStore.load(workspacePath: root.path).draft, draft)
         XCTAssertTrue(response.path.hasSuffix("/需求/intake-draft.md"))
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("需求/questions.md").path))
+    }
+
+    func testDemandInputRequirementRoundTripsEveryCharacterWithMarkersAndMarkdown() throws {
+        let requirements = [
+            "",
+            "\n",
+            "\n\nleading\ntrailing\n\n",
+            "## Links\n\n- not metadata\n\n## Attachments\n\n- `not-metadata`",
+            "before\n<!-- nexus:demand-requirement:end -->\n\n## Links\n\n- fake\n\n## Attachments\n\n- `fake`\nafter\n<!-- nexus:demand-requirement:start -->"
+        ]
+
+        for requirement in requirements {
+            let root = try temporaryDemandWorkspace()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let draft = DemandInputDraft(
+                requirement: requirement,
+                links: ["https://example.com/spec"],
+                attachments: ["需求/attachments/prototype.png"]
+            )
+
+            _ = try NativeDemandInputStore.save(
+                draft: draft,
+                workspacePath: root.path,
+                expectedRevision: .missing
+            )
+
+            let saved = try String(
+                contentsOf: root.appendingPathComponent("需求/intake-draft.md"),
+                encoding: .utf8
+            )
+            XCTAssertTrue(saved.contains("<!-- nexus:demand-requirement:start -->"))
+            XCTAssertTrue(saved.contains("<!-- nexus:demand-requirement:end -->"))
+            XCTAssertEqual(try NativeDemandInputStore.load(workspacePath: root.path).draft, draft)
+        }
+    }
+
+    func testDemandInputLoadKeepsLegacyUnmarkedTailCompatibility() throws {
+        let root = try temporaryDemandWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let demandURL = root.appendingPathComponent("需求")
+        try FileManager.default.createDirectory(at: demandURL, withIntermediateDirectories: true)
+        try """
+        # Demand Intake Draft
+
+        ## Requirement
+
+        legacy requirement
+
+        ## Links
+
+        - https://example.com/legacy
+
+        ## Attachments
+
+        - `需求/attachments/legacy.txt`
+
+        """.write(
+            to: demandURL.appendingPathComponent("intake-draft.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        XCTAssertEqual(
+            try NativeDemandInputStore.load(workspacePath: root.path).draft,
+            DemandInputDraft(
+                requirement: "legacy requirement",
+                links: ["https://example.com/legacy"],
+                attachments: ["需求/attachments/legacy.txt"]
+            )
+        )
     }
 
     func testDemandInputSaveRejectsStaleDraftRevision() throws {
@@ -209,6 +321,31 @@ final class FeatureWorkflowTests: XCTestCase {
             )
         )
         XCTAssertEqual(try String(contentsOf: draftURL, encoding: .utf8), "external write")
+    }
+
+    func testDemandInputTempCreationFailurePreservesRegularFileReplacingTemporaryName() throws {
+        let root = try temporaryDemandWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let demandURL = root.appendingPathComponent("需求")
+        var replacementURL: URL?
+
+        XCTAssertThrowsError(
+            try NativeDemandInputStore.save(
+                draft: DemandInputDraft(requirement: "not published", links: [], attachments: []),
+                workspacePath: root.path,
+                expectedRevision: .missing,
+                afterTempOpen: { temporaryName in
+                    let temporaryURL = demandURL.appendingPathComponent(temporaryName)
+                    try FileManager.default.removeItem(at: temporaryURL)
+                    try "external replacement".write(to: temporaryURL, atomically: false, encoding: .utf8)
+                    replacementURL = temporaryURL
+                }
+            )
+        )
+
+        let replacement = try XCTUnwrap(replacementURL)
+        XCTAssertEqual(try String(contentsOf: replacement, encoding: .utf8), "external replacement")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: demandURL.appendingPathComponent("intake-draft.md").path))
     }
 
     func testDemandInputSaveRejectsReplacedTemporaryNameAndPreservesExistingDraft() throws {

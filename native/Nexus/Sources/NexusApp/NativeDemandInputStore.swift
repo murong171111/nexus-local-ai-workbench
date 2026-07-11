@@ -7,6 +7,8 @@ enum NativeDemandInputStore {
     static let demandDirectoryName = "需求"
     static let draftFileName = "intake-draft.md"
     static let attachmentsDirectoryName = "attachments"
+    private static let requirementStartMarker = "<!-- nexus:demand-requirement:start -->"
+    private static let requirementEndMarker = "<!-- nexus:demand-requirement:end -->"
 
     // ponytail: one Nexus-local lock is sufficient for the current in-process editor; split by workspace only if concurrent editing becomes a measured need.
     private static let writeLock = NSLock()
@@ -47,6 +49,7 @@ enum NativeDemandInputStore {
         auditRoot: String? = nil,
         actor: String? = nil,
         fileManager: FileManager = .default,
+        afterTempOpen: ((String) throws -> Void)? = nil,
         beforeFinalRevisionCheck: (() throws -> Void)? = nil,
         afterPublishBeforeVerify: (() throws -> Void)? = nil
     ) throws -> DemandInputSaveResponse {
@@ -68,7 +71,12 @@ enum NativeDemandInputStore {
 
             let data = Data(render(draft).utf8)
             let temporaryName = ".\(draftFileName).\(UUID().uuidString).tmp"
-            let staged = try createVerifiedTemporaryFile(data, parentFD: demandFD, name: temporaryName)
+            let staged = try createVerifiedTemporaryFile(
+                data,
+                parentFD: demandFD,
+                name: temporaryName,
+                afterOpen: afterTempOpen
+            )
             var temporaryCleanupIdentity: FileIdentity? = staged.identity
             defer {
                 close(staged.fd)
@@ -506,7 +514,6 @@ enum NativeDemandInputStore {
     }
 
     private static func render(_ draft: DemandInputDraft) -> String {
-        let requirement = draft.requirement.trimmingCharacters(in: .newlines)
         let links = draft.links
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
@@ -517,25 +524,59 @@ enum NativeDemandInputStore {
             .filter { !$0.isEmpty }
             .map { "- `\($0)`" }
             .joined(separator: "\n")
-        return [
-            "# Demand Intake Draft",
-            "",
-            "## Requirement",
-            "",
-            requirement,
-            "",
-            "## Links",
-            "",
-            links,
-            "",
-            "## Attachments",
-            "",
-            attachments,
-            ""
-        ].joined(separator: "\n")
+        return """
+        # Demand Intake Draft
+
+        ## Requirement
+
+        \(requirementStartMarker)
+        \(draft.requirement)
+        \(requirementEndMarker)
+
+        ## Links
+
+        \(links)
+
+        ## Attachments
+
+        \(attachments)
+
+        """
     }
 
     private static func parse(_ content: String) -> DemandInputDraft {
+        parseMarked(content) ?? parseLegacy(content)
+    }
+
+    private static func parseMarked(_ content: String) -> DemandInputDraft? {
+        let startBoundary = "## Requirement\n\n\(requirementStartMarker)\n"
+        let endBoundary = "\n\(requirementEndMarker)\n\n## Links\n\n"
+        let attachmentsBoundary = "\n\n## Attachments\n\n"
+        guard let start = content.range(of: startBoundary),
+              let end = content.range(
+                of: endBoundary,
+                options: .backwards,
+                range: start.upperBound..<content.endIndex
+              ) else {
+            return nil
+        }
+
+        let metadataTail = content[end.upperBound...]
+        guard let attachmentsStart = metadataTail.range(of: attachmentsBoundary, options: .backwards) else {
+            return nil
+        }
+        let linkLines = String(metadataTail[..<attachmentsStart.lowerBound]).components(separatedBy: "\n")
+        let attachmentLines = String(metadataTail[attachmentsStart.upperBound...]).components(separatedBy: "\n")
+        guard linkBlockIsValid(linkLines), attachmentTailIsValid(attachmentLines) else { return nil }
+
+        return DemandInputDraft(
+            requirement: String(content[start.upperBound..<end.lowerBound]),
+            links: linkLines.compactMap(linkValue),
+            attachments: attachmentLines.compactMap(attachmentValue)
+        )
+    }
+
+    private static func parseLegacy(_ content: String) -> DemandInputDraft {
         let lines = content.components(separatedBy: "\n")
         guard let requirementIndex = lines.firstIndex(of: "## Requirement") else {
             return .empty
@@ -620,19 +661,30 @@ enum NativeDemandInputStore {
     private static func createVerifiedTemporaryFile(
         _ data: Data,
         parentFD: Int32,
-        name: String
+        name: String,
+        afterOpen: ((String) throws -> Void)? = nil
     ) throws -> OpenTemporaryFile {
         let fileFD = openat(parentFD, name, O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW, mode_t(0o600))
         guard fileFD >= 0 else {
             throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
         }
+        let identity: FileIdentity
         do {
+            identity = try fileIdentity(fileFD, path: name)
+        } catch {
+            close(fileFD)
+            throw error
+        }
+        do {
+            try afterOpen?(name)
+            guard try namedRegularFileIdentity(parentFD: parentFD, name: name, path: name) == identity else {
+                throw NativeDemandInputStoreError.publicationConflict(name)
+            }
             let handle = FileHandle(fileDescriptor: fileFD, closeOnDealloc: false)
             try handle.write(contentsOf: data)
             guard fsync(fileFD) == 0 else {
                 throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
             }
-            let identity = try fileIdentity(fileFD, path: name)
             let writtenData = try readData(fileFD)
             let writtenSHA256 = sha256Hex(writtenData)
             guard writtenData.count == data.count,
@@ -647,7 +699,13 @@ enum NativeDemandInputStore {
             )
         } catch {
             close(fileFD)
-            _ = unlinkat(parentFD, name, 0)
+            guard unlinkNamedFileIfIdentityMatches(
+                parentFD: parentFD,
+                name: name,
+                identity: identity
+            ) else {
+                throw NativeDemandInputStoreError.publicationConflict(name)
+            }
             throw error
         }
     }

@@ -21,6 +21,48 @@ enum FeatureWorkspaceDraftPolicy {
     }
 }
 
+@MainActor
+final class FeatureWorkspaceAutosavePolicy {
+    private let delayNanoseconds: UInt64
+    private var expectedProgrammaticDraft: DemandInputDraft?
+    private var task: Task<Void, Never>?
+
+    init(delayNanoseconds: UInt64 = 600_000_000) {
+        self.delayNanoseconds = delayNanoseconds
+    }
+
+    func prepareProgrammaticUpdate(_ draft: DemandInputDraft) {
+        cancel()
+        expectedProgrammaticDraft = draft
+    }
+
+    func draftChanged(
+        _ draft: DemandInputDraft,
+        workspaceID: WorkspaceSummary.ID,
+        save: @escaping @MainActor (WorkspaceSummary.ID, DemandInputDraft) async -> Void
+    ) {
+        if let expectedProgrammaticDraft {
+            self.expectedProgrammaticDraft = nil
+            if draft == expectedProgrammaticDraft { return }
+        }
+
+        cancel()
+        let capturedDraft = draft
+        let capturedWorkspaceID = workspaceID
+        let capturedDelay = delayNanoseconds
+        task = Task {
+            try? await Task.sleep(nanoseconds: capturedDelay)
+            guard !Task.isCancelled else { return }
+            await save(capturedWorkspaceID, capturedDraft)
+        }
+    }
+
+    func cancel() {
+        task?.cancel()
+        task = nil
+    }
+}
+
 struct FeatureWorkspaceView: View {
     @EnvironmentObject private var appState: AppState
     let workspace: WorkspaceSummary
@@ -31,7 +73,7 @@ struct FeatureWorkspaceView: View {
     @State private var isImportingMaterials = false
     @State private var isAttaching = false
     @State private var pendingMaterials: [URL] = []
-    @State private var autosaveTask: Task<Void, Never>?
+    @State private var autosavePolicy = FeatureWorkspaceAutosavePolicy()
 
     private var isSaving: Bool {
         appState.demandInputSavingWorkspaceID == workspace.id
@@ -144,7 +186,7 @@ struct FeatureWorkspaceView: View {
                 }
 
                 Button {
-                    autosaveTask?.cancel()
+                    autosavePolicy.cancel()
                     Task {
                         let result = await appState.saveDemandInputDraft(draft, in: workspace)
                         guard result.succeeded else { return }
@@ -162,16 +204,27 @@ struct FeatureWorkspaceView: View {
         .background(Color.primary.opacity(0.04))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .task(id: workspace.id) {
+            autosavePolicy.cancel()
+            let loadingWorkspace = workspace
             isLoading = true
-            await appState.loadDemandInput(for: workspace)
-            draft = FeatureWorkspaceDraftPolicy.refreshedDraft(
+            await appState.loadDemandInput(for: loadingWorkspace)
+            guard !Task.isCancelled, workspace.id == loadingWorkspace.id else { return }
+            let loadedDraft = FeatureWorkspaceDraftPolicy.refreshedDraft(
                 current: draft,
-                snapshot: appState.demandInputSnapshot(for: workspace)
+                snapshot: appState.demandInputSnapshot(for: loadingWorkspace)
             )
+            autosavePolicy.prepareProgrammaticUpdate(loadedDraft)
+            draft = loadedDraft
             isLoading = false
         }
         .onChange(of: draft) { _ in
             scheduleAutosave()
+        }
+        .onChange(of: workspace.id) { _ in
+            autosavePolicy.cancel()
+        }
+        .onDisappear {
+            autosavePolicy.cancel()
         }
         .fileImporter(
             isPresented: $isImportingMaterials,
@@ -197,8 +250,7 @@ struct FeatureWorkspaceView: View {
                 let urls = pendingMaterials
                 let liveDraft = draft
                 pendingMaterials = []
-                autosaveTask?.cancel()
-                autosaveTask = nil
+                autosavePolicy.cancel()
                 isAttaching = true
                 Task {
                     defer { isAttaching = false }
@@ -211,10 +263,12 @@ struct FeatureWorkspaceView: View {
                     ) else {
                         return
                     }
-                    draft = FeatureWorkspaceDraftPolicy.mergingCopiedAttachments(
+                    let mergedDraft = FeatureWorkspaceDraftPolicy.mergingCopiedAttachments(
                         response.copiedRelativePaths,
                         into: draft
                     )
+                    autosavePolicy.prepareProgrammaticUpdate(mergedDraft)
+                    draft = mergedDraft
                 }
             }
             Button("取消", role: .cancel) {
@@ -225,11 +279,9 @@ struct FeatureWorkspaceView: View {
 
     private func scheduleAutosave() {
         guard !isLoading, !isAttaching else { return }
-        autosaveTask?.cancel()
-        autosaveTask = Task {
-            try? await Task.sleep(nanoseconds: 600_000_000)
-            guard !Task.isCancelled else { return }
-            _ = await appState.saveDemandInputDraft(draft, in: workspace)
+        let capturedWorkspace = workspace
+        autosavePolicy.draftChanged(draft, workspaceID: capturedWorkspace.id) { _, capturedDraft in
+            _ = await appState.saveDemandInputDraft(capturedDraft, in: capturedWorkspace)
         }
     }
 
