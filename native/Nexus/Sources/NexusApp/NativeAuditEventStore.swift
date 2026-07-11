@@ -8,6 +8,7 @@ struct NativeAuditAppendFeedback {
 
 enum NativeAuditEventStore {
     static let fileName = "audit-events.jsonl"
+    private static let fileLock = NSLock()
 
     static func appendAsync(
         auditRoot: String,
@@ -28,7 +29,6 @@ enum NativeAuditEventStore {
         id: String = UUID().uuidString
     ) throws -> AppendAuditEventResponse {
         let rootURL = URL(fileURLWithPath: auditRoot)
-        try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
         let event = AuditEvent(
             id: id,
             timestamp: ISO8601DateFormatter().string(from: now),
@@ -40,6 +40,10 @@ enum NativeAuditEventStore {
         )
         let fileURL = rootURL.appendingPathComponent(fileName)
         let line = try encoder.encode(event) + Data([0x0A])
+
+        fileLock.lock()
+        defer { fileLock.unlock() }
+        try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
         if fileManager.fileExists(atPath: fileURL.path) {
             let handle = try FileHandle(forWritingTo: fileURL)
             defer { try? handle.close() }
@@ -75,6 +79,9 @@ enum NativeAuditEventStore {
         fileManager: FileManager = .default
     ) throws -> [AuditEvent] {
         guard limit > 0 else { return [] }
+
+        fileLock.lock()
+        defer { fileLock.unlock() }
         let fileURL = URL(fileURLWithPath: auditRoot).appendingPathComponent(fileName)
         guard fileManager.fileExists(atPath: fileURL.path) else {
             return []

@@ -982,6 +982,48 @@ final class FeatureWorkflowTests: XCTestCase {
         XCTAssertEqual(try NativeAuditEventStore.loadRecent(auditRoot: root.appendingPathComponent("audit").path, limit: 1).first?.action, "test.appended")
     }
 
+    func testNativeAuditConcurrentAsyncAppendsPreserveEveryJSONLine() async throws {
+        let root = try temporaryDemandWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let auditRoot = root.appendingPathComponent("audit").path
+        let appendCount = 20
+
+        let operations = (0..<appendCount).map { index in
+            Task {
+                await Task.yield()
+                _ = try await NativeAuditEventStore.appendAsync(
+                    auditRoot: auditRoot,
+                    event: AuditEventInput(
+                        actor: "Nexus Native",
+                        action: "test.concurrent.\(index)",
+                        target: root.path,
+                        summary: "Concurrent audit append \(index)"
+                    )
+                )
+            }
+        }
+
+        for operation in operations {
+            _ = try await operation.value
+        }
+
+        let events = try NativeAuditEventStore.loadRecent(auditRoot: auditRoot, limit: appendCount)
+        XCTAssertEqual(events.count, appendCount)
+        XCTAssertEqual(Set(events.map(\.id)).count, appendCount)
+        XCTAssertEqual(
+            Set(events.map(\.action)),
+            Set((0..<appendCount).map { "test.concurrent.\($0)" })
+        )
+
+        let fileURL = URL(fileURLWithPath: auditRoot).appendingPathComponent(NativeAuditEventStore.fileName)
+        let lines = try String(contentsOf: fileURL, encoding: .utf8)
+            .split(separator: "\n", omittingEmptySubsequences: true)
+        XCTAssertEqual(lines.count, appendCount)
+        for line in lines {
+            XCTAssertNoThrow(try JSONSerialization.jsonObject(with: Data(line.utf8)))
+        }
+    }
+
     @MainActor
     func testAppStateDemandSaveFailurePreservesEditedDraftAndReportsResult() async throws {
         let root = try temporaryDemandWorkspace()

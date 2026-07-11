@@ -6,7 +6,7 @@ COMPLETE_WITH_ACCEPTED_LIMITATION
 
 ## Final Commit
 
-- `Serialize Native demand saves`
+- `Serialize Native audit appends`
 
 ## Final Fixes
 
@@ -15,6 +15,7 @@ COMPLETE_WITH_ACCEPTED_LIMITATION
 3. The save implementation is isolated in `performDemandInputSave`. Different workspaces have independent tails and can advance while another workspace is waiting at its detached I/O boundary.
 4. `featureIntakePrompt` is async. Its `changes.md` candidate probes run in `Task.detached`, while prompt rendering remains value-only. `openFeatureIntakeInCodex` awaits the prompt before performing MainActor clipboard and `NSWorkspace.open` work.
 5. `NativeAuditEventStore.appendAsync` runs directory creation, seek, and write through `Task.detached`. `recordNativeAuditEvent` awaits it and only then updates `lastError`. `AuditEventInput` was already `Sendable`, so no bridge model change was required.
+6. `NativeAuditEventStore.append` now holds one process-local static `NSLock` across directory creation, existence checks, file creation, seek, and write. `loadRecent` uses the same lock while reading and decoding, so App-process readers cannot observe a partial JSONL line. The `beforeAppend` test seam remains outside the lock; no cross-process locking guarantee is claimed.
 
 ## Regression Coverage
 
@@ -22,12 +23,13 @@ COMPLETE_WITH_ACCEPTED_LIMITATION
 - A blocked save in one workspace does not stop another workspace save from completing.
 - A blocked production `changes.md` path probe leaves MainActor responsive and preserves the compact prompt plus `FEATURES.draft.md`-only contract.
 - A blocked production async audit append leaves MainActor responsive and writes a readable audit event after release.
+- Twenty parallel `appendAsync` calls preserve all unique actions, and every non-empty on-disk JSONL line decodes successfully.
 - Existing exact markers, autosave token behavior, recovery state, attachment background I/O, source validation, and fingerprint cleanup tests remain green.
 
 ## Final Verification
 
 - `swift test --disable-sandbox --package-path native/Nexus --filter 'FeatureWorkflowTests'`
-  - PASS: 43 tests, 0 failures.
+  - PASS: 44 tests, 0 failures.
 - `swift build --disable-sandbox --package-path native/Nexus`
   - PASS.
 - `npm run native:m1-acceptance`
