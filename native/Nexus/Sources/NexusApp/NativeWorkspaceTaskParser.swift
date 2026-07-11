@@ -11,6 +11,9 @@ struct NativeWorkspaceTaskRow {
 }
 
 enum NativeWorkspaceTaskParser {
+    private static let featureMarkerPattern = try! NSRegularExpression(
+        pattern: #"(?:^|[\s·;,|])feature\s*=\s*[^\s·;,|]*"#
+    )
     static func rows(from content: String, folder: String) -> [NativeWorkspaceTaskRow] {
         var result: [NativeWorkspaceTaskRow] = []
         var taskIndex = 0
@@ -151,16 +154,18 @@ enum NativeWorkspaceTaskParser {
     }
 
     static func featureAttribution(in detail: String) -> (id: String?, warning: String?) {
-        let tokens = detail.components(separatedBy: .whitespacesAndNewlines)
-            .flatMap { $0.split(whereSeparator: { "·;,|".contains($0) }) }
-            .map(String.init)
-            .filter { $0.hasPrefix("feature=") }
+        let range = NSRange(detail.startIndex..., in: detail)
+        let tokens = featureMarkerPattern.matches(in: detail, range: range).compactMap { match -> String? in
+            guard let range = Range(match.range, in: detail) else { return nil }
+            return detail[range].trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(
+                CharacterSet(charactersIn: "·;,|")
+            ))
+        }
         guard !tokens.isEmpty else { return (nil, nil) }
         guard tokens.count == 1 else { return (nil, "多个 feature= 标记，任务未关联") }
-        let value = String(tokens[0].dropFirst("feature=".count))
-        guard value.range(of: #"^F-[0-9]{3,}$"#, options: .regularExpression) != nil else {
+        guard tokens[0].range(of: #"^feature=F-[0-9]{3,}$"#, options: .regularExpression) != nil else {
             return (nil, "feature= 标记格式无效，任务未关联")
         }
-        return (value, nil)
+        return (String(tokens[0].dropFirst("feature=".count)), nil)
     }
 }

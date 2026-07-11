@@ -300,8 +300,8 @@ struct FeatureWorkspaceView: View {
         .confirmationDialog(
             featureConfirmationTitle,
             isPresented: Binding(
-                get: { appState.pendingFeatureWrite != nil },
-                set: { if !$0 { Task { await appState.confirmPendingFeatureWrite(confirmed: false) } } }
+                get: { appState.pendingFeatureWrite(for: workspace) != nil },
+                set: { _ in }
             ),
             titleVisibility: .visible
         ) {
@@ -439,12 +439,15 @@ struct FeatureWorkspaceView: View {
     }
 
     private var featureConfirmationTitle: String {
-        guard let mutation = appState.pendingFeatureWrite?.mutation else { return "确认功能点变更" }
+        guard let mutation = appState.pendingFeatureWrite(for: workspace)?.mutation else {
+            return "确认 \(workspace.name) 功能点变更"
+        }
         switch mutation {
-        case .add(let feature): return "确认新增 \(feature.id)"
-        case .update(let expected, _): return "确认修改 \(expected.id)"
-        case .setStatus(let id, let status, _): return "确认将 \(id) 设为 \(status.rawValue)"
-        case .cancel(let id, _): return "确认取消 \(id)"
+        case .add(let feature): return "确认在 \(workspace.name) 新增 \(feature.id)"
+        case .update(let expected, _): return "确认在 \(workspace.name) 修改 \(expected.id)"
+        case .setStatus(let id, let status, _):
+            return "确认在 \(workspace.name) 将 \(id) 设为 \(status.rawValue)"
+        case .cancel(let id, _): return "确认在 \(workspace.name) 取消 \(id)"
         }
     }
 

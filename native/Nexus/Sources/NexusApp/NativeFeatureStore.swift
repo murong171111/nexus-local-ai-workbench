@@ -6,7 +6,9 @@ import NexusBridge
 enum NativeFeatureStore {
     private static let fileName = "FEATURES.md"
     private static let idPattern = try! NSRegularExpression(pattern: #"^F-[0-9]{3,}$"#)
-    private static let headingPattern = try! NSRegularExpression(pattern: #"^## (F-[^ ]*) (.+)$"#)
+    private static let headingPattern = try! NSRegularExpression(
+        pattern: #"^## ([A-Z][A-Z0-9]*-[0-9]+)(?: (.*))?$"#
+    )
     private static let metadataLabels = [
         "Status", "Verification", "Auto complete", "Source", "Services", "Tasks", "Evidence",
         "Completed at", "Completed by", "Completion note", "Evidence stale"
@@ -28,14 +30,10 @@ enum NativeFeatureStore {
     }
 
     static func load(workspacePath: String) throws -> FeatureDocumentSnapshot {
-        let workspaceURL = try validatedWorkspaceURL(workspacePath)
-        let url = workspaceURL.appendingPathComponent(fileName)
-        let inspected = try inspectFile(url)
-        switch inspected {
-        case .missing:
-            return FeatureDocumentSnapshot(document: .empty, revision: .missing, path: url.path)
-        case .regular(let content, let revision):
-            return FeatureDocumentSnapshot(document: try parse(content), revision: revision, path: url.path)
+        let workspaceURL = canonicalWorkspaceURL(workspacePath)
+        let path = workspaceURL.appendingPathComponent(fileName).path
+        return try withWorkspaceDirectory(workspaceURL) { workspaceFD in
+            try snapshot(workspaceFD: workspaceFD, path: path)
         }
     }
 
@@ -65,35 +63,71 @@ enum NativeFeatureStore {
         plan: FeatureWritePlan,
         confirmed: Bool,
         auditRoot: String? = nil,
-        actor: String? = nil
+        actor: String? = nil,
+        afterWorkspaceOpen: (() throws -> Void)? = nil,
+        beforeFinalRevisionCheck: (() throws -> Void)? = nil,
+        beforePublish: (() throws -> Void)? = nil
     ) throws -> FeatureWriteResponse {
         guard confirmed else { throw NativeFeatureStoreError.unconfirmed }
         if case .invalid(let reason) = plan.revision {
             throw NativeFeatureStoreError.invalidDocument(reason)
         }
 
+        let workspaceURL = canonicalWorkspaceURL(plan.workspacePath)
+        let featurePath = workspaceURL.appendingPathComponent(fileName).path
+        guard plan.workspacePath == workspaceURL.path, plan.path == featurePath else {
+            throw NativeFeatureStoreError.malformedPlan(plan.path)
+        }
+
         let mutationActor = actor ?? "Nexus Native"
         let result = try writeLock(for: plan.workspacePath).withLock {
             () -> (FeatureDocument, FeatureDocumentRevision) in
-            let current = try load(workspacePath: plan.workspacePath)
-            guard current.path == plan.path, current.revision == plan.revision else {
-                throw NativeFeatureStoreError.staleRevision(
-                    expected: plan.revision.label,
-                    current: current.revision.label
-                )
-            }
-            if let expected = plan.expectedFeature,
-               current.document.features.first(where: { $0.id == expected.id }) != expected {
-                throw NativeFeatureStoreError.staleFeature(expected.id)
-            }
+            try withWorkspaceDirectory(workspaceURL) { workspaceFD in
+                try afterWorkspaceOpen?()
+                let current = try snapshot(workspaceFD: workspaceFD, path: featurePath)
+                try requireRevision(current.revision, expected: plan.revision)
+                if let expected = plan.expectedFeature,
+                   current.document.features.first(where: { $0.id == expected.id }) != expected {
+                    throw NativeFeatureStoreError.staleFeature(expected.id)
+                }
 
-            var document = current.document
-            try apply(plan.mutation, actor: mutationActor, to: &document)
-            try validate(document)
-            let data = Data(render(document).utf8)
-            try data.write(to: URL(fileURLWithPath: plan.path), options: .atomic)
-            let written = try load(workspacePath: plan.workspacePath)
-            return (written.document, written.revision)
+                var document = current.document
+                try apply(plan.mutation, actor: mutationActor, to: &document)
+                try validate(document)
+                let data = Data(render(document).utf8)
+                let temporaryName = ".\(fileName).\(UUID().uuidString).tmp"
+                let staged = try createVerifiedTemporaryFile(data, parentFD: workspaceFD, name: temporaryName)
+                var temporaryCleanupIdentity: FileIdentity? = staged.identity
+                defer {
+                    close(staged.fd)
+                    if let temporaryCleanupIdentity {
+                        _ = unlinkNamedFileIfIdentityMatches(
+                            parentFD: workspaceFD,
+                            name: temporaryName,
+                            identity: temporaryCleanupIdentity,
+                            fingerprint: staged.fingerprint
+                        )
+                    }
+                }
+
+                try beforeFinalRevisionCheck?()
+                try requireRevision(
+                    snapshot(workspaceFD: workspaceFD, path: featurePath).revision,
+                    expected: plan.revision
+                )
+                try beforePublish?()
+                try replaceFeatureFile(
+                    workspaceFD: workspaceFD,
+                    path: featurePath,
+                    temporaryName: temporaryName,
+                    expectedRevision: plan.revision,
+                    staged: staged,
+                    expectedData: data,
+                    temporaryCleanupIdentity: &temporaryCleanupIdentity
+                )
+                let written = try snapshot(workspaceFD: workspaceFD, path: featurePath)
+                return (written.document, written.revision)
+            }
         }
 
         let id = mutationID(plan.mutation)
@@ -328,36 +362,271 @@ enum NativeFeatureStore {
         if !normalized.isEmpty { lines.append("- \(label): \(normalized.joined(separator: ", "))") }
     }
 
-    private static func inspectFile(_ url: URL) throws -> InspectedFile {
+    private static func snapshot(workspaceFD: Int32, path: String) throws -> FeatureDocumentSnapshot {
+        let fileFD = openat(workspaceFD, fileName, O_RDONLY | O_NOFOLLOW)
+        if fileFD < 0 {
+            if errno == ENOENT {
+                return FeatureDocumentSnapshot(document: .empty, revision: .missing, path: path)
+            }
+            throw NativeFeatureStoreError.unreadable(path)
+        }
+        defer { close(fileFD) }
         var info = stat()
-        if lstat(url.path, &info) != 0 {
-            if errno == ENOENT { return .missing }
-            throw NativeFeatureStoreError.unreadable(url.path)
+        guard fstat(fileFD, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else {
+            throw NativeFeatureStoreError.notRegularFile(path)
         }
-        guard (info.st_mode & S_IFMT) == S_IFREG else {
-            throw NativeFeatureStoreError.notRegularFile(url.path)
-        }
-        let data = try Data(contentsOf: url)
+        let data = try readData(fileFD)
         guard let content = String(data: data, encoding: .utf8) else {
-            throw NativeFeatureStoreError.invalidUTF8(url.path)
+            throw NativeFeatureStoreError.invalidUTF8(path)
         }
-        let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-        return .regular(content, .regularUTF8(sha256: digest, byteCount: data.count))
+        return FeatureDocumentSnapshot(
+            document: try parse(content),
+            revision: revision(data),
+            path: path
+        )
     }
 
-    private static func validatedWorkspaceURL(_ path: String) throws -> URL {
-        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL
-        var info = stat()
-        guard lstat(url.path, &info) == 0, (info.st_mode & S_IFMT) == S_IFDIR else {
-            throw NativeFeatureStoreError.invalidWorkspace(url.path)
+    private static func requireRevision(
+        _ current: FeatureDocumentRevision,
+        expected: FeatureDocumentRevision
+    ) throws {
+        guard current == expected else {
+            throw NativeFeatureStoreError.staleRevision(
+                expected: expected.label,
+                current: current.label
+            )
         }
-        return url
+    }
+
+    private static func withWorkspaceDirectory<T>(
+        _ workspaceURL: URL,
+        body: (Int32) throws -> T
+    ) throws -> T {
+        let workspaceFD = open(workspaceURL.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+        guard workspaceFD >= 0 else {
+            throw NativeFeatureStoreError.invalidWorkspace(workspaceURL.path)
+        }
+        defer { close(workspaceFD) }
+        return try body(workspaceFD)
+    }
+
+    private static func canonicalWorkspaceURL(_ path: String) -> URL {
+        URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL
     }
 
     private static func featureURL(_ workspacePath: String) -> URL {
-        URL(fileURLWithPath: (workspacePath as NSString).expandingTildeInPath)
-            .standardizedFileURL
-            .appendingPathComponent(fileName)
+        canonicalWorkspaceURL(workspacePath).appendingPathComponent(fileName)
+    }
+
+    private static func createVerifiedTemporaryFile(
+        _ data: Data,
+        parentFD: Int32,
+        name: String
+    ) throws -> OpenTemporaryFile {
+        let fileFD = openat(parentFD, name, O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW, mode_t(0o600))
+        guard fileFD >= 0 else { throw posixError() }
+        let identity: FileIdentity
+        do {
+            identity = try fileIdentity(fileFD, path: name)
+        } catch {
+            close(fileFD)
+            throw error
+        }
+        do {
+            try FileHandle(fileDescriptor: fileFD, closeOnDealloc: false).write(contentsOf: data)
+            guard fsync(fileFD) == 0 else { throw posixError() }
+            let written = try readData(fileFD)
+            guard written == data else {
+                throw NativeFeatureStoreError.publicationConflict(name)
+            }
+            return OpenTemporaryFile(
+                fd: fileFD,
+                identity: identity,
+                fingerprint: FileContentFingerprint(data: written)
+            )
+        } catch {
+            close(fileFD)
+            _ = unlinkNamedFileIfIdentityMatches(
+                parentFD: parentFD,
+                name: name,
+                identity: identity,
+                fingerprint: FileContentFingerprint(data: data)
+            )
+            throw error
+        }
+    }
+
+    private static func replaceFeatureFile(
+        workspaceFD: Int32,
+        path: String,
+        temporaryName: String,
+        expectedRevision: FeatureDocumentRevision,
+        staged: OpenTemporaryFile,
+        expectedData: Data,
+        temporaryCleanupIdentity: inout FileIdentity?
+    ) throws {
+        switch expectedRevision {
+        case .missing:
+            guard entryKind(at: workspaceFD, name: fileName) == .missing,
+                  linkat(workspaceFD, temporaryName, workspaceFD, fileName, 0) == 0 else {
+                let current = try? snapshot(workspaceFD: workspaceFD, path: path).revision
+                throw NativeFeatureStoreError.staleRevision(
+                    expected: expectedRevision.label,
+                    current: current?.label ?? "unsafe"
+                )
+            }
+            do {
+                try verifyPublishedFile(
+                    parentFD: workspaceFD,
+                    name: fileName,
+                    path: path,
+                    staged: staged,
+                    expectedData: expectedData
+                )
+                guard unlinkNamedFileIfIdentityMatches(
+                    parentFD: workspaceFD,
+                    name: temporaryName,
+                    identity: staged.identity,
+                    fingerprint: staged.fingerprint
+                ) else { throw NativeFeatureStoreError.publicationConflict(temporaryName) }
+                temporaryCleanupIdentity = nil
+            } catch {
+                guard unlinkNamedFileIfIdentityMatches(
+                    parentFD: workspaceFD,
+                    name: fileName,
+                    identity: staged.identity,
+                    fingerprint: staged.fingerprint
+                ) else { throw NativeFeatureStoreError.publicationConflict(path) }
+                throw error
+            }
+        case .regularUTF8(let expectedSHA256, let expectedByteCount):
+            try requireRevision(
+                snapshot(workspaceFD: workspaceFD, path: path).revision,
+                expected: expectedRevision
+            )
+            let previousIdentity = try namedRegularFileIdentity(
+                parentFD: workspaceFD,
+                name: fileName,
+                path: path
+            )
+            guard renameatx_np(
+                workspaceFD,
+                temporaryName,
+                workspaceFD,
+                fileName,
+                UInt32(RENAME_SWAP)
+            ) == 0 else { throw NativeFeatureStoreError.publicationConflict(path) }
+            temporaryCleanupIdentity = previousIdentity
+            do {
+                try verifyPublishedFile(
+                    parentFD: workspaceFD,
+                    name: fileName,
+                    path: path,
+                    staged: staged,
+                    expectedData: expectedData
+                )
+                guard unlinkNamedFileIfIdentityMatches(
+                    parentFD: workspaceFD,
+                    name: temporaryName,
+                    identity: previousIdentity,
+                    fingerprint: FileContentFingerprint(
+                        byteCount: expectedByteCount,
+                        sha256: expectedSHA256
+                    )
+                ) else { throw NativeFeatureStoreError.publicationConflict(temporaryName) }
+                temporaryCleanupIdentity = nil
+            } catch {
+                guard renameatx_np(
+                    workspaceFD,
+                    temporaryName,
+                    workspaceFD,
+                    fileName,
+                    UInt32(RENAME_SWAP)
+                ) == 0 else {
+                    temporaryCleanupIdentity = nil
+                    throw NativeFeatureStoreError.recoveryRequired(path, temporaryName)
+                }
+                temporaryCleanupIdentity = staged.identity
+                throw error
+            }
+        case .invalid(let reason):
+            throw NativeFeatureStoreError.invalidDocument(reason)
+        }
+    }
+
+    private static func verifyPublishedFile(
+        parentFD: Int32,
+        name: String,
+        path: String,
+        staged: OpenTemporaryFile,
+        expectedData: Data
+    ) throws {
+        let fileFD = openat(parentFD, name, O_RDONLY | O_NOFOLLOW)
+        guard fileFD >= 0 else { throw NativeFeatureStoreError.publicationConflict(path) }
+        defer { close(fileFD) }
+        guard try fileIdentity(fileFD, path: path) == staged.identity,
+              try readData(fileFD) == expectedData else {
+            throw NativeFeatureStoreError.publicationConflict(path)
+        }
+    }
+
+    private static func unlinkNamedFileIfIdentityMatches(
+        parentFD: Int32,
+        name: String,
+        identity: FileIdentity,
+        fingerprint: FileContentFingerprint
+    ) -> Bool {
+        let fileFD = openat(parentFD, name, O_RDONLY | O_NOFOLLOW)
+        guard fileFD >= 0 else { return false }
+        defer { close(fileFD) }
+        guard (try? fileIdentity(fileFD, path: name)) == identity,
+              let data = try? readData(fileFD),
+              FileContentFingerprint(data: data) == fingerprint else { return false }
+        return unlinkat(parentFD, name, 0) == 0
+    }
+
+    private static func namedRegularFileIdentity(
+        parentFD: Int32,
+        name: String,
+        path: String
+    ) throws -> FileIdentity {
+        let fileFD = openat(parentFD, name, O_RDONLY | O_NOFOLLOW)
+        guard fileFD >= 0 else { throw NativeFeatureStoreError.publicationConflict(path) }
+        defer { close(fileFD) }
+        return try fileIdentity(fileFD, path: path)
+    }
+
+    private static func fileIdentity(_ fileFD: Int32, path: String) throws -> FileIdentity {
+        var info = stat()
+        guard fstat(fileFD, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else {
+            throw NativeFeatureStoreError.notRegularFile(path)
+        }
+        return FileIdentity(device: UInt64(info.st_dev), inode: UInt64(info.st_ino))
+    }
+
+    private static func entryKind(at parentFD: Int32, name: String) -> EntryKind {
+        var info = stat()
+        guard fstatat(parentFD, name, &info, AT_SYMLINK_NOFOLLOW) == 0 else {
+            return errno == ENOENT ? .missing : .other
+        }
+        return (info.st_mode & S_IFMT) == S_IFREG ? .regular : .other
+    }
+
+    private static func readData(_ fileFD: Int32) throws -> Data {
+        guard lseek(fileFD, 0, SEEK_SET) >= 0 else { throw posixError() }
+        return try FileHandle(fileDescriptor: fileFD, closeOnDealloc: false).readToEnd() ?? Data()
+    }
+
+    private static func revision(_ data: Data) -> FeatureDocumentRevision {
+        .regularUTF8(sha256: sha256Hex(data), byteCount: data.count)
+    }
+
+    private static func sha256Hex(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func posixError() -> POSIXError {
+        POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
     }
 
     private static func writeLock(for workspacePath: String) -> NSLock {
@@ -391,9 +660,36 @@ enum NativeFeatureStore {
     }
 }
 
-private enum InspectedFile {
+private struct FileIdentity: Equatable {
+    let device: UInt64
+    let inode: UInt64
+}
+
+private struct FileContentFingerprint: Equatable {
+    let byteCount: Int
+    let sha256: String
+
+    init(byteCount: Int, sha256: String) {
+        self.byteCount = byteCount
+        self.sha256 = sha256
+    }
+
+    init(data: Data) {
+        byteCount = data.count
+        sha256 = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+private struct OpenTemporaryFile {
+    let fd: Int32
+    let identity: FileIdentity
+    let fingerprint: FileContentFingerprint
+}
+
+private enum EntryKind {
     case missing
-    case regular(String, FeatureDocumentRevision)
+    case regular
+    case other
 }
 
 private enum NativeFeatureStoreError: LocalizedError {
@@ -413,6 +709,9 @@ private enum NativeFeatureStoreError: LocalizedError {
     case staleFeature(String)
     case featureNotFound(String)
     case changedID
+    case malformedPlan(String)
+    case publicationConflict(String)
+    case recoveryRequired(String, String)
 
     var errorDescription: String? {
         switch self {
@@ -433,6 +732,10 @@ private enum NativeFeatureStoreError: LocalizedError {
         case .staleFeature(let id): return "feature changed since confirmation: \(id)"
         case .featureNotFound(let id): return "feature not found: \(id)"
         case .changedID: return "feature IDs cannot be changed"
+        case .malformedPlan(let path): return "malformed feature write plan: \(path)"
+        case .publicationConflict(let path): return "FEATURES.md publication conflict: \(path)"
+        case .recoveryRequired(let path, let temporaryName):
+            return "FEATURES.md recovery required for \(path); staged file: \(temporaryName)"
         }
     }
 }

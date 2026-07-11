@@ -66,28 +66,59 @@ struct FeatureEditView: View {
     }
 
     private var feature: WorkspaceFeature {
-        let description = description.trimmingCharacters(in: .whitespacesAndNewlines)
-        return WorkspaceFeature(
+        FeatureEditState.makeFeature(
             id: featureID,
-            title: title.trimmingCharacters(in: .whitespacesAndNewlines),
-            status: original?.status ?? .todo,
+            original: original,
+            title: title,
             verification: verification,
             autoComplete: autoComplete,
             sources: list(sources),
             services: list(services),
             taskIDs: list(taskIDs),
             evidenceIDs: list(evidenceIDs),
-            description: description,
-            completedAt: original?.completedAt,
-            completedBy: original?.completedBy,
-            completionNote: original?.completionNote,
-            evidenceStale: original?.evidenceStale ?? false,
-            preservedLines: description.isEmpty ? [] : ["", description]
+            description: description
         )
     }
 
     private func list(_ value: String) -> [String] {
         value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
+    }
+}
+
+enum FeatureEditState {
+    static func makeFeature(
+        id: String? = nil,
+        original: WorkspaceFeature?,
+        title: String,
+        verification: FeatureVerificationPolicy,
+        autoComplete: Bool,
+        sources: [String],
+        services: [String],
+        taskIDs: [String],
+        evidenceIDs: [String],
+        description: String
+    ) -> WorkspaceFeature {
+        let trimmedDescription = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        let preservedLines = original?.description == trimmedDescription
+            ? (original?.preservedLines ?? [])
+            : (trimmedDescription.isEmpty ? [] : ["", trimmedDescription])
+        return WorkspaceFeature(
+            id: id ?? original?.id ?? "",
+            title: title.trimmingCharacters(in: .whitespacesAndNewlines),
+            status: original?.status ?? .todo,
+            verification: verification,
+            autoComplete: autoComplete,
+            sources: sources,
+            services: services,
+            taskIDs: taskIDs,
+            evidenceIDs: evidenceIDs,
+            description: trimmedDescription,
+            completedAt: original?.completedAt,
+            completedBy: original?.completedBy,
+            completionNote: original?.completionNote,
+            evidenceStale: original?.evidenceStale ?? false,
+            preservedLines: preservedLines
+        )
     }
 }

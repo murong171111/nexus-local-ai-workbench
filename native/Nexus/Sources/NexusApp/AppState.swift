@@ -172,7 +172,16 @@ struct NativeSetupReadiness: Hashable {
 final class AppState: ObservableObject {
     @Published var query = ""
     @Published var selectedFilter: WorkspaceFilter = .all
-    @Published var selectedWorkspaceID: WorkspaceSummary.ID?
+    @Published var selectedWorkspaceID: WorkspaceSummary.ID? {
+        didSet {
+            guard selectedWorkspaceID != oldValue else { return }
+            featurePlanGeneration += 1
+            if pendingFeatureWrite != nil {
+                pendingFeatureWrite = nil
+                featureWriteWorkspaceID = nil
+            }
+        }
+    }
     @Published var workspaces: [WorkspaceSummary]
     @Published var pinnedWorkspaceIDs: Set<WorkspaceSummary.ID>
     @Published var selectedSearchScope: SearchScope
@@ -3405,10 +3414,20 @@ final class AppState: ObservableObject {
         }
     }
 
+    func pendingFeatureWrite(for workspace: WorkspaceSummary) -> FeatureWritePlan? {
+        guard selectedWorkspaceID == workspace.id,
+              pendingFeatureWrite?.workspacePath == workspace.path else { return nil }
+        return pendingFeatureWrite
+    }
+
     func confirmPendingFeatureWrite(confirmed: Bool) async {
-        guard let plan = pendingFeatureWrite else { return }
-        pendingFeatureWrite = nil
+        let decision: FeatureConfirmationDecision = confirmed ? .confirm : .cancel
+        guard let plan = FeatureConfirmationPolicy.consume(&pendingFeatureWrite, decision: decision) else { return }
         guard confirmed else {
+            featureWriteWorkspaceID = nil
+            return
+        }
+        guard workspaces.first(where: { $0.id == selectedWorkspaceID })?.path == plan.workspacePath else {
             featureWriteWorkspaceID = nil
             return
         }

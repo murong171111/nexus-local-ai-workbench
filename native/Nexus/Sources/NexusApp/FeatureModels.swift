@@ -89,3 +89,18 @@ struct FeatureWriteResponse: Hashable, Sendable {
     let auditEventPath: String?
     let auditError: String?
 }
+
+enum FeatureConfirmationDecision {
+    case confirm
+    case cancel
+}
+
+enum FeatureConfirmationPolicy {
+    static func consume(
+        _ pending: inout FeatureWritePlan?,
+        decision: FeatureConfirmationDecision
+    ) -> FeatureWritePlan? {
+        defer { pending = nil }
+        return pending
+    }
+}
