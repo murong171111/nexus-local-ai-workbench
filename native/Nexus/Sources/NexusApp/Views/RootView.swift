@@ -3461,18 +3461,17 @@ private struct WorkspaceBoardView: View {
     @Binding var isCreateWorkspacePresented: Bool
     @Binding var isSettingsPresented: Bool
     let openConsole: () -> Void
-    @State private var boardScope: WorkspaceBoardScope = .all
+    @State private var showsAllCompleted = false
 
     private var workspaces: [WorkspaceSummary] {
         appState.workspaces
     }
 
-    private var visibleWorkspaces: [WorkspaceSummary] {
-        boardScope.filter(workspaces)
-    }
-
-    private var columns: [WorkspaceBoardColumn] {
-        WorkspaceBoardColumn.columns(for: workspaces, scope: boardScope)
+    private var lanes: [WorkspaceBoardLane] {
+        WorkspaceBoardLane.lanes(
+            for: workspaces,
+            showsAllCompleted: showsAllCompleted
+        )
     }
 
     private var summary: WorkspaceListSummary {
@@ -3482,7 +3481,7 @@ private struct WorkspaceBoardView: View {
     private var emptyStateReason: WorkspaceBoardEmptyStateReason? {
         WorkspaceBoardEmptyStateReason.resolve(
             summary: summary,
-            visibleCount: visibleWorkspaces.count,
+            visibleCount: workspaces.count,
             readiness: appState.setupReadiness
         )
     }
@@ -3497,17 +3496,11 @@ private struct WorkspaceBoardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             WorkspaceBoardHeader(
-                activeCount: summary.activeWorkspaceCount,
-                blockedCount: summary.blockedWorkspaceCount,
-                deliveryCount: summary.deliveryWorkspaceCount,
-                archivedCount: summary.archivedWorkspaceCount,
-                visibleCount: visibleWorkspaces.count,
-                totalCount: workspaces.count,
-                scope: $boardScope
+                activeCount: summary.activeWorkspaceCount
             )
             Divider()
 
-            if visibleWorkspaces.isEmpty {
+            if workspaces.isEmpty {
                 VStack(alignment: .leading, spacing: 14) {
                     if let recoveryReceipt {
                         CreatedWorkspaceVisibilityRecoveryView(
@@ -3517,19 +3510,23 @@ private struct WorkspaceBoardView: View {
                     }
 
                     WorkspaceBoardEmptyState(
-                        reason: emptyStateReason ?? .filteredNoResults,
+                        reason: emptyStateReason ?? .configuredNoDirectories,
                         diagnostics: appState.nativeStatusDiagnostics,
                         runPrimaryAction: runEmptyStatePrimaryAction
                     )
                 }
                 .padding(18)
             } else {
-                ScrollView([.horizontal, .vertical]) {
-                    HStack(alignment: .top, spacing: 12) {
-                        ForEach(columns) { column in
-                            WorkspaceBoardColumnView(column: column) { workspace in
-                                appState.select(workspace)
-                                openConsole()
+                ScrollView {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .top, spacing: 12) {
+                            ForEach(lanes) { lane in
+                                laneView(lane)
+                            }
+                        }
+                        VStack(alignment: .leading, spacing: 12) {
+                            ForEach(lanes) { lane in
+                                laneView(lane)
                             }
                         }
                     }
@@ -3541,112 +3538,89 @@ private struct WorkspaceBoardView: View {
     }
 
     private func runEmptyStatePrimaryAction() {
-        switch emptyStateReason ?? .filteredNoResults {
+        switch emptyStateReason ?? .configuredNoDirectories {
         case .unconfigured:
             isSettingsPresented = true
         case .configuredNoDirectories:
             isCreateWorkspacePresented = true
         case .filteredNoResults:
-            boardScope = .all
+            return
         }
+    }
+
+    private func laneView(_ lane: WorkspaceBoardLane) -> some View {
+        WorkspaceBoardLaneView(
+            lane: lane,
+            showsAllCompleted: $showsAllCompleted,
+            openWorkspace: { workspace in
+                appState.select(workspace)
+                openConsole()
+            }
+        )
     }
 }
 
 private struct WorkspaceBoardHeader: View {
     let activeCount: Int
-    let blockedCount: Int
-    let deliveryCount: Int
-    let archivedCount: Int
-    let visibleCount: Int
-    let totalCount: Int
-    @Binding var scope: WorkspaceBoardScope
 
     var body: some View {
-        HStack(alignment: .center, spacing: 14) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(WorkspaceBoardCopy.title)
-                    .font(.title3.weight(.semibold))
-                    .help(WorkspaceBoardCopy.titleHelp)
-                Text("全量项目视角，不受 Console 筛选影响；点击卡片进入单项目控制台。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text("当前显示 \(visibleCount) / \(totalCount)")
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.secondary)
-            }
-
+        HStack {
+            Text(WorkspaceBoardCopy.title)
+                .font(.title3.weight(.semibold))
+                .help(WorkspaceBoardCopy.titleHelp)
+            Text(WorkspaceBoardCopy.activeWorkspaceCount(activeCount))
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
             Spacer()
-
-            VStack(alignment: .trailing, spacing: 8) {
-                HStack(spacing: 14) {
-                    BoardMetric(label: "活跃", english: "Active", value: activeCount, tone: NexusPalette.accent)
-                    BoardMetric(label: "阻塞", english: "Blocked", value: blockedCount, tone: blockedCount > 0 ? NexusPalette.danger : NexusPalette.success)
-                    BoardMetric(label: "待交付", english: "Delivery", value: deliveryCount, tone: deliveryCount > 0 ? NexusPalette.warning : NexusPalette.success)
-                    BoardMetric(label: "已归档", english: "Archive", value: archivedCount, tone: NexusPalette.accent.opacity(0.55))
-                }
-
-                Picker("面板范围 / Board scope", selection: $scope) {
-                    ForEach(WorkspaceBoardScope.allCases) { scope in
-                        Text(scope.label)
-                            .help(scope.helpText)
-                            .tag(scope)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 340)
-            }
         }
         .padding(.horizontal, 18)
-        .frame(height: 92)
+        .frame(height: 60)
     }
 }
 
-private struct BoardMetric: View {
-    let label: String
-    let english: String
-    let value: Int
-    let tone: Color
-
-    var body: some View {
-        VStack(alignment: .trailing, spacing: 2) {
-            Text("\(value)")
-                .font(.system(size: 18, weight: .semibold, design: .monospaced))
-                .foregroundStyle(tone)
-            Text(label)
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .help(english)
-        }
-        .frame(minWidth: 72, alignment: .trailing)
-    }
-}
-
-private struct WorkspaceBoardColumnView: View {
-    let column: WorkspaceBoardColumn
+private struct WorkspaceBoardLaneView: View {
+    let lane: WorkspaceBoardLane
+    @Binding var showsAllCompleted: Bool
     let openWorkspace: (WorkspaceSummary) -> Void
+
+    private var tone: Color {
+        switch lane.id {
+        case .attention: NexusPalette.warning
+        case .active: NexusPalette.accent
+        case .completed: NexusPalette.success
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 7) {
-                Image(systemName: column.systemImage)
-                    .foregroundStyle(NexusPalette.accent)
-                    .frame(width: 15)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(column.title)
-                        .font(.caption.weight(.semibold))
-                        .lineLimit(1)
-                    Text(WorkspaceBoardCopy.workspaceCount(column.count))
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .help(WorkspaceBoardCopy.workspaceCountHelp(column.count))
-                }
+                Image(systemName: lane.systemImage)
+                    .foregroundStyle(tone)
+                Text(lane.title)
+                    .font(.caption.weight(.semibold))
+                Text("\(lane.totalCount)")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
                 Spacer()
+                if lane.id == .completed && lane.totalCount > 5 {
+                    Button(showsAllCompleted
+                        ? WorkspaceBoardCopy.showRecentCompleted
+                        : WorkspaceBoardCopy.showAllCompleted
+                    ) {
+                        showsAllCompleted.toggle()
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+                }
             }
 
-            if column.workspaces.isEmpty {
-                WorkspaceBoardColumnEmptyView()
+            if lane.workspaces.isEmpty {
+                Text("暂无")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 56)
             } else {
-                ForEach(column.workspaces) { workspace in
+                ForEach(lane.workspaces) { workspace in
                     WorkspaceBoardCard(workspace: workspace) {
                         openWorkspace(workspace)
                     }
@@ -3654,24 +3628,13 @@ private struct WorkspaceBoardColumnView: View {
             }
         }
         .padding(10)
-        .frame(width: 278, alignment: .topLeading)
+        .frame(minWidth: 260, maxWidth: .infinity, alignment: .topLeading)
         .background(NexusPalette.panel)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(NexusPalette.border, lineWidth: 1)
         }
-    }
-}
-
-private struct WorkspaceBoardColumnEmptyView: View {
-    var body: some View {
-        Text("当前阶段暂无工作区")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, minHeight: 88, alignment: .center)
-            .background(NexusPalette.badge)
-            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 }
 
@@ -3683,134 +3646,49 @@ private struct WorkspaceBoardCard: View {
         workspace.mainStage()
     }
 
-    private var activeTaskCount: Int {
-        workspace.tasks.filter(\.isActive).count
-    }
-
-    private var worktreeSummary: String {
-        let missingCount = workspace.services.filter { !$0.worktreeExists }.count
-        let dirtyCount = workspace.services.filter { service in
-            !service.gitSummary.localizedCaseInsensitiveContains("clean")
-        }.count
-
-        return WorkspaceBoardCopy.worktreeSummary(
-            serviceCount: workspace.services.count,
-            missingCount: missingCount,
-            dirtyCount: dirtyCount
-        )
-    }
-
-    private var serviceChips: [String] {
-        Array(workspace.services.map(\.name).prefix(3))
-    }
-
-    private var extraServiceCount: Int {
-        max(0, workspace.services.count - serviceChips.count)
-    }
-
     var body: some View {
         Button(action: openConsole) {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .top, spacing: 8) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(workspace.name)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                        Text(workspace.folder)
-                            .font(.system(size: 10, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
+                    Text(workspace.name)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
                     Spacer(minLength: 8)
-                    RiskBadge(level: workspace.riskLevel)
+                    if workspace.riskLevel != .low {
+                        RiskBadge(level: workspace.riskLevel)
+                    }
                 }
 
-                HStack(spacing: 6) {
-                    Label(stage.status.displayLabel, systemImage: stage.id.systemImage)
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(stage.status.color)
-                        .lineLimit(1)
-                    Spacer()
-                    Text(stage.id.shortLabel)
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                }
+                Text(workspace.branch)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .help(workspace.branch)
+
+                Text(stage.id.shortLabel)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
                 Text(stage.reason)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(3)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(2)
 
-                VStack(alignment: .leading, spacing: 6) {
-                    BoardInfoRow(label: "分支", value: workspace.branch, systemImage: "arrow.triangle.branch")
-                    BoardInfoRow(label: "下一步", value: stage.primaryActionLabel, systemImage: stage.primaryActionSystemImage)
-                    BoardInfoRow(label: "任务", value: WorkspaceBoardCopy.activeTaskCount(activeTaskCount), systemImage: "checklist")
-                    BoardInfoRow(label: "Worktree", value: worktreeSummary, systemImage: "externaldrive")
+                HStack {
+                    Text("下一步：\(stage.primaryActionLabel)")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(NexusPalette.accent)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .foregroundStyle(NexusPalette.accent)
                 }
-
-                if !serviceChips.isEmpty {
-                    HStack(spacing: 6) {
-                        ForEach(serviceChips, id: \.self) { service in
-                            Text(service)
-                                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 3)
-                                .background(NexusPalette.badge)
-                                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                        }
-                        if extraServiceCount > 0 {
-                            Text("+\(extraServiceCount)")
-                                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 3)
-                                .background(NexusPalette.badge)
-                                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                        }
-                    }
-                }
-
-                Label(WorkspaceBoardCopy.openConsoleLabel, systemImage: "rectangle.and.text.magnifyingglass")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(NexusPalette.accent)
-                    .help(WorkspaceBoardCopy.openConsoleHelp)
             }
             .padding(11)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(workspace.isArchived ? NexusPalette.preview : NexusPalette.badge)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(stage.status.color.opacity(workspace.isArchived ? 0.16 : 0.22), lineWidth: 1)
-            }
         }
         .buttonStyle(.plain)
-    }
-}
-
-private struct BoardInfoRow: View {
-    let label: String
-    let value: String
-    let systemImage: String
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Image(systemName: systemImage)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .frame(width: 12)
-            Text(label)
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-        }
+        .accessibilityLabel("\(workspace.name)，分支 \(workspace.branch)，下一步 \(stage.primaryActionLabel)")
     }
 }
 

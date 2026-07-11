@@ -245,8 +245,8 @@ final class ModelBehaviorTests: XCTestCase {
         let models = try String(contentsOf: modelsPath, encoding: .utf8)
 
         let forbiddenModelSymbols = [
-            "struct WorkspaceBoardColumn",
-            "enum WorkspaceBoardScope",
+            "enum WorkspaceBoardLaneID",
+            "struct WorkspaceBoardLane",
             "struct MenuBarStatusSummary",
             "struct WorkspaceLifecycle",
             "struct WorkspaceWorkflowSummary",
@@ -506,32 +506,49 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertFalse(WorkspaceBoardEmptyStateReason.configuredNoDirectories.title.contains("/"))
     }
 
-    func testWorkspaceBoardDefaultCopyKeepsEnglishInHelpText() {
-        XCTAssertEqual(WorkspaceBoardCopy.title, "工作区面板")
-        XCTAssertEqual(WorkspaceBoardCopy.titleHelp, "Board")
-        XCTAssertEqual(WorkspaceBoardCopy.openConsoleLabel, "打开控制台")
-        XCTAssertEqual(WorkspaceBoardCopy.openConsoleHelp, "Open Console")
-        XCTAssertEqual(WorkspaceBoardCopy.workspaceCount(2), "2 个工作区")
-        XCTAssertEqual(WorkspaceBoardCopy.workspaceCountHelp(2), "2 workspaces")
-        XCTAssertEqual(WorkspaceBoardCopy.activeTaskCount(3), "3 个进行中")
-        XCTAssertEqual(
-            WorkspaceBoardCopy.worktreeSummary(serviceCount: 3, missingCount: 1, dirtyCount: 0),
-            "1 缺失"
-        )
-        XCTAssertEqual(
-            WorkspaceBoardCopy.worktreeSummary(serviceCount: 3, missingCount: 0, dirtyCount: 2),
-            "2 有改动"
-        )
-        XCTAssertEqual(
-            WorkspaceBoardCopy.worktreeSummary(serviceCount: 3, missingCount: 0, dirtyCount: 0),
-            "3 就绪"
-        )
-
-        for scope in WorkspaceBoardScope.allCases {
-            XCTAssertFalse(scope.label.contains("/"))
-            XCTAssertEqual(scope.helpText, scope.englishLabel)
-            XCTAssertFalse(scope.helpText.isEmpty)
+    func testWorkspaceBoardLaneClassificationUsesAttentionProgressAndArchive() {
+        func stage(_ id: WorkspaceMainStageID, _ status: WorkflowPathStatus) -> WorkspaceMainStage {
+            WorkspaceMainStage(
+                id: id,
+                status: status,
+                title: "Stage",
+                reason: "Reason",
+                primaryActionLabel: "Continue",
+                primaryActionSystemImage: "arrow.right",
+                primaryAction: .document("workspace"),
+                evidence: ["workspace.md"],
+                nextStageAllowed: false
+            )
         }
+
+        XCTAssertEqual(
+            WorkspaceBoardLaneID.resolve(isArchived: false, stage: stage(.development, .blocked)),
+            .attention
+        )
+        XCTAssertEqual(
+            WorkspaceBoardLaneID.resolve(isArchived: false, stage: stage(.demandIntake, .review)),
+            .attention
+        )
+        XCTAssertEqual(
+            WorkspaceBoardLaneID.resolve(isArchived: false, stage: stage(.created, .next)),
+            .attention
+        )
+        XCTAssertEqual(
+            WorkspaceBoardLaneID.resolve(isArchived: false, stage: stage(.development, .next)),
+            .active
+        )
+        XCTAssertEqual(
+            WorkspaceBoardLaneID.resolve(isArchived: true, stage: stage(.archived, .archived)),
+            .completed
+        )
+    }
+
+    func testWorkspaceBoardCopyStaysChineseFirstAndFocused() {
+        XCTAssertEqual(WorkspaceBoardCopy.title, "工作区")
+        XCTAssertEqual(WorkspaceBoardCopy.titleHelp, "Board")
+        XCTAssertEqual(WorkspaceBoardCopy.activeWorkspaceCount(2), "2 个活跃项目")
+        XCTAssertEqual(WorkspaceBoardCopy.showAllCompleted, "查看全部")
+        XCTAssertEqual(WorkspaceBoardCopy.showRecentCompleted, "收起")
     }
 
     func testNativeStatusDiagnosticsReportsDirectoriesIndexWidgetAndAuditTarget() throws {
@@ -1495,7 +1512,7 @@ final class ModelBehaviorTests: XCTestCase {
             let stage = workspace.mainStage()
 
             XCTAssertTrue(
-                WorkspaceBoardColumn.visibleStageOrder.contains(stage.id),
+                WorkspaceMainStageID.allCases.contains(stage.id),
                 "\(workspace.id) produced an unknown main stage: \(stage.id)"
             )
             XCTAssertFalse(stage.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, workspace.id)
@@ -4513,7 +4530,7 @@ final class ModelBehaviorTests: XCTestCase {
 
         let canonicalStage = appState.mainWorkflowStage(for: workspace)
         let directStage = workspace.mainStage()
-        let boardColumns = WorkspaceBoardColumn.columns(for: [workspace])
+        let boardLanes = WorkspaceBoardLane.lanes(for: [workspace])
         let summary = WorkspaceListSummary(workspaces: [workspace])
         let widget = NativeWidgetSnapshotBuilder.build(
             generatedAt: "2026-07-10T00:00:00Z",
@@ -4524,8 +4541,8 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertEqual(canonicalStage.id, .demandIntake)
         XCTAssertEqual(directStage, canonicalStage)
-        XCTAssertEqual(boardColumns.first { $0.id == .demandIntake }?.count, 1)
-        XCTAssertEqual(boardColumns.first { $0.id == .created }?.count, 0)
+        XCTAssertEqual(boardLanes.first { $0.id == .attention }?.workspaces.count, 1)
+        XCTAssertEqual(boardLanes.first { $0.id == .active }?.workspaces.count, 0)
         XCTAssertEqual(summary.blockedWorkspaceCount, 1)
         XCTAssertTrue(appState.menuBarSummary.activeStageLine?.contains(canonicalStage.answer.stageLabel) == true)
         XCTAssertEqual(widget.mainStage, canonicalStage.answer.stageLabel)
@@ -6275,179 +6292,24 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(readyBadges.last?.status, .ready)
     }
 
-    func testWorkspaceBoardColumnsFollowMainWorkflowOrder() throws {
-        let deliveryRoot = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nexus-board-delivery-\(UUID().uuidString)")
-        defer {
-            try? FileManager.default.removeItem(at: deliveryRoot)
+    func testWorkspaceBoardLanesOrderProjectsAndLimitCompletedToFive() {
+        let archived = (1...7).map { index in
+            workspaceForWorkflowSummary(
+                stage: "archived",
+                id: "archive-\(index)",
+                folder: String(format: "2026-07-%02d-archive", index)
+            )
         }
-        let demandDir = deliveryRoot.appendingPathComponent("需求")
-        try FileManager.default.createDirectory(at: demandDir, withIntermediateDirectories: true)
-        try writeDemandIntakeFixture(
-            demandDir: demandDir,
-            scope: """
-            # 本次开发范围
+        let limited = WorkspaceBoardLane.lanes(for: archived)
+        let completed = limited.first { $0.id == .completed }
+        XCTAssertEqual(limited.map(\.id), [.attention, .active, .completed])
+        XCTAssertEqual(completed?.totalCount, 7)
+        XCTAssertEqual(completed?.workspaces.count, 5)
+        XCTAssertEqual(completed?.workspaces.first?.id, "archive-7")
+        XCTAssertTrue(completed?.hasHiddenWorkspaces == true)
 
-            ## 已确认并实现
-
-            - Board 已按真实需求文件进入交付检查列。
-
-            ## 暂不实现
-
-            - 不扩展其他看板维度。
-
-            ## 仍待确认
-
-            - 无 P0 待确认项。
-
-            ## 进入开发条件
-
-            - [x] 本文件已冻结本次开发范围。
-            """
-        )
-        try """
-        # Tasks
-
-        | 任务 | 状态 | 说明 |
-        | --- | --- | --- |
-        | 新增交易快照写入 | 已完成 | priority=high; 需求任务已转入并完成。 |
-        """.write(
-            to: deliveryRoot.appendingPathComponent("tasks.md"),
-            atomically: true,
-            encoding: .utf8
-        )
-        try writeBranchPolicyFixture(
-            workspaceRoot: deliveryRoot,
-            branch: "feature/workflow-summary"
-        )
-
-        let createdWorkspace = workspaceForWorkflowSummary(
-            stage: "scoping",
-            id: "board-created",
-            name: "已建档"
-        )
-        let deliveryWorkspace = workspaceForWorkflowSummary(
-            stage: "developing",
-            id: "board-delivery",
-            name: "交付检查",
-            path: deliveryRoot.path,
-            healthChecks: [
-                WorkspaceHealthCheck(id: "demand-intake", label: "需求预检", detail: "需求预检已就绪", status: "pass", action: "demandIntake")
-            ],
-            tasks: [
-                WorkspaceTask(
-                    id: "board-delivery-task",
-                    title: "新增交易快照写入",
-                    status: "done",
-                    detail: "需求任务已转入并完成。",
-                    priority: "high",
-                    source: "workspace",
-                    sourceEventID: nil,
-                    sourceLine: 1
-                )
-            ]
-        )
-        let archivedWorkspace = workspaceForWorkflowSummary(
-            stage: "archived",
-            id: "board-archive",
-            name: "已归档"
-        )
-
-        let columns = WorkspaceBoardColumn.columns(for: [archivedWorkspace, deliveryWorkspace, createdWorkspace])
-
-        XCTAssertEqual(columns.map(\.id), WorkspaceBoardColumn.visibleStageOrder)
-        XCTAssertEqual(columns.first(where: { $0.id == .created })?.workspaces.map(\.id), ["board-created"])
-        XCTAssertEqual(columns.first(where: { $0.id == .deliveryCheck })?.workspaces.map(\.id), ["board-delivery"])
-        XCTAssertEqual(columns.first(where: { $0.id == .archived })?.workspaces.map(\.id), ["board-archive"])
-    }
-
-    func testWorkspaceBoardScopeFiltersWithoutChangingColumnOrder() throws {
-        let deliveryRoot = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nexus-board-scope-\(UUID().uuidString)")
-        defer {
-            try? FileManager.default.removeItem(at: deliveryRoot)
-        }
-        let demandDir = deliveryRoot.appendingPathComponent("需求")
-        try FileManager.default.createDirectory(at: demandDir, withIntermediateDirectories: true)
-        try writeBranchPolicyFixture(
-            workspaceRoot: deliveryRoot,
-            branch: "feature/workflow-summary"
-        )
-        try writeDemandIntakeFixture(
-            demandDir: demandDir,
-            scope: """
-            # 本次开发范围
-
-            ## 已确认并实现
-
-            - Board 范围过滤使用真实需求文件样例。
-
-            ## 暂不实现
-
-            - 不新增额外过滤规则。
-
-            ## 仍待确认
-
-            - 无 P0 待确认项。
-
-            ## 进入开发条件
-
-            - [x] 本文件已冻结本次开发范围。
-            """
-        )
-        try """
-        # Tasks
-
-        | 任务 | 状态 | 说明 |
-        | --- | --- | --- |
-        | 新增交易快照写入 | 已完成 | priority=high; 需求任务已转入并完成。 |
-        """.write(
-            to: deliveryRoot.appendingPathComponent("tasks.md"),
-            atomically: true,
-            encoding: .utf8
-        )
-
-        let createdWorkspace = workspaceForWorkflowSummary(
-            stage: "scoping",
-            id: "board-created",
-            name: "已建档"
-        )
-        let deliveryWorkspace = workspaceForWorkflowSummary(
-            stage: "developing",
-            id: "board-delivery",
-            name: "交付检查",
-            path: deliveryRoot.path,
-            healthChecks: [
-                WorkspaceHealthCheck(id: "demand-intake", label: "需求预检", detail: "需求预检已就绪", status: "pass", action: "demandIntake")
-            ],
-            tasks: [
-                WorkspaceTask(
-                    id: "board-delivery-task",
-                    title: "新增交易快照写入",
-                    status: "done",
-                    detail: "需求任务已转入并完成。",
-                    priority: "high",
-                    source: "workspace",
-                    sourceEventID: nil,
-                    sourceLine: 1
-                )
-            ]
-        )
-        let archivedWorkspace = workspaceForWorkflowSummary(
-            stage: "archived",
-            id: "board-archive",
-            name: "已归档"
-        )
-        let workspaces = [archivedWorkspace, deliveryWorkspace, createdWorkspace]
-
-        let attentionColumns = WorkspaceBoardColumn.columns(for: workspaces, scope: .attention)
-        let deliveryColumns = WorkspaceBoardColumn.columns(for: workspaces, scope: .delivery)
-        let archivedColumns = WorkspaceBoardColumn.columns(for: workspaces, scope: .archived)
-
-        XCTAssertEqual(attentionColumns.map(\.id), WorkspaceBoardColumn.visibleStageOrder)
-        XCTAssertEqual(attentionColumns.flatMap { $0.workspaces.map(\.id) }, ["board-created", "board-delivery"])
-        XCTAssertEqual(deliveryColumns.flatMap { $0.workspaces.map(\.id) }, ["board-delivery"])
-        XCTAssertEqual(archivedColumns.flatMap { $0.workspaces.map(\.id) }, ["board-archive"])
+        let expanded = WorkspaceBoardLane.lanes(for: archived, showsAllCompleted: true)
+        XCTAssertEqual(expanded.first { $0.id == .completed }?.workspaces.count, 7)
     }
 
     func testWorkspaceSummaryMapsSqlFilesFromBridgeSnapshot() {

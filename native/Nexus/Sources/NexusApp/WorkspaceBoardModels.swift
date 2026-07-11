@@ -1,167 +1,87 @@
 import Foundation
 
-struct WorkspaceBoardColumn: Hashable, Identifiable {
-    let id: WorkspaceMainStageID
-    let workspaces: [WorkspaceSummary]
-
-    var title: String { id.label }
-    var shortTitle: String { id.shortLabel }
-    var systemImage: String { id.systemImage }
-    var count: Int { workspaces.count }
-
-    static let visibleStageOrder: [WorkspaceMainStageID] = [
-        .created,
-        .demandIntake,
-        .scopeFreeze,
-        .serviceBranchConfirm,
-        .worktreeSetup,
-        .development,
-        .deliveryCheck,
-        .archived
-    ]
-
-    static func columns(
-        for workspaces: [WorkspaceSummary],
-        scope: WorkspaceBoardScope = .all
-    ) -> [WorkspaceBoardColumn] {
-        let visibleWorkspaces = scope.filter(workspaces)
-        let grouped = Dictionary(grouping: visibleWorkspaces) { workspace in
-            workspace.mainStage().id
-        }
-
-        return visibleStageOrder.map { stageID in
-            WorkspaceBoardColumn(
-                id: stageID,
-                workspaces: (grouped[stageID] ?? []).sorted(by: boardSort)
-            )
-        }
-    }
-
-    private static func boardSort(_ lhs: WorkspaceSummary, _ rhs: WorkspaceSummary) -> Bool {
-        let lhsStage = lhs.mainStage()
-        let rhsStage = rhs.mainStage()
-        if lhsStage.status.boardPriority != rhsStage.status.boardPriority {
-            return lhsStage.status.boardPriority < rhsStage.status.boardPriority
-        }
-        if lhs.riskLevel.rank != rhs.riskLevel.rank {
-            return lhs.riskLevel.rank < rhs.riskLevel.rank
-        }
-        if lhs.folder != rhs.folder {
-            return lhs.folder > rhs.folder
-        }
-        return lhs.name < rhs.name
-    }
-}
-
-enum WorkspaceBoardScope: String, CaseIterable, Hashable, Identifiable {
-    case all
+enum WorkspaceBoardLaneID: String, CaseIterable, Hashable, Identifiable {
     case attention
-    case delivery
-    case archived
+    case active
+    case completed
 
     var id: String { rawValue }
 
-    var label: String {
+    var title: String {
         switch self {
-        case .all:
-            "全部"
-        case .attention:
-            "需处理"
-        case .delivery:
-            "交付"
-        case .archived:
-            "归档"
+        case .attention: "待处理"
+        case .active: "进行中"
+        case .completed: "已完成"
         }
     }
 
-    var englishLabel: String {
+    var systemImage: String {
         switch self {
-        case .all:
-            "All"
-        case .attention:
-            "Attention"
-        case .delivery:
-            "Delivery"
-        case .archived:
-            "Archive"
+        case .attention: "exclamationmark.circle"
+        case .active: "arrow.right.circle"
+        case .completed: "checkmark.circle"
         }
     }
 
-    var helpText: String {
-        englishLabel
-    }
-
-    func filter(_ workspaces: [WorkspaceSummary]) -> [WorkspaceSummary] {
-        workspaces.filter(matches)
-    }
-
-    func matches(_ workspace: WorkspaceSummary) -> Bool {
-        switch self {
-        case .all:
-            true
-        case .attention:
-            workspace.needsBoardAttention
-        case .delivery:
-            workspace.mainStage().id == .deliveryCheck
-        case .archived:
-            workspace.isArchived
+    static func resolve(isArchived: Bool, stage: WorkspaceMainStage) -> Self {
+        if isArchived { return .completed }
+        if stage.status == .blocked || stage.status == .pending || stage.status == .review {
+            return .attention
         }
+        if stage.id == .created && stage.status == .next { return .attention }
+        return .active
     }
 }
 
-extension WorkspaceSummary {
-    var needsBoardAttention: Bool {
-        if isArchived {
-            return false
+struct WorkspaceBoardLane: Hashable, Identifiable {
+    let id: WorkspaceBoardLaneID
+    let workspaces: [WorkspaceSummary]
+    let totalCount: Int
+
+    var title: String { id.title }
+    var systemImage: String { id.systemImage }
+    var hasHiddenWorkspaces: Bool { workspaces.count < totalCount }
+
+    static func lanes(
+        for workspaces: [WorkspaceSummary],
+        showsAllCompleted: Bool = false
+    ) -> [WorkspaceBoardLane] {
+        let grouped = Dictionary(grouping: workspaces) { workspace in
+            WorkspaceBoardLaneID.resolve(
+                isArchived: workspace.isArchived,
+                stage: workspace.mainStage()
+            )
         }
 
-        let stage = mainStage()
-        if stage.status == .blocked || stage.status == .pending || stage.status == .review {
-            return true
-        }
-
-        if stage.id == .created && stage.status == .next {
-            return true
-        }
-
-        if state == .blocked || riskLevel != .low {
-            return true
-        }
-
-        return services.contains { service in
-            service.worktreeExists == false
-                || service.sourceExists == false
-                || !service.gitSummary.localizedCaseInsensitiveContains("clean")
+        return WorkspaceBoardLaneID.allCases.map { id in
+            let sorted = (grouped[id] ?? []).sorted { lhs, rhs in
+                if id == .attention {
+                    let lhsPriority = lhs.mainStage().status.boardPriority
+                    let rhsPriority = rhs.mainStage().status.boardPriority
+                    if lhsPriority != rhsPriority { return lhsPriority < rhsPriority }
+                    if lhs.riskLevel.rank != rhs.riskLevel.rank {
+                        return lhs.riskLevel.rank < rhs.riskLevel.rank
+                    }
+                }
+                if lhs.folder != rhs.folder { return lhs.folder > rhs.folder }
+                return lhs.name < rhs.name
+            }
+            let visible = id == .completed && !showsAllCompleted
+                ? Array(sorted.prefix(5))
+                : sorted
+            return WorkspaceBoardLane(id: id, workspaces: visible, totalCount: sorted.count)
         }
     }
 }
 
 struct WorkspaceBoardCopy: Hashable {
-    static let title = "工作区面板"
+    static let title = "工作区"
     static let titleHelp = "Board"
-    static let openConsoleLabel = "打开控制台"
-    static let openConsoleHelp = "Open Console"
+    static let showAllCompleted = "查看全部"
+    static let showRecentCompleted = "收起"
 
-    static func workspaceCount(_ count: Int) -> String {
-        "\(count) 个工作区"
-    }
-
-    static func workspaceCountHelp(_ count: Int) -> String {
-        "\(count) workspaces"
-    }
-
-    static func activeTaskCount(_ count: Int) -> String {
-        "\(count) 个进行中"
-    }
-
-    static func worktreeSummary(serviceCount: Int, missingCount: Int, dirtyCount: Int) -> String {
-        if missingCount > 0 {
-            return "\(missingCount) 缺失"
-        }
-        if dirtyCount > 0 {
-            return "\(dirtyCount) 有改动"
-        }
-        return "\(serviceCount) 就绪"
+    static func activeWorkspaceCount(_ count: Int) -> String {
+        "\(count) 个活跃项目"
     }
 }
 
