@@ -7455,10 +7455,26 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(serviceBranch.primaryAction, .document("branches"))
     }
 
-    func testServiceBranchEvidenceBlocksUnavailableTargetBranch() {
+    func testServiceBranchEvidenceRoutesUnavailableTargetBranchToWorktreeSetup() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-service-branch-create-target-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try """
+        # Branches
+
+        - 目标分支: feature/missing-branch
+        - 基线: origin/HEAD
+        - 分支策略: 目标分支不存在时由 Nexus 确认创建。
+        """.write(
+            to: root.appendingPathComponent("branches.md"),
+            atomically: true,
+            encoding: .utf8
+        )
         let workspace = workspaceForWorkflowSummary(
             stage: "developing",
             id: "service-branch-unavailable-target",
+            path: root.path,
             branch: "feature/missing-branch",
             services: [
                 ServiceStatus(
@@ -7478,11 +7494,11 @@ final class ModelBehaviorTests: XCTestCase {
             serviceBranch: serviceBranch
         )
 
-        XCTAssertEqual(serviceBranch.status, .blocked)
+        XCTAssertEqual(serviceBranch.status, .ready)
         XCTAssertEqual(serviceBranch.targetBranchMissingServices, ["order"])
-        XCTAssertEqual(serviceBranch.checks.first { $0.id == "target-branch-availability" }?.status, .blocked)
-        XCTAssertEqual(stage.id, .serviceBranchConfirm)
-        XCTAssertEqual(stage.primaryAction, .document("branches"))
+        XCTAssertEqual(serviceBranch.checks.first { $0.id == "target-branch-availability" }?.status, .next)
+        XCTAssertEqual(stage.id, .worktreeSetup)
+        XCTAssertEqual(stage.primaryAction, .worktree)
     }
 
     func testServiceBranchEvidenceKeepsMissingWorktreeInWorktreeGate() throws {
@@ -7760,7 +7776,7 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(stage.primaryAction, .worktree)
     }
 
-    func testWorktreeSetupEvidenceBlocksUnavailableTargetBranch() {
+    func testWorktreeSetupEvidenceCreatesUnavailableTargetBranchWithMissingWorktree() {
         let workspace = workspaceForWorkflowSummary(
             stage: "developing",
             id: "worktree-mismatch",
@@ -7769,9 +7785,9 @@ final class ModelBehaviorTests: XCTestCase {
                 ServiceStatus(
                     name: "order",
                     branch: "dev",
-                    worktree: "ready",
+                    worktree: "missing",
                     gitSummary: "target branch missing: feature/worktree",
-                    worktreeExists: true,
+                    worktreeExists: false,
                     sourceExists: true
                 )
             ]
@@ -7784,16 +7800,16 @@ final class ModelBehaviorTests: XCTestCase {
             worktreeSetup: worktree
         )
 
-        XCTAssertEqual(worktree.status, .blocked)
+        XCTAssertEqual(worktree.status, .next)
         XCTAssertEqual(worktree.branchMismatchServices, ["order(feature/worktree)"])
-        XCTAssertEqual(worktree.setupPlan.map(\.action), [.blocked])
+        XCTAssertEqual(worktree.setupPlan.map(\.action), [.create])
         XCTAssertEqual(worktree.setupPlan.first?.currentBranch, "dev")
-        XCTAssertTrue(worktree.setupPlan.first?.reason.contains("未发现目标分支") ?? false)
-        XCTAssertEqual(worktree.mutationPolicy.blockedServices, ["order"])
-        XCTAssertFalse(worktree.mutationPolicy.canRequestConfirmation)
-        XCTAssertFalse(worktree.mutationPolicy.canRun(afterConfirmation: true))
+        XCTAssertTrue(worktree.setupPlan.first?.reason.contains("默认基线") ?? false)
+        XCTAssertTrue(worktree.mutationPolicy.blockedServices.isEmpty)
+        XCTAssertTrue(worktree.mutationPolicy.canRequestConfirmation)
+        XCTAssertTrue(worktree.mutationPolicy.canRun(afterConfirmation: true))
         XCTAssertEqual(stage.id, .worktreeSetup)
-        XCTAssertEqual(stage.primaryAction, .document("branches"))
+        XCTAssertEqual(stage.primaryAction, .worktree)
     }
 
     func testWorktreeSetupEvidenceAllowsDifferentCurrentBranchWhenTargetBranchExists() {

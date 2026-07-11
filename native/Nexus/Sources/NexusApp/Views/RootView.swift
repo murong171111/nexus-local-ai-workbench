@@ -1175,7 +1175,7 @@ private struct CreateWorkspaceSheet: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("新建工作区 / New Workspace")
                     .font(.title3.weight(.semibold))
-                Text("按三步建档：命名 -> 确认服务/分支 -> 预检后写入标准文档。worktree 创建仍是后续独立确认动作。")
+                Text("按三步建档：命名 -> 确认服务/分支 -> 预检后写入标准文档。范围完整时会继续确认创建分支与 Worktree。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -1609,7 +1609,7 @@ private struct WorktreeSetupSheet: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("创建缺失 worktree / Setup worktrees")
                         .font(.title3.weight(.semibold))
-                    Text("Nexus will fetch each source repository and create missing workspace-local repos under this workspace.")
+                    Text("Nexus will fetch each source repository, create missing target branches from the default branch, and create workspace-local worktrees.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -1632,7 +1632,7 @@ private struct WorktreeSetupSheet: View {
                 if preflightIsReady {
                     SectionBlock(title: "将要执行 / Local git operations") {
                         VStack(alignment: .leading, spacing: 8) {
-                            Label("Nexus 会为 \(confirmedPlan?.services.count ?? mutationPolicy.allowedServices.count) 个服务执行 git fetch origin 和 git worktree add。", systemImage: "terminal")
+                            Label("Nexus 会为 \(confirmedPlan?.services.count ?? mutationPolicy.allowedServices.count) 个服务执行 git fetch，并按需创建目标分支和 worktree。", systemImage: "terminal")
                                 .font(.caption)
                             Text("\(confirmedPlan?.workspacePath ?? currentWorkspace.path)/repos/<service>")
                                 .font(.system(.caption, design: .monospaced))
@@ -1647,7 +1647,7 @@ private struct WorktreeSetupSheet: View {
                     }
                 }
 
-                Toggle("确认执行本地 git fetch 与 git worktree add / Confirm local git write", isOn: $confirmed)
+                Toggle("确认创建目标分支与 worktree / Confirm local git write", isOn: $confirmed)
                     .disabled(!preflightIsReady)
                     .onChange(of: confirmed) { isConfirmed in
                         guard isConfirmed else {
@@ -1682,7 +1682,7 @@ private struct WorktreeSetupSheet: View {
 
                     Spacer()
 
-                    Button(appState.isSettingUpWorktrees ? "Setting up" : "Setup worktrees") {
+                    Button(appState.isSettingUpWorktrees ? "Setting up" : "创建分支与 Worktree") {
                         if let confirmedPlan {
                             Task {
                                 await appState.setupMissingWorktrees(plan: confirmedPlan, confirmed: confirmed)

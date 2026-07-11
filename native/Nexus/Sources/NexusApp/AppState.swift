@@ -5174,6 +5174,9 @@ final class AppState: ObservableObject {
             selectedWorkspaceID = response.folder
             if let workspace = workspaces.first(where: { $0.folder == response.folder }) {
                 await refreshDemandIntakeStatus(for: workspace)
+                if Self.shouldPresentWorktreeSetupAfterCreation(for: workspace) {
+                    presentWorktreeSetup(for: workspace)
+                }
             }
         } catch {
             lastError = error.localizedDescription
@@ -5224,6 +5227,10 @@ final class AppState: ObservableObject {
         pendingWorktreeSetupWorkspace = workspace
     }
 
+    static func shouldPresentWorktreeSetupAfterCreation(for workspace: WorkspaceSummary) -> Bool {
+        WorktreeSetupEvidence.resolve(workspace: workspace).mutationPolicy.canRequestConfirmation
+    }
+
     func missingWorktreeServices(in workspace: WorkspaceSummary) -> [String] {
         workspace.services
             .filter { !$0.worktreeExists }
@@ -5251,9 +5258,6 @@ final class AppState: ObservableObject {
         }
         guard evidence.missingSourceServices.isEmpty else {
             throw AppStateWorktreeSetupPlanError.notReady("存在源仓库不可用的服务：\(evidence.missingSourceServices.joined(separator: ", "))。")
-        }
-        guard evidence.branchMismatchServices.isEmpty else {
-            throw AppStateWorktreeSetupPlanError.notReady("存在目标分支不可用的服务：\(evidence.branchMismatchServices.joined(separator: ", "))。")
         }
         guard mutationPolicy.canRequestConfirmation else {
             throw AppStateWorktreeSetupPlanError.notReady(mutationPolicy.summary)

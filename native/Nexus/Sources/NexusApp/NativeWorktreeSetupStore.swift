@@ -7,12 +7,21 @@ struct NativeWorktreeSetupPlan: Equatable {
     let services: [String]
     let targetBranch: String
     let sourceRevisions: [String: String]
+    let branchCreationBases: [String: NativeBranchCreationBase]
     let auditRoot: String?
     let actor: String?
 
     var summary: String {
-        "确认后将在 \(workspacePath)/repos/ 为 \(services.joined(separator: ", ")) 创建 \(targetBranch) worktree；每个 source commit 已冻结。"
+        let branchDetail = branchCreationBases.isEmpty
+            ? "复用已有目标分支"
+            : "为 \(branchCreationBases.keys.sorted().joined(separator: ", ")) 创建目标分支"
+        return "确认后将在 \(workspacePath)/repos/ 为 \(services.joined(separator: ", ")) 创建 \(targetBranch) worktree；\(branchDetail)，每个 source commit 已冻结。"
     }
+}
+
+struct NativeBranchCreationBase: Equatable {
+    let reference: String
+    let revision: String
 }
 
 enum NativeWorktreeSetupStore {
@@ -35,6 +44,7 @@ enum NativeWorktreeSetupStore {
         try validateReposRoot(reposURL, fileManager: fileManager)
         let sourceRootURL = expandedURL(for: request.sourceReposRoot)
         var sourceRevisions: [String: String] = [:]
+        var branchCreationBases: [String: NativeBranchCreationBase] = [:]
 
         for service in services {
             guard isSafeServiceName(service) else {
@@ -51,10 +61,14 @@ enum NativeWorktreeSetupStore {
             guard fileType(at: worktreeURL, fileManager: fileManager) == nil else {
                 throw NativeWorktreeSetupError.targetChangedSinceConfirmation(service, worktreeURL.path)
             }
-            guard let revision = branchRevision(targetBranch, in: sourceURL) else {
+            if let revision = branchRevision(targetBranch, in: sourceURL) {
+                sourceRevisions[service] = revision
+            } else if let base = defaultBranchCreationBase(in: sourceURL) {
+                sourceRevisions[service] = base.revision
+                branchCreationBases[service] = base
+            } else {
                 throw NativeWorktreeSetupError.branchRevisionUnavailable(service, targetBranch)
             }
-            sourceRevisions[service] = revision
         }
 
         return NativeWorktreeSetupPlan(
@@ -63,6 +77,7 @@ enum NativeWorktreeSetupStore {
             services: services,
             targetBranch: targetBranch,
             sourceRevisions: sourceRevisions,
+            branchCreationBases: branchCreationBases,
             auditRoot: request.auditRoot,
             actor: request.actor
         )
@@ -80,12 +95,14 @@ enum NativeWorktreeSetupStore {
             request: request(from: plan, confirmed: false),
             fileManager: fileManager
         )
-        guard currentPlan.sourceRevisions == plan.sourceRevisions else {
+        guard currentPlan.sourceRevisions == plan.sourceRevisions,
+              currentPlan.branchCreationBases == plan.branchCreationBases else {
             throw NativeWorktreeSetupError.planChangedSinceConfirmation
         }
         return try execute(
             request: request(from: plan, confirmed: true),
             expectedSourceRevisions: plan.sourceRevisions,
+            expectedBranchCreationBases: plan.branchCreationBases,
             fileManager: fileManager
         )
     }
@@ -94,12 +111,18 @@ enum NativeWorktreeSetupStore {
         request: SetupWorktreesRequest,
         fileManager: FileManager = .default
     ) throws -> SetupWorktreesResponse {
-        try execute(request: request, expectedSourceRevisions: nil, fileManager: fileManager)
+        try execute(
+            request: request,
+            expectedSourceRevisions: nil,
+            expectedBranchCreationBases: nil,
+            fileManager: fileManager
+        )
     }
 
     private static func execute(
         request: SetupWorktreesRequest,
         expectedSourceRevisions: [String: String]?,
+        expectedBranchCreationBases: [String: NativeBranchCreationBase]?,
         fileManager: FileManager
     ) throws -> SetupWorktreesResponse {
         guard request.confirmed else {
@@ -124,6 +147,7 @@ enum NativeWorktreeSetupStore {
         var created: [WorktreeSetupResult] = []
         var skipped: [WorktreeSetupResult] = []
         var failed: [WorktreeSetupResult] = []
+        var branchCreationBasesUsed: [String: NativeBranchCreationBase] = [:]
 
         for service in services {
             let sourceURL = sourceRootURL.appendingPathComponent(service, isDirectory: true)
@@ -167,16 +191,28 @@ enum NativeWorktreeSetupStore {
                 continue
             }
 
-            if let expectedRevision = expectedSourceRevisions?[service],
-               branchRevision(targetBranch, in: sourceURL) != expectedRevision {
-                failed.append(result(
-                    service: service,
-                    sourceURL: sourceURL,
-                    worktreeURL: worktreeURL,
-                    status: "failed",
-                    detail: "target branch changed since confirmation; refresh and confirm the worktree plan again"
-                ))
-                continue
+            if let expectedBase = expectedBranchCreationBases?[service] {
+                guard branchRevision(targetBranch, in: sourceURL) == nil,
+                      revision(expectedBase.reference, in: sourceURL) == expectedBase.revision else {
+                    failed.append(result(
+                        service: service,
+                        sourceURL: sourceURL,
+                        worktreeURL: worktreeURL,
+                        status: "failed",
+                        detail: "branch creation base changed since confirmation; refresh and confirm the worktree plan again"
+                    ))
+                    continue
+                }
+            } else if let expectedRevision = expectedSourceRevisions?[service],
+                      branchRevision(targetBranch, in: sourceURL) != expectedRevision {
+                    failed.append(result(
+                        service: service,
+                        sourceURL: sourceURL,
+                        worktreeURL: worktreeURL,
+                        status: "failed",
+                        detail: "target branch changed since confirmation; refresh and confirm the worktree plan again"
+                    ))
+                    continue
             }
 
             if fileType(at: reposURL, fileManager: fileManager) == nil {
@@ -204,7 +240,17 @@ enum NativeWorktreeSetupStore {
                 continue
             }
 
-            switch runGit(["worktree", "add", worktreeURL.path, targetBranch], in: sourceURL) {
+            let branchCreationBase = expectedBranchCreationBases?[service]
+                ?? (branchRevision(targetBranch, in: sourceURL) == nil ? defaultBranchCreationBase(in: sourceURL) : nil)
+            let worktreeArguments: [String]
+            if let branchCreationBase {
+                worktreeArguments = ["worktree", "add", "-b", targetBranch, worktreeURL.path, branchCreationBase.revision]
+                branchCreationBasesUsed[service] = branchCreationBase
+            } else {
+                worktreeArguments = ["worktree", "add", worktreeURL.path, targetBranch]
+            }
+
+            switch runGit(worktreeArguments, in: sourceURL) {
             case .success(let output):
                 created.append(result(
                     service: service,
@@ -221,7 +267,13 @@ enum NativeWorktreeSetupStore {
         let response = SetupWorktreesResponse(
             workspacePath: workspaceURL.path,
             targetBranch: targetBranch,
-            command: command(workspaceURL: workspaceURL, sourceReposRoot: request.sourceReposRoot, services: services, targetBranch: targetBranch),
+            command: command(
+                workspaceURL: workspaceURL,
+                sourceReposRoot: request.sourceReposRoot,
+                services: services,
+                targetBranch: targetBranch,
+                branchCreationBases: branchCreationBasesUsed
+            ),
             created: created,
             skipped: skipped,
             failed: failed
@@ -331,6 +383,24 @@ enum NativeWorktreeSetupStore {
         return nil
     }
 
+    private static func defaultBranchCreationBase(in sourceURL: URL) -> NativeBranchCreationBase? {
+        for reference in ["origin/HEAD", "HEAD"] {
+            if let revision = revision(reference, in: sourceURL) {
+                return NativeBranchCreationBase(reference: reference, revision: revision)
+            }
+        }
+        return nil
+    }
+
+    private static func revision(_ reference: String, in sourceURL: URL) -> String? {
+        switch runGit(["rev-parse", "--verify", "\(reference)^{commit}"], in: sourceURL) {
+        case .success(let revision) where !revision.isEmpty:
+            return revision
+        case .success, .failure:
+            return nil
+        }
+    }
+
     private static func fileType(at url: URL, fileManager: FileManager) -> FileAttributeType? {
         guard let attributes = try? fileManager.attributesOfItem(atPath: url.path) else {
             return nil
@@ -387,7 +457,8 @@ enum NativeWorktreeSetupStore {
         workspaceURL: URL,
         sourceReposRoot: String,
         services: [String],
-        targetBranch: String
+        targetBranch: String,
+        branchCreationBases: [String: NativeBranchCreationBase]
     ) -> String {
         services.map { service in
             let sourcePath = "\(sourceReposRoot)/\(service)"
@@ -395,7 +466,12 @@ enum NativeWorktreeSetupStore {
                 .appendingPathComponent("repos", isDirectory: true)
                 .appendingPathComponent(service, isDirectory: true)
                 .path
-            return "# \(service)\ngit -C '\(sourcePath)' fetch origin\ngit -C '\(sourcePath)' worktree add '\(worktreePath)' '\(targetBranch)'"
+            let worktreeCommand = if let base = branchCreationBases[service] {
+                "git -C '\(sourcePath)' worktree add -b '\(targetBranch)' '\(worktreePath)' '\(base.revision)'"
+            } else {
+                "git -C '\(sourcePath)' worktree add '\(worktreePath)' '\(targetBranch)'"
+            }
+            return "# \(service)\ngit -C '\(sourcePath)' fetch origin\n\(worktreeCommand)"
         }
         .joined(separator: "\n\n")
     }

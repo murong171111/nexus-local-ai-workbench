@@ -247,7 +247,7 @@ struct ServiceBranchEvidence: Hashable {
             return "修正源仓库 / Source repos"
         }
         if !targetBranchMissingServices.isEmpty {
-            return "修正目标分支 / Target branch"
+            return "准备目标分支 / Prepare branch"
         }
         if !branchPolicyRecorded {
             return "记录分支策略 / Branch policy"
@@ -256,21 +256,30 @@ struct ServiceBranchEvidence: Hashable {
     }
 
     var primaryActionLabel: String {
-        if !branchConfirmed || !branchPolicyRecorded || !targetBranchMissingServices.isEmpty {
+        if !targetBranchMissingServices.isEmpty {
+            return "创建分支与 Worktree"
+        }
+        if !branchConfirmed || !branchPolicyRecorded {
             return "打开分支"
         }
         return "打开服务"
     }
 
     var primaryActionSystemImage: String {
-        if !branchConfirmed || !branchPolicyRecorded || !targetBranchMissingServices.isEmpty {
+        if !targetBranchMissingServices.isEmpty {
+            return "wrench.and.screwdriver"
+        }
+        if !branchConfirmed || !branchPolicyRecorded {
             return "arrow.triangle.branch"
         }
         return "square.stack.3d.up"
     }
 
     var primaryAction: WorkspaceMainStageAction {
-        if !branchConfirmed || !branchPolicyRecorded || !targetBranchMissingServices.isEmpty {
+        if !targetBranchMissingServices.isEmpty {
+            return .worktree
+        }
+        if !branchConfirmed || !branchPolicyRecorded {
             return .document("branches")
         }
         return .document("services")
@@ -332,9 +341,9 @@ struct ServiceBranchEvidence: Hashable {
                 label: "分支可用 / Availability",
                 detail: targetBranchMissingServices.isEmpty
                     ? targetBranchAvailableDetail(branchConfirmed: branchConfirmed, targetBranch: workspace.branch)
-                    : "这些服务缺少目标分支或远端引用不可用：\(targetBranchMissingServices.joined(separator: ", "))。",
-                status: targetBranchMissingServices.isEmpty ? .ready : .blocked,
-                systemImage: targetBranchMissingServices.isEmpty ? "checkmark.seal" : "exclamationmark.triangle",
+                    : "这些服务尚无目标分支，将在确认后从默认基线创建：\(targetBranchMissingServices.joined(separator: ", "))。",
+                status: targetBranchMissingServices.isEmpty ? .ready : .next,
+                systemImage: targetBranchMissingServices.isEmpty ? "checkmark.seal" : "plus.rectangle.on.folder",
                 path: branchesPath
             ),
             ServiceBranchCheck(
@@ -711,7 +720,7 @@ struct WorktreeSetupEvidence: Hashable {
             return "修正源仓库 / Source repos"
         }
         if !branchMismatchServices.isEmpty {
-            return "修正目标分支 / Target branch"
+            return "创建目标分支与 Worktree / Prepare branch"
         }
         if !missingServices.isEmpty {
             return "准备隔离 worktree / Setup worktrees"
@@ -727,7 +736,7 @@ struct WorktreeSetupEvidence: Hashable {
             return "打开服务"
         }
         if !branchMismatchServices.isEmpty {
-            return "打开分支"
+            return "创建分支与 Worktree"
         }
         if !missingServices.isEmpty {
             return "创建 worktree"
@@ -736,7 +745,7 @@ struct WorktreeSetupEvidence: Hashable {
     }
 
     var primaryActionSystemImage: String {
-        if !branchConfirmed || !branchMismatchServices.isEmpty {
+        if !branchConfirmed {
             return "arrow.triangle.branch"
         }
         if !missingSourceServices.isEmpty {
@@ -749,7 +758,7 @@ struct WorktreeSetupEvidence: Hashable {
     }
 
     var primaryAction: WorkspaceMainStageAction {
-        if !branchConfirmed || !branchMismatchServices.isEmpty {
+        if !branchConfirmed {
             return .document("branches")
         }
         if !missingSourceServices.isEmpty {
@@ -817,9 +826,9 @@ struct WorktreeSetupEvidence: Hashable {
                 label: "分支可用 / Availability",
                 detail: branchMismatchServices.isEmpty
                     ? "已确认 source repo 未报告目标分支缺失；source 当前检出分支不作为阻塞条件。"
-                    : "这些服务缺少目标分支或远端引用不可用：\(branchMismatchServices.joined(separator: ", "))。",
-                status: branchMismatchServices.isEmpty ? .ready : .blocked,
-                systemImage: branchMismatchServices.isEmpty ? "checkmark.circle" : "arrow.triangle.branch",
+                    : "这些服务尚无目标分支，将在确认后从默认基线创建：\(branchMismatchServices.joined(separator: ", "))。",
+                status: branchMismatchServices.isEmpty ? .ready : .next,
+                systemImage: branchMismatchServices.isEmpty ? "checkmark.circle" : "plus.rectangle.on.folder",
                 path: workspace.documentLinks["branches"] ?? "\(workspace.path)/branches.md"
             ),
             WorktreeSetupCheck(
@@ -923,12 +932,12 @@ struct WorktreeSetupEvidence: Hashable {
                 return WorktreeSetupPlanItem(
                     id: service.name,
                     serviceName: service.name,
-                    action: .blocked,
+                    action: .create,
                     targetBranch: targetBranch,
                     targetPath: targetPath,
                     sourceAvailable: true,
                     currentBranch: service.branch,
-                    reason: "source repo 未发现目标分支 \(targetBranch)，先同步源仓库或创建指定分支。"
+                    reason: "source repo 尚无目标分支 \(targetBranch)；确认后从默认基线创建分支和 worktree。"
                 )
             }
 
