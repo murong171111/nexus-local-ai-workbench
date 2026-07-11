@@ -76,7 +76,7 @@ struct FeatureWorkspaceView: View {
     @State private var autosavePolicy = FeatureWorkspaceAutosavePolicy()
 
     private var isSaving: Bool {
-        appState.demandInputSavingWorkspaceID == workspace.id
+        appState.isDemandInputSaveActive(for: workspace)
             || appState.isDemandAttachmentOperationActive(for: workspace)
     }
 

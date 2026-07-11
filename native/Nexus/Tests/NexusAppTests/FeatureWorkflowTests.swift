@@ -812,7 +812,7 @@ final class FeatureWorkflowTests: XCTestCase {
             in: workspace
         )
 
-        let prompt = appState.featureIntakePrompt(for: workspace)
+        let prompt = await appState.featureIntakePrompt(for: workspace)
 
         XCTAssertTrue(prompt.contains(root.path))
         XCTAssertTrue(prompt.contains("为订单保存增加快照。"))
@@ -823,6 +823,163 @@ final class FeatureWorkflowTests: XCTestCase {
         XCTAssertTrue(prompt.contains("Write a proposal to \(root.path)/FEATURES.draft.md."))
         XCTAssertTrue(prompt.contains("Do not modify FEATURES.md."))
         XCTAssertTrue(prompt.contains("DRAFT-001, DRAFT-002"))
+    }
+
+    @MainActor
+    func testAppStateSerializesDemandSavesPerWorkspaceAndKeepsLastDraftAfterCallerCancellation() async throws {
+        let root = try temporaryDemandWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = demandInputWorkspace(path: root.path)
+        let appState = makeAppState(workspace: workspace, root: root)
+        let first = DemandInputDraft(requirement: "first", links: [], attachments: [])
+        let second = DemandInputDraft(requirement: "second", links: ["https://example.com/latest"], attachments: [])
+        let firstReachedSave = expectation(description: "first save reached detached IO")
+        let releaseFirstSave = DispatchSemaphore(value: 0)
+        let secondReachedSave = expectation(description: "second save reached detached IO")
+        let releaseSecondSave = DispatchSemaphore(value: 0)
+        defer {
+            releaseFirstSave.signal()
+            releaseSecondSave.signal()
+        }
+
+        let firstOperation = Task { @MainActor in
+            await appState.saveDemandInputDraft(first, in: workspace) {
+                firstReachedSave.fulfill()
+                releaseFirstSave.wait()
+            }
+        }
+        await fulfillment(of: [firstReachedSave], timeout: 2)
+
+        let secondCaller = Task { @MainActor in
+            await appState.saveDemandInputDraft(second, in: workspace) {
+                secondReachedSave.fulfill()
+                releaseSecondSave.wait()
+            }
+        }
+        await Task.yield()
+        secondCaller.cancel()
+
+        XCTAssertTrue(appState.isDemandInputSaveActive(for: workspace))
+        XCTAssertEqual(appState.demandInputSavingWorkspaceID, workspace.id)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: NativeDemandInputStore.canonicalDraftPath(workspacePath: workspace.path)))
+
+        releaseFirstSave.signal()
+        await fulfillment(of: [secondReachedSave], timeout: 2)
+        let firstResult = await firstOperation.value
+
+        XCTAssertTrue(firstResult.succeeded)
+        XCTAssertEqual(try NativeDemandInputStore.load(workspacePath: workspace.path).draft, first)
+        XCTAssertEqual(appState.demandInputSnapshot(for: workspace)?.draft, first)
+        XCTAssertTrue(appState.isDemandInputSaveActive(for: workspace))
+
+        releaseSecondSave.signal()
+        let secondResult = await secondCaller.value
+
+        XCTAssertTrue(secondResult.succeeded)
+        XCTAssertEqual(try NativeDemandInputStore.load(workspacePath: workspace.path).draft, second)
+        XCTAssertEqual(appState.demandInputSnapshot(for: workspace)?.draft, second)
+        XCTAssertEqual(appState.demandInputSaveStatus(for: workspace), .saved)
+        XCTAssertFalse(appState.hasDemandInputRecoveryDraft(for: workspace))
+        XCTAssertFalse(appState.isDemandInputSaveActive(for: workspace))
+        XCTAssertNil(appState.demandInputSavingWorkspaceID)
+    }
+
+    @MainActor
+    func testAppStateDemandSaveQueuesAreIndependentAcrossWorkspaces() async throws {
+        let root = try temporaryDemandWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let firstRoot = root.appendingPathComponent("first")
+        let secondRoot = root.appendingPathComponent("second")
+        try FileManager.default.createDirectory(at: firstRoot, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: secondRoot, withIntermediateDirectories: true)
+        let firstWorkspace = demandInputWorkspace(id: "first", path: firstRoot.path)
+        let secondWorkspace = demandInputWorkspace(id: "second", path: secondRoot.path)
+        let appState = makeAppState(workspaces: [firstWorkspace, secondWorkspace], root: root)
+        let firstReachedSave = expectation(description: "first workspace reached detached IO")
+        let releaseFirstSave = DispatchSemaphore(value: 0)
+        defer { releaseFirstSave.signal() }
+
+        let blocked = Task { @MainActor in
+            await appState.saveDemandInputDraft(
+                DemandInputDraft(requirement: "blocked", links: [], attachments: []),
+                in: firstWorkspace
+            ) {
+                firstReachedSave.fulfill()
+                releaseFirstSave.wait()
+            }
+        }
+        await fulfillment(of: [firstReachedSave], timeout: 2)
+
+        let independent = await appState.saveDemandInputDraft(
+            DemandInputDraft(requirement: "independent", links: [], attachments: []),
+            in: secondWorkspace
+        )
+
+        XCTAssertTrue(independent.succeeded)
+        XCTAssertTrue(appState.isDemandInputSaveActive(for: firstWorkspace))
+        XCTAssertFalse(appState.isDemandInputSaveActive(for: secondWorkspace))
+        releaseFirstSave.signal()
+        let blockedResult = await blocked.value
+        XCTAssertTrue(blockedResult.succeeded)
+    }
+
+    @MainActor
+    func testFeatureIntakePromptPathProbeRunsOffMainActor() async throws {
+        let root = try temporaryDemandWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = demandInputWorkspace(path: root.path)
+        let appState = makeAppState(workspace: workspace, root: root)
+        let probeStarted = expectation(description: "changes path probe started")
+        let releaseProbe = DispatchSemaphore(value: 0)
+        defer { releaseProbe.signal() }
+
+        let promptTask = Task { @MainActor in
+            await appState.featureIntakePrompt(for: workspace) {
+                probeStarted.fulfill()
+                releaseProbe.wait()
+            }
+        }
+
+        await fulfillment(of: [probeStarted], timeout: 2)
+        appState.query = "main actor remained responsive during path probe"
+        releaseProbe.signal()
+        _ = await promptTask.value
+
+        XCTAssertEqual(appState.query, "main actor remained responsive during path probe")
+    }
+
+    @MainActor
+    func testNativeAuditAppendRunsOffMainActor() async throws {
+        let root = try temporaryDemandWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = demandInputWorkspace(path: root.path)
+        let appState = makeAppState(workspace: workspace, root: root)
+        let appendStarted = expectation(description: "audit append started")
+        let releaseAppend = DispatchSemaphore(value: 0)
+        defer { releaseAppend.signal() }
+
+        let appendTask = Task { @MainActor in
+            try await NativeAuditEventStore.appendAsync(
+                auditRoot: root.appendingPathComponent("audit").path,
+                event: AuditEventInput(
+                    actor: "Nexus Native",
+                    action: "test.appended",
+                    target: root.path,
+                    summary: "Test async audit append"
+                )
+            ) {
+                appendStarted.fulfill()
+                releaseAppend.wait()
+            }
+        }
+
+        await fulfillment(of: [appendStarted], timeout: 2)
+        appState.query = "main actor remained responsive during audit append"
+        releaseAppend.signal()
+        _ = try await appendTask.value
+
+        XCTAssertEqual(appState.query, "main actor remained responsive during audit append")
+        XCTAssertEqual(try NativeAuditEventStore.loadRecent(auditRoot: root.appendingPathComponent("audit").path, limit: 1).first?.action, "test.appended")
     }
 
     @MainActor
@@ -1189,9 +1346,9 @@ final class FeatureWorkflowTests: XCTestCase {
         return try XCTUnwrap((attributes[.systemFileNumber] as? NSNumber)?.uint64Value)
     }
 
-    private func demandInputWorkspace(path: String) -> WorkspaceSummary {
+    private func demandInputWorkspace(id: String = "demand-input-workspace", path: String) -> WorkspaceSummary {
         WorkspaceSummary(
-            id: "demand-input-workspace",
+            id: id,
             name: "Demand Input",
             folder: "demand-input",
             path: path,
@@ -1226,11 +1383,16 @@ final class FeatureWorkflowTests: XCTestCase {
 
     @MainActor
     private func makeAppState(workspace: WorkspaceSummary, root: URL) -> AppState {
+        makeAppState(workspaces: [workspace], root: root)
+    }
+
+    @MainActor
+    private func makeAppState(workspaces: [WorkspaceSummary], root: URL) -> AppState {
         let defaultsSuite = "NexusAppTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: defaultsSuite)!
         addTeardownBlock { defaults.removePersistentDomain(forName: defaultsSuite) }
         return AppState(
-            workspaces: [workspace],
+            workspaces: workspaces,
             agentStatus: AgentStatus(title: "Ready", detail: "Tests", connectedTools: []),
             bridge: PreviewNexusBridge(),
             workspaceRoot: root.path,

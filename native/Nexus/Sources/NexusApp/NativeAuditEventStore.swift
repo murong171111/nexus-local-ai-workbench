@@ -9,6 +9,17 @@ struct NativeAuditAppendFeedback {
 enum NativeAuditEventStore {
     static let fileName = "audit-events.jsonl"
 
+    static func appendAsync(
+        auditRoot: String,
+        event: AuditEventInput,
+        beforeAppend: (@Sendable () -> Void)? = nil
+    ) async throws -> AppendAuditEventResponse {
+        try await Task.detached(priority: .utility) {
+            beforeAppend?()
+            return try append(auditRoot: auditRoot, event: event)
+        }.value
+    }
+
     static func append(
         auditRoot: String,
         event input: AuditEventInput,

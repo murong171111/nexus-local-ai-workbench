@@ -198,6 +198,9 @@ final class AppState: ObservableObject {
     @Published var demandInputSaveStatusesByWorkspace: [WorkspaceSummary.ID: DemandInputSaveStatus] = [:]
     private var demandInputRecoveryWorkspaceIDs = Set<WorkspaceSummary.ID>()
     private var demandAttachmentOperationWorkspaceIDs = Set<WorkspaceSummary.ID>()
+    private var demandInputSaveTailsByWorkspace: [WorkspaceSummary.ID: Task<DemandInputSaveResult, Never>] = [:]
+    private var demandInputSaveGenerationsByWorkspace: [WorkspaceSummary.ID: Int] = [:]
+    private var demandInputSaveRequestCountsByWorkspace: [WorkspaceSummary.ID: Int] = [:]
     @Published var isUpdatingTask = false
     @Published var isUpdatingDeliveryRecord = false
     @Published var isUpdatingLifecycle = false
@@ -3371,6 +3374,10 @@ final class AppState: ObservableObject {
         demandAttachmentOperationWorkspaceIDs.contains(workspace.id)
     }
 
+    func isDemandInputSaveActive(for workspace: WorkspaceSummary) -> Bool {
+        demandInputSaveRequestCountsByWorkspace[workspace.id, default: 0] > 0
+    }
+
     func loadDemandInput(for workspace: WorkspaceSummary) async {
         demandInputLoadingWorkspaceID = workspace.id
         lastError = nil
@@ -3400,21 +3407,50 @@ final class AppState: ObservableObject {
         }
     }
 
-    func saveDemandInputDraft(_ draft: DemandInputDraft, in workspace: WorkspaceSummary) async -> DemandInputSaveResult {
+    func saveDemandInputDraft(
+        _ draft: DemandInputDraft,
+        in workspace: WorkspaceSummary,
+        beforeDetachedSave: (@Sendable () -> Void)? = nil
+    ) async -> DemandInputSaveResult {
+        let workspaceID = workspace.id
+        let previous = demandInputSaveTailsByWorkspace[workspaceID]
+        let generation = demandInputSaveGenerationsByWorkspace[workspaceID, default: 0] + 1
+        demandInputSaveGenerationsByWorkspace[workspaceID] = generation
+        demandInputSaveRequestCountsByWorkspace[workspaceID, default: 0] += 1
+        demandInputSavingWorkspaceID = workspaceID
+        demandInputSaveStatusesByWorkspace[workspaceID] = .saving
+
+        let operation = Task { @MainActor [self] in
+            if let previous {
+                _ = await previous.value
+            }
+            let result = await performDemandInputSave(
+                draft,
+                in: workspace,
+                beforeDetachedSave: beforeDetachedSave
+            )
+            finishDemandInputSave(workspaceID: workspaceID, generation: generation)
+            return result
+        }
+        demandInputSaveTailsByWorkspace[workspaceID] = operation
+        return await operation.value
+    }
+
+    private func performDemandInputSave(
+        _ draft: DemandInputDraft,
+        in workspace: WorkspaceSummary,
+        beforeDetachedSave: (@Sendable () -> Void)?
+    ) async -> DemandInputSaveResult {
         demandInputSavingWorkspaceID = workspace.id
         demandInputSaveStatusesByWorkspace[workspace.id] = .saving
         lastError = nil
-        defer {
-            if demandInputSavingWorkspaceID == workspace.id {
-                demandInputSavingWorkspaceID = nil
-            }
-        }
 
         do {
             let current = demandInputsByWorkspace[workspace.id]
             let workspacePath = workspace.path
             let auditRoot = auditRootPath
             let (response, snapshot) = try await Task.detached(priority: .userInitiated) {
+                beforeDetachedSave?()
                 let baseline = try current
                     ?? NativeDemandInputStore.load(workspacePath: workspacePath)
                 let response = try NativeDemandInputStore.save(
@@ -3452,6 +3488,22 @@ final class AppState: ObservableObject {
             lastError = message
             demandInputSaveStatusesByWorkspace[workspace.id] = .failed(message)
             return .failed(message: message)
+        }
+    }
+
+    private func finishDemandInputSave(workspaceID: WorkspaceSummary.ID, generation: Int) {
+        let remaining = max(0, demandInputSaveRequestCountsByWorkspace[workspaceID, default: 1] - 1)
+        if remaining == 0 {
+            demandInputSaveRequestCountsByWorkspace.removeValue(forKey: workspaceID)
+        } else {
+            demandInputSaveRequestCountsByWorkspace[workspaceID] = remaining
+        }
+        if demandInputSaveGenerationsByWorkspace[workspaceID] == generation {
+            demandInputSaveTailsByWorkspace.removeValue(forKey: workspaceID)
+            demandInputSaveGenerationsByWorkspace.removeValue(forKey: workspaceID)
+        }
+        if demandInputSavingWorkspaceID == workspaceID, remaining == 0 {
+            demandInputSavingWorkspaceID = demandInputSaveRequestCountsByWorkspace.keys.first
         }
     }
 
@@ -3538,7 +3590,10 @@ final class AppState: ObservableObject {
         }
     }
 
-    func featureIntakePrompt(for workspace: WorkspaceSummary) -> String {
+    func featureIntakePrompt(
+        for workspace: WorkspaceSummary,
+        beforeChangesPathProbe: (@Sendable () -> Void)? = nil
+    ) async -> String {
         let snapshot = demandInputsByWorkspace[workspace.id]
         let draft = snapshot?.draft ?? .empty
         let materialLines = draft.attachments.isEmpty
@@ -3547,12 +3602,12 @@ final class AppState: ObservableObject {
         let linkLines = draft.links.isEmpty
             ? ["- None."]
             : draft.links.map { "- \($0)" }
-        let changePaths = [workspace.documentLinks["changes"], "\(workspace.path)/changes.md"]
+        let changePathCandidates = [workspace.documentLinks["changes"], "\(workspace.path)/changes.md"]
             .compactMap { $0 }
-            .filter { FileManager.default.fileExists(atPath: $0) }
-            .reduce(into: [String]()) { paths, path in
-                if !paths.contains(path) { paths.append(path) }
-            }
+        let changePaths = await Self.existingFeatureChangePaths(
+            changePathCandidates,
+            beforeProbe: beforeChangesPathProbe
+        )
         let activityLines = workspace.activities.prefix(3).map { "- \($0.title): \($0.detail)" }
 
         return [
@@ -3584,9 +3639,23 @@ final class AppState: ObservableObject {
         ].filter { !$0.isEmpty }.joined(separator: "\n")
     }
 
+    private static func existingFeatureChangePaths(
+        _ candidates: [String],
+        beforeProbe: (@Sendable () -> Void)?
+    ) async -> [String] {
+        await Task.detached(priority: .userInitiated) {
+            beforeProbe?()
+            return candidates
+                .filter { FileManager.default.fileExists(atPath: $0) }
+                .reduce(into: [String]()) { paths, path in
+                    if !paths.contains(path) { paths.append(path) }
+                }
+        }.value
+    }
+
     func openFeatureIntakeInCodex(for workspace: WorkspaceSummary) async {
         await loadDemandInput(for: workspace)
-        let prompt = featureIntakePrompt(for: workspace)
+        let prompt = await featureIntakePrompt(for: workspace)
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(prompt, forType: .string)
         lastCopiedCodexHandoffPayload = prompt
@@ -4748,7 +4817,8 @@ final class AppState: ObservableObject {
 
     private func recordNativeAuditEvent(_ event: AuditEventInput) async {
         do {
-            _ = try NativeAuditEventStore.append(auditRoot: auditRootPath, event: event)
+            let auditRoot = auditRootPath
+            _ = try await NativeAuditEventStore.appendAsync(auditRoot: auditRoot, event: event)
         } catch {
             lastError = "Native audit failed: \(error.localizedDescription)"
         }
