@@ -47,7 +47,8 @@ enum NativeDemandInputStore {
         auditRoot: String? = nil,
         actor: String? = nil,
         fileManager: FileManager = .default,
-        beforeFinalRevisionCheck: (() throws -> Void)? = nil
+        beforeFinalRevisionCheck: (() throws -> Void)? = nil,
+        afterPublishBeforeVerify: (() throws -> Void)? = nil
     ) throws -> DemandInputSaveResponse {
         if case .invalid(let reason) = expectedRevision {
             throw NativeDemandInputStoreError.invalidExpectedRevision(reason)
@@ -68,11 +69,15 @@ enum NativeDemandInputStore {
             let data = Data(render(draft).utf8)
             let temporaryName = ".\(draftFileName).\(UUID().uuidString).tmp"
             let staged = try createVerifiedTemporaryFile(data, parentFD: demandFD, name: temporaryName)
-            var shouldCleanupTemporaryName = true
+            var temporaryCleanupIdentity: FileIdentity? = staged.identity
             defer {
                 close(staged.fd)
-                if shouldCleanupTemporaryName {
-                    _ = unlinkat(demandFD, temporaryName, 0)
+                if let temporaryCleanupIdentity {
+                    _ = unlinkNamedFileIfIdentityMatches(
+                        parentFD: demandFD,
+                        name: temporaryName,
+                        identity: temporaryCleanupIdentity
+                    )
                 }
             }
             try beforeFinalRevisionCheck?()
@@ -86,7 +91,8 @@ enum NativeDemandInputStore {
                 expectedRevision: expectedRevision,
                 staged: staged,
                 expectedData: data,
-                shouldCleanupTemporaryName: &shouldCleanupTemporaryName
+                afterPublishBeforeVerify: afterPublishBeforeVerify,
+                temporaryCleanupIdentity: &temporaryCleanupIdentity
             )
 
             let revision = inspectDraft(demandFD: demandFD, path: draftPath).revision
@@ -177,6 +183,7 @@ enum NativeDemandInputStore {
         beforeDestinationWrite: ((DemandAttachmentPlanItem) throws -> Void)? = nil,
         beforeSourceRead: ((DemandAttachmentPlanItem) throws -> Void)? = nil,
         beforeAttachmentPublish: ((DemandAttachmentPlanItem) throws -> Void)? = nil,
+        afterPublishBeforeVerify: ((DemandAttachmentPlanItem) throws -> Void)? = nil,
         beforeAttachmentResponse: (() -> Void)? = nil
     ) throws -> DemandAttachmentCopyResponse {
         guard confirmed else {
@@ -224,7 +231,8 @@ enum NativeDemandInputStore {
                         data: data,
                         item: item,
                         attachmentsFD: attachmentsFD,
-                        beforePublish: beforeAttachmentPublish
+                        beforePublish: beforeAttachmentPublish,
+                        afterPublishBeforeVerify: afterPublishBeforeVerify
                     )
                     copiedPaths.append(item.destinationURL.path)
                     copiedRelativePaths.append(
@@ -273,7 +281,8 @@ enum NativeDemandInputStore {
         expectedRevision: DemandInputRevision,
         staged: OpenTemporaryFile,
         expectedData: Data,
-        shouldCleanupTemporaryName: inout Bool
+        afterPublishBeforeVerify: (() throws -> Void)?,
+        temporaryCleanupIdentity: inout FileIdentity?
     ) throws {
         switch expectedRevision {
         case .missing:
@@ -290,6 +299,7 @@ enum NativeDemandInputStore {
                 throw NativeDemandInputStoreError.staleDraft(path: draftPath, expected: expectedRevision.label, current: current.label)
             }
             do {
+                try afterPublishBeforeVerify?()
                 try verifyPublishedFile(
                     parentFD: demandFD,
                     name: draftFileName,
@@ -298,7 +308,13 @@ enum NativeDemandInputStore {
                     expectedData: expectedData
                 )
             } catch {
-                _ = unlinkat(demandFD, draftFileName, 0)
+                guard unlinkNamedFileIfIdentityMatches(
+                    parentFD: demandFD,
+                    name: draftFileName,
+                    identity: staged.identity
+                ) else {
+                    throw NativeDemandInputStoreError.publicationConflict(draftPath)
+                }
                 throw error
             }
         case .regularUTF8:
@@ -310,6 +326,11 @@ enum NativeDemandInputStore {
                     current: current.label
                 )
             }
+            let previousIdentity = try namedRegularFileIdentity(
+                parentFD: demandFD,
+                name: draftFileName,
+                path: draftPath
+            )
             guard renameatx_np(
                 demandFD,
                 temporaryName,
@@ -319,7 +340,9 @@ enum NativeDemandInputStore {
             ) == 0 else {
                 throw NativeDemandInputStoreError.invalidDraft("could not replace demand draft: \(draftPath)")
             }
+            temporaryCleanupIdentity = previousIdentity
             do {
+                try afterPublishBeforeVerify?()
                 try verifyPublishedFile(
                     parentFD: demandFD,
                     name: draftFileName,
@@ -335,9 +358,10 @@ enum NativeDemandInputStore {
                     draftFileName,
                     UInt32(RENAME_SWAP)
                 ) != 0 {
-                    shouldCleanupTemporaryName = false
+                    temporaryCleanupIdentity = nil
                     throw NativeDemandInputStoreError.draftRecoveryRequired(draftPath, temporaryName)
                 }
+                temporaryCleanupIdentity = staged.identity
                 throw error
             }
         case .invalid(let reason):
@@ -632,13 +656,18 @@ enum NativeDemandInputStore {
         data: Data,
         item: DemandAttachmentPlanItem,
         attachmentsFD: Int32,
-        beforePublish: ((DemandAttachmentPlanItem) throws -> Void)?
+        beforePublish: ((DemandAttachmentPlanItem) throws -> Void)?,
+        afterPublishBeforeVerify: ((DemandAttachmentPlanItem) throws -> Void)?
     ) throws {
         let temporaryName = ".attachment.\(UUID().uuidString).tmp"
         let staged = try createVerifiedTemporaryFile(data, parentFD: attachmentsFD, name: temporaryName)
         defer {
             close(staged.fd)
-            _ = unlinkat(attachmentsFD, temporaryName, 0)
+            _ = unlinkNamedFileIfIdentityMatches(
+                parentFD: attachmentsFD,
+                name: temporaryName,
+                identity: staged.identity
+            )
         }
         try beforePublish?(item)
 
@@ -653,6 +682,7 @@ enum NativeDemandInputStore {
             throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
         }
         do {
+            try afterPublishBeforeVerify?(item)
             try verifyPublishedFile(
                 parentFD: attachmentsFD,
                 name: destinationName,
@@ -661,9 +691,40 @@ enum NativeDemandInputStore {
                 expectedData: data
             )
         } catch {
-            _ = unlinkat(attachmentsFD, destinationName, 0)
+            guard unlinkNamedFileIfIdentityMatches(
+                parentFD: attachmentsFD,
+                name: destinationName,
+                identity: staged.identity
+            ) else {
+                throw NativeDemandInputStoreError.publicationConflict(item.destinationURL.path)
+            }
             throw error
         }
+    }
+
+    private static func unlinkNamedFileIfIdentityMatches(
+        parentFD: Int32,
+        name: String,
+        identity: FileIdentity
+    ) -> Bool {
+        let fileFD = openat(parentFD, name, O_RDONLY | O_NOFOLLOW)
+        guard fileFD >= 0 else { return false }
+        defer { close(fileFD) }
+        guard (try? fileIdentity(fileFD, path: name)) == identity else { return false }
+        return unlinkat(parentFD, name, 0) == 0
+    }
+
+    private static func namedRegularFileIdentity(
+        parentFD: Int32,
+        name: String,
+        path: String
+    ) throws -> FileIdentity {
+        let fileFD = openat(parentFD, name, O_RDONLY | O_NOFOLLOW)
+        guard fileFD >= 0 else {
+            throw NativeDemandInputStoreError.destinationVerificationFailed(path)
+        }
+        defer { close(fileFD) }
+        return try fileIdentity(fileFD, path: path)
     }
 
     private static func verifyPublishedFile(
@@ -778,6 +839,7 @@ private enum NativeDemandInputStoreError: LocalizedError {
     case duplicateAttachmentName(String)
     case malformedAttachmentPlan(String)
     case draftRecoveryRequired(String, String)
+    case publicationConflict(String)
 
     var errorDescription: String? {
         switch self {
@@ -807,6 +869,8 @@ private enum NativeDemandInputStoreError: LocalizedError {
             "malformed demand attachment plan: \(path)"
         case .draftRecoveryRequired(let path, let temporaryName):
             "demand draft replacement could not be rolled back: \(path); previous draft preserved as \(temporaryName)"
+        case .publicationConflict(let path):
+            "published name was replaced before verification; preserved conflicting entry: \(path)"
         }
     }
 }

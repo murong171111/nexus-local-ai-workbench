@@ -196,6 +196,8 @@ final class AppState: ObservableObject {
     @Published var demandInputSavingWorkspaceID: WorkspaceSummary.ID?
     @Published var demandInputsByWorkspace: [WorkspaceSummary.ID: DemandInputSnapshot] = [:]
     @Published var demandInputSaveStatusesByWorkspace: [WorkspaceSummary.ID: DemandInputSaveStatus] = [:]
+    private var demandInputRecoveryWorkspaceIDs = Set<WorkspaceSummary.ID>()
+    private var demandAttachmentOperationWorkspaceIDs = Set<WorkspaceSummary.ID>()
     @Published var isUpdatingTask = false
     @Published var isUpdatingDeliveryRecord = false
     @Published var isUpdatingLifecycle = false
@@ -3361,6 +3363,14 @@ final class AppState: ObservableObject {
         demandInputSaveStatusesByWorkspace[workspace.id] ?? .idle
     }
 
+    func hasDemandInputRecoveryDraft(for workspace: WorkspaceSummary) -> Bool {
+        demandInputRecoveryWorkspaceIDs.contains(workspace.id)
+    }
+
+    func isDemandAttachmentOperationActive(for workspace: WorkspaceSummary) -> Bool {
+        demandAttachmentOperationWorkspaceIDs.contains(workspace.id)
+    }
+
     func loadDemandInput(for workspace: WorkspaceSummary) async {
         demandInputLoadingWorkspaceID = workspace.id
         lastError = nil
@@ -3372,7 +3382,8 @@ final class AppState: ObservableObject {
 
         do {
             let snapshot = try NativeDemandInputStore.load(workspacePath: workspace.path)
-            if let recovery = demandInputsByWorkspace[workspace.id], case .invalid = recovery.revision {
+            if let recovery = demandInputsByWorkspace[workspace.id],
+               demandInputRecoveryWorkspaceIDs.contains(workspace.id) {
                 demandInputsByWorkspace[workspace.id] = DemandInputSnapshot(
                     draft: recovery.draft,
                     revision: snapshot.revision,
@@ -3408,6 +3419,7 @@ final class AppState: ObservableObject {
             )
             let snapshot = try NativeDemandInputStore.load(workspacePath: workspace.path)
             demandInputsByWorkspace[workspace.id] = snapshot
+            demandInputRecoveryWorkspaceIDs.remove(workspace.id)
             demandInputSaveStatusesByWorkspace[workspace.id] = .saved
             markLocalWriteFeedback(
                 title: "需求草稿已保存 / Demand draft saved",
@@ -3427,6 +3439,7 @@ final class AppState: ObservableObject {
                 revision: .invalid(reason: message),
                 path: NativeDemandInputStore.canonicalDraftPath(workspacePath: workspace.path)
             )
+            demandInputRecoveryWorkspaceIDs.insert(workspace.id)
             lastError = message
             demandInputSaveStatusesByWorkspace[workspace.id] = .failed(message)
             return .failed(message: message)
@@ -3436,16 +3449,15 @@ final class AppState: ObservableObject {
     func attachDemandMaterials(
         _ urls: [URL],
         liveDraft: DemandInputDraft,
+        currentDraft: (() -> DemandInputDraft)? = nil,
         to workspace: WorkspaceSummary,
         confirmed: Bool,
         beforeAttachmentResponse: (() -> Void)? = nil
     ) async -> DemandAttachmentCopyResponse? {
-        demandInputSavingWorkspaceID = workspace.id
+        demandAttachmentOperationWorkspaceIDs.insert(workspace.id)
         lastError = nil
         defer {
-            if demandInputSavingWorkspaceID == workspace.id {
-                demandInputSavingWorkspaceID = nil
-            }
+            demandAttachmentOperationWorkspaceIDs.remove(workspace.id)
         }
 
         let savedSnapshot: DemandInputSnapshot
@@ -3468,7 +3480,7 @@ final class AppState: ObservableObject {
                 actor: "Nexus Native",
                 beforeAttachmentResponse: beforeAttachmentResponse
             )
-            var next = savedSnapshot.draft
+            var next = currentDraft?() ?? savedSnapshot.draft
             for path in copied.copiedRelativePaths where !next.attachments.contains(path) {
                 next.attachments.append(path)
             }
@@ -3499,7 +3511,14 @@ final class AppState: ObservableObject {
             )
             return copied
         } catch {
-            lastError = error.localizedDescription
+            let copyError = error.localizedDescription
+            let latest = currentDraft?() ?? liveDraft
+            let saveResult = latest == savedSnapshot.draft
+                ? nil
+                : await saveDemandInputDraft(latest, in: workspace)
+            lastError = [copyError, saveResult?.message]
+                .compactMap { $0 }
+                .joined(separator: " ")
             return nil
         }
     }

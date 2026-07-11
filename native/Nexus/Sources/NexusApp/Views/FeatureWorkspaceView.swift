@@ -8,6 +8,17 @@ enum FeatureWorkspaceDraftPolicy {
     ) -> DemandInputDraft {
         snapshot?.draft ?? current
     }
+
+    static func mergingCopiedAttachments(
+        _ paths: [String],
+        into current: DemandInputDraft
+    ) -> DemandInputDraft {
+        var merged = current
+        for path in paths where !merged.attachments.contains(path) {
+            merged.attachments.append(path)
+        }
+        return merged
+    }
 }
 
 struct FeatureWorkspaceView: View {
@@ -18,11 +29,13 @@ struct FeatureWorkspaceView: View {
     @State private var draft = DemandInputDraft.empty
     @State private var isLoading = false
     @State private var isImportingMaterials = false
+    @State private var isAttaching = false
     @State private var pendingMaterials: [URL] = []
     @State private var autosaveTask: Task<Void, Never>?
 
     private var isSaving: Bool {
         appState.demandInputSavingWorkspaceID == workspace.id
+            || appState.isDemandAttachmentOperationActive(for: workspace)
     }
 
     private var saveStatus: DemandInputSaveStatus {
@@ -116,7 +129,7 @@ struct FeatureWorkspaceView: View {
                 }
 
                 HStack(spacing: 8) {
-                    Image(systemName: saveStatus == .saving ? "arrow.triangle.2.circlepath" : (hasSaveFailure ? "exclamationmark.triangle" : "checkmark.circle"))
+                    Image(systemName: isSaving ? "arrow.triangle.2.circlepath" : (hasSaveFailure ? "exclamationmark.triangle" : "checkmark.circle"))
                         .foregroundStyle(hasSaveFailure ? Color.orange : (isSaving ? Color.orange : Color.green))
                     Text(saveStatusText)
                         .font(.caption)
@@ -186,18 +199,21 @@ struct FeatureWorkspaceView: View {
                 pendingMaterials = []
                 autosaveTask?.cancel()
                 autosaveTask = nil
+                isAttaching = true
                 Task {
-                    guard await appState.attachDemandMaterials(
+                    defer { isAttaching = false }
+                    guard let response = await appState.attachDemandMaterials(
                         urls,
                         liveDraft: liveDraft,
+                        currentDraft: { draft },
                         to: workspace,
                         confirmed: true
-                    ) != nil else {
+                    ) else {
                         return
                     }
-                    draft = FeatureWorkspaceDraftPolicy.refreshedDraft(
-                        current: liveDraft,
-                        snapshot: appState.demandInputSnapshot(for: workspace)
+                    draft = FeatureWorkspaceDraftPolicy.mergingCopiedAttachments(
+                        response.copiedRelativePaths,
+                        into: draft
                     )
                 }
             }
@@ -208,7 +224,7 @@ struct FeatureWorkspaceView: View {
     }
 
     private func scheduleAutosave() {
-        guard !isLoading else { return }
+        guard !isLoading, !isAttaching else { return }
         autosaveTask?.cancel()
         autosaveTask = Task {
             try? await Task.sleep(nanoseconds: 600_000_000)
@@ -219,6 +235,7 @@ struct FeatureWorkspaceView: View {
 
     private var saveStatusText: String {
         if isLoading { return "正在加载" }
+        if isSaving { return "正在保存" }
         switch saveStatus {
         case .saving:
             return "正在保存"
