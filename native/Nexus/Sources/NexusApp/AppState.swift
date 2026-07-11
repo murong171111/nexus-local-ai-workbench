@@ -185,6 +185,11 @@ final class AppState: ObservableObject {
             pendingFeatureWriteToken = nil
             activeFeatureWriteToken = nil
             featureWriteWorkspaceID = nil
+            featureProposalPlanGeneration += 1
+            pendingFeatureProposalMerge = nil
+            pendingFeatureProposalMergeToken = nil
+            activeFeatureProposalMergeToken = nil
+            featureProposalMergeWorkspaceID = nil
         }
     }
     @Published var workspaces: [WorkspaceSummary]
@@ -214,9 +219,18 @@ final class AppState: ObservableObject {
     @Published var pendingFeatureWrite: FeatureWritePlan?
     @Published var featureLoadingWorkspaceID: WorkspaceSummary.ID?
     @Published var featureWriteWorkspaceID: WorkspaceSummary.ID?
+    @Published var featureProposalReviewsByWorkspace: [WorkspaceSummary.ID: FeatureProposalReview] = [:]
+    @Published var featureProposalSelectedItemIDsByWorkspace: [WorkspaceSummary.ID: Set<String>] = [:]
+    @Published var featureProposalReplacementsByWorkspace: [WorkspaceSummary.ID: [String: WorkspaceFeature]] = [:]
+    @Published var pendingFeatureProposalMerge: FeatureProposalMergePlan?
+    @Published var featureProposalLoadingWorkspaceID: WorkspaceSummary.ID?
+    @Published var featureProposalMergeWorkspaceID: WorkspaceSummary.ID?
     private var featurePlanGeneration = 0
     private var pendingFeatureWriteToken: Int?
     private var activeFeatureWriteToken: Int?
+    private var featureProposalPlanGeneration = 0
+    private var pendingFeatureProposalMergeToken: Int?
+    private var activeFeatureProposalMergeToken: Int?
     private var demandInputRecoveryWorkspaceIDs = Set<WorkspaceSummary.ID>()
     private var demandAttachmentOperationWorkspaceIDs = Set<WorkspaceSummary.ID>()
     private var demandInputSaveTailsByWorkspace: [WorkspaceSummary.ID: Task<DemandInputSaveResult, Never>] = [:]
@@ -3396,6 +3410,169 @@ final class AppState: ObservableObject {
             featuresByWorkspace[workspace.id] = snapshot.document
         } catch {
             lastError = error.localizedDescription
+        }
+    }
+
+    func refreshFeatureProposal(for workspace: WorkspaceSummary) async {
+        featureProposalLoadingWorkspaceID = workspace.id
+        defer {
+            if featureProposalLoadingWorkspaceID == workspace.id {
+                featureProposalLoadingWorkspaceID = nil
+            }
+        }
+        let path = workspace.path
+        let review = await Task.detached(priority: .userInitiated) {
+            NativeFeatureStore.inspectProposal(workspacePath: path)
+        }.value
+        featureProposalReviewsByWorkspace[workspace.id] = review
+        guard let diff = review.diff else {
+            featureProposalSelectedItemIDsByWorkspace[workspace.id] = []
+            featureProposalReplacementsByWorkspace[workspace.id] = [:]
+            return
+        }
+        featureProposalSelectedItemIDsByWorkspace[workspace.id] = Set(diff.actionableItems.map(\.id))
+        featureProposalReplacementsByWorkspace[workspace.id] = Dictionary(
+            uniqueKeysWithValues: diff.actionableItems.compactMap { item in
+                item.proposed.map { (item.id, $0) }
+            }
+        )
+    }
+
+    func featureProposalReview(for workspace: WorkspaceSummary) -> FeatureProposalReview? {
+        featureProposalReviewsByWorkspace[workspace.id]
+    }
+
+    func updateFeatureProposalItem(
+        itemID: String,
+        selected: Bool,
+        replacement: WorkspaceFeature?,
+        in workspace: WorkspaceSummary
+    ) {
+        guard featureProposalReviewsByWorkspace[workspace.id]?.diff?.items.contains(where: {
+            $0.id == itemID && $0.kind != .unchanged
+        }) == true else { return }
+        if selected {
+            featureProposalSelectedItemIDsByWorkspace[workspace.id, default: []].insert(itemID)
+        } else {
+            featureProposalSelectedItemIDsByWorkspace[workspace.id, default: []].remove(itemID)
+        }
+        if let replacement {
+            featureProposalReplacementsByWorkspace[workspace.id, default: [:]][itemID] = replacement
+        }
+    }
+
+    @discardableResult
+    func requestFeatureProposalMerge(in workspace: WorkspaceSummary) -> Task<Void, Never> {
+        featureProposalPlanGeneration += 1
+        let generation = featureProposalPlanGeneration
+        pendingFeatureProposalMerge = nil
+        pendingFeatureProposalMergeToken = nil
+        activeFeatureProposalMergeToken = generation
+        featureProposalMergeWorkspaceID = workspace.id
+        lastError = nil
+        let path = workspace.path
+        let selected = featureProposalSelectedItemIDsByWorkspace[workspace.id] ?? []
+        let allReplacements = featureProposalReplacementsByWorkspace[workspace.id] ?? [:]
+        let replacements = allReplacements.filter { selected.contains($0.key) }
+        return Task {
+            do {
+                let plan = try await Task.detached(priority: .userInitiated) {
+                    try NativeFeatureStore.makeMergePlan(
+                        workspacePath: path,
+                        selectedItemIDs: selected,
+                        replacements: replacements
+                    )
+                }.value
+                guard generation == featureProposalPlanGeneration else { return }
+                pendingFeatureProposalMerge = plan
+                pendingFeatureProposalMergeToken = generation
+            } catch {
+                guard generation == featureProposalPlanGeneration else { return }
+                activeFeatureProposalMergeToken = nil
+                featureProposalMergeWorkspaceID = nil
+                lastError = error.localizedDescription
+            }
+        }
+    }
+
+    func pendingFeatureProposalMerge(for workspace: WorkspaceSummary) -> FeatureProposalMergePlan? {
+        guard selectedWorkspaceID == workspace.id,
+              pendingFeatureProposalMerge?.workspacePath == workspace.path else { return nil }
+        return pendingFeatureProposalMerge
+    }
+
+    func takePendingFeatureProposalMerge() -> ConfirmedFeatureProposalMerge? {
+        guard let plan = pendingFeatureProposalMerge,
+              let token = pendingFeatureProposalMergeToken else { return nil }
+        pendingFeatureProposalMerge = nil
+        pendingFeatureProposalMergeToken = nil
+        return ConfirmedFeatureProposalMerge(plan: plan, token: token)
+    }
+
+    func cancelPendingFeatureProposalMerge() {
+        guard pendingFeatureProposalMerge != nil,
+              let token = pendingFeatureProposalMergeToken else { return }
+        pendingFeatureProposalMerge = nil
+        pendingFeatureProposalMergeToken = nil
+        if activeFeatureProposalMergeToken == token {
+            activeFeatureProposalMergeToken = nil
+            featureProposalMergeWorkspaceID = nil
+        }
+    }
+
+    func confirmPendingFeatureProposalMerge(confirmed: Bool) async {
+        guard confirmed else {
+            cancelPendingFeatureProposalMerge()
+            return
+        }
+        guard let operation = takePendingFeatureProposalMerge(),
+              activeFeatureProposalMergeToken == operation.token,
+              workspaces.first(where: { $0.id == selectedWorkspaceID })?.path == operation.plan.workspacePath else {
+            return
+        }
+        do {
+            let auditRoot = auditRootPath
+            let response = try await Task.detached(priority: .userInitiated) {
+                try NativeFeatureStore.merge(
+                    plan: operation.plan,
+                    confirmed: true,
+                    auditRoot: auditRoot,
+                    actor: "Nexus Native"
+                )
+            }.value
+            guard activeFeatureProposalMergeToken == operation.token,
+                  let workspace = workspaces.first(where: { $0.path == operation.plan.workspacePath }) else {
+                return
+            }
+            featuresByWorkspace[workspace.id] = response.document
+            featureProposalReviewsByWorkspace[workspace.id] = nil
+            featureProposalSelectedItemIDsByWorkspace[workspace.id] = nil
+            featureProposalReplacementsByWorkspace[workspace.id] = nil
+            activeFeatureProposalMergeToken = nil
+            featureProposalMergeWorkspaceID = nil
+            let archiveFeedback = response.archivePath.map { "已归档 \(($0 as NSString).lastPathComponent)" }
+                ?? "草稿未归档：\(response.archiveError ?? "unknown error")"
+            markLocalWriteFeedback(
+                title: "功能提案已合并 / Proposal merged",
+                detail: "\(workspace.name) · +\(response.addCount) ~\(response.changeCount) ×\(response.cancelCount) · \(archiveFeedback)",
+                workspaceID: workspace.id,
+                workspaceName: workspace.name,
+                documentPath: response.path,
+                documentLabel: "FEATURES.md",
+                systemImage: "checkmark.circle",
+                auditError: response.auditError
+            )
+            if response.auditError != nil || response.archiveError != nil {
+                lastError = [response.auditError, response.archiveError].compactMap { $0 }.joined(separator: " · ")
+            }
+        } catch {
+            guard activeFeatureProposalMergeToken == operation.token else { return }
+            activeFeatureProposalMergeToken = nil
+            featureProposalMergeWorkspaceID = nil
+            lastError = error.localizedDescription
+            if let workspace = workspaces.first(where: { $0.path == operation.plan.workspacePath }) {
+                await refreshFeatureProposal(for: workspace)
+            }
         }
     }
 

@@ -80,6 +80,7 @@ struct FeatureWorkspaceView: View {
     @State private var autosavePolicy = FeatureWorkspaceAutosavePolicy()
     @State private var isAddingFeature = false
     @State private var editingFeature: WorkspaceFeature?
+    @State private var isReviewingFeatureProposal = false
 
     private var isSaving: Bool {
         appState.isDemandInputSaveActive(for: workspace)
@@ -226,6 +227,7 @@ struct FeatureWorkspaceView: View {
             draft = loadedDraft
             isLoading = false
             await appState.refreshFeatures(for: loadingWorkspace)
+            await appState.refreshFeatureProposal(for: loadingWorkspace)
         }
         .onChange(of: draft) { _ in
             scheduleAutosave()
@@ -297,6 +299,10 @@ struct FeatureWorkspaceView: View {
                 )
             }
         }
+        .sheet(isPresented: $isReviewingFeatureProposal) {
+            FeatureProposalReviewView(workspace: workspace)
+                .environmentObject(appState)
+        }
         .confirmationDialog(
             featureConfirmationTitle,
             isPresented: Binding(
@@ -328,6 +334,53 @@ struct FeatureWorkspaceView: View {
                 }
                 .buttonStyle(.bordered)
                 .disabled(appState.featureWriteWorkspaceID != nil)
+            }
+
+            if featureProposalIsVisible {
+                HStack(spacing: 8) {
+                    Image(systemName: featureProposalReview?.canConfirm == true ? "doc.badge.plus" : "exclamationmark.triangle")
+                        .foregroundStyle(featureProposalReview?.canConfirm == true ? Color.accentColor : Color.orange)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(featureProposalReview?.canConfirm == true ? "发现功能提案" : "功能提案需要修正")
+                            .font(.caption.weight(.semibold))
+                        if let counts = featureProposalCounts {
+                            Text("新增 \(counts.add) · 变更 \(counts.change) · 取消 \(counts.cancel)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else if let error = featureProposalReview?.error {
+                            Text(error)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
+                    }
+                    Spacer()
+                    Button {
+                        Task { await appState.refreshFeatureProposal(for: workspace) }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .help("刷新功能提案")
+                    Button {
+                        isReviewingFeatureProposal = true
+                    } label: {
+                        Label("审阅", systemImage: "doc.text.magnifyingglass")
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            } else {
+                HStack {
+                    Spacer()
+                    Button {
+                        Task { await appState.refreshFeatureProposal(for: workspace) }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("检查 FEATURES.draft.md")
+                }
             }
 
             if appState.featureLoadingWorkspaceID == workspace.id {
@@ -418,6 +471,25 @@ struct FeatureWorkspaceView: View {
 
     private var features: [WorkspaceFeature] {
         appState.featuresByWorkspace[workspace.id]?.features ?? []
+    }
+
+    private var featureProposalReview: FeatureProposalReview? {
+        appState.featureProposalReview(for: workspace)
+    }
+
+    private var featureProposalIsVisible: Bool {
+        guard let review = featureProposalReview else { return false }
+        if review.diff != nil { return true }
+        return !(review.error?.contains("feature proposal draft is missing") ?? false)
+    }
+
+    private var featureProposalCounts: (add: Int, change: Int, cancel: Int)? {
+        guard let items = featureProposalReview?.diff?.items else { return nil }
+        return (
+            items.filter { $0.kind == .add }.count,
+            items.filter { $0.kind == .change }.count,
+            items.filter { $0.kind == .cancel }.count
+        )
     }
 
     private var nextFeatureID: String {

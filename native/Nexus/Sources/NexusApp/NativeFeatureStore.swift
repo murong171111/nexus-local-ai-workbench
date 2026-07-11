@@ -5,7 +5,9 @@ import NexusBridge
 
 enum NativeFeatureStore {
     private static let fileName = "FEATURES.md"
+    private static let draftFileName = "FEATURES.draft.md"
     private static let idPattern = try! NSRegularExpression(pattern: #"^F-[0-9]{3,}$"#)
+    private static let draftIDPattern = try! NSRegularExpression(pattern: #"^DRAFT-[0-9]{3,}$"#)
     private static let headingPattern = try! NSRegularExpression(
         pattern: #"^## ([A-Z][A-Z0-9]*-[0-9]+)(?: (.*))?$"#
     )
@@ -56,6 +58,191 @@ enum NativeFeatureStore {
             document: snapshot.document,
             expectedFeature: expectedFeature,
             mutation: mutation
+        )
+    }
+
+    static func inspectProposal(workspacePath: String) -> FeatureProposalReview {
+        do {
+            let plan = try makeMergePlan(workspacePath: workspacePath)
+            return FeatureProposalReview(diff: FeatureProposalDiff(items: plan.items), error: nil)
+        } catch {
+            return FeatureProposalReview(diff: nil, error: error.localizedDescription)
+        }
+    }
+
+    static func makeMergePlan(
+        workspacePath: String,
+        selectedItemIDs: Set<String>? = nil,
+        replacements: [String: WorkspaceFeature] = [:]
+    ) throws -> FeatureProposalMergePlan {
+        let workspaceURL = canonicalWorkspaceURL(workspacePath)
+        guard workspacePath == workspaceURL.path else {
+            throw NativeFeatureStoreError.invalidWorkspace(workspacePath)
+        }
+        let confirmedPath = workspaceURL.appendingPathComponent(fileName).path
+        let draftPath = workspaceURL.appendingPathComponent(draftFileName).path
+        return try withWorkspaceDirectory(workspaceURL) { workspaceFD in
+            let confirmed = try snapshot(workspaceFD: workspaceFD, path: confirmedPath)
+            let draft = try proposalSnapshot(workspaceFD: workspaceFD, path: draftPath)
+            if case .missing = draft.revision { throw NativeFeatureStoreError.missingDraft(draftPath) }
+            let confirmedIDs = Set(confirmed.document.features.map(\.id))
+            if let unknown = draft.document.features.first(where: {
+                $0.id.hasPrefix("F-") && !confirmedIDs.contains($0.id)
+            }) {
+                throw NativeFeatureStoreError.unknownConfirmedFeature(unknown.id)
+            }
+            let diff = FeatureProposalDiff.resolve(
+                confirmed: confirmed.document,
+                draft: draft.document
+            )
+            let availableIDs = Set(diff.items.map(\.id))
+            let selected = selectedItemIDs ?? Set(diff.actionableItems.map(\.id))
+            guard selected.isSubset(of: availableIDs), Set(replacements.keys).isSubset(of: selected) else {
+                throw NativeFeatureStoreError.invalidProposalSelection
+            }
+            return FeatureProposalMergePlan(
+                workspacePath: workspacePath,
+                confirmedPath: confirmedPath,
+                draftPath: draftPath,
+                confirmedRevision: confirmed.revision,
+                draftRevision: draft.revision,
+                confirmedDocument: confirmed.document,
+                draftDocument: draft.document,
+                items: diff.items,
+                selectedItemIDs: selected,
+                replacements: replacements
+            )
+        }
+    }
+
+    static func merge(
+        plan: FeatureProposalMergePlan,
+        confirmed: Bool,
+        auditRoot: String? = nil,
+        actor: String? = nil,
+        archiveTimestamp: String? = nil,
+        afterWorkspaceOpen: (() throws -> Void)? = nil,
+        beforeFinalRevisionCheck: (() throws -> Void)? = nil,
+        beforePublish: (() throws -> Void)? = nil,
+        afterPublishBeforeVerify: (() throws -> Void)? = nil,
+        beforeArchive: (() throws -> Void)? = nil
+    ) throws -> FeatureProposalMergeResponse {
+        guard confirmed else { throw NativeFeatureStoreError.unconfirmedProposal }
+        let workspaceURL = canonicalWorkspaceURL(plan.workspacePath)
+        guard plan.workspacePath == workspaceURL.path,
+              plan.confirmedPath == workspaceURL.appendingPathComponent(fileName).path,
+              plan.draftPath == workspaceURL.appendingPathComponent(draftFileName).path else {
+            throw NativeFeatureStoreError.malformedPlan(plan.confirmedPath)
+        }
+
+        let selectedItems = plan.items.filter { plan.selectedItemIDs.contains($0.id) }
+        let counts = (
+            add: selectedItems.filter { $0.kind == .add }.count,
+            change: selectedItems.filter { $0.kind == .change }.count,
+            cancel: selectedItems.filter { $0.kind == .cancel }.count
+        )
+        let result = try writeLock(for: plan.workspacePath).withLock {
+            () -> (FeatureDocument, FeatureDocumentRevision) in
+            try withWorkspaceDirectory(workspaceURL) { workspaceFD in
+                try afterWorkspaceOpen?()
+                let current = try snapshot(workspaceFD: workspaceFD, path: plan.confirmedPath)
+                let currentDraft = try proposalSnapshot(workspaceFD: workspaceFD, path: plan.draftPath)
+                try requireRevision(current.revision, expected: plan.confirmedRevision)
+                try requireDraftRevision(currentDraft.revision, expected: plan.draftRevision)
+
+                var document = current.document
+                try applyProposal(plan, to: &document)
+                try validate(document)
+                let data = try validatedRenderedData(document)
+                let temporaryName = ".\(fileName).\(UUID().uuidString).tmp"
+                let staged = try createVerifiedTemporaryFile(data, parentFD: workspaceFD, name: temporaryName)
+                var temporaryCleanupIdentity: FileIdentity? = staged.identity
+                defer {
+                    close(staged.fd)
+                    if let temporaryCleanupIdentity {
+                        _ = unlinkNamedFileIfIdentityMatches(
+                            parentFD: workspaceFD,
+                            name: temporaryName,
+                            identity: temporaryCleanupIdentity,
+                            fingerprint: staged.fingerprint
+                        )
+                    }
+                }
+
+                try beforeFinalRevisionCheck?()
+                try requireRevision(
+                    snapshot(workspaceFD: workspaceFD, path: plan.confirmedPath).revision,
+                    expected: plan.confirmedRevision
+                )
+                try requireDraftRevision(
+                    proposalSnapshot(workspaceFD: workspaceFD, path: plan.draftPath).revision,
+                    expected: plan.draftRevision
+                )
+                try beforePublish?()
+                try requireRevision(
+                    snapshot(workspaceFD: workspaceFD, path: plan.confirmedPath).revision,
+                    expected: plan.confirmedRevision
+                )
+                try requireDraftRevision(
+                    proposalSnapshot(workspaceFD: workspaceFD, path: plan.draftPath).revision,
+                    expected: plan.draftRevision
+                )
+                try replaceFeatureFile(
+                    workspaceFD: workspaceFD,
+                    path: plan.confirmedPath,
+                    temporaryName: temporaryName,
+                    expectedRevision: plan.confirmedRevision,
+                    staged: staged,
+                    expectedData: data,
+                    afterPublishBeforeVerify: afterPublishBeforeVerify,
+                    temporaryCleanupIdentity: &temporaryCleanupIdentity
+                )
+                let written = try snapshot(workspaceFD: workspaceFD, path: plan.confirmedPath)
+                return (written.document, written.revision)
+            }
+        }
+
+        let mergeActor = actor ?? "Nexus Native"
+        let audit = NativeAuditEventStore.appendFeedback(
+            auditRoot: auditRoot,
+            event: AuditEventInput(
+                actor: mergeActor,
+                action: "feature.proposal_merged",
+                target: plan.confirmedPath,
+                summary: "Confirmed Codex feature proposal",
+                metadata: [
+                    "workspace": plan.workspacePath,
+                    "addCount": String(counts.add),
+                    "changeCount": String(counts.change),
+                    "cancelCount": String(counts.cancel),
+                    "confirmedSourceRevision": plan.confirmedRevision.label,
+                    "draftSourceRevision": plan.draftRevision.label,
+                    "revision": result.1.label
+                ]
+            )
+        )
+        let archive: (path: String?, error: String?)
+        do {
+            try beforeArchive?()
+            archive = archiveAcceptedDraft(
+                plan: plan,
+                timestamp: archiveTimestamp ?? archiveTimestampString()
+            )
+        } catch {
+            archive = (nil, error.localizedDescription)
+        }
+        return FeatureProposalMergeResponse(
+            path: plan.confirmedPath,
+            revision: result.1,
+            document: result.0,
+            addCount: counts.add,
+            changeCount: counts.change,
+            cancelCount: counts.cancel,
+            auditEventID: audit.response?.event.id,
+            auditEventPath: audit.response?.path,
+            auditError: audit.error,
+            archivePath: archive.path,
+            archiveError: archive.error
         )
     }
 
@@ -164,6 +351,14 @@ enum NativeFeatureStore {
     }
 
     static func parse(_ source: String) throws -> FeatureDocument {
+        try parse(source, allowsDraftIDs: false)
+    }
+
+    static func parseProposal(_ source: String) throws -> FeatureDocument {
+        try parse(source, allowsDraftIDs: true)
+    }
+
+    private static func parse(_ source: String, allowsDraftIDs: Bool) throws -> FeatureDocument {
         let lines = source.components(separatedBy: "\n")
         var preamble: [String] = []
         var blocks: [(id: String, title: String, lines: [String])] = []
@@ -185,7 +380,9 @@ enum NativeFeatureStore {
 
         var ids = Set<String>()
         let features = try blocks.map { block -> WorkspaceFeature in
-            guard validID(block.id) else { throw NativeFeatureStoreError.invalidID(block.id) }
+            guard validID(block.id) || (allowsDraftIDs && validDraftID(block.id)) else {
+                throw NativeFeatureStoreError.invalidID(block.id)
+            }
             guard ids.insert(block.id).inserted else { throw NativeFeatureStoreError.duplicateID(block.id) }
             return try parseFeature(block)
         }
@@ -375,6 +572,65 @@ enum NativeFeatureStore {
         }
     }
 
+    private static func applyProposal(
+        _ plan: FeatureProposalMergePlan,
+        to document: inout FeatureDocument
+    ) throws {
+        for item in plan.items where plan.selectedItemIDs.contains(item.id) {
+            switch item.kind {
+            case .add:
+                guard let assignedID = item.assignedFeatureID,
+                      let proposed = plan.replacements[item.id] ?? item.proposed else {
+                    throw NativeFeatureStoreError.invalidProposalReplacement(item.id)
+                }
+                var replacement = proposalReplacement(proposed, id: assignedID)
+                if replacement.status == .draft { replacement.status = .todo }
+                guard !document.features.contains(where: { $0.id == assignedID }) else {
+                    throw NativeFeatureStoreError.duplicateID(assignedID)
+                }
+                document.features.append(replacement)
+            case .change:
+                guard let index = document.features.firstIndex(where: { $0.id == item.id }),
+                      let proposed = plan.replacements[item.id] ?? item.proposed else {
+                    throw NativeFeatureStoreError.invalidProposalReplacement(item.id)
+                }
+                var replacement = proposalReplacement(proposed, id: item.id)
+                if replacement.status == .draft { replacement.status = .todo }
+                document.features[index] = replacement
+            case .cancel:
+                guard let index = document.features.firstIndex(where: { $0.id == item.id }) else {
+                    throw NativeFeatureStoreError.featureNotFound(item.id)
+                }
+                document.features[index].status = .cancelled
+                document.features[index].completionNote = "Cancelled by feature proposal"
+                document.features[index].completedAt = nil
+                document.features[index].completedBy = nil
+            case .unchanged:
+                break
+            }
+        }
+    }
+
+    private static func proposalReplacement(_ feature: WorkspaceFeature, id: String) -> WorkspaceFeature {
+        WorkspaceFeature(
+            id: id,
+            title: feature.title,
+            status: feature.status,
+            verification: feature.verification,
+            autoComplete: feature.autoComplete,
+            sources: feature.sources,
+            services: feature.services,
+            taskIDs: feature.taskIDs,
+            evidenceIDs: feature.evidenceIDs,
+            description: feature.description,
+            completedAt: feature.completedAt,
+            completedBy: feature.completedBy,
+            completionNote: feature.completionNote,
+            evidenceStale: feature.evidenceStale,
+            preservedLines: feature.preservedLines
+        )
+    }
+
     private static func validate(_ document: FeatureDocument) throws {
         var ids = Set<String>()
         for feature in document.features {
@@ -408,6 +664,10 @@ enum NativeFeatureStore {
 
     private static func validID(_ id: String) -> Bool {
         idPattern.firstMatch(in: id, range: NSRange(id.startIndex..., in: id)) != nil
+    }
+
+    private static func validDraftID(_ id: String) -> Bool {
+        draftIDPattern.firstMatch(in: id, range: NSRange(id.startIndex..., in: id)) != nil
     }
 
     private static func list(_ value: String?) -> [String] {
@@ -488,7 +748,20 @@ enum NativeFeatureStore {
     }
 
     private static func snapshot(workspaceFD: Int32, path: String) throws -> FeatureDocumentSnapshot {
-        let fileFD = openat(workspaceFD, fileName, O_RDONLY | O_NOFOLLOW)
+        try snapshot(workspaceFD: workspaceFD, name: fileName, path: path, parser: parse)
+    }
+
+    private static func proposalSnapshot(workspaceFD: Int32, path: String) throws -> FeatureDocumentSnapshot {
+        try snapshot(workspaceFD: workspaceFD, name: draftFileName, path: path, parser: parseProposal)
+    }
+
+    private static func snapshot(
+        workspaceFD: Int32,
+        name: String,
+        path: String,
+        parser: (String) throws -> FeatureDocument
+    ) throws -> FeatureDocumentSnapshot {
+        let fileFD = openat(workspaceFD, name, O_RDONLY | O_NOFOLLOW)
         if fileFD < 0 {
             if errno == ENOENT {
                 return FeatureDocumentSnapshot(document: .empty, revision: .missing, path: path)
@@ -505,7 +778,7 @@ enum NativeFeatureStore {
             throw NativeFeatureStoreError.invalidUTF8(path)
         }
         return FeatureDocumentSnapshot(
-            document: try parse(content),
+            document: try parser(content),
             revision: revision(data),
             path: path
         )
@@ -517,6 +790,18 @@ enum NativeFeatureStore {
     ) throws {
         guard current == expected else {
             throw NativeFeatureStoreError.staleRevision(
+                expected: expected.label,
+                current: current.label
+            )
+        }
+    }
+
+    private static func requireDraftRevision(
+        _ current: FeatureDocumentRevision,
+        expected: FeatureDocumentRevision
+    ) throws {
+        guard current == expected else {
+            throw NativeFeatureStoreError.staleDraftRevision(
                 expected: expected.label,
                 current: current.label
             )
@@ -541,6 +826,82 @@ enum NativeFeatureStore {
 
     private static func featureURL(_ workspacePath: String) -> URL {
         canonicalWorkspaceURL(workspacePath).appendingPathComponent(fileName)
+    }
+
+    private static func archiveAcceptedDraft(
+        plan: FeatureProposalMergePlan,
+        timestamp: String
+    ) -> (path: String?, error: String?) {
+        guard timestamp.range(of: #"^[A-Za-z0-9_-]+$"#, options: .regularExpression) != nil else {
+            return (nil, "invalid feature proposal archive timestamp")
+        }
+        let archiveName = "FEATURES.draft.accepted-\(timestamp).md"
+        let workspaceURL = canonicalWorkspaceURL(plan.workspacePath)
+        let archivePath = workspaceURL.appendingPathComponent(archiveName).path
+        do {
+            try writeLock(for: plan.workspacePath).withLock {
+                try withWorkspaceDirectory(workspaceURL) { workspaceFD in
+                    let current = try proposalSnapshot(workspaceFD: workspaceFD, path: plan.draftPath)
+                    try requireDraftRevision(current.revision, expected: plan.draftRevision)
+                    guard entryKind(at: workspaceFD, name: archiveName) == .missing else {
+                        throw NativeFeatureStoreError.archiveExists(archivePath)
+                    }
+                    let sourceIdentity = try namedRegularFileIdentity(
+                        parentFD: workspaceFD,
+                        name: draftFileName,
+                        path: plan.draftPath
+                    )
+                    guard renameatx_np(
+                        workspaceFD,
+                        draftFileName,
+                        workspaceFD,
+                        archiveName,
+                        UInt32(RENAME_EXCL)
+                    ) == 0 else {
+                        throw NativeFeatureStoreError.archiveConflict(archivePath)
+                    }
+                    do {
+                        let archived = try snapshot(
+                            workspaceFD: workspaceFD,
+                            name: archiveName,
+                            path: archivePath,
+                            parser: parseProposal
+                        )
+                        guard archived.revision == plan.draftRevision,
+                              try namedRegularFileIdentity(
+                                parentFD: workspaceFD,
+                                name: archiveName,
+                                path: archivePath
+                              ) == sourceIdentity else {
+                            throw NativeFeatureStoreError.archiveConflict(archivePath)
+                        }
+                    } catch {
+                        guard entryKind(at: workspaceFD, name: draftFileName) == .missing,
+                              renameatx_np(
+                                workspaceFD,
+                                archiveName,
+                                workspaceFD,
+                                draftFileName,
+                                UInt32(RENAME_EXCL)
+                              ) == 0 else {
+                            throw NativeFeatureStoreError.archiveRecoveryRequired(archivePath)
+                        }
+                        throw error
+                    }
+                }
+            }
+            return (archivePath, nil)
+        } catch {
+            return (nil, error.localizedDescription)
+        }
+    }
+
+    private static func archiveTimestampString() -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.string(from: Date())
+            .replacingOccurrences(of: "-", with: "")
+            .replacingOccurrences(of: ":", with: "")
     }
 
     private static func createVerifiedTemporaryFile(
@@ -854,6 +1215,7 @@ private enum EntryKind {
 
 private enum NativeFeatureStoreError: LocalizedError {
     case unconfirmed
+    case unconfirmedProposal
     case invalidWorkspace(String)
     case unreadable(String)
     case notRegularFile(String)
@@ -866,16 +1228,25 @@ private enum NativeFeatureStoreError: LocalizedError {
     case missingRequired(String, String)
     case invalidMetadata(String, String)
     case staleRevision(expected: String, current: String)
+    case staleDraftRevision(expected: String, current: String)
     case staleFeature(String)
     case featureNotFound(String)
     case changedID
     case malformedPlan(String)
+    case missingDraft(String)
+    case unknownConfirmedFeature(String)
+    case invalidProposalSelection
+    case invalidProposalReplacement(String)
     case publicationConflict(String)
     case recoveryRequired(String, String)
+    case archiveExists(String)
+    case archiveConflict(String)
+    case archiveRecoveryRequired(String)
 
     var errorDescription: String? {
         switch self {
         case .unconfirmed: return "feature write requires explicit confirmation"
+        case .unconfirmedProposal: return "feature proposal merge requires explicit confirmation"
         case .invalidWorkspace(let path): return "workspace is not a regular directory: \(path)"
         case .unreadable(let path): return "feature document is unreadable: \(path)"
         case .notRegularFile(let path): return "feature document is not a regular file: \(path)"
@@ -889,13 +1260,24 @@ private enum NativeFeatureStoreError: LocalizedError {
         case .invalidMetadata(let field, let id): return "invalid \(field) metadata for \(id)"
         case .staleRevision(let expected, let current):
             return "FEATURES.md changed since confirmation; expected \(expected); current \(current)"
+        case .staleDraftRevision(let expected, let current):
+            return "FEATURES.draft.md changed since confirmation; expected \(expected); current \(current)"
         case .staleFeature(let id): return "feature changed since confirmation: \(id)"
         case .featureNotFound(let id): return "feature not found: \(id)"
         case .changedID: return "feature IDs cannot be changed"
         case .malformedPlan(let path): return "malformed feature write plan: \(path)"
+        case .missingDraft(let path): return "feature proposal draft is missing: \(path)"
+        case .unknownConfirmedFeature(let id):
+            return "proposal references unknown confirmed feature ID: \(id)"
+        case .invalidProposalSelection: return "feature proposal selection is invalid"
+        case .invalidProposalReplacement(let id): return "feature proposal replacement is invalid: \(id)"
         case .publicationConflict(let path): return "FEATURES.md publication conflict: \(path)"
         case .recoveryRequired(let path, let temporaryName):
             return "FEATURES.md recovery required for \(path); staged file: \(temporaryName)"
+        case .archiveExists(let path): return "feature proposal archive already exists: \(path)"
+        case .archiveConflict(let path): return "feature proposal archive conflict: \(path)"
+        case .archiveRecoveryRequired(let path):
+            return "feature proposal archive recovery required: \(path)"
         }
     }
 }
