@@ -56,6 +56,13 @@ struct WorkspaceConsoleLayoutPolicy: Hashable {
             currentSignalsAreSecondary: currentSignalsAreSecondary
         )
     }
+
+    func focusesFeatureFlow(
+        usesFeatureCenteredWorkflow: Bool,
+        stageID: WorkspaceMainStageID
+    ) -> Bool {
+        usesFeatureCenteredWorkflow && (stageID == .created || stageID == .demandIntake)
+    }
 }
 
 struct WorkspaceConsoleLayoutAuditSummary: Hashable {

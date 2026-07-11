@@ -558,6 +558,38 @@ final class FeatureWorkflowTests: XCTestCase {
         )
     }
 
+    func testFeatureProposalInspectionRejectsDraftWithoutParseableFeatures() throws {
+        let root = try temporaryDemandWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try "# Features\n".write(
+            to: root.appendingPathComponent("FEATURES.md"), atomically: true, encoding: .utf8
+        )
+        try "# Proposal\n\n### DRAFT-001 Human-readable but not parseable\n".write(
+            to: root.appendingPathComponent("FEATURES.draft.md"), atomically: true, encoding: .utf8
+        )
+
+        let review = NativeFeatureStore.inspectProposal(workspacePath: root.path)
+
+        XCTAssertNil(review.diff)
+        XCTAssertEqual(review.error, "feature proposal contains no parseable features")
+    }
+
+    func testFeatureProposalInspectionRejectsEmptyDraftInsteadOfCancellingConfirmedFeatures() throws {
+        let root = try temporaryDemandWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try featureSource(id: "F-001", title: "Keep me").write(
+            to: root.appendingPathComponent("FEATURES.md"), atomically: true, encoding: .utf8
+        )
+        try "# Proposal\n\n### DRAFT-001 Not parseable\n".write(
+            to: root.appendingPathComponent("FEATURES.draft.md"), atomically: true, encoding: .utf8
+        )
+
+        let review = NativeFeatureStore.inspectProposal(workspacePath: root.path)
+
+        XCTAssertNil(review.diff)
+        XCTAssertEqual(review.error, "feature proposal contains no parseable features")
+    }
+
     func testFeatureProposalDiffSeparatesAddsChangesAndCancellationsDeterministically() throws {
         let confirmed = try NativeFeatureStore.parse(
             featureSource(id: "F-010", title: "Changed")
@@ -669,6 +701,41 @@ final class FeatureWorkflowTests: XCTestCase {
         XCTAssertEqual(response.document.features[1].status, .todo, "unselected cancellation must be ignored")
         XCTAssertEqual(response.document.features[2].title, "Added")
         XCTAssertEqual(response.document.features[2].status, .todo)
+    }
+
+    func testFeatureProposalMergeIncludesUserAddedFeatureOnlyInConfirmedWrite() throws {
+        let root = try featureProposalWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let added = WorkspaceFeature(
+            id: "DRAFT-002",
+            title: "User added",
+            status: .draft,
+            verification: .manual,
+            autoComplete: false,
+            sources: [],
+            services: [],
+            taskIDs: [],
+            evidenceIDs: [],
+            description: "Added during proposal review",
+            completedAt: nil,
+            completedBy: nil,
+            completionNote: nil,
+            evidenceStale: false,
+            preservedLines: ["Added during proposal review"]
+        )
+
+        let plan = try NativeFeatureStore.makeMergePlan(
+            workspacePath: root.path,
+            additionalFeatures: [added]
+        )
+
+        XCTAssertEqual(plan.items.last?.id, "DRAFT-002")
+        XCTAssertEqual(plan.items.last?.assignedFeatureID, "F-004")
+        XCTAssertFalse(try String(contentsOf: root.appendingPathComponent("FEATURES.md")).contains("User added"))
+
+        let response = try NativeFeatureStore.merge(plan: plan, confirmed: true)
+        XCTAssertEqual(response.document.features.last?.id, "F-004")
+        XCTAssertEqual(response.document.features.last?.title, "User added")
     }
 
     func testFeatureProposalMergeRejectsUnconfirmedAndPreservesBothFiles() throws {
@@ -1080,6 +1147,41 @@ final class FeatureWorkflowTests: XCTestCase {
     }
 
     @MainActor
+    func testFeatureProposalAppStateAddsEditsAndRemovesLocalProposalItems() async throws {
+        let root = try featureProposalWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = demandInputWorkspace(path: root.path)
+        let appState = makeAppState(workspace: workspace, root: root)
+        await appState.refreshFeatures(for: workspace)
+        await appState.refreshFeatureProposal(for: workspace)
+        var added = WorkspaceFeature(
+            id: "DRAFT-002", title: "User added", status: .draft, verification: .manual,
+            autoComplete: false, sources: [], services: [], taskIDs: [], evidenceIDs: [],
+            description: "", completedAt: nil, completedBy: nil, completionNote: nil,
+            evidenceStale: false, preservedLines: []
+        )
+
+        appState.addFeatureProposalItem(added, in: workspace)
+        XCTAssertEqual(appState.featureProposalItems(for: workspace).last?.assignedFeatureID, "F-004")
+        added.title = "Edited locally"
+        appState.updateFeatureProposalItem(
+            itemID: added.id,
+            selected: true,
+            replacement: added,
+            in: workspace
+        )
+        await appState.requestFeatureProposalMerge(in: workspace).value
+        XCTAssertEqual(
+            appState.pendingFeatureProposalMerge(for: workspace)?.additionalFeatures.first?.title,
+            "Edited locally"
+        )
+
+        appState.cancelPendingFeatureProposalMerge()
+        appState.removeFeatureProposalItem(itemID: added.id, in: workspace)
+        XCTAssertFalse(appState.featureProposalItems(for: workspace).contains { $0.id == added.id })
+    }
+
+    @MainActor
     func testFeatureProposalRequestRejectsChangedReviewedRevisionAndRefreshesReview() async throws {
         let root = try featureProposalWorkspace()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -1473,6 +1575,111 @@ final class FeatureWorkflowTests: XCTestCase {
                 isAttaching: false
             )
         )
+    }
+
+    func testFeatureWorkspacePresentationFollowsDemandHandoffReviewAndConfirmation() throws {
+        let missing = FeatureProposalReview(
+            diff: nil,
+            confirmedRevision: nil,
+            draftRevision: nil,
+            error: "feature proposal draft is missing: /workspace/FEATURES.draft.md"
+        )
+        let invalid = FeatureProposalReview(
+            diff: nil,
+            confirmedRevision: nil,
+            draftRevision: nil,
+            error: "missing valid Status metadata for DRAFT-001"
+        )
+        let draft = try NativeFeatureStore.parseProposal(
+            featureSource(id: "DRAFT-001", title: "Review me", status: "draft")
+        )
+        let ready = FeatureProposalReview(
+            diff: FeatureProposalDiff.resolve(confirmed: .empty, draft: draft),
+            confirmedRevision: .missing,
+            draftRevision: .regularUTF8(sha256: "draft", byteCount: 1),
+            error: nil
+        )
+
+        XCTAssertEqual(
+            FeatureWorkspacePresentation.phase(hasConfirmedFeatures: false, didHandoff: false, review: missing),
+            .editing
+        )
+        XCTAssertEqual(
+            FeatureWorkspacePresentation.phase(hasConfirmedFeatures: false, didHandoff: true, review: missing),
+            .waiting
+        )
+        XCTAssertEqual(
+            FeatureWorkspacePresentation.phase(hasConfirmedFeatures: false, didHandoff: true, review: invalid),
+            .waiting
+        )
+        XCTAssertEqual(
+            FeatureWorkspacePresentation.phase(hasConfirmedFeatures: false, didHandoff: false, review: invalid),
+            .proposalInvalid
+        )
+        XCTAssertEqual(
+            FeatureWorkspacePresentation.phase(hasConfirmedFeatures: false, didHandoff: false, review: ready),
+            .proposalReady
+        )
+        XCTAssertEqual(
+            FeatureWorkspacePresentation.phase(hasConfirmedFeatures: true, didHandoff: false, review: missing),
+            .confirmed
+        )
+    }
+
+    func testFeatureCenteredMainStageRoutesDemandAndProposalWithoutLegacyPrecheck() throws {
+        let root = try temporaryDemandWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try "# Workspace\n\n<!-- template-version: 2 -->\n".write(
+            to: root.appendingPathComponent("workspace.md"), atomically: true, encoding: .utf8
+        )
+        try "# Features\n\n<!-- template-version: 2 -->\n".write(
+            to: root.appendingPathComponent("FEATURES.md"), atomically: true, encoding: .utf8
+        )
+        let workspace = featureCenteredWorkspace(path: root.path)
+
+        XCTAssertEqual(workspace.mainStage().primaryActionLabel, "描述需求")
+
+        _ = try NativeDemandInputStore.save(
+            draft: DemandInputDraft(requirement: "修复通知异常导致的业务回滚", links: [], attachments: []),
+            workspacePath: root.path,
+            expectedRevision: .missing
+        )
+        XCTAssertEqual(workspace.mainStage().primaryActionLabel, "交给 Codex 梳理")
+
+        try "### DRAFT-001 Invalid\n".write(
+            to: root.appendingPathComponent("FEATURES.draft.md"), atomically: true, encoding: .utf8
+        )
+        XCTAssertEqual(workspace.mainStage().primaryActionLabel, "修正功能提案")
+
+        try featureSource(id: "DRAFT-001", title: "隔离通知异常", status: "draft").write(
+            to: root.appendingPathComponent("FEATURES.draft.md"), atomically: true, encoding: .utf8
+        )
+        XCTAssertEqual(workspace.mainStage().primaryActionLabel, "审阅功能点")
+
+        try featureSource(id: "F-001", title: "隔离通知异常").write(
+            to: root.appendingPathComponent("FEATURES.md"), atomically: true, encoding: .utf8
+        )
+        try FileManager.default.removeItem(at: root.appendingPathComponent("FEATURES.draft.md"))
+        let confirmedStage = workspace.mainStage()
+        XCTAssertNotEqual(confirmedStage.id, .demandIntake)
+        XCTAssertNotEqual(confirmedStage.primaryActionLabel, "打开预检")
+    }
+
+    func testLegacyWorkspaceWithMigratedFeaturesKeepsLegacyPrecheckGates() throws {
+        let root = try temporaryDemandWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try "# Legacy Workspace\n".write(
+            to: root.appendingPathComponent("workspace.md"), atomically: true, encoding: .utf8
+        )
+        try featureSource(id: "F-001", title: "Migrated legacy feature").write(
+            to: root.appendingPathComponent("FEATURES.md"), atomically: true, encoding: .utf8
+        )
+        let workspace = featureCenteredWorkspace(path: root.path)
+
+        let stage = workspace.mainStage()
+
+        XCTAssertEqual(stage.id, .created)
+        XCTAssertEqual(stage.primaryActionLabel, "开始预检")
     }
 
     func testDemandInputDraftRoundTripsWithoutCreatingLegacyTemplates() throws {
@@ -2254,6 +2461,12 @@ final class FeatureWorkflowTests: XCTestCase {
         XCTAssertTrue(prompt.contains("Write a proposal to \(root.path)/FEATURES.draft.md."))
         XCTAssertTrue(prompt.contains("Do not modify FEATURES.md."))
         XCTAssertTrue(prompt.contains("DRAFT-001, DRAFT-002"))
+        XCTAssertTrue(prompt.contains("## DRAFT-001 Feature title"))
+        XCTAssertTrue(prompt.contains("- Status: draft"))
+        XCTAssertTrue(prompt.contains("- Verification: code"))
+        XCTAssertTrue(prompt.contains("- Auto complete: true"))
+        XCTAssertTrue(prompt.contains("Keep the first proposal limited to the stated requirement"))
+        XCTAssertTrue(prompt.contains("The user must review and confirm the proposal in Nexus"))
         XCTAssertLessThanOrEqual(prompt.utf8.count, 6_144)
         XCTAssertTrue(prompt.contains("<!-- generated-by: Nexus Native -->"))
         XCTAssertEqual(
@@ -3323,12 +3536,17 @@ final class FeatureWorkflowTests: XCTestCase {
     }
 
     func testConsoleLayoutKeepsOnePrimaryActionAndFilesCollapsed() {
-        let summary = WorkspaceConsoleLayoutPolicy().auditSummary
+        let policy = WorkspaceConsoleLayoutPolicy()
+        let summary = policy.auditSummary
 
         XCTAssertEqual(summary.stageGroups, [.created, .demandAndFeatures, .development, .delivery, .archive])
         XCTAssertEqual(summary.prominentPrimaryActionCount, 1)
         XCTAssertTrue(summary.filesAreCollapsed)
         XCTAssertTrue(summary.currentSignalsAreSecondary)
+        XCTAssertTrue(policy.focusesFeatureFlow(usesFeatureCenteredWorkflow: true, stageID: .created))
+        XCTAssertTrue(policy.focusesFeatureFlow(usesFeatureCenteredWorkflow: true, stageID: .demandIntake))
+        XCTAssertFalse(policy.focusesFeatureFlow(usesFeatureCenteredWorkflow: true, stageID: .development))
+        XCTAssertFalse(policy.focusesFeatureFlow(usesFeatureCenteredWorkflow: false, stageID: .demandIntake))
     }
 
     func testCodeFeatureAutoCompletesOnlyWithFreshExplicitEvidence() {
@@ -4913,6 +5131,7 @@ final class FeatureWorkflowTests: XCTestCase {
             draftRevision: plan.draftRevision,
             confirmedDocument: plan.confirmedDocument,
             draftDocument: plan.draftDocument,
+            additionalFeatures: plan.additionalFeatures,
             items: items ?? plan.items,
             selectedItemIDs: selectedItemIDs ?? plan.selectedItemIDs,
             replacements: replacements ?? plan.replacements
@@ -5002,6 +5221,36 @@ final class FeatureWorkflowTests: XCTestCase {
                 progress: 20,
                 nextAction: "Draft",
                 documentKey: "changes"
+            )
+        )
+    }
+
+    private func featureCenteredWorkspace(path: String) -> WorkspaceSummary {
+        WorkspaceSummary(
+            id: "feature-centered-workspace",
+            name: "Feature Centered",
+            folder: "feature-centered",
+            path: path,
+            branch: "feature/order-snapshot",
+            state: .analyzing,
+            riskLevel: .low,
+            aiState: "Ready",
+            worktreeState: "Pending",
+            documentLinks: [
+                "workspace": "\(path)/workspace.md",
+                "features": "\(path)/FEATURES.md",
+                "changes": "\(path)/changes.md"
+            ],
+            services: [],
+            activities: [],
+            risks: [],
+            lifecycle: WorkspaceLifecycle(
+                stage: "scoping",
+                label: "Demand",
+                detail: "Feature-centered fixture",
+                progress: 20,
+                nextAction: "Draft",
+                documentKey: "features"
             )
         )
     }

@@ -83,6 +83,7 @@ struct FeatureProposalMergePlan: Hashable, Sendable {
     let draftRevision: FeatureDocumentRevision
     let confirmedDocument: FeatureDocument
     let draftDocument: FeatureDocument
+    let additionalFeatures: [WorkspaceFeature]
     let items: [FeatureProposalItem]
     let selectedItemIDs: Set<String>
     let replacements: [String: WorkspaceFeature]

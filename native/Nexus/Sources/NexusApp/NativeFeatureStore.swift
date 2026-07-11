@@ -400,6 +400,7 @@ enum NativeFeatureStore {
         workspacePath: String,
         selectedItemIDs: Set<String>? = nil,
         replacements: [String: WorkspaceFeature] = [:],
+        additionalFeatures: [WorkspaceFeature] = [],
         confirmedRevision: FeatureDocumentRevision? = nil,
         draftRevision: FeatureDocumentRevision? = nil
     ) throws -> FeatureProposalMergePlan {
@@ -413,6 +414,9 @@ enum NativeFeatureStore {
             let confirmed = try snapshot(workspaceFD: workspaceFD, path: confirmedPath)
             let draft = try proposalSnapshot(workspaceFD: workspaceFD, path: draftPath)
             if case .missing = draft.revision { throw NativeFeatureStoreError.missingDraft(draftPath) }
+            if draft.document.features.isEmpty {
+                throw NativeFeatureStoreError.invalidDocument("feature proposal contains no parseable features")
+            }
             if let confirmedRevision { try requireRevision(confirmed.revision, expected: confirmedRevision) }
             if let draftRevision { try requireDraftRevision(draft.revision, expected: draftRevision) }
             let confirmedIDs = Set(confirmed.document.features.map(\.id))
@@ -425,9 +429,15 @@ enum NativeFeatureStore {
                 confirmed: confirmed.document,
                 draft: draft.document
             )
-            let availableIDs = Set(diff.actionableItems.map(\.id))
-            let selected = selectedItemIDs ?? Set(diff.actionableItems.map(\.id))
-            let replaceableIDs = Set(diff.actionableItems.filter {
+            let items = try proposalItems(
+                confirmed: confirmed.document,
+                diff: diff,
+                additionalFeatures: additionalFeatures
+            )
+            let actionableItems = items.filter { $0.kind != .unchanged }
+            let availableIDs = Set(actionableItems.map(\.id))
+            let selected = selectedItemIDs ?? Set(actionableItems.map(\.id))
+            let replaceableIDs = Set(actionableItems.filter {
                 $0.kind == .add || $0.kind == .change
             }.map(\.id))
             guard selected.isSubset(of: availableIDs),
@@ -442,7 +452,8 @@ enum NativeFeatureStore {
                 draftRevision: draft.revision,
                 confirmedDocument: confirmed.document,
                 draftDocument: draft.document,
-                items: diff.items,
+                additionalFeatures: additionalFeatures,
+                items: items,
                 selectedItemIDs: selected,
                 replacements: replacements
             )
@@ -488,13 +499,19 @@ enum NativeFeatureStore {
                     confirmed: current.document,
                     draft: currentDraft.document
                 )
-                let actionableIDs = Set(currentDiff.actionableItems.map(\.id))
-                let replaceableIDs = Set(currentDiff.actionableItems.filter {
+                let currentItems = try proposalItems(
+                    confirmed: current.document,
+                    diff: currentDiff,
+                    additionalFeatures: plan.additionalFeatures
+                )
+                let actionableItems = currentItems.filter { $0.kind != .unchanged }
+                let actionableIDs = Set(actionableItems.map(\.id))
+                let replaceableIDs = Set(actionableItems.filter {
                     $0.kind == .add || $0.kind == .change
                 }.map(\.id))
                 guard current.document == plan.confirmedDocument,
                       currentDraft.document == plan.draftDocument,
-                      currentDiff.items == plan.items else {
+                      currentItems == plan.items else {
                     throw NativeFeatureStoreError.malformedPlan(plan.confirmedPath)
                 }
                 guard plan.selectedItemIDs.isSubset(of: actionableIDs),
@@ -993,6 +1010,44 @@ enum NativeFeatureStore {
         current.description = proposed.description
         current.preservedLines = proposed.preservedLines
         return current
+    }
+
+    static func proposalItems(
+        confirmed: FeatureDocument,
+        diff: FeatureProposalDiff,
+        additionalFeatures: [WorkspaceFeature]
+    ) throws -> [FeatureProposalItem] {
+        var items = diff.items
+        var usedIDs = Set(items.map(\.id))
+        let assignedNumbers = items.compactMap { item -> Int? in
+            guard let id = item.assignedFeatureID, id.hasPrefix("F-") else { return nil }
+            return Int(id.dropFirst(2))
+        } + confirmed.features.compactMap { feature -> Int? in
+            guard feature.id.hasPrefix("F-") else { return nil }
+            return Int(feature.id.dropFirst(2))
+        }
+        var nextID = (assignedNumbers.max() ?? 0) + 1
+        for feature in additionalFeatures {
+            guard validDraftID(feature.id) else { throw NativeFeatureStoreError.invalidID(feature.id) }
+            guard usedIDs.insert(feature.id).inserted else {
+                throw NativeFeatureStoreError.duplicateID(feature.id)
+            }
+            guard feature.status == .draft,
+                  !feature.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw NativeFeatureStoreError.invalidMetadata("Status or title", feature.id)
+            }
+            items.append(
+                FeatureProposalItem(
+                    id: feature.id,
+                    kind: .add,
+                    confirmed: nil,
+                    proposed: feature,
+                    assignedFeatureID: String(format: "F-%03d", nextID)
+                )
+            )
+            nextID += 1
+        }
+        return items
     }
 
     private static func newProposalFeature(_ proposed: WorkspaceFeature, id: String) -> WorkspaceFeature {

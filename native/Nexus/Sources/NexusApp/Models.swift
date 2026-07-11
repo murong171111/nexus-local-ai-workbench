@@ -1013,7 +1013,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
             path: snapshot.path,
             branch: snapshot.targetBranch,
             state: WorkspaceState(snapshot.state),
-            riskLevel: RiskLevel(riskCount: snapshot.riskCount),
+            riskLevel: RiskLevel(risks: risks),
             aiState: snapshot.riskCount == 0 ? "Ready for Codex continuation" : "\(snapshot.riskCount) risks need review",
             worktreeState: worktreeState,
             documentLinks: snapshot.links,
@@ -1171,6 +1171,11 @@ private extension WorkspaceState {
 }
 
 private extension RiskLevel {
+    init(risks: [RiskAlert]) {
+        let readinessTitles = ["交付记录待补充", "缺少交付记录", "缺少 SQL 目录"]
+        self.init(riskCount: risks.filter { !readinessTitles.contains($0.title) }.count)
+    }
+
     init(riskCount: Int) {
         if riskCount >= 3 {
             self = .high

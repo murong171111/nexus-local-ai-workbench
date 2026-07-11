@@ -141,7 +141,7 @@ struct FeatureProposalReviewView: View {
     }
 }
 
-private struct FeatureProposalItemEditor: View {
+struct FeatureProposalItemEditor: View {
     let item: FeatureProposalItem
     @Binding var selected: Bool
     @Binding var replacement: WorkspaceFeature?
@@ -154,7 +154,7 @@ private struct FeatureProposalItemEditor: View {
                     .toggleStyle(.checkbox)
                 Text(item.assignedFeatureID ?? item.id)
                     .font(.caption.monospaced().weight(.semibold))
-                Text(item.kind.rawValue)
+                Text(kindLabel)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -214,5 +214,14 @@ private struct FeatureProposalItemEditor: View {
                 replacement = updated
             }
         )
+    }
+
+    private var kindLabel: String {
+        switch item.kind {
+        case .add: return "新增"
+        case .change: return "修改"
+        case .cancel: return "取消"
+        case .unchanged: return "不变"
+        }
     }
 }

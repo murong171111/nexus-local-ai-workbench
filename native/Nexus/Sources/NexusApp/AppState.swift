@@ -236,6 +236,7 @@ final class AppState: ObservableObject {
     @Published var featureProposalReviewsByWorkspace: [WorkspaceSummary.ID: FeatureProposalReview] = [:]
     @Published var featureProposalSelectedItemIDsByWorkspace: [WorkspaceSummary.ID: Set<String>] = [:]
     @Published var featureProposalReplacementsByWorkspace: [WorkspaceSummary.ID: [String: WorkspaceFeature]] = [:]
+    @Published var featureProposalAdditionalFeaturesByWorkspace: [WorkspaceSummary.ID: [WorkspaceFeature]] = [:]
     @Published var pendingFeatureProposalMerge: FeatureProposalMergePlan?
     @Published var featureProposalLoadingWorkspaceID: WorkspaceSummary.ID?
     @Published var featureProposalMergeWorkspaceID: WorkspaceSummary.ID?
@@ -3603,6 +3604,7 @@ final class AppState: ObservableObject {
         for workspace: WorkspaceSummary,
         afterInspect: (@Sendable () -> Void)? = nil
     ) async {
+        let previousDraftRevision = featureProposalReviewsByWorkspace[workspace.id]?.draftRevision
         let generation = featureProposalRefreshGenerationsByWorkspace[workspace.id, default: 0] + 1
         featureProposalRefreshGenerationsByWorkspace[workspace.id] = generation
         featureProposalLoadingWorkspaceID = workspace.id
@@ -3620,6 +3622,9 @@ final class AppState: ObservableObject {
         }.value
         guard featureProposalRefreshGenerationsByWorkspace[workspace.id] == generation else { return }
         featureProposalReviewsByWorkspace[workspace.id] = review
+        if previousDraftRevision != review.draftRevision {
+            featureProposalAdditionalFeaturesByWorkspace[workspace.id] = []
+        }
         guard let diff = review.diff else {
             featureProposalSelectedItemIDsByWorkspace[workspace.id] = []
             featureProposalReplacementsByWorkspace[workspace.id] = [:]
@@ -3637,12 +3642,51 @@ final class AppState: ObservableObject {
         featureProposalReviewsByWorkspace[workspace.id]
     }
 
+    func featureProposalItems(for workspace: WorkspaceSummary) -> [FeatureProposalItem] {
+        guard let diff = featureProposalReviewsByWorkspace[workspace.id]?.diff else { return [] }
+        return (try? NativeFeatureStore.proposalItems(
+            confirmed: featuresByWorkspace[workspace.id] ?? .empty,
+            diff: diff,
+            additionalFeatures: featureProposalAdditionalFeaturesByWorkspace[workspace.id] ?? []
+        )) ?? diff.items
+    }
+
+    func addFeatureProposalItem(_ feature: WorkspaceFeature, in workspace: WorkspaceSummary) {
+        guard featureProposalReviewsByWorkspace[workspace.id]?.canConfirm == true,
+              !featureProposalItems(for: workspace).contains(where: { $0.id == feature.id }) else { return }
+        var feature = feature
+        feature.status = .draft
+        featureProposalAdditionalFeaturesByWorkspace[workspace.id, default: []].append(feature)
+        featureProposalSelectedItemIDsByWorkspace[workspace.id, default: []].insert(feature.id)
+        featureProposalReplacementsByWorkspace[workspace.id, default: [:]][feature.id] = feature
+    }
+
+    func removeFeatureProposalItem(itemID: String, in workspace: WorkspaceSummary) {
+        featureProposalAdditionalFeaturesByWorkspace[workspace.id, default: []].removeAll { $0.id == itemID }
+        featureProposalSelectedItemIDsByWorkspace[workspace.id, default: []].remove(itemID)
+        featureProposalReplacementsByWorkspace[workspace.id, default: [:]][itemID] = nil
+    }
+
     func updateFeatureProposalItem(
         itemID: String,
         selected: Bool,
         replacement: WorkspaceFeature?,
         in workspace: WorkspaceSummary
     ) {
+        if let index = featureProposalAdditionalFeaturesByWorkspace[workspace.id]?.firstIndex(where: {
+            $0.id == itemID
+        }) {
+            if let replacement {
+                featureProposalAdditionalFeaturesByWorkspace[workspace.id]?[index] = replacement
+                featureProposalReplacementsByWorkspace[workspace.id, default: [:]][itemID] = replacement
+            }
+            if selected {
+                featureProposalSelectedItemIDsByWorkspace[workspace.id, default: []].insert(itemID)
+            } else {
+                featureProposalSelectedItemIDsByWorkspace[workspace.id, default: []].remove(itemID)
+            }
+            return
+        }
         guard featureProposalReviewsByWorkspace[workspace.id]?.diff?.items.contains(where: {
             $0.id == itemID && $0.kind != .unchanged
         }) == true else { return }
@@ -3677,6 +3721,7 @@ final class AppState: ObservableObject {
         }
         let allReplacements = featureProposalReplacementsByWorkspace[workspace.id] ?? [:]
         let replacements = allReplacements.filter { selected.contains($0.key) }
+        let additionalFeatures = featureProposalAdditionalFeaturesByWorkspace[workspace.id] ?? []
         return Task {
             do {
                 let plan = try await Task.detached(priority: .userInitiated) {
@@ -3684,6 +3729,7 @@ final class AppState: ObservableObject {
                         workspacePath: path,
                         selectedItemIDs: selected,
                         replacements: replacements,
+                        additionalFeatures: additionalFeatures,
                         confirmedRevision: confirmedRevision,
                         draftRevision: draftRevision
                     )
@@ -3753,6 +3799,7 @@ final class AppState: ObservableObject {
             featureProposalReviewsByWorkspace[workspace.id] = nil
             featureProposalSelectedItemIDsByWorkspace[workspace.id] = nil
             featureProposalReplacementsByWorkspace[workspace.id] = nil
+            featureProposalAdditionalFeaturesByWorkspace[workspace.id] = nil
             activeFeatureProposalMergeToken = nil
             featureProposalMergeWorkspaceID = nil
             let archiveFeedback = response.archivePath.map { "已归档 \(($0 as NSString).lastPathComponent)" }
@@ -4465,10 +4512,11 @@ final class AppState: ObservableObject {
         return ""
     }
 
-    func openFeatureIntakeInCodex(for workspace: WorkspaceSummary) async {
+    @discardableResult
+    func openFeatureIntakeInCodex(for workspace: WorkspaceSummary) async -> Bool {
         await loadDemandInput(for: workspace)
         let prompt = await featureIntakePrompt(for: workspace)
-        guard !prompt.isEmpty else { return }
+        guard !prompt.isEmpty else { return false }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(prompt, forType: .string)
         lastCopiedCodexHandoffPayload = prompt
@@ -4507,6 +4555,7 @@ final class AppState: ObservableObject {
             ],
             workspaceOverride: workspace
         )
+        return didOpen
     }
 
     private func normalizedDemandIntakeLine(label: String, value: String) -> String? {

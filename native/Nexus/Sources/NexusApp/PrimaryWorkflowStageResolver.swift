@@ -27,6 +27,11 @@ extension WorkspaceSummary {
             )
         }
 
+        let usesFeatureCenteredFlow = usesFeatureCenteredWorkflow
+        if usesFeatureCenteredFlow, let stage = featureCenteredDemandStage() {
+            return stage
+        }
+
         let resolvedDemandIntake = resolveDemandIntakeStatus(explicitStatus: demandIntakeStatus)
         let resolvedDemandIntakeStatus = resolvedDemandIntake.status
         let resolvedDemandReadiness = demandReadiness
@@ -42,60 +47,62 @@ extension WorkspaceSummary {
                 DemandTaskTransferPlan.resolve(workspace: self, status: $0)
             }
 
-        if shouldShowCreatedStage(
-            demandIntakeStatus: resolvedDemandIntakeStatus,
-            demandReadiness: resolvedDemandReadiness
-        ) {
-            return WorkspaceMainStage(
-                id: .created,
-                status: .next,
-                title: "工作区已建档 / Workspace created",
-                reason: "工作区文件已经存在，但尚未读取到需求预检证据。下一步先进入需求预检，而不是直接创建 worktree 或开始开发。",
-                primaryActionLabel: "开始预检",
-                primaryActionSystemImage: "text.badge.checkmark",
-                primaryAction: .demandIntake,
-                evidence: compactEvidence(
-                    documentLinks["workspace"] ?? "workspace.md",
-                    documentLinks["status"] ?? "STATUS.md",
-                    "需求/"
-                ),
-                nextStageAllowed: false
-            )
-        }
+        if !usesFeatureCenteredFlow {
+            if shouldShowCreatedStage(
+                demandIntakeStatus: resolvedDemandIntakeStatus,
+                demandReadiness: resolvedDemandReadiness
+            ) {
+                return WorkspaceMainStage(
+                    id: .created,
+                    status: .next,
+                    title: "工作区已建档 / Workspace created",
+                    reason: "工作区文件已经存在，但尚未读取到需求预检证据。下一步先进入需求预检，而不是直接创建 worktree 或开始开发。",
+                    primaryActionLabel: "开始预检",
+                    primaryActionSystemImage: "text.badge.checkmark",
+                    primaryAction: .demandIntake,
+                    evidence: compactEvidence(
+                        documentLinks["workspace"] ?? "workspace.md",
+                        documentLinks["status"] ?? "STATUS.md",
+                        "需求/"
+                    ),
+                    nextStageAllowed: false
+                )
+            }
 
-        let demandGate = Self.demandGate(
-            for: self,
-            resolution: resolvedDemandIntake,
-            status: resolvedDemandIntakeStatus,
-            readiness: resolvedDemandReadiness
-        )
-        if demandGate.status != .ready {
-            return WorkspaceMainStage(
-                id: .demandIntake,
-                status: demandGate.status,
-                title: "完成需求预检 / Demand intake",
-                reason: demandGate.reason,
-                primaryActionLabel: "打开预检",
-                primaryActionSystemImage: "text.badge.checkmark",
-                primaryAction: .demandIntake,
-                evidence: demandGate.evidence,
-                nextStageAllowed: false
+            let demandGate = Self.demandGate(
+                for: self,
+                resolution: resolvedDemandIntake,
+                status: resolvedDemandIntakeStatus,
+                readiness: resolvedDemandReadiness
             )
-        }
+            if demandGate.status != .ready {
+                return WorkspaceMainStage(
+                    id: .demandIntake,
+                    status: demandGate.status,
+                    title: "完成需求预检 / Demand intake",
+                    reason: demandGate.reason,
+                    primaryActionLabel: "打开预检",
+                    primaryActionSystemImage: "text.badge.checkmark",
+                    primaryAction: .demandIntake,
+                    evidence: demandGate.evidence,
+                    nextStageAllowed: false
+                )
+            }
 
-        let scopeGate = resolvedScopeFreeze
-        if let scopeGate, scopeGate.status != .ready {
-            return WorkspaceMainStage(
-                id: .scopeFreeze,
-                status: scopeGate.status,
-                title: "冻结开发范围 / Scope freeze",
-                reason: scopeGate.reason,
-                primaryActionLabel: "打开范围",
-                primaryActionSystemImage: "scope",
-                primaryAction: .path(scopeGate.scopePath),
-                evidence: scopeGate.evidence,
-                nextStageAllowed: false
-            )
+            let scopeGate = resolvedScopeFreeze
+            if let scopeGate, scopeGate.status != .ready {
+                return WorkspaceMainStage(
+                    id: .scopeFreeze,
+                    status: scopeGate.status,
+                    title: "冻结开发范围 / Scope freeze",
+                    reason: scopeGate.reason,
+                    primaryActionLabel: "打开范围",
+                    primaryActionSystemImage: "scope",
+                    primaryAction: .path(scopeGate.scopePath),
+                    evidence: scopeGate.evidence,
+                    nextStageAllowed: false
+                )
+            }
         }
 
         let serviceBranchGate = serviceBranch ?? ServiceBranchEvidence.resolve(workspace: self)
@@ -128,7 +135,7 @@ extension WorkspaceSummary {
             )
         }
 
-        if let plan = resolvedDemandTaskTransfer, plan.isBlocked {
+        if !usesFeatureCenteredFlow, let plan = resolvedDemandTaskTransfer, plan.isBlocked {
             return WorkspaceMainStage(
                 id: .development,
                 status: .blocked,
@@ -142,7 +149,9 @@ extension WorkspaceSummary {
             )
         }
 
-        if let resolvedDemandTaskTransfer, resolvedDemandTaskTransfer.hasTransferableItems {
+        if !usesFeatureCenteredFlow,
+           let resolvedDemandTaskTransfer,
+           resolvedDemandTaskTransfer.hasTransferableItems {
             return WorkspaceMainStage(
                 id: .development,
                 status: .next,
@@ -218,6 +227,66 @@ extension WorkspaceSummary {
         }
 
         return demandReadiness == nil
+    }
+
+    var usesFeatureCenteredWorkflow: Bool {
+        let workspacePath = documentLinks["workspace"] ?? "\(path)/workspace.md"
+        return (try? NativeDocumentStore.read(path: workspacePath).content)
+            .map { $0.contains("<!-- template-version: 2 -->") } == true
+    }
+
+    private func featureCenteredDemandStage() -> WorkspaceMainStage? {
+        let review = NativeFeatureStore.inspectProposal(workspacePath: path)
+        if let diff = review.diff {
+            let count = diff.actionableItems.count
+            return WorkspaceMainStage(
+                id: .demandIntake,
+                status: .review,
+                title: "审阅功能提案 / Review features",
+                reason: "Codex 已生成 \(count) 个待确认功能点。确认前不会修改 FEATURES.md。",
+                primaryActionLabel: "审阅功能点",
+                primaryActionSystemImage: "doc.text.magnifyingglass",
+                primaryAction: .demandIntake,
+                evidence: compactEvidence("FEATURES.draft.md", "FEATURES.md"),
+                nextStageAllowed: false
+            )
+        }
+        let draftExists = FileManager.default.fileExists(atPath: "\(path)/FEATURES.draft.md")
+        if draftExists,
+           let error = review.error,
+           !error.contains("feature proposal draft is missing") {
+            return WorkspaceMainStage(
+                id: .demandIntake,
+                status: .review,
+                title: "修正功能提案 / Repair proposal",
+                reason: "Codex 已写入提案，但 Nexus 无法读取：\(error)",
+                primaryActionLabel: "修正功能提案",
+                primaryActionSystemImage: "exclamationmark.triangle",
+                primaryAction: .demandIntake,
+                evidence: compactEvidence("FEATURES.draft.md"),
+                nextStageAllowed: false
+            )
+        }
+
+        if let snapshot = try? NativeFeatureStore.load(workspacePath: path),
+           !snapshot.document.features.isEmpty {
+            return nil
+        }
+        let demand = try? NativeDemandInputStore.load(workspacePath: path).draft
+        let hasRequirement = !(demand?.requirement.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        return WorkspaceMainStage(
+            id: hasRequirement ? .demandIntake : .created,
+            status: .next,
+            title: hasRequirement ? "等待功能提案 / Feature proposal" : "工作区已建档 / Workspace created",
+            reason: hasRequirement
+                ? "需求已经保存。下一步交给 Codex 梳理为可审阅的功能点。"
+                : "先描述需求并附上链接或材料，再交给 Codex 梳理功能点。",
+            primaryActionLabel: hasRequirement ? "交给 Codex 梳理" : "描述需求",
+            primaryActionSystemImage: hasRequirement ? "sparkles" : "square.and.pencil",
+            primaryAction: .demandIntake,
+            evidence: compactEvidence("需求/intake-draft.md", "FEATURES.md"),
+            nextStageAllowed: false
+        )
     }
 
     private func compactEvidence(_ values: String?...) -> [String] {

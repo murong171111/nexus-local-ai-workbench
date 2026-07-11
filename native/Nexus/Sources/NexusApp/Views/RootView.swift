@@ -2537,26 +2537,36 @@ private struct WorkspaceConsoleView: View {
             ScrollView {
                 if let workspace = appState.selectedWorkspace {
                     let stage = mainStage(for: workspace)
+                    let focusesFeatureFlow = WorkspaceConsoleLayoutPolicy().focusesFeatureFlow(
+                        usesFeatureCenteredWorkflow: workspace.usesFeatureCenteredWorkflow,
+                        stageID: stage.id
+                    )
 
                     VStack(alignment: .leading, spacing: 16) {
                         WorkspaceConsoleHeader(workspace: workspace)
                         WorkspaceConsoleStageRail(stage: stage)
                         WorkspaceConsoleFocusBand(
                             stage: stage,
+                            showsAction: !focusesFeatureFlow,
                             action: { run(stage.primaryAction, in: workspace, proxy: proxy) }
                         )
 
-                        ViewThatFits(in: .horizontal) {
-                            HStack(alignment: .top, spacing: 16) {
-                                demandInput(for: workspace)
-                                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                                WorkspaceConsoleCurrentSignals(stage: stage)
-                                    .frame(width: 280, alignment: .topLeading)
-                            }
+                        if focusesFeatureFlow {
+                            demandInput(for: workspace)
+                                .frame(maxWidth: .infinity, alignment: .topLeading)
+                        } else {
+                            ViewThatFits(in: .horizontal) {
+                                HStack(alignment: .top, spacing: 16) {
+                                    demandInput(for: workspace)
+                                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                                    WorkspaceConsoleCurrentSignals(stage: stage)
+                                        .frame(width: 280, alignment: .topLeading)
+                                }
 
-                            VStack(alignment: .leading, spacing: 16) {
-                                demandInput(for: workspace)
-                                WorkspaceConsoleCurrentSignals(stage: stage)
+                                VStack(alignment: .leading, spacing: 16) {
+                                    demandInput(for: workspace)
+                                    WorkspaceConsoleCurrentSignals(stage: stage)
+                                }
                             }
                         }
 
@@ -2863,6 +2873,7 @@ private struct WorkspaceConsoleStageRail: View {
 
 private struct WorkspaceConsoleFocusBand: View {
     let stage: WorkspaceMainStage
+    let showsAction: Bool
     let action: () -> Void
 
     var body: some View {
@@ -2884,18 +2895,22 @@ private struct WorkspaceConsoleFocusBand: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    Text("激活后将进入下一步所需的工作区操作。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    if showsAction {
+                        Text("激活后将进入下一步所需的工作区操作。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 Spacer()
 
-                Button(action: action) {
-                    Label(stage.primaryActionLabel, systemImage: stage.primaryActionSystemImage)
+                if showsAction {
+                    Button(action: action) {
+                        Label(stage.primaryActionLabel, systemImage: stage.primaryActionSystemImage)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
             }
         }
         .padding(14)

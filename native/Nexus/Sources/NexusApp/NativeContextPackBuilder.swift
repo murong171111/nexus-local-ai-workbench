@@ -150,7 +150,20 @@ enum NativeContextPackBuilder {
                 "### Output Contract",
                 "- Write a proposal to \(proposal.draftPath).",
                 "- Do not modify FEATURES.md.",
-                "- Use stable provisional IDs DRAFT-001, DRAFT-002, ... ."
+                "- Use stable provisional IDs DRAFT-001, DRAFT-002, ... .",
+                "- Keep the first proposal limited to the stated requirement; list broader audits as follow-up suggestions.",
+                "- The user must review and confirm the proposal in Nexus before FEATURES.md changes.",
+                "- Use this exact parseable shape for every proposed feature:",
+                "## DRAFT-001 Feature title",
+                "- Status: draft",
+                "- Verification: code",
+                "- Auto complete: true",
+                "- Source: optional paths",
+                "- Services: optional service names",
+                "- Tasks: optional task IDs",
+                "- Evidence: optional evidence IDs",
+                "",
+                "Feature description and acceptance details may follow the metadata."
             ]
         }
         lines += ["", "## Blockers And Next Action"]

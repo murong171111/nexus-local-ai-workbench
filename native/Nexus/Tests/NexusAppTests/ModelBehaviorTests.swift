@@ -231,6 +231,11 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertNil(appState.documentPreview)
         XCTAssertNil(appState.documentFocusHint)
         XCTAssertFalse(appState.demandIntakeDisplayStatus(for: workspace).exists)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: "\(workspace.path)/FEATURES.md"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: "\(workspace.path)/FEATURES.draft.md"))
+        XCTAssertTrue(try NativeDemandInputStore.load(workspacePath: workspace.path).draft.requirement.isEmpty)
+        XCTAssertEqual(workspace.mainStage().primaryActionLabel, "描述需求")
+        XCTAssertEqual(workspace.mainStage().id, .created)
         XCTAssertEqual(appState.mainWorkflowStage(for: workspace).id, .created)
         XCTAssertEqual(appState.mainWorkflowStage(for: workspace).primaryAction, .demandIntake)
     }
