@@ -3431,8 +3431,10 @@ final class AppState: ObservableObject {
 
     func attachDemandMaterials(
         _ urls: [URL],
+        liveDraft: DemandInputDraft,
         to workspace: WorkspaceSummary,
-        confirmed: Bool
+        confirmed: Bool,
+        beforeAttachmentResponse: (() -> Void)? = nil
     ) async -> DemandAttachmentCopyResponse? {
         demandInputSavingWorkspaceID = workspace.id
         lastError = nil
@@ -3440,6 +3442,14 @@ final class AppState: ObservableObject {
             if demandInputSavingWorkspaceID == workspace.id {
                 demandInputSavingWorkspaceID = nil
             }
+        }
+
+        let savedSnapshot: DemandInputSnapshot
+        switch await saveDemandInputDraft(liveDraft, in: workspace) {
+        case .saved(let snapshot):
+            savedSnapshot = snapshot
+        case .failed:
+            return nil
         }
 
         do {
@@ -3451,44 +3461,27 @@ final class AppState: ObservableObject {
                 plan: plan,
                 confirmed: confirmed,
                 auditRoot: auditRootPath,
-                actor: "Nexus Native"
+                actor: "Nexus Native",
+                beforeAttachmentResponse: beforeAttachmentResponse
             )
             let attachmentPaths = copied.copiedPaths.compactMap { path -> String? in
                 let workspacePrefix = workspace.path.hasSuffix("/") ? workspace.path : "\(workspace.path)/"
                 guard path.hasPrefix(workspacePrefix) else { return nil }
                 return String(path.dropFirst(workspacePrefix.count))
             }
-            let preservedSnapshot = demandInputsByWorkspace[workspace.id] ?? DemandInputSnapshot(
-                draft: .empty,
-                revision: plan.expectedDraftRevision,
-                path: "\(workspace.path)/需求/intake-draft.md"
-            )
-            var next = preservedSnapshot.draft
+            var next = savedSnapshot.draft
             for path in attachmentPaths where !next.attachments.contains(path) {
                 next.attachments.append(path)
             }
             demandInputsByWorkspace[workspace.id] = DemandInputSnapshot(
                 draft: next,
-                revision: preservedSnapshot.revision,
-                path: preservedSnapshot.path
+                revision: savedSnapshot.revision,
+                path: savedSnapshot.path
             )
             var followUpError: String?
-            do {
-                let current = try NativeDemandInputStore.load(workspacePath: workspace.path)
-                for path in attachmentPaths where !next.attachments.contains(path) {
-                    next.attachments.append(path)
-                }
-                demandInputsByWorkspace[workspace.id] = DemandInputSnapshot(
-                    draft: next,
-                    revision: current.revision,
-                    path: current.path
-                )
-                if next != current.draft {
-                    let saveResult = await saveDemandInputDraft(next, in: workspace)
-                    followUpError = saveResult.message
-                }
-            } catch {
-                followUpError = error.localizedDescription
+            if next != savedSnapshot.draft {
+                let saveResult = await saveDemandInputDraft(next, in: workspace)
+                followUpError = saveResult.message
             }
             let failureDetail = copied.errors.prefix(2).map(\.message).joined(separator: " | ")
             if !copied.errors.isEmpty || followUpError != nil {

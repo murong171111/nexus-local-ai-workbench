@@ -10,17 +10,21 @@ enum NativeDemandInputStore {
 
     // ponytail: one Nexus-local lock is sufficient for the current in-process editor; split by workspace only if concurrent editing becomes a measured need.
     private static let writeLock = NSLock()
-    internal static var testBeforeDemandDirectoryOpen: (() throws -> Void)?
-    internal static var testBeforeAttachmentResponse: (() -> Void)?
 
     static func load(
         workspacePath: String,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        beforeDemandDirectoryOpen: (() throws -> Void)? = nil
     ) throws -> DemandInputSnapshot {
         let workspaceURL = try validatedWorkspaceURL(workspacePath, fileManager: fileManager)
         let draftPath = workspaceURL.appendingPathComponent(demandDirectoryName).appendingPathComponent(draftFileName).path
         return try withWorkspaceDirectory(workspaceURL) { workspaceFD in
-            guard let demandFD = try openDemandDirectory(workspaceFD: workspaceFD, path: draftPath, create: false) else {
+            guard let demandFD = try openDemandDirectory(
+                workspaceFD: workspaceFD,
+                path: draftPath,
+                create: false,
+                beforeOpen: beforeDemandDirectoryOpen
+            ) else {
                 return DemandInputSnapshot(draft: .empty, revision: .missing, path: draftPath)
             }
             defer { close(demandFD) }
@@ -101,7 +105,8 @@ enum NativeDemandInputStore {
     static func makeAttachmentPlan(
         workspacePath: String,
         sourceURLs: [URL],
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        beforeSourceRead: (() throws -> Void)? = nil
     ) throws -> DemandAttachmentPlan {
         let workspaceURL = try validatedWorkspaceURL(workspacePath, fileManager: fileManager)
         let demandURL = workspaceURL.appendingPathComponent(demandDirectoryName, isDirectory: true)
@@ -121,7 +126,8 @@ enum NativeDemandInputStore {
             var names = Set<String>()
             let items = try sourceURLs.map { sourceURL in
                 let normalizedURL = sourceURL.standardizedFileURL
-                let data = try regularFileData(at: normalizedURL, fileManager: fileManager)
+                try beforeSourceRead?()
+                let data = try regularFileData(at: normalizedURL)
                 let name = try sanitizedAttachmentName(for: normalizedURL)
                 guard names.insert(name).inserted else {
                     throw NativeDemandInputStoreError.duplicateAttachmentName(name)
@@ -151,7 +157,10 @@ enum NativeDemandInputStore {
         auditRoot: String? = nil,
         actor: String? = nil,
         fileManager: FileManager = .default,
-        beforeDestinationWrite: ((DemandAttachmentPlanItem) throws -> Void)? = nil
+        beforeDestinationWrite: ((DemandAttachmentPlanItem) throws -> Void)? = nil,
+        beforeSourceRead: ((DemandAttachmentPlanItem) throws -> Void)? = nil,
+        beforeAttachmentPublish: ((DemandAttachmentPlanItem) throws -> Void)? = nil,
+        beforeAttachmentResponse: (() -> Void)? = nil
     ) throws -> DemandAttachmentCopyResponse {
         guard confirmed else {
             throw NativeDemandInputStoreError.unconfirmedAttachmentCopy
@@ -182,18 +191,19 @@ enum NativeDemandInputStore {
             var errors: [DemandAttachmentCopyError] = []
             for item in plan.items {
                 do {
-                    let data = try verifiedAttachmentData(item, fileManager: fileManager)
+                    try beforeSourceRead?(item)
+                    let data = try verifiedAttachmentData(item)
                     try beforeDestinationWrite?(item)
                     let name = item.destinationURL.lastPathComponent
                     guard entryKind(at: attachmentsFD, name: name) == .missing else {
                         throw NativeDemandInputStoreError.destinationExists(item.destinationURL.path)
                     }
-                    try writeNewFile(data, parentFD: attachmentsFD, name: name)
-                    let writtenData = try readRegularFile(parentFD: attachmentsFD, name: name, path: item.destinationURL.path)
-                    guard writtenData.count == item.expectedSizeBytes,
-                          sha256Hex(writtenData) == item.expectedSHA256 else {
-                        throw NativeDemandInputStoreError.destinationVerificationFailed(item.destinationURL.path)
-                    }
+                    try publishVerifiedAttachment(
+                        data: data,
+                        item: item,
+                        attachmentsFD: attachmentsFD,
+                        beforePublish: beforeAttachmentPublish
+                    )
                     copiedPaths.append(item.destinationURL.path)
                 } catch {
                     errors.append(DemandAttachmentCopyError(
@@ -204,7 +214,7 @@ enum NativeDemandInputStore {
             }
             return (copiedPaths, errors)
         }
-        testBeforeAttachmentResponse?()
+        beforeAttachmentResponse?()
 
         let audit = NativeAuditEventStore.appendFeedback(
             auditRoot: auditRoot,
@@ -311,10 +321,9 @@ enum NativeDemandInputStore {
     }
 
     private static func verifiedAttachmentData(
-        _ item: DemandAttachmentPlanItem,
-        fileManager: FileManager
+        _ item: DemandAttachmentPlanItem
     ) throws -> Data {
-        let data = try regularFileData(at: item.sourceURL, fileManager: fileManager)
+        let data = try regularFileData(at: item.sourceURL)
         guard data.count == item.expectedSizeBytes,
               sha256Hex(data) == item.expectedSHA256 else {
             throw NativeDemandInputStoreError.sourceChanged(item.sourceURL.path)
@@ -336,8 +345,13 @@ enum NativeDemandInputStore {
         return try body(workspaceFD)
     }
 
-    private static func openDemandDirectory(workspaceFD: Int32, path: String, create: Bool) throws -> Int32? {
-        try testBeforeDemandDirectoryOpen?()
+    private static func openDemandDirectory(
+        workspaceFD: Int32,
+        path: String,
+        create: Bool,
+        beforeOpen: (() throws -> Void)? = nil
+    ) throws -> Int32? {
+        try beforeOpen?()
         var demandFD = openat(workspaceFD, demandDirectoryName, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
         if demandFD < 0 && errno == ENOENT && create {
             guard mkdirat(workspaceFD, demandDirectoryName, mode_t(0o700)) == 0 || errno == EEXIST else {
@@ -478,15 +492,17 @@ enum NativeDemandInputStore {
         return String(value.dropFirst(3).dropLast())
     }
 
-    private static func regularFileData(at url: URL, fileManager: FileManager) throws -> Data {
-        guard entryKind(at: url, fileManager: fileManager) == .regular else {
+    private static func regularFileData(at url: URL) throws -> Data {
+        let fileFD = open(url.path, O_RDONLY | O_NOFOLLOW)
+        guard fileFD >= 0 else {
             throw NativeDemandInputStoreError.unsafeSource(url.path)
         }
-        let data = try Data(contentsOf: url)
-        guard entryKind(at: url, fileManager: fileManager) == .regular else {
+        defer { close(fileFD) }
+        var info = stat()
+        guard fstat(fileFD, &info) == 0, fileType(info) == .regular else {
             throw NativeDemandInputStoreError.unsafeSource(url.path)
         }
-        return data
+        return try FileHandle(fileDescriptor: fileFD, closeOnDealloc: false).readToEnd() ?? Data()
     }
 
     private static func sanitizedAttachmentName(for url: URL) throws -> String {
@@ -516,6 +532,39 @@ enum NativeDemandInputStore {
         let handle = FileHandle(fileDescriptor: fileFD, closeOnDealloc: false)
         try handle.write(contentsOf: data)
         guard fsync(fileFD) == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+    }
+
+    private static func publishVerifiedAttachment(
+        data: Data,
+        item: DemandAttachmentPlanItem,
+        attachmentsFD: Int32,
+        beforePublish: ((DemandAttachmentPlanItem) throws -> Void)?
+    ) throws {
+        let temporaryName = ".attachment.\(UUID().uuidString).tmp"
+        defer { _ = unlinkat(attachmentsFD, temporaryName, 0) }
+        try writeNewFile(data, parentFD: attachmentsFD, name: temporaryName)
+
+        let writtenData = try readRegularFile(
+            parentFD: attachmentsFD,
+            name: temporaryName,
+            path: item.destinationURL.path
+        )
+        guard writtenData.count == item.expectedSizeBytes,
+              sha256Hex(writtenData) == item.expectedSHA256 else {
+            throw NativeDemandInputStoreError.destinationVerificationFailed(item.destinationURL.path)
+        }
+        try beforePublish?(item)
+
+        let destinationName = item.destinationURL.lastPathComponent
+        guard entryKind(at: attachmentsFD, name: destinationName) == .missing else {
+            throw NativeDemandInputStoreError.destinationExists(item.destinationURL.path)
+        }
+        guard linkat(attachmentsFD, temporaryName, attachmentsFD, destinationName, 0) == 0 else {
+            if errno == EEXIST {
+                throw NativeDemandInputStoreError.destinationExists(item.destinationURL.path)
+            }
             throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
         }
     }
@@ -551,28 +600,6 @@ enum NativeDemandInputStore {
             .symlink
         default:
             .other
-        }
-    }
-
-    private static func entryKind(at url: URL, fileManager: FileManager) -> EntryKind {
-        if (try? fileManager.destinationOfSymbolicLink(atPath: url.path)) != nil {
-            return .symlink
-        }
-        do {
-            let attributes = try fileManager.attributesOfItem(atPath: url.path)
-            switch attributes[.type] as? FileAttributeType {
-            case .typeRegular:
-                return .regular
-            case .typeDirectory:
-                return .directory
-            default:
-                return .other
-            }
-        } catch let error as NSError where error.domain == NSCocoaErrorDomain
-            && (error.code == NSFileNoSuchFileError || error.code == NSFileReadNoSuchFileError) {
-            return .missing
-        } catch {
-            return .other
         }
     }
 

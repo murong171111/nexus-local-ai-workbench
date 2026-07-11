@@ -170,10 +170,26 @@ struct FeatureWorkspaceView: View {
         ) {
             Button("复制 \(pendingMaterials.count) 个材料") {
                 let urls = pendingMaterials
+                let liveDraft = draft
                 pendingMaterials = []
+                autosaveTask?.cancel()
+                autosaveTask = nil
                 Task {
-                    _ = await appState.attachDemandMaterials(urls, to: workspace, confirmed: true)
-                    draft = appState.demandInputSnapshot(for: workspace)?.draft ?? draft
+                    guard let copied = await appState.attachDemandMaterials(
+                        urls,
+                        liveDraft: liveDraft,
+                        to: workspace,
+                        confirmed: true
+                    ) else {
+                        return
+                    }
+                    let workspacePrefix = workspace.path.hasSuffix("/") ? workspace.path : "\(workspace.path)/"
+                    for path in copied.copiedPaths where path.hasPrefix(workspacePrefix) {
+                        let attachment = String(path.dropFirst(workspacePrefix.count))
+                        if !draft.attachments.contains(attachment) {
+                            draft.attachments.append(attachment)
+                        }
+                    }
                 }
             }
             Button("取消", role: .cancel) {
