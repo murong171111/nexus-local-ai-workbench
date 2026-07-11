@@ -506,7 +506,7 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertFalse(WorkspaceBoardEmptyStateReason.configuredNoDirectories.title.contains("/"))
     }
 
-    func testWorkspaceBoardLaneClassificationUsesWorkflowStageNotRisk() {
+    func testWorkspaceBoardLaneClassificationUsesWorkflowStageNotRisk() throws {
         func stage(_ id: WorkspaceMainStageID, _ status: WorkflowPathStatus) -> WorkspaceMainStage {
             WorkspaceMainStage(
                 id: id,
@@ -535,16 +535,45 @@ final class ModelBehaviorTests: XCTestCase {
             XCTAssertEqual(WorkspaceBoardLaneID.resolve(isArchived: isArchived, stage: stage(id, status)), expected)
         }
 
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-board-risk-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try "# Board\n\n<!-- template-version: 2 -->\n".write(
+            to: root.appendingPathComponent("workspace.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "## F-001 Board\n- Status: todo\n- Verification: code\n- Auto complete: true\n".write(
+            to: root.appendingPathComponent("FEATURES.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try writeBranchPolicyFixture(workspaceRoot: root, branch: "feature/board-risk")
+        let todo = WorkspaceTask(
+            id: "todo",
+            title: "Todo",
+            status: "todo",
+            detail: "Todo",
+            priority: "normal",
+            source: "workspace",
+            sourceEventID: nil,
+            sourceLine: nil
+        )
         let riskOnly = [RiskLevel.low, .medium, .high].map { riskLevel in
             workspaceForWorkflowSummary(
-                stage: "scoping",
+                stage: "developing",
                 id: "board-risk-\(riskLevel.rawValue)",
-                riskLevel: riskLevel
+                path: root.path,
+                branch: "feature/board-risk",
+                riskLevel: riskLevel,
+                tasks: [todo]
             )
         }
         let lanes = WorkspaceBoardLane.lanes(for: riskOnly)
-        XCTAssertEqual(Set(lanes.first { $0.id == .attention }?.workspaces.map(\.id) ?? []), Set(riskOnly.map(\.id)))
-        XCTAssertTrue(lanes.first { $0.id == .active }?.workspaces.isEmpty == true)
+        XCTAssertEqual(riskOnly.map { $0.mainStage().id }, [.development, .development, .development])
+        XCTAssertTrue(lanes.first { $0.id == .attention }?.workspaces.isEmpty == true)
+        XCTAssertEqual(Set(lanes.first { $0.id == .active }?.workspaces.map(\.id) ?? []), Set(riskOnly.map(\.id)))
     }
 
     func testWorkspaceBoardCopyStaysChineseFirstAndFocused() {
@@ -553,6 +582,25 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(WorkspaceBoardCopy.activeWorkspaceCount(2), "2 个活跃项目")
         XCTAssertEqual(WorkspaceBoardCopy.showAllCompleted, "查看全部")
         XCTAssertEqual(WorkspaceBoardCopy.showRecentCompleted, "收起")
+    }
+
+    func testWorkspaceBoardCardKeepsRoundedStageAwareTreatment() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(
+            contentsOf: packageRoot.appendingPathComponent("Sources/NexusApp/Views/RootView.swift"),
+            encoding: .utf8
+        )
+        let cardStart = try XCTUnwrap(source.range(of: "private struct WorkspaceBoardCard"))
+        let cardTail = source[cardStart.lowerBound...]
+        let cardEnd = try XCTUnwrap(cardTail.range(of: "\nprivate struct CreatedWorkspaceVisibilityRecoveryView"))
+        let card = cardTail[..<cardEnd.lowerBound]
+
+        XCTAssertTrue(card.contains(".background(workspace.isArchived ? NexusPalette.preview : NexusPalette.badge)"))
+        XCTAssertTrue(card.contains(".clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))"))
+        XCTAssertTrue(card.contains(".stroke(stage.status.color.opacity(workspace.isArchived ? 0.16 : 0.22), lineWidth: 1)"))
     }
 
     func testNativeStatusDiagnosticsReportsDirectoriesIndexWidgetAndAuditTarget() throws {
@@ -1515,10 +1563,6 @@ final class ModelBehaviorTests: XCTestCase {
         for workspace in workspaces {
             let stage = workspace.mainStage()
 
-            XCTAssertTrue(
-                WorkspaceMainStageID.allCases.contains(stage.id),
-                "\(workspace.id) produced an unknown main stage: \(stage.id)"
-            )
             XCTAssertFalse(stage.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, workspace.id)
             XCTAssertFalse(stage.reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, workspace.id)
             XCTAssertFalse(stage.primaryActionLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, workspace.id)

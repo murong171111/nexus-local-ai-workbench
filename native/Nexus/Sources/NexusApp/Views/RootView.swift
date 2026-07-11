@@ -3686,6 +3686,12 @@ private struct WorkspaceBoardCard: View {
             }
             .padding(11)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .background(workspace.isArchived ? NexusPalette.preview : NexusPalette.badge)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(stage.status.color.opacity(workspace.isArchived ? 0.16 : 0.22), lineWidth: 1)
+            }
         }
         .buttonStyle(.plain)
         .accessibilityLabel(
