@@ -45,6 +45,21 @@ final class FeatureWorkflowTests: XCTestCase {
         XCTAssertEqual(saves.last?.1, realEditWithoutProgrammaticOnChange)
     }
 
+    func testFeatureWorkspaceAutosaveContinuesWhileAttachmentOperationIsActive() {
+        XCTAssertTrue(
+            FeatureWorkspaceDraftPolicy.shouldScheduleAutosave(
+                isLoading: false,
+                isAttaching: true
+            )
+        )
+        XCTAssertFalse(
+            FeatureWorkspaceDraftPolicy.shouldScheduleAutosave(
+                isLoading: true,
+                isAttaching: false
+            )
+        )
+    }
+
     func testDemandInputDraftRoundTripsWithoutCreatingLegacyTemplates() throws {
         let root = try temporaryDemandWorkspace()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -946,6 +961,81 @@ final class FeatureWorkflowTests: XCTestCase {
         _ = await promptTask.value
 
         XCTAssertEqual(appState.query, "main actor remained responsive during path probe")
+    }
+
+    @MainActor
+    func testFeatureIntakePromptReadsLatestDraftAfterPathProbe() async throws {
+        let root = try temporaryDemandWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = demandInputWorkspace(path: root.path)
+        let appState = makeAppState(workspace: workspace, root: root)
+        let oldDraft = DemandInputDraft(requirement: "old prompt draft", links: [], attachments: [])
+        let latestDraft = DemandInputDraft(
+            requirement: "latest prompt draft",
+            links: ["https://example.com/latest-prompt"],
+            attachments: []
+        )
+        _ = await appState.saveDemandInputDraft(oldDraft, in: workspace)
+        let probeStarted = expectation(description: "prompt probe started")
+        let releaseProbe = DispatchSemaphore(value: 0)
+        defer { releaseProbe.signal() }
+
+        let promptTask = Task { @MainActor in
+            await appState.featureIntakePrompt(for: workspace) {
+                probeStarted.fulfill()
+                releaseProbe.wait()
+            }
+        }
+        await fulfillment(of: [probeStarted], timeout: 2)
+        let saved = await appState.saveDemandInputDraft(latestDraft, in: workspace)
+        XCTAssertTrue(saved.succeeded)
+        releaseProbe.signal()
+        let prompt = await promptTask.value
+
+        XCTAssertTrue(prompt.contains(latestDraft.requirement))
+        XCTAssertTrue(prompt.contains(latestDraft.links[0]))
+        XCTAssertFalse(prompt.contains(oldDraft.requirement))
+    }
+
+    func testDemandStoreLocksDifferentWorkspacesIndependentlyInsideSaveCriticalSection() async throws {
+        let root = try temporaryDemandWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let firstRoot = root.appendingPathComponent("first-store")
+        let secondRoot = root.appendingPathComponent("second-store")
+        try FileManager.default.createDirectory(at: firstRoot, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: secondRoot, withIntermediateDirectories: true)
+        let firstInsideLock = expectation(description: "first store save entered critical section")
+        let secondCompleted = expectation(description: "second store save completed")
+        let releaseFirst = DispatchSemaphore(value: 0)
+        defer { releaseFirst.signal() }
+
+        let first = Task.detached {
+            try NativeDemandInputStore.save(
+                draft: DemandInputDraft(requirement: "first", links: [], attachments: []),
+                workspacePath: firstRoot.path,
+                expectedRevision: .missing,
+                beforeFinalRevisionCheck: {
+                    firstInsideLock.fulfill()
+                    releaseFirst.wait()
+                }
+            )
+        }
+        await fulfillment(of: [firstInsideLock], timeout: 2)
+
+        let second = Task.detached {
+            let response = try NativeDemandInputStore.save(
+                draft: DemandInputDraft(requirement: "second", links: [], attachments: []),
+                workspacePath: secondRoot.path,
+                expectedRevision: .missing
+            )
+            secondCompleted.fulfill()
+            return response
+        }
+        await fulfillment(of: [secondCompleted], timeout: 1)
+
+        releaseFirst.signal()
+        _ = try await first.value
+        _ = try await second.value
     }
 
     @MainActor

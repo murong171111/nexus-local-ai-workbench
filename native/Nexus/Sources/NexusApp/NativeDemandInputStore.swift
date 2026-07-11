@@ -10,8 +10,9 @@ enum NativeDemandInputStore {
     private static let requirementStartMarker = "<!-- nexus:demand-requirement:start -->"
     private static let requirementEndMarker = "<!-- nexus:demand-requirement:end -->"
 
-    // ponytail: one Nexus-local lock is sufficient for the current in-process editor; split by workspace only if concurrent editing becomes a measured need.
-    private static let writeLock = NSLock()
+    // ponytail: workspace locks stay process-local; cross-process writers are handled by revision checks.
+    private static let writeLockRegistry = NSLock()
+    private static var writeLocksByWorkspace: [String: NSLock] = [:]
 
     static func canonicalDraftPath(workspacePath: String) -> String {
         canonicalWorkspaceURL(workspacePath)
@@ -58,59 +59,59 @@ enum NativeDemandInputStore {
             throw NativeDemandInputStoreError.invalidExpectedRevision(reason)
         }
 
-        writeLock.lock()
-        defer { writeLock.unlock() }
         let workspaceURL = try validatedWorkspaceURL(workspacePath, fileManager: fileManager)
         let draftPath = workspaceURL.appendingPathComponent(demandDirectoryName).appendingPathComponent(draftFileName).path
-        let revision = try withWorkspaceDirectory(workspaceURL) { workspaceFD in
-            guard let demandFD = try openDemandDirectory(workspaceFD: workspaceFD, path: draftPath, create: true) else {
-                throw NativeDemandInputStoreError.unsafeDirectory(draftPath)
-            }
-            defer { close(demandFD) }
-            let current = inspectDraft(demandFD: demandFD, path: draftPath)
-            try requireExpectedDraftRevision(current.revision, expected: expectedRevision, path: draftPath)
-
-            let data = Data(render(draft).utf8)
-            let temporaryName = ".\(draftFileName).\(UUID().uuidString).tmp"
-            let staged = try createVerifiedTemporaryFile(
-                data,
-                parentFD: demandFD,
-                name: temporaryName,
-                afterOpen: afterTempOpen
-            )
-            var temporaryCleanupIdentity: FileIdentity? = staged.identity
-            defer {
-                close(staged.fd)
-                if let temporaryCleanupIdentity {
-                    _ = unlinkNamedFileIfIdentityMatches(
-                        parentFD: demandFD,
-                        name: temporaryName,
-                        identity: temporaryCleanupIdentity,
-                        fingerprint: staged.fingerprint
-                    )
+        let revision = try withWorkspaceWriteLock(path: workspaceURL.path) {
+            try withWorkspaceDirectory(workspaceURL) { workspaceFD in
+                guard let demandFD = try openDemandDirectory(workspaceFD: workspaceFD, path: draftPath, create: true) else {
+                    throw NativeDemandInputStoreError.unsafeDirectory(draftPath)
                 }
-            }
-            try beforeFinalRevisionCheck?()
+                defer { close(demandFD) }
+                let current = inspectDraft(demandFD: demandFD, path: draftPath)
+                try requireExpectedDraftRevision(current.revision, expected: expectedRevision, path: draftPath)
 
-            let latest = inspectDraft(demandFD: demandFD, path: draftPath)
-            try requireExpectedDraftRevision(latest.revision, expected: expectedRevision, path: draftPath)
-            try beforeDraftPublish?()
-            try replaceDraft(
-                demandFD: demandFD,
-                temporaryName: temporaryName,
-                draftPath: draftPath,
-                expectedRevision: expectedRevision,
-                staged: staged,
-                expectedData: data,
-                afterPublishBeforeVerify: afterPublishBeforeVerify,
-                temporaryCleanupIdentity: &temporaryCleanupIdentity
-            )
+                let data = Data(render(draft).utf8)
+                let temporaryName = ".\(draftFileName).\(UUID().uuidString).tmp"
+                let staged = try createVerifiedTemporaryFile(
+                    data,
+                    parentFD: demandFD,
+                    name: temporaryName,
+                    afterOpen: afterTempOpen
+                )
+                var temporaryCleanupIdentity: FileIdentity? = staged.identity
+                defer {
+                    close(staged.fd)
+                    if let temporaryCleanupIdentity {
+                        _ = unlinkNamedFileIfIdentityMatches(
+                            parentFD: demandFD,
+                            name: temporaryName,
+                            identity: temporaryCleanupIdentity,
+                            fingerprint: staged.fingerprint
+                        )
+                    }
+                }
+                try beforeFinalRevisionCheck?()
 
-            let revision = inspectDraft(demandFD: demandFD, path: draftPath).revision
-            guard case .regularUTF8 = revision else {
-                throw NativeDemandInputStoreError.invalidDraft("staged draft write did not produce a regular UTF-8 file")
+                let latest = inspectDraft(demandFD: demandFD, path: draftPath)
+                try requireExpectedDraftRevision(latest.revision, expected: expectedRevision, path: draftPath)
+                try beforeDraftPublish?()
+                try replaceDraft(
+                    demandFD: demandFD,
+                    temporaryName: temporaryName,
+                    draftPath: draftPath,
+                    expectedRevision: expectedRevision,
+                    staged: staged,
+                    expectedData: data,
+                    afterPublishBeforeVerify: afterPublishBeforeVerify,
+                    temporaryCleanupIdentity: &temporaryCleanupIdentity
+                )
+
+                let revision = inspectDraft(demandFD: demandFD, path: draftPath).revision
+                guard case .regularUTF8 = revision else {
+                    throw NativeDemandInputStoreError.invalidDraft("staged draft write did not produce a regular UTF-8 file")
+                }
+                return revision
             }
-            return revision
         }
         let audit = NativeAuditEventStore.appendFeedback(
             auditRoot: auditRoot,
@@ -461,6 +462,23 @@ enum NativeDemandInputStore {
 
     private static func canonicalWorkspaceURL(_ workspacePath: String) -> URL {
         URL(fileURLWithPath: (workspacePath as NSString).expandingTildeInPath).standardizedFileURL
+    }
+
+    private static func withWorkspaceWriteLock<T>(path: String, body: () throws -> T) rethrows -> T {
+        writeLockRegistry.lock()
+        let lock: NSLock
+        if let existing = writeLocksByWorkspace[path] {
+            lock = existing
+        } else {
+            let created = NSLock()
+            writeLocksByWorkspace[path] = created
+            lock = created
+        }
+        writeLockRegistry.unlock()
+
+        lock.lock()
+        defer { lock.unlock() }
+        return try body()
     }
 
     private static func withWorkspaceDirectory<T>(_ workspaceURL: URL, body: (Int32) throws -> T) throws -> T {

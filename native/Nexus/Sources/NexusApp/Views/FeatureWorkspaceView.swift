@@ -2,6 +2,10 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 enum FeatureWorkspaceDraftPolicy {
+    static func shouldScheduleAutosave(isLoading: Bool, isAttaching _: Bool) -> Bool {
+        !isLoading
+    }
+
     static func refreshedDraft(
         current: DemandInputDraft,
         snapshot: DemandInputSnapshot?
@@ -267,7 +271,6 @@ struct FeatureWorkspaceView: View {
                         response.copiedRelativePaths,
                         into: draft
                     )
-                    autosavePolicy.prepareProgrammaticUpdate(mergedDraft)
                     draft = mergedDraft
                 }
             }
@@ -278,7 +281,10 @@ struct FeatureWorkspaceView: View {
     }
 
     private func scheduleAutosave() {
-        guard !isLoading, !isAttaching else { return }
+        guard FeatureWorkspaceDraftPolicy.shouldScheduleAutosave(
+            isLoading: isLoading,
+            isAttaching: isAttaching
+        ) else { return }
         let capturedWorkspace = workspace
         autosavePolicy.draftChanged(draft, workspaceID: capturedWorkspace.id) { _, capturedDraft in
             _ = await appState.saveDemandInputDraft(capturedDraft, in: capturedWorkspace)

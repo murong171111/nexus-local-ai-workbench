@@ -3594,20 +3594,19 @@ final class AppState: ObservableObject {
         for workspace: WorkspaceSummary,
         beforeChangesPathProbe: (@Sendable () -> Void)? = nil
     ) async -> String {
-        let snapshot = demandInputsByWorkspace[workspace.id]
-        let draft = snapshot?.draft ?? .empty
-        let materialLines = draft.attachments.isEmpty
-            ? ["- None confirmed."]
-            : draft.attachments.map { "- \($0)" }
-        let linkLines = draft.links.isEmpty
-            ? ["- None."]
-            : draft.links.map { "- \($0)" }
         let changePathCandidates = [workspace.documentLinks["changes"], "\(workspace.path)/changes.md"]
             .compactMap { $0 }
         let changePaths = await Self.existingFeatureChangePaths(
             changePathCandidates,
             beforeProbe: beforeChangesPathProbe
         )
+        let draft = demandInputsByWorkspace[workspace.id]?.draft ?? .empty
+        let materialLines = draft.attachments.isEmpty
+            ? ["- None confirmed."]
+            : draft.attachments.map { "- \($0)" }
+        let linkLines = draft.links.isEmpty
+            ? ["- None."]
+            : draft.links.map { "- \($0)" }
         let activityLines = workspace.activities.prefix(3).map { "- \($0.title): \($0.detail)" }
 
         return [

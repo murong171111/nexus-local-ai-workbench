@@ -6,7 +6,7 @@ COMPLETE_WITH_ACCEPTED_LIMITATION
 
 ## Final Commit
 
-- `Serialize Native audit appends`
+- `Finalize Native demand concurrency` (pending commit at report update)
 
 ## Final Fixes
 
@@ -16,6 +16,9 @@ COMPLETE_WITH_ACCEPTED_LIMITATION
 4. `featureIntakePrompt` is async. Its `changes.md` candidate probes run in `Task.detached`, while prompt rendering remains value-only. `openFeatureIntakeInCodex` awaits the prompt before performing MainActor clipboard and `NSWorkspace.open` work.
 5. `NativeAuditEventStore.appendAsync` runs directory creation, seek, and write through `Task.detached`. `recordNativeAuditEvent` awaits it and only then updates `lastError`. `AuditEventInput` was already `Sendable`, so no bridge model change was required.
 6. `NativeAuditEventStore.append` now holds one process-local static `NSLock` across directory creation, existence checks, file creation, seek, and write. `loadRecent` uses the same lock while reading and decoding, so App-process readers cannot observe a partial JSONL line. The `beforeAppend` test seam remains outside the lock; no cross-process locking guarantee is claimed.
+7. Attachment-time edits continue through the autosave queue. The verified relative-path merge schedules the latest draft instead of being suppressed as a programmatic load.
+8. Feature prompt path probing completes before AppState reads the demand snapshot, so a save completed during the probe is included in the handoff.
+9. Draft write locks are keyed by canonical workspace path. Different workspaces can enter the real save critical section independently, while same-workspace writes remain serialized. Demand audit feedback is appended after releasing the workspace draft lock.
 
 ## Regression Coverage
 
@@ -24,12 +27,15 @@ COMPLETE_WITH_ACCEPTED_LIMITATION
 - A blocked production `changes.md` path probe leaves MainActor responsive and preserves the compact prompt plus `FEATURES.draft.md`-only contract.
 - A blocked production async audit append leaves MainActor responsive and writes a readable audit event after release.
 - Twenty parallel `appendAsync` calls preserve all unique actions, and every non-empty on-disk JSONL line decodes successfully.
+- Attachment autosave remains active during material copying, and the verified relative-path merge schedules persistence.
+- A prompt probe blocked while a newer demand save completes renders the newer requirement and link.
+- A save blocked inside one workspace's final-revision critical section does not block another workspace's store save.
 - Existing exact markers, autosave token behavior, recovery state, attachment background I/O, source validation, and fingerprint cleanup tests remain green.
 
 ## Final Verification
 
 - `swift test --disable-sandbox --package-path native/Nexus --filter 'FeatureWorkflowTests'`
-  - PASS: 44 tests, 0 failures.
+  - PASS: 47 tests, 0 failures.
 - `swift build --disable-sandbox --package-path native/Nexus`
   - PASS.
 - `npm run native:m1-acceptance`
