@@ -11,6 +11,13 @@ enum NativeDemandInputStore {
     // ponytail: one Nexus-local lock is sufficient for the current in-process editor; split by workspace only if concurrent editing becomes a measured need.
     private static let writeLock = NSLock()
 
+    static func canonicalDraftPath(workspacePath: String) -> String {
+        canonicalWorkspaceURL(workspacePath)
+            .appendingPathComponent(demandDirectoryName)
+            .appendingPathComponent(draftFileName)
+            .path
+    }
+
     static func load(
         workspacePath: String,
         fileManager: FileManager = .default,
@@ -58,9 +65,16 @@ enum NativeDemandInputStore {
             let current = inspectDraft(demandFD: demandFD, path: draftPath)
             try requireExpectedDraftRevision(current.revision, expected: expectedRevision, path: draftPath)
 
+            let data = Data(render(draft).utf8)
             let temporaryName = ".\(draftFileName).\(UUID().uuidString).tmp"
-            defer { _ = unlinkat(demandFD, temporaryName, 0) }
-            try writeNewFile(Data(render(draft).utf8), parentFD: demandFD, name: temporaryName)
+            let staged = try createVerifiedTemporaryFile(data, parentFD: demandFD, name: temporaryName)
+            var shouldCleanupTemporaryName = true
+            defer {
+                close(staged.fd)
+                if shouldCleanupTemporaryName {
+                    _ = unlinkat(demandFD, temporaryName, 0)
+                }
+            }
             try beforeFinalRevisionCheck?()
 
             let latest = inspectDraft(demandFD: demandFD, path: draftPath)
@@ -69,7 +83,10 @@ enum NativeDemandInputStore {
                 demandFD: demandFD,
                 temporaryName: temporaryName,
                 draftPath: draftPath,
-                expectedRevision: expectedRevision
+                expectedRevision: expectedRevision,
+                staged: staged,
+                expectedData: data,
+                shouldCleanupTemporaryName: &shouldCleanupTemporaryName
             )
 
             let revision = inspectDraft(demandFD: demandFD, path: draftPath).revision
@@ -177,7 +194,11 @@ enum NativeDemandInputStore {
             workspaceURL: workspaceURL,
             attachmentsURL: expectedAttachmentsURL
         )
-        let result = try withWorkspaceDirectory(workspaceURL) { workspaceFD -> (copiedPaths: [String], errors: [DemandAttachmentCopyError]) in
+        let result = try withWorkspaceDirectory(workspaceURL) { workspaceFD -> (
+            copiedPaths: [String],
+            copiedRelativePaths: [String],
+            errors: [DemandAttachmentCopyError]
+        ) in
             guard let demandFD = try openDemandDirectory(workspaceFD: workspaceFD, path: demandURL.path, create: true) else {
                 throw NativeDemandInputStoreError.unsafeDirectory(demandURL.path)
             }
@@ -188,6 +209,7 @@ enum NativeDemandInputStore {
             defer { close(attachmentsFD) }
 
             var copiedPaths: [String] = []
+            var copiedRelativePaths: [String] = []
             var errors: [DemandAttachmentCopyError] = []
             for item in plan.items {
                 do {
@@ -205,6 +227,9 @@ enum NativeDemandInputStore {
                         beforePublish: beforeAttachmentPublish
                     )
                     copiedPaths.append(item.destinationURL.path)
+                    copiedRelativePaths.append(
+                        "\(demandDirectoryName)/\(attachmentsDirectoryName)/\(name)"
+                    )
                 } catch {
                     errors.append(DemandAttachmentCopyError(
                         sourcePath: item.sourceURL.path,
@@ -212,7 +237,7 @@ enum NativeDemandInputStore {
                     ))
                 }
             }
-            return (copiedPaths, errors)
+            return (copiedPaths, copiedRelativePaths, errors)
         }
         beforeAttachmentResponse?()
 
@@ -233,6 +258,7 @@ enum NativeDemandInputStore {
         )
         return DemandAttachmentCopyResponse(
             copiedPaths: result.copiedPaths,
+            copiedRelativePaths: result.copiedRelativePaths,
             errors: result.errors,
             auditEventID: audit.response?.event.id,
             auditEventPath: audit.response?.path,
@@ -245,6 +271,9 @@ enum NativeDemandInputStore {
         temporaryName: String,
         draftPath: String,
         expectedRevision: DemandInputRevision,
+        staged: OpenTemporaryFile,
+        expectedData: Data,
+        shouldCleanupTemporaryName: inout Bool
     ) throws {
         switch expectedRevision {
         case .missing:
@@ -260,7 +289,18 @@ enum NativeDemandInputStore {
                 let current = inspectDraft(demandFD: demandFD, path: draftPath).revision
                 throw NativeDemandInputStoreError.staleDraft(path: draftPath, expected: expectedRevision.label, current: current.label)
             }
-            _ = unlinkat(demandFD, temporaryName, 0)
+            do {
+                try verifyPublishedFile(
+                    parentFD: demandFD,
+                    name: draftFileName,
+                    path: draftPath,
+                    staged: staged,
+                    expectedData: expectedData
+                )
+            } catch {
+                _ = unlinkat(demandFD, draftFileName, 0)
+                throw error
+            }
         case .regularUTF8:
             guard entryKind(at: demandFD, name: draftFileName) == .regular else {
                 let current = inspectDraft(demandFD: demandFD, path: draftPath).revision
@@ -270,8 +310,35 @@ enum NativeDemandInputStore {
                     current: current.label
                 )
             }
-            guard renameat(demandFD, temporaryName, demandFD, draftFileName) == 0 else {
+            guard renameatx_np(
+                demandFD,
+                temporaryName,
+                demandFD,
+                draftFileName,
+                UInt32(RENAME_SWAP)
+            ) == 0 else {
                 throw NativeDemandInputStoreError.invalidDraft("could not replace demand draft: \(draftPath)")
+            }
+            do {
+                try verifyPublishedFile(
+                    parentFD: demandFD,
+                    name: draftFileName,
+                    path: draftPath,
+                    staged: staged,
+                    expectedData: expectedData
+                )
+            } catch {
+                if renameatx_np(
+                    demandFD,
+                    temporaryName,
+                    demandFD,
+                    draftFileName,
+                    UInt32(RENAME_SWAP)
+                ) != 0 {
+                    shouldCleanupTemporaryName = false
+                    throw NativeDemandInputStoreError.draftRecoveryRequired(draftPath, temporaryName)
+                }
+                throw error
             }
         case .invalid(let reason):
             throw NativeDemandInputStoreError.invalidExpectedRevision(reason)
@@ -332,8 +399,11 @@ enum NativeDemandInputStore {
     }
 
     private static func validatedWorkspaceURL(_ workspacePath: String, fileManager: FileManager) throws -> URL {
-        let workspaceURL = URL(fileURLWithPath: (workspacePath as NSString).expandingTildeInPath).standardizedFileURL
-        return workspaceURL
+        canonicalWorkspaceURL(workspacePath)
+    }
+
+    private static func canonicalWorkspaceURL(_ workspacePath: String) -> URL {
+        URL(fileURLWithPath: (workspacePath as NSString).expandingTildeInPath).standardizedFileURL
     }
 
     private static func withWorkspaceDirectory<T>(_ workspaceURL: URL, body: (Int32) throws -> T) throws -> T {
@@ -523,16 +593,38 @@ enum NativeDemandInputStore {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
-    private static func writeNewFile(_ data: Data, parentFD: Int32, name: String) throws {
-        let fileFD = openat(parentFD, name, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, mode_t(0o600))
+    private static func createVerifiedTemporaryFile(
+        _ data: Data,
+        parentFD: Int32,
+        name: String
+    ) throws -> OpenTemporaryFile {
+        let fileFD = openat(parentFD, name, O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW, mode_t(0o600))
         guard fileFD >= 0 else {
             throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
         }
-        defer { close(fileFD) }
-        let handle = FileHandle(fileDescriptor: fileFD, closeOnDealloc: false)
-        try handle.write(contentsOf: data)
-        guard fsync(fileFD) == 0 else {
-            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        do {
+            let handle = FileHandle(fileDescriptor: fileFD, closeOnDealloc: false)
+            try handle.write(contentsOf: data)
+            guard fsync(fileFD) == 0 else {
+                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
+            let identity = try fileIdentity(fileFD, path: name)
+            let writtenData = try readData(fileFD)
+            let writtenSHA256 = sha256Hex(writtenData)
+            guard writtenData.count == data.count,
+                  writtenSHA256 == sha256Hex(data) else {
+                throw NativeDemandInputStoreError.destinationVerificationFailed(name)
+            }
+            return OpenTemporaryFile(
+                fd: fileFD,
+                identity: identity,
+                byteCount: writtenData.count,
+                sha256: writtenSHA256
+            )
+        } catch {
+            close(fileFD)
+            _ = unlinkat(parentFD, name, 0)
+            throw error
         }
     }
 
@@ -543,17 +635,10 @@ enum NativeDemandInputStore {
         beforePublish: ((DemandAttachmentPlanItem) throws -> Void)?
     ) throws {
         let temporaryName = ".attachment.\(UUID().uuidString).tmp"
-        defer { _ = unlinkat(attachmentsFD, temporaryName, 0) }
-        try writeNewFile(data, parentFD: attachmentsFD, name: temporaryName)
-
-        let writtenData = try readRegularFile(
-            parentFD: attachmentsFD,
-            name: temporaryName,
-            path: item.destinationURL.path
-        )
-        guard writtenData.count == item.expectedSizeBytes,
-              sha256Hex(writtenData) == item.expectedSHA256 else {
-            throw NativeDemandInputStoreError.destinationVerificationFailed(item.destinationURL.path)
+        let staged = try createVerifiedTemporaryFile(data, parentFD: attachmentsFD, name: temporaryName)
+        defer {
+            close(staged.fd)
+            _ = unlinkat(attachmentsFD, temporaryName, 0)
         }
         try beforePublish?(item)
 
@@ -567,6 +652,56 @@ enum NativeDemandInputStore {
             }
             throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
         }
+        do {
+            try verifyPublishedFile(
+                parentFD: attachmentsFD,
+                name: destinationName,
+                path: item.destinationURL.path,
+                staged: staged,
+                expectedData: data
+            )
+        } catch {
+            _ = unlinkat(attachmentsFD, destinationName, 0)
+            throw error
+        }
+    }
+
+    private static func verifyPublishedFile(
+        parentFD: Int32,
+        name: String,
+        path: String,
+        staged: OpenTemporaryFile,
+        expectedData: Data
+    ) throws {
+        let publishedFD = openat(parentFD, name, O_RDONLY | O_NOFOLLOW)
+        guard publishedFD >= 0 else {
+            throw NativeDemandInputStoreError.destinationVerificationFailed(path)
+        }
+        defer { close(publishedFD) }
+        guard try fileIdentity(publishedFD, path: path) == staged.identity else {
+            throw NativeDemandInputStoreError.destinationVerificationFailed(path)
+        }
+        let publishedData = try readData(publishedFD)
+        guard publishedData.count == staged.byteCount,
+              sha256Hex(publishedData) == staged.sha256,
+              publishedData == expectedData else {
+            throw NativeDemandInputStoreError.destinationVerificationFailed(path)
+        }
+    }
+
+    private static func fileIdentity(_ fileFD: Int32, path: String) throws -> FileIdentity {
+        var info = stat()
+        guard fstat(fileFD, &info) == 0, fileType(info) == .regular else {
+            throw NativeDemandInputStoreError.destinationVerificationFailed(path)
+        }
+        return FileIdentity(device: UInt64(info.st_dev), inode: UInt64(info.st_ino))
+    }
+
+    private static func readData(_ fileFD: Int32) throws -> Data {
+        guard lseek(fileFD, 0, SEEK_SET) >= 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+        return try FileHandle(fileDescriptor: fileFD, closeOnDealloc: false).readToEnd() ?? Data()
     }
 
     private static func readRegularFile(parentFD: Int32, name: String, path: String) throws -> Data {
@@ -608,6 +743,18 @@ enum NativeDemandInputStore {
         let revision: DemandInputRevision
     }
 
+    private struct OpenTemporaryFile {
+        let fd: Int32
+        let identity: FileIdentity
+        let byteCount: Int
+        let sha256: String
+    }
+
+    private struct FileIdentity: Equatable {
+        let device: UInt64
+        let inode: UInt64
+    }
+
     private enum EntryKind {
         case missing
         case regular
@@ -630,6 +777,7 @@ private enum NativeDemandInputStoreError: LocalizedError {
     case destinationVerificationFailed(String)
     case duplicateAttachmentName(String)
     case malformedAttachmentPlan(String)
+    case draftRecoveryRequired(String, String)
 
     var errorDescription: String? {
         switch self {
@@ -657,6 +805,8 @@ private enum NativeDemandInputStoreError: LocalizedError {
             "duplicate sanitized demand attachment name: \(name)"
         case .malformedAttachmentPlan(let path):
             "malformed demand attachment plan: \(path)"
+        case .draftRecoveryRequired(let path, let temporaryName):
+            "demand draft replacement could not be rolled back: \(path); previous draft preserved as \(temporaryName)"
         }
     }
 }

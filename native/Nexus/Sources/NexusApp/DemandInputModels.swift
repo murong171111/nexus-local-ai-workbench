@@ -81,6 +81,7 @@ struct DemandAttachmentCopyError: Hashable {
 
 struct DemandAttachmentCopyResponse: Hashable {
     let copiedPaths: [String]
+    let copiedRelativePaths: [String]
     let errors: [DemandAttachmentCopyError]
     let auditEventID: String?
     let auditEventPath: String?

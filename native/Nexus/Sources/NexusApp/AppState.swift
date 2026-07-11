@@ -3372,7 +3372,15 @@ final class AppState: ObservableObject {
 
         do {
             let snapshot = try NativeDemandInputStore.load(workspacePath: workspace.path)
-            demandInputsByWorkspace[workspace.id] = snapshot
+            if let recovery = demandInputsByWorkspace[workspace.id], case .invalid = recovery.revision {
+                demandInputsByWorkspace[workspace.id] = DemandInputSnapshot(
+                    draft: recovery.draft,
+                    revision: snapshot.revision,
+                    path: snapshot.path
+                )
+            } else {
+                demandInputsByWorkspace[workspace.id] = snapshot
+            }
         } catch {
             lastError = error.localizedDescription
         }
@@ -3388,11 +3396,9 @@ final class AppState: ObservableObject {
             }
         }
 
-        var preservedSnapshot = demandInputsByWorkspace[workspace.id]
         do {
             let current = try demandInputsByWorkspace[workspace.id]
                 ?? NativeDemandInputStore.load(workspacePath: workspace.path)
-            preservedSnapshot = current
             let response = try NativeDemandInputStore.save(
                 draft: draft,
                 workspacePath: workspace.path,
@@ -3416,13 +3422,11 @@ final class AppState: ObservableObject {
             return .saved(snapshot)
         } catch {
             let message = error.localizedDescription
-            if let preservedSnapshot {
-                demandInputsByWorkspace[workspace.id] = DemandInputSnapshot(
-                    draft: draft,
-                    revision: preservedSnapshot.revision,
-                    path: preservedSnapshot.path
-                )
-            }
+            demandInputsByWorkspace[workspace.id] = DemandInputSnapshot(
+                draft: draft,
+                revision: .invalid(reason: message),
+                path: NativeDemandInputStore.canonicalDraftPath(workspacePath: workspace.path)
+            )
             lastError = message
             demandInputSaveStatusesByWorkspace[workspace.id] = .failed(message)
             return .failed(message: message)
@@ -3464,13 +3468,8 @@ final class AppState: ObservableObject {
                 actor: "Nexus Native",
                 beforeAttachmentResponse: beforeAttachmentResponse
             )
-            let attachmentPaths = copied.copiedPaths.compactMap { path -> String? in
-                let workspacePrefix = workspace.path.hasSuffix("/") ? workspace.path : "\(workspace.path)/"
-                guard path.hasPrefix(workspacePrefix) else { return nil }
-                return String(path.dropFirst(workspacePrefix.count))
-            }
             var next = savedSnapshot.draft
-            for path in attachmentPaths where !next.attachments.contains(path) {
+            for path in copied.copiedRelativePaths where !next.attachments.contains(path) {
                 next.attachments.append(path)
             }
             demandInputsByWorkspace[workspace.id] = DemandInputSnapshot(

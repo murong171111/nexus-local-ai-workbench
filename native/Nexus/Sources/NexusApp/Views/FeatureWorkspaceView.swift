@@ -1,6 +1,15 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+enum FeatureWorkspaceDraftPolicy {
+    static func refreshedDraft(
+        current: DemandInputDraft,
+        snapshot: DemandInputSnapshot?
+    ) -> DemandInputDraft {
+        snapshot?.draft ?? current
+    }
+}
+
 struct FeatureWorkspaceView: View {
     @EnvironmentObject private var appState: AppState
     let workspace: WorkspaceSummary
@@ -142,7 +151,10 @@ struct FeatureWorkspaceView: View {
         .task(id: workspace.id) {
             isLoading = true
             await appState.loadDemandInput(for: workspace)
-            draft = appState.demandInputSnapshot(for: workspace)?.draft ?? .empty
+            draft = FeatureWorkspaceDraftPolicy.refreshedDraft(
+                current: draft,
+                snapshot: appState.demandInputSnapshot(for: workspace)
+            )
             isLoading = false
         }
         .onChange(of: draft) { _ in
@@ -175,21 +187,18 @@ struct FeatureWorkspaceView: View {
                 autosaveTask?.cancel()
                 autosaveTask = nil
                 Task {
-                    guard let copied = await appState.attachDemandMaterials(
+                    guard await appState.attachDemandMaterials(
                         urls,
                         liveDraft: liveDraft,
                         to: workspace,
                         confirmed: true
-                    ) else {
+                    ) != nil else {
                         return
                     }
-                    let workspacePrefix = workspace.path.hasSuffix("/") ? workspace.path : "\(workspace.path)/"
-                    for path in copied.copiedPaths where path.hasPrefix(workspacePrefix) {
-                        let attachment = String(path.dropFirst(workspacePrefix.count))
-                        if !draft.attachments.contains(attachment) {
-                            draft.attachments.append(attachment)
-                        }
-                    }
+                    draft = FeatureWorkspaceDraftPolicy.refreshedDraft(
+                        current: liveDraft,
+                        snapshot: appState.demandInputSnapshot(for: workspace)
+                    )
                 }
             }
             Button("取消", role: .cancel) {
