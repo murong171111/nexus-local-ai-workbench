@@ -200,6 +200,7 @@ final class AppState: ObservableObject {
             pendingSessionChangeWriteToken = nil
             activeSessionChangeWriteToken = nil
             sessionChangeWriteWorkspaceID = nil
+            sessionChangeLoadingWorkspaceID = nil
         }
     }
     @Published var workspaces: [WorkspaceSummary]
@@ -3703,6 +3704,201 @@ final class AppState: ObservableObject {
         }
     }
 
+    func sessionChangeNotice(for workspace: WorkspaceSummary) -> String? {
+        sessionChangeDraftsByWorkspace[workspace.id]?.notice
+    }
+
+    func generateSessionChangeDraft(
+        in workspace: WorkspaceSummary,
+        codexSummary: String? = nil,
+        beforeIO: (@Sendable () -> Void)? = nil
+    ) async -> SessionChangeDraft? {
+        let workspaceID = workspace.id
+        let generation = sessionChangeDraftGenerationsByWorkspace[workspaceID, default: 0] + 1
+        sessionChangeDraftGenerationsByWorkspace[workspaceID] = generation
+        sessionChangeLoadingWorkspaceID = workspaceID
+        lastError = nil
+
+        let repositoryPaths = Dictionary(uniqueKeysWithValues: workspace.services.map { service in
+            let path = service.worktree.hasPrefix("/")
+                ? service.worktree
+                : "\(workspace.path)/repos/\(service.name)"
+            return (service.name, path)
+        })
+        let evidencePaths = (workspace.sqlFiles.map(\.path) + workspace.sqlDocuments.map(\.path)
+            + [deliveryDocumentPath(for: workspace)])
+        let latestTest = lastAutomationCheck.map {
+            "\($0.status) at \($0.generatedAt): \($0.summary)"
+        }
+        let workspacePath = workspace.path
+        let workspaceFolder = workspace.folder
+        let sessionID = codexSessionLinksByWorkspace[workspaceID]?.first?.id ?? UUID().uuidString
+        let startedAt = ISO8601DateFormatter().string(from: Date())
+
+        do {
+            let draft = try await Task.detached(priority: .userInitiated) {
+                var baseline: SessionChangeBaselineResult?
+                for attempt in 0..<2 {
+                    do {
+                        beforeIO?()
+                        let source = try NativeSessionChangeStore.contextSourceSnapshot(
+                            workspacePath: workspacePath,
+                            workspaceFolder: workspaceFolder
+                        )
+                        let repositories = NativeSessionChangeStore.repositorySnapshot(
+                            pathsByService: repositoryPaths
+                        )
+                        let featureRevision = source.sourceRevisions["FEATURES.md"]!.token
+                        let taskRevision = source.sourceRevisions["tasks.md"]!.token
+                        if baseline == nil {
+                            baseline = try NativeSessionChangeStore.loadOrCreateBaseline(
+                                workspacePath: workspacePath,
+                                current: SessionChangeBaseline(
+                                    sessionID: sessionID,
+                                    workspacePath: workspacePath,
+                                    startedAt: startedAt,
+                                    repositoryHeads: repositories.heads,
+                                    featureRevision: featureRevision,
+                                    taskRevision: taskRevision
+                                )
+                            )
+                        }
+                        let revisions = Dictionary(uniqueKeysWithValues: evidencePaths.map { path in
+                            (path, (try? NativeSessionChangeStore.fileRevision(
+                                path: path,
+                                workspacePath: workspacePath
+                            )) ?? "unavailable")
+                        })
+                        return try NativeSessionChangeStore.writeDraft(
+                            input: SessionChangeDraftInput(
+                                workspacePath: workspacePath,
+                                baseline: baseline!.baseline,
+                                currentRepositoryHeads: repositories.heads,
+                                repositoryDiffs: repositories.diffs,
+                                featureRevision: featureRevision,
+                                taskRevision: taskRevision,
+                                latestTest: latestTest,
+                                sqlAndDeliveryRevisions: revisions,
+                                codexSummary: codexSummary,
+                                featureAndTaskFacts: source.featureDocument.features.map {
+                                    "\($0.id) [\($0.status.rawValue)]: \($0.title)"
+                                } + source.tasks.map {
+                                    "\($0.id) [\($0.status)]: \($0.title)"
+                                },
+                                canClaimPriorDiff: baseline!.canClaimPriorDiff,
+                                baselineNotice: baseline!.notice
+                            ),
+                            expectedSourceRevisions: source.sourceRevisions
+                        )
+                    } catch let error as NativeSessionChangeStoreError {
+                        if attempt == 0, case .stale = error { continue }
+                        throw error
+                    }
+                }
+                throw NativeSessionChangeStoreError.stale(workspacePath)
+            }.value
+            guard sessionChangeDraftGenerationsByWorkspace[workspaceID] == generation,
+                  selectedWorkspaceID == workspaceID else { return nil }
+            sessionChangeDraftsByWorkspace[workspaceID] = draft
+            sessionChangeLoadingWorkspaceID = nil
+            return draft
+        } catch {
+            guard sessionChangeDraftGenerationsByWorkspace[workspaceID] == generation else { return nil }
+            sessionChangeLoadingWorkspaceID = nil
+            lastError = error.localizedDescription
+            return nil
+        }
+    }
+
+    func prepareSessionChangeWrite(
+        _ draft: SessionChangeDraft,
+        in workspace: WorkspaceSummary,
+        beforePlan: (@Sendable () -> Void)? = nil
+    ) async {
+        sessionChangePlanGeneration += 1
+        let generation = sessionChangePlanGeneration
+        sessionChangeWriteWorkspaceID = workspace.id
+        pendingSessionChangeWrite = nil
+        pendingSessionChangeWriteToken = nil
+        lastError = nil
+        do {
+            let plan = try await Task.detached(priority: .userInitiated) {
+                beforePlan?()
+                return try NativeSessionChangeStore.makeWritePlan(draft: draft)
+            }.value
+            guard generation == sessionChangePlanGeneration,
+                  selectedWorkspaceID == workspace.id else { return }
+            requestSessionChangeWrite(plan, in: workspace)
+        } catch {
+            guard generation == sessionChangePlanGeneration else { return }
+            sessionChangeWriteWorkspaceID = nil
+            lastError = error.localizedDescription
+            let refreshTask = Task.detached(priority: .userInitiated) {
+                try NativeSessionChangeStore.refreshDraftSnapshot(draft)
+            }
+            if let refreshed = try? await refreshTask.value {
+                sessionChangeDraftsByWorkspace[workspace.id] = refreshed
+            }
+        }
+    }
+
+    func writeConfirmedSessionChange(
+        _ operation: ConfirmedSessionChangeWrite,
+        beforeWrite: (@Sendable () -> Void)? = nil
+    ) async {
+        let plan = operation.plan
+        guard activeSessionChangeWriteToken == operation.token,
+              workspaces.first(where: { $0.id == selectedWorkspaceID })?.path == plan.workspacePath else { return }
+        lastError = nil
+        do {
+            let auditRoot = auditRootPath
+            let response = try await Task.detached(priority: .userInitiated) {
+                beforeWrite?()
+                return try NativeSessionChangeStore.append(
+                    plan: plan,
+                    confirmed: true,
+                    auditRoot: auditRoot,
+                    actor: "Nexus Native"
+                )
+            }.value
+            guard activeSessionChangeWriteToken == operation.token,
+                  let workspace = workspaces.first(where: { $0.path == plan.workspacePath }) else { return }
+            activeSessionChangeWriteToken = nil
+            sessionChangeWriteWorkspaceID = nil
+            if response.archivedDraftPath != nil {
+                sessionChangeDraftsByWorkspace.removeValue(forKey: workspace.id)
+            }
+            let warning = [response.archiveError, response.auditError].compactMap { $0 }.joined(separator: " ")
+            markLocalWriteFeedback(
+                title: "本次变化已确认 / Session changes confirmed",
+                detail: "\(workspace.name) · changes.md appended.",
+                workspaceID: workspace.id,
+                workspaceName: workspace.name,
+                documentPath: response.path,
+                documentLabel: "changes.md",
+                systemImage: "checkmark.circle",
+                auditError: warning.isEmpty ? nil : warning
+            )
+            if !warning.isEmpty { lastError = "changes.md 已写入，但后续处理失败：\(warning)" }
+        } catch {
+            guard activeSessionChangeWriteToken == operation.token else { return }
+            activeSessionChangeWriteToken = nil
+            sessionChangeWriteWorkspaceID = nil
+            lastError = error.localizedDescription
+            if let draft = sessionChangeDraftsByWorkspace.first(where: {
+                $0.value.workspacePath == plan.workspacePath
+            })?.value {
+                let refreshTask = Task.detached(priority: .userInitiated) {
+                    try NativeSessionChangeStore.refreshDraftSnapshot(draft)
+                }
+                if let refreshed = try? await refreshTask.value,
+                   let workspace = workspaces.first(where: { $0.path == plan.workspacePath }) {
+                    sessionChangeDraftsByWorkspace[workspace.id] = refreshed
+                }
+            }
+        }
+    }
+
     func writeConfirmedFeature(
         _ operation: ConfirmedFeatureWrite,
         beforeWrite: (@Sendable () -> Void)? = nil
@@ -3977,69 +4173,135 @@ final class AppState: ObservableObject {
 
     func featureIntakePrompt(
         for workspace: WorkspaceSummary,
-        beforeChangesPathProbe: (@Sendable () -> Void)? = nil
+        beforeChangesPathProbe: (@Sendable () -> Void)? = nil,
+        beforeHandoffWrite: (@Sendable (Int) -> Void)? = nil
     ) async -> String {
-        let changePathCandidates = [workspace.documentLinks["changes"], "\(workspace.path)/changes.md"]
-            .compactMap { $0 }
-        let changePaths = await Self.existingFeatureChangePaths(
-            changePathCandidates,
-            beforeProbe: beforeChangesPathProbe
-        )
-        let draft = demandInputsByWorkspace[workspace.id]?.draft ?? .empty
-        let materialLines = draft.attachments.isEmpty
-            ? ["- None confirmed."]
-            : draft.attachments.map { "- \($0)" }
-        let linkLines = draft.links.isEmpty
-            ? ["- None."]
-            : draft.links.map { "- \($0)" }
-        let activityLines = workspace.activities.prefix(3).map { "- \($0.title): \($0.detail)" }
+        let workspacePath = workspace.path
+        let workspaceFolder = workspace.folder
+        let repositoryPaths = Dictionary(uniqueKeysWithValues: workspace.services.map { service in
+            let path = service.worktree.hasPrefix("/")
+                ? service.worktree
+                : "\(workspace.path)/repos/\(service.name)"
+            return (service.name, path)
+        })
+        let selectedFeatureID = selectedContextFeatureIDsByWorkspace[workspace.id]
+        let fixedEvidence = [
+            workspace.documentLinks["features"] ?? "\(workspace.path)/FEATURES.md",
+            workspace.documentLinks["tasks"] ?? "\(workspace.path)/tasks.md",
+            workspace.documentLinks["changes"] ?? "\(workspace.path)/changes.md",
+            workspace.documentLinks["services"] ?? "\(workspace.path)/services.md",
+            workspace.documentLinks["branches"] ?? "\(workspace.path)/branches.md"
+        ]
+        let sqlEvidence = workspace.sqlFiles.map(\.path) + workspace.sqlDocuments.map(\.path)
+        let evidencePaths = fixedEvidence
+            + (sqlEvidence.isEmpty ? ["\(workspace.path)/sql"] : sqlEvidence)
+            + [deliveryDocumentPath(for: workspace)]
+            + (codexSessionLinksByWorkspace[workspace.id] ?? []).prefix(1).map { "Codex session: \($0.url)" }
+        let latestCheck = lastAutomationCheck.map {
+            "\($0.status) at \($0.generatedAt): \($0.summary)"
+        }
+        let services = workspace.services.map {
+            NativeContextService(name: $0.name, branch: $0.branch, gitSummary: $0.gitSummary)
+        }
+        let riskBlockers = workspace.risks.map { "\($0.title): \($0.detail)" }
+        let workspaceName = workspace.name
 
-        return [
-            "Prepare a feature proposal from this Nexus demand input.",
-            "",
-            "## Workspace",
-            "- Name: \(workspace.name)",
-            "- Path: \(workspace.path)",
-            "- Target branch: \(workspace.branch)",
-            "- Services: \(workspace.serviceSummary.isEmpty ? "None confirmed." : workspace.serviceSummary)",
-            "",
-            "## Demand",
-            draft.requirement.isEmpty ? "- No requirement text saved yet." : draft.requirement,
-            "",
-            "## Links",
-            linkLines.joined(separator: "\n"),
-            "",
-            "## Confirmed materials",
-            materialLines.joined(separator: "\n"),
-            "",
-            "## Recent known changes",
-            (changePaths.isEmpty ? ["- No confirmed changes.md path found."] : changePaths.map { "- \($0)" }).joined(separator: "\n"),
-            activityLines.isEmpty ? "" : activityLines.joined(separator: "\n"),
-            "",
-            "## Output contract",
-            "Write a proposal to \(workspace.path)/FEATURES.draft.md.",
-            "Do not modify FEATURES.md.",
-            "Use stable provisional IDs DRAFT-001, DRAFT-002, ... and propose Verification values code, sql, documentation, or manual."
-        ].filter { !$0.isEmpty }.joined(separator: "\n")
-    }
-
-    private static func existingFeatureChangePaths(
-        _ candidates: [String],
-        beforeProbe: (@Sendable () -> Void)?
-    ) async -> [String] {
-        await Task.detached(priority: .userInitiated) {
-            beforeProbe?()
-            return candidates
-                .filter { FileManager.default.fileExists(atPath: $0) }
-                .reduce(into: [String]()) { paths, path in
-                    if !paths.contains(path) { paths.append(path) }
-                }
-        }.value
+        for attempt in 0..<2 {
+            do {
+                let response = try await Task.detached(priority: .userInitiated) {
+                    beforeChangesPathProbe?()
+                    let draft = await MainActor.run {
+                        self.demandInputsByWorkspace[workspace.id]?.draft ?? .empty
+                    }
+                    let source = try NativeSessionChangeStore.contextSourceSnapshot(
+                        workspacePath: workspacePath,
+                        workspaceFolder: workspaceFolder
+                    )
+                    let repositories = NativeSessionChangeStore.repositorySnapshot(
+                        pathsByService: repositoryPaths
+                    )
+                    let selectedFeature = selectedFeatureID.flatMap { id in
+                        source.featureDocument.features.first { $0.id == id }
+                    } ?? source.featureDocument.features.first {
+                        $0.status != .cancelled && $0.status != .done
+                    }
+                    let linkedTasks = selectedFeature.map { feature in
+                        source.tasks.filter { task in
+                            let status = "\(task.status) \(task.detail)".lowercased()
+                            let isActive = !status.contains("done")
+                                && !status.contains("完成")
+                                && !status.contains("deferred")
+                                && !status.contains("延期")
+                            return isActive && (
+                                feature.taskIDs.contains(task.id)
+                                    || NativeWorkspaceTaskParser.featureAttribution(in: task.detail).id == feature.id
+                            )
+                        }
+                    } ?? []
+                    let blockers = linkedTasks.compactMap { task -> String? in
+                        let status = "\(task.status) \(task.detail)".lowercased()
+                        guard status.contains("blocked") || status.contains("阻塞") else { return nil }
+                        return "\(task.id): \(task.title)"
+                    } + riskBlockers
+                    let input = NativeContextPackInput(
+                        generatedAt: ISO8601DateFormatter().string(from: Date()),
+                        workspaceName: workspaceName,
+                        workspacePath: workspacePath,
+                        selectedFeature: selectedFeature.map {
+                            NativeContextFeature(
+                                id: $0.id,
+                                title: $0.title,
+                                status: $0.status.rawValue,
+                                detail: $0.description
+                            )
+                        },
+                        activeLinkedTasks: linkedTasks.map {
+                            NativeContextTask(id: $0.id, title: $0.title, status: $0.status, detail: $0.detail)
+                        },
+                        blockers: blockers,
+                        nextAction: "Prepare a feature proposal; keep FEATURES.md authoritative.",
+                        services: services,
+                        gitSummary: repositories.heads.keys.sorted().map { service in
+                            let diff = repositories.diffs[service].flatMap { $0.isEmpty ? nil : $0 } ?? "clean"
+                            return "\(service): head=\(repositories.heads[service] ?? "unavailable"), \(diff)"
+                        },
+                        latestRelevantCheck: latestCheck,
+                        confirmedChanges: source.confirmedChanges,
+                        evidence: evidencePaths.map { NativeContextEvidence(path: $0, summary: nil) },
+                        sourceRevisions: source.sourceRevisions.mapValues(\.token),
+                        featureProposal: NativeFeatureProposalContext(
+                            requirement: draft.requirement,
+                            links: draft.links,
+                            materialPaths: draft.attachments,
+                            draftPath: "\(workspacePath)/FEATURES.draft.md"
+                        )
+                    )
+                    beforeHandoffWrite?(attempt)
+                    let plan = try NativeSessionChangeStore.makeHandoffPlan(
+                        workspacePath: workspacePath,
+                        input: input,
+                        expectedSourceRevisions: source.sourceRevisions
+                    )
+                    return try NativeSessionChangeStore.writeHandoff(plan: plan)
+                }.value
+                lastError = nil
+                return response.markdown
+            } catch let error as NativeSessionChangeStoreError {
+                if attempt == 0, case .stale = error { continue }
+                lastError = "无法生成 bounded Codex context：\(error.localizedDescription)"
+                return ""
+            } catch {
+                lastError = "无法生成 bounded Codex context：\(error.localizedDescription)"
+                return ""
+            }
+        }
+        return ""
     }
 
     func openFeatureIntakeInCodex(for workspace: WorkspaceSummary) async {
         await loadDemandInput(for: workspace)
         let prompt = await featureIntakePrompt(for: workspace)
+        guard !prompt.isEmpty else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(prompt, forType: .string)
         lastCopiedCodexHandoffPayload = prompt

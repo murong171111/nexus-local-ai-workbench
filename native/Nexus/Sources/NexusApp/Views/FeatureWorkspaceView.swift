@@ -25,6 +25,12 @@ enum FeatureWorkspaceDraftPolicy {
     }
 }
 
+enum FeatureWorkspaceSessionChangePolicy {
+    static func canWrite(hasDraft: Bool, confirmed: Bool, isBusy: Bool) -> Bool {
+        hasDraft && confirmed && !isBusy
+    }
+}
+
 @MainActor
 final class FeatureWorkspaceAutosavePolicy {
     private let delayNanoseconds: UInt64
@@ -81,6 +87,8 @@ struct FeatureWorkspaceView: View {
     @State private var isAddingFeature = false
     @State private var editingFeature: WorkspaceFeature?
     @State private var isReviewingFeatureProposal = false
+    @State private var sessionCodexSummary = ""
+    @State private var isSessionChangeConfirmed = false
 
     private var isSaving: Bool {
         appState.isDemandInputSaveActive(for: workspace)
@@ -207,6 +215,8 @@ struct FeatureWorkspaceView: View {
 
                 Divider()
                 featureList
+                Divider()
+                sessionChangeReview
             }
             .padding(12)
         }
@@ -319,6 +329,27 @@ struct FeatureWorkspaceView: View {
                 appState.cancelPendingFeatureWrite()
             }
         }
+        .confirmationDialog(
+            "确认写入 \(workspace.name) changes.md",
+            isPresented: Binding(
+                get: { appState.pendingSessionChangeWrite(for: workspace) != nil },
+                set: { if !$0 { appState.cancelPendingSessionChangeWrite() } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("确认写入 changes.md") {
+                guard let operation = appState.takePendingSessionChangeWrite() else { return }
+                Task {
+                    await appState.writeConfirmedSessionChange(operation)
+                    if appState.sessionChangeDraftsByWorkspace[workspace.id] == nil {
+                        isSessionChangeConfirmed = false
+                    }
+                }
+            }
+            Button("取消", role: .cancel) {
+                appState.cancelPendingSessionChangeWrite()
+            }
+        }
     }
 
     private var featureList: some View {
@@ -405,6 +436,75 @@ struct FeatureWorkspaceView: View {
         }
     }
 
+    private var sessionChangeReview: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("本次变化 / Session Changes")
+                    .font(.headline)
+                Spacer()
+                if sessionChangeDraft == nil {
+                    Button {
+                        isSessionChangeConfirmed = false
+                        Task {
+                            _ = await appState.generateSessionChangeDraft(
+                                in: workspace,
+                                codexSummary: sessionCodexSummary.isEmpty ? nil : sessionCodexSummary
+                            )
+                        }
+                    } label: {
+                        Label("生成本次变化摘要", systemImage: "doc.text.magnifyingglass")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isSessionChangeBusy)
+                }
+            }
+
+            TextField("可选 Codex 摘要", text: $sessionCodexSummary)
+                .textFieldStyle(.roundedBorder)
+                .disabled(isSessionChangeBusy || sessionChangeDraft != nil)
+
+            if isSessionChangeBusy {
+                ProgressView()
+                    .controlSize(.small)
+            }
+
+            if let draft = sessionChangeDraft {
+                Label(
+                    draft.notice,
+                    systemImage: draft.canClaimPriorDiff ? "info.circle" : "exclamationmark.triangle"
+                )
+                .font(.caption)
+                .foregroundStyle(draft.canClaimPriorDiff ? Color.secondary : Color.orange)
+
+                ScrollView {
+                    Text(draft.markdown)
+                        .font(.caption.monospaced())
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 180)
+
+                Toggle("我已审阅并确认写入 changes.md", isOn: $isSessionChangeConfirmed)
+                    .toggleStyle(.checkbox)
+
+                HStack {
+                    Spacer()
+                    Button {
+                        Task { await appState.prepareSessionChangeWrite(draft, in: workspace) }
+                    } label: {
+                        Label("写入 changes.md", systemImage: "square.and.arrow.down")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!FeatureWorkspaceSessionChangePolicy.canWrite(
+                        hasDraft: true,
+                        confirmed: isSessionChangeConfirmed,
+                        isBusy: isSessionChangeBusy
+                    ))
+                }
+            }
+        }
+    }
+
     private func featureRow(_ feature: WorkspaceFeature) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -471,6 +571,15 @@ struct FeatureWorkspaceView: View {
 
     private var features: [WorkspaceFeature] {
         appState.featuresByWorkspace[workspace.id]?.features ?? []
+    }
+
+    private var sessionChangeDraft: SessionChangeDraft? {
+        appState.sessionChangeDraftsByWorkspace[workspace.id]
+    }
+
+    private var isSessionChangeBusy: Bool {
+        appState.sessionChangeLoadingWorkspaceID == workspace.id
+            || appState.sessionChangeWriteWorkspaceID == workspace.id
     }
 
     private var featureProposalReview: FeatureProposalReview? {

@@ -25,6 +25,13 @@ struct NativeContextEvidence: Hashable, Sendable {
     let summary: String?
 }
 
+struct NativeFeatureProposalContext: Hashable, Sendable {
+    let requirement: String
+    let links: [String]
+    let materialPaths: [String]
+    let draftPath: String
+}
+
 struct NativeContextPackInput: Hashable, Sendable {
     var generatedAt: String
     var workspaceName: String
@@ -39,6 +46,7 @@ struct NativeContextPackInput: Hashable, Sendable {
     var confirmedChanges: [String]
     var evidence: [NativeContextEvidence]
     var sourceRevisions: [String: String]
+    var featureProposal: NativeFeatureProposalContext? = nil
 }
 
 enum NativeContextPackStatus: Hashable, Sendable {
@@ -58,17 +66,13 @@ enum NativeContextPackBuilder {
         let maximum = max(0, maximumUTF8Bytes)
         var changes = Array(input.confirmedChanges.prefix(3))
         var evidenceSummaries = input.evidence.map(\.summary)
-        var includeCheck = input.latestRelevantCheck != nil
-        var includeServiceAndGit = !input.services.isEmpty || !input.gitSummary.isEmpty
         var omitted: [String] = []
 
         func render() -> String {
             markdown(
                 input: input,
                 changes: changes,
-                evidenceSummaries: evidenceSummaries,
-                includeCheck: includeCheck,
-                includeServiceAndGit: includeServiceAndGit
+                evidenceSummaries: evidenceSummaries
             )
         }
 
@@ -84,16 +88,6 @@ enum NativeContextPackBuilder {
                 rendered = render()
                 if rendered.utf8.count <= maximum { break }
             }
-        }
-        if rendered.utf8.count > maximum, includeCheck {
-            includeCheck = false
-            omitted.append("latest-relevant-check")
-            rendered = render()
-        }
-        if rendered.utf8.count > maximum, includeServiceAndGit {
-            includeServiceAndGit = false
-            omitted.append("service-branch-git")
-            rendered = render()
         }
         guard rendered.utf8.count <= maximum else {
             return NativeContextPack(
@@ -114,9 +108,7 @@ enum NativeContextPackBuilder {
     private static func markdown(
         input: NativeContextPackInput,
         changes: [String],
-        evidenceSummaries: [String?],
-        includeCheck: Bool,
-        includeServiceAndGit: Bool
+        evidenceSummaries: [String?]
     ) -> String {
         var lines = [
             "# Nexus Context Pack",
@@ -142,18 +134,37 @@ enum NativeContextPackBuilder {
                     "- \($0.id) [\($0.status)]: \(singleLine($0.title)) | \(singleLine($0.detail))"
                 }
         }
+        if let proposal = input.featureProposal {
+            lines += ["", "## Feature Proposal Input", "### Requirement"]
+            let requirementLines = proposal.requirement.split(
+                separator: "\n",
+                omittingEmptySubsequences: false
+            ).map(String.init)
+            lines += requirementLines.isEmpty ? ["No requirement text saved yet."] : requirementLines
+            lines += ["", "### Links"]
+            lines += proposal.links.isEmpty ? ["- None."] : proposal.links.map { "- \($0)" }
+            lines += ["", "### Confirmed Material Paths"]
+            lines += proposal.materialPaths.isEmpty ? ["- None confirmed."] : proposal.materialPaths.map { "- \($0)" }
+            lines += [
+                "",
+                "### Output Contract",
+                "- Write a proposal to \(proposal.draftPath).",
+                "- Do not modify FEATURES.md.",
+                "- Use stable provisional IDs DRAFT-001, DRAFT-002, ... ."
+            ]
+        }
         lines += ["", "## Blockers And Next Action"]
         lines += input.blockers.isEmpty ? ["- Blockers: None."] : input.blockers.map { "- Blocker: \(singleLine($0))" }
         lines.append("- Next: \(singleLine(input.nextAction))")
 
-        if includeServiceAndGit {
+        if !input.services.isEmpty || !input.gitSummary.isEmpty {
             lines += ["", "## Service, Branch And Git"]
             lines += input.services.map {
                 "- \($0.name): branch=\($0.branch), git=\(singleLine($0.gitSummary))"
             }
             lines += input.gitSummary.map { "- \(singleLine($0))" }
         }
-        if includeCheck, let check = input.latestRelevantCheck {
+        if let check = input.latestRelevantCheck {
             lines += ["", "## Latest Relevant Check", "- \(singleLine(check))"]
         }
         if !changes.isEmpty {

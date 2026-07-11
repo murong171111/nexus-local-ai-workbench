@@ -2222,6 +2222,7 @@ final class FeatureWorkflowTests: XCTestCase {
             workspaceRoot: root.deletingLastPathComponent().path,
             sourceReposRoot: root.path,
             docsRoot: root.path,
+            applicationSupportRoot: root.appendingPathComponent("application-support").path,
             defaults: defaults
         )
 
@@ -2245,6 +2246,99 @@ final class FeatureWorkflowTests: XCTestCase {
         XCTAssertTrue(prompt.contains("Write a proposal to \(root.path)/FEATURES.draft.md."))
         XCTAssertTrue(prompt.contains("Do not modify FEATURES.md."))
         XCTAssertTrue(prompt.contains("DRAFT-001, DRAFT-002"))
+        XCTAssertLessThanOrEqual(prompt.utf8.count, 6_144)
+        XCTAssertTrue(prompt.contains("<!-- generated-by: Nexus Native -->"))
+        XCTAssertEqual(
+            prompt,
+            try String(contentsOf: root.appendingPathComponent("handoff.md"), encoding: .utf8)
+        )
+        XCTAssertFalse(prompt.contains("FULL DELIVERY BODY"))
+    }
+
+    @MainActor
+    func testFeatureIntakePromptRebuildsOnceWhenHandoffSourceTurnsStale() async throws {
+        let root = try sessionChangeWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = demandInputWorkspace(path: root.path)
+        let appState = makeAppState(workspace: workspace, root: root)
+        appState.selectedWorkspaceID = workspace.id
+        let secondAttempt = expectation(description: "handoff rebuilt after stale source")
+
+        let prompt = await appState.featureIntakePrompt(
+            for: workspace,
+            beforeHandoffWrite: { attempt in
+                if attempt == 0 {
+                    try? "# Tasks\n\nexternal source update\n".write(
+                        to: root.appendingPathComponent("tasks.md"), atomically: true, encoding: .utf8
+                    )
+                } else {
+                    secondAttempt.fulfill()
+                }
+            }
+        )
+
+        await fulfillment(of: [secondAttempt], timeout: 1)
+        XCTAssertFalse(prompt.isEmpty)
+        XCTAssertEqual(prompt, try String(contentsOf: root.appendingPathComponent("handoff.md"), encoding: .utf8))
+        XCTAssertNil(appState.lastError)
+    }
+
+    @MainActor
+    func testFeatureIntakePromptRebuildsFeatureFactsAfterPrePlanStale() async throws {
+        let root = try sessionChangeWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try featureSource(id: "F-001", title: "Old feature fact").write(
+            to: root.appendingPathComponent("FEATURES.md"), atomically: true, encoding: .utf8
+        )
+        let workspace = demandInputWorkspace(path: root.path)
+        let appState = makeAppState(workspace: workspace, root: root)
+        appState.selectedWorkspaceID = workspace.id
+
+        let prompt = await appState.featureIntakePrompt(
+            for: workspace,
+            beforeHandoffWrite: { attempt in
+            if attempt == 0 {
+                try? self.featureSource(id: "F-001", title: "Fresh feature fact").write(
+                    to: root.appendingPathComponent("FEATURES.md"), atomically: true, encoding: .utf8
+                )
+            }
+            }
+        )
+
+        XCTAssertTrue(prompt.contains("Fresh feature fact"))
+        XCTAssertFalse(prompt.contains("Old feature fact"))
+        let snapshot = try NativeSessionChangeStore.contextSourceSnapshot(
+            workspacePath: root.path,
+            workspaceFolder: workspace.folder
+        )
+        XCTAssertTrue(prompt.contains("FEATURES.md=\(snapshot.sourceRevisions["FEATURES.md"]!.token)"))
+    }
+
+    @MainActor
+    func testFeatureIntakePromptRebuildsChangeEntriesAfterPrePlanStale() async throws {
+        let root = try sessionChangeWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = demandInputWorkspace(path: root.path)
+        let appState = makeAppState(workspace: workspace, root: root)
+        appState.selectedWorkspaceID = workspace.id
+
+        let prompt = await appState.featureIntakePrompt(
+            for: workspace,
+            beforeHandoffWrite: { attempt in
+            if attempt == 0 {
+                try? "# Changes\n\n## newest\n- Fresh change fact\n".write(
+                    to: root.appendingPathComponent("changes.md"), atomically: true, encoding: .utf8
+                )
+            }
+            }
+        )
+
+        XCTAssertTrue(prompt.contains("Fresh change fact"))
+        let snapshot = try NativeSessionChangeStore.contextSourceSnapshot(
+            workspacePath: root.path,
+            workspaceFolder: workspace.folder
+        )
+        XCTAssertTrue(prompt.contains("changes.md=\(snapshot.sourceRevisions["changes.md"]!.token)"))
     }
 
     @MainActor
@@ -2857,6 +2951,13 @@ final class FeatureWorkflowTests: XCTestCase {
         )
     }
 
+    func testSessionChangeReviewPolicyRequiresPreviewConfirmationAndIdleWriter() {
+        XCTAssertFalse(FeatureWorkspaceSessionChangePolicy.canWrite(hasDraft: false, confirmed: true, isBusy: false))
+        XCTAssertFalse(FeatureWorkspaceSessionChangePolicy.canWrite(hasDraft: true, confirmed: false, isBusy: false))
+        XCTAssertFalse(FeatureWorkspaceSessionChangePolicy.canWrite(hasDraft: true, confirmed: true, isBusy: true))
+        XCTAssertTrue(FeatureWorkspaceSessionChangePolicy.canWrite(hasDraft: true, confirmed: true, isBusy: false))
+    }
+
     func testContextPackFitsUnicodeBudgetWithoutSplittingLines() {
         var input = contextPackInput()
         input.confirmedChanges = (1...8).map { index in
@@ -2910,14 +3011,44 @@ final class FeatureWorkflowTests: XCTestCase {
         XCTAssertTrue(pack.omittedSections.contains("required-content-overflow"))
     }
 
+    func testContextPackNeverDropsServiceGitOrLatestCheckToFitBudget() {
+        var input = contextPackInput()
+        input.services = [
+            NativeContextService(
+                name: "order-service",
+                branch: "feature/order",
+                gitSummary: String(repeating: "required-git-fact ", count: 35)
+            )
+        ]
+        input.latestRelevantCheck = String(repeating: "required-check-fact ", count: 35)
+        input.confirmedChanges = ["## old\n- " + String(repeating: "optional change ", count: 80)]
+        input.evidence = input.evidence.map {
+            NativeContextEvidence(path: $0.path, summary: String(repeating: "optional summary ", count: 30))
+        }
+
+        let pack = NativeContextPackBuilder.build(input: input, maximumUTF8Bytes: 1_100)
+
+        guard case .overflow = pack.status else { return XCTFail("required service/check facts must overflow") }
+        XCTAssertTrue(pack.markdown.isEmpty)
+        XCTAssertFalse(pack.omittedSections.contains("latest-relevant-check"))
+        XCTAssertFalse(pack.omittedSections.contains("service-branch-git"))
+    }
+
     func testHandoffWriteRejectsStaleSourceRevisionAndPreservesProjection() throws {
         let root = try sessionChangeWorkspace()
         defer { try? FileManager.default.removeItem(at: root) }
         let original = "external handoff\n"
         try original.write(to: root.appendingPathComponent("handoff.md"), atomically: true, encoding: .utf8)
+        let source = try NativeSessionChangeStore.contextSourceSnapshot(
+            workspacePath: root.path,
+            workspaceFolder: "workspace"
+        )
+        var input = contextPackInput(workspacePath: root.path)
+        input.sourceRevisions = source.sourceRevisions.mapValues(\.token)
         let plan = try NativeSessionChangeStore.makeHandoffPlan(
             workspacePath: root.path,
-            input: contextPackInput(workspacePath: root.path)
+            input: input,
+            expectedSourceRevisions: source.sourceRevisions
         )
         try "# Tasks\n\nexternal\n".write(
             to: root.appendingPathComponent("tasks.md"), atomically: true, encoding: .utf8
@@ -2930,9 +3061,16 @@ final class FeatureWorkflowTests: XCTestCase {
     func testHandoffWriteIncludesGeneratedMetadataAndExactSourceRevisions() throws {
         let root = try sessionChangeWorkspace()
         defer { try? FileManager.default.removeItem(at: root) }
+        let source = try NativeSessionChangeStore.contextSourceSnapshot(
+            workspacePath: root.path,
+            workspaceFolder: "workspace"
+        )
+        var input = contextPackInput(workspacePath: root.path)
+        input.sourceRevisions = source.sourceRevisions.mapValues(\.token)
         let plan = try NativeSessionChangeStore.makeHandoffPlan(
             workspacePath: root.path,
-            input: contextPackInput(workspacePath: root.path)
+            input: input,
+            expectedSourceRevisions: source.sourceRevisions
         )
 
         let response = try NativeSessionChangeStore.writeHandoff(plan: plan)
@@ -2967,6 +3105,53 @@ final class FeatureWorkflowTests: XCTestCase {
         XCTAssertFalse(result.canClaimPriorDiff)
         XCTAssertTrue(result.notice.contains("不能声称此前差异"))
         XCTAssertEqual(try NativeSessionChangeStore.loadBaseline(workspacePath: root.path), baseline)
+    }
+
+    func testSessionDraftFactsAndRevisionsComeFromTheSameSourceSnapshot() throws {
+        let root = try sessionChangeWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try featureSource(id: "F-001", title: "Snapshot feature").write(
+            to: root.appendingPathComponent("FEATURES.md"), atomically: true, encoding: .utf8
+        )
+        try "| 任务 | 状态 | 详情 |\n| --- | --- | --- |\n| Old task | todo | feature=F-001 |\n".write(
+            to: root.appendingPathComponent("tasks.md"), atomically: true, encoding: .utf8
+        )
+        let source = try NativeSessionChangeStore.contextSourceSnapshot(
+            workspacePath: root.path,
+            workspaceFolder: "workspace"
+        )
+        try "| 任务 | 状态 | 详情 |\n| --- | --- | --- |\n| Fresh task | todo | feature=F-001 |\n".write(
+            to: root.appendingPathComponent("tasks.md"), atomically: true, encoding: .utf8
+        )
+        let baseline = SessionChangeBaseline(
+            sessionID: "session-source",
+            workspacePath: root.path,
+            startedAt: "2026-07-11T01:02:03Z",
+            repositoryHeads: [:],
+            featureRevision: source.sourceRevisions["FEATURES.md"]?.token,
+            taskRevision: source.sourceRevisions["tasks.md"]?.token
+        )
+        let input = SessionChangeDraftInput(
+            workspacePath: root.path,
+            baseline: baseline,
+            currentRepositoryHeads: [:],
+            repositoryDiffs: [:],
+            featureRevision: source.sourceRevisions["FEATURES.md"]?.token,
+            taskRevision: source.sourceRevisions["tasks.md"]?.token,
+            latestTest: nil,
+            sqlAndDeliveryRevisions: [:],
+            codexSummary: nil,
+            featureAndTaskFacts: source.featureDocument.features.map(\.title)
+                + source.tasks.map(\.title)
+        )
+
+        XCTAssertThrowsError(
+            try NativeSessionChangeStore.writeDraft(
+                input: input,
+                expectedSourceRevisions: source.sourceRevisions
+            )
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("changes.draft.md").path))
     }
 
     func testSessionChangeAppendRejectsChangedChangesOrDraftRevision() throws {
@@ -3083,6 +3268,50 @@ final class FeatureWorkflowTests: XCTestCase {
         XCTAssertNotNil(appState.pendingSessionChangeWrite(for: workspaceB))
         appState.selectedWorkspaceID = workspaceA.id
         XCTAssertNil(appState.pendingSessionChangeWrite(for: workspaceB))
+    }
+
+    @MainActor
+    func testAppStateGeneratesSessionChangeDraftAndExplainsMissingBaseline() async throws {
+        let root = try sessionChangeWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = demandInputWorkspace(path: root.path)
+        let appState = makeAppState(workspace: workspace, root: root)
+        appState.selectedWorkspaceID = workspace.id
+
+        let draft = await appState.generateSessionChangeDraft(
+            in: workspace,
+            codexSummary: "Codex summary"
+        )
+
+        let generated = try XCTUnwrap(draft)
+        XCTAssertFalse(generated.canClaimPriorDiff)
+        XCTAssertTrue(generated.notice.contains("不能声称此前差异"))
+        XCTAssertEqual(appState.sessionChangeDraftsByWorkspace[workspace.id], generated)
+        XCTAssertEqual(appState.sessionChangeNotice(for: workspace), generated.notice)
+        XCTAssertTrue(generated.markdown.contains("order-service"))
+        XCTAssertTrue(generated.markdown.contains("Codex summary"))
+        XCTAssertNotNil(try NativeSessionChangeStore.loadBaseline(workspacePath: root.path))
+    }
+
+    @MainActor
+    func testAppStateConfirmsRevisionBoundSessionChangeAndClearsArchivedPreview() async throws {
+        let root = try sessionChangeWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = demandInputWorkspace(path: root.path)
+        let appState = makeAppState(workspace: workspace, root: root)
+        appState.selectedWorkspaceID = workspace.id
+        let generated = await appState.generateSessionChangeDraft(in: workspace)
+        let draft = try XCTUnwrap(generated)
+
+        await appState.prepareSessionChangeWrite(draft, in: workspace)
+        let operation = try XCTUnwrap(appState.takePendingSessionChangeWrite())
+        await appState.writeConfirmedSessionChange(operation)
+
+        let changes = try String(contentsOf: root.appendingPathComponent("changes.md"), encoding: .utf8)
+        XCTAssertTrue(changes.contains("Session change confirmed"))
+        XCTAssertNil(appState.sessionChangeDraftsByWorkspace[workspace.id])
+        XCTAssertNil(appState.sessionChangeWriteWorkspaceID)
+        XCTAssertNil(appState.lastError)
     }
 
     func testConsoleLayoutKeepsOnePrimaryActionAndFilesCollapsed() {
@@ -3385,6 +3614,7 @@ final class FeatureWorkflowTests: XCTestCase {
             workspaceRoot: root.path,
             sourceReposRoot: root.path,
             docsRoot: root.path,
+            applicationSupportRoot: root.appendingPathComponent("application-support").path,
             defaults: defaults
         )
     }

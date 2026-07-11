@@ -28,6 +28,37 @@ struct SessionChangeDraftInput: Hashable, Sendable {
     let latestTest: String?
     let sqlAndDeliveryRevisions: [String: String]
     let codexSummary: String?
+    let featureAndTaskFacts: [String]
+    let canClaimPriorDiff: Bool
+    let baselineNotice: String
+
+    init(
+        workspacePath: String,
+        baseline: SessionChangeBaseline,
+        currentRepositoryHeads: [String: String],
+        repositoryDiffs: [String: String],
+        featureRevision: String?,
+        taskRevision: String?,
+        latestTest: String?,
+        sqlAndDeliveryRevisions: [String: String],
+        codexSummary: String?,
+        featureAndTaskFacts: [String] = [],
+        canClaimPriorDiff: Bool = true,
+        baselineNotice: String = ""
+    ) {
+        self.workspacePath = workspacePath
+        self.baseline = baseline
+        self.currentRepositoryHeads = currentRepositoryHeads
+        self.repositoryDiffs = repositoryDiffs
+        self.featureRevision = featureRevision
+        self.taskRevision = taskRevision
+        self.latestTest = latestTest
+        self.sqlAndDeliveryRevisions = sqlAndDeliveryRevisions
+        self.codexSummary = codexSummary
+        self.featureAndTaskFacts = featureAndTaskFacts
+        self.canClaimPriorDiff = canClaimPriorDiff
+        self.baselineNotice = baselineNotice
+    }
 }
 
 struct SessionChangeDraft: Hashable, Sendable {
@@ -37,6 +68,8 @@ struct SessionChangeDraft: Hashable, Sendable {
     let baseline: SessionChangeBaseline
     let changesRevision: NativeStrictFileRevision
     let draftRevision: NativeStrictFileRevision
+    let canClaimPriorDiff: Bool
+    let notice: String
 }
 
 struct SessionChangeWritePlan: Hashable, Sendable {
@@ -76,6 +109,13 @@ struct NativeHandoffWriteResponse: Hashable, Sendable {
 struct SessionRepositorySnapshot: Hashable, Sendable {
     let heads: [String: String]
     let diffs: [String: String]
+}
+
+struct NativeContextSourceSnapshot {
+    let featureDocument: FeatureDocument
+    let tasks: [WorkspaceTaskSnapshot]
+    let confirmedChanges: [String]
+    let sourceRevisions: [String: NativeStrictFileRevision]
 }
 
 enum NativeStrictFileRevision: Hashable, Sendable {
@@ -136,6 +176,32 @@ enum NativeSessionChangeStore {
         }
     }
 
+    static func contextSourceSnapshot(
+        workspacePath: String,
+        workspaceFolder: String,
+        changeLimit: Int = 3
+    ) throws -> NativeContextSourceSnapshot {
+        let feature = try NativeFeatureStore.load(workspacePath: workspacePath)
+        let featureRevision = try strictRevision(feature.revision, path: feature.path)
+        return try withWorkspace(workspacePath) { fd, root in
+            let tasks = try readSnapshot(fd: fd, root: root, name: "tasks.md", allowMissing: true)
+            let changes = try readSnapshot(fd: fd, root: root, name: changesFileName, allowMissing: true)
+            return NativeContextSourceSnapshot(
+                featureDocument: feature.document,
+                tasks: NativeWorkspaceTaskParser.snapshots(
+                    from: String(decoding: tasks.data, as: UTF8.self),
+                    folder: workspaceFolder
+                ),
+                confirmedChanges: changeEntries(from: changes.data, limit: changeLimit),
+                sourceRevisions: [
+                    "FEATURES.md": featureRevision,
+                    "tasks.md": tasks.revision,
+                    changesFileName: changes.revision
+                ]
+            )
+        }
+    }
+
     static func fileRevision(path: String, workspacePath: String) throws -> String {
         let root = URL(fileURLWithPath: canonicalPath(workspacePath))
         let url = URL(fileURLWithPath: canonicalPath(path))
@@ -159,19 +225,7 @@ enum NativeSessionChangeStore {
         return try withWorkspace(workspacePath) { fd, root in
             let snapshot = try readSnapshot(fd: fd, root: root, name: changesFileName, allowMissing: true)
             guard snapshot.revision != .missing else { return [] }
-            let lines = String(decoding: snapshot.data, as: UTF8.self)
-                .split(separator: "\n", omittingEmptySubsequences: false)
-                .map(String.init)
-            var sections: [[String]] = []
-            for line in lines {
-                if line.hasPrefix("## ") { sections.append([line]) }
-                else if !sections.isEmpty { sections[sections.count - 1].append(line) }
-            }
-            return sections.suffix(limit).reversed().map {
-                var lines = $0
-                while lines.last?.isEmpty == true { lines.removeLast() }
-                return lines.joined(separator: "\n")
-            }
+            return changeEntries(from: snapshot.data, limit: limit)
         }
     }
 
@@ -211,9 +265,15 @@ enum NativeSessionChangeStore {
         }
     }
 
-    static func writeDraft(input: SessionChangeDraftInput) throws -> SessionChangeDraft {
+    static func writeDraft(
+        input: SessionChangeDraftInput,
+        expectedSourceRevisions: [String: NativeStrictFileRevision]? = nil
+    ) throws -> SessionChangeDraft {
         let markdown = renderDraft(input)
         return try lockedWorkspace(input.workspacePath) { fd, root in
+            if let expectedSourceRevisions {
+                try requireSourceRevisions(expectedSourceRevisions, fd: fd, root: root)
+            }
             let changes = try readSnapshot(fd: fd, root: root, name: changesFileName)
             let currentDraft = try readSnapshot(fd: fd, root: root, name: draftFileName, allowMissing: true)
             let data = Data(markdown.utf8)
@@ -225,7 +285,9 @@ enum NativeSessionChangeStore {
                 markdown: markdown,
                 baseline: input.baseline,
                 changesRevision: changes.revision,
-                draftRevision: written.revision
+                draftRevision: written.revision,
+                canClaimPriorDiff: input.canClaimPriorDiff,
+                notice: input.baselineNotice
             )
         }
     }
@@ -256,6 +318,23 @@ enum NativeSessionChangeStore {
         }
     }
 
+    static func refreshDraftSnapshot(_ draft: SessionChangeDraft) throws -> SessionChangeDraft {
+        try withWorkspace(draft.workspacePath) { fd, root in
+            let changes = try readSnapshot(fd: fd, root: root, name: changesFileName)
+            let currentDraft = try readSnapshot(fd: fd, root: root, name: draftFileName)
+            return SessionChangeDraft(
+                workspacePath: root.path,
+                path: draft.path,
+                markdown: String(decoding: currentDraft.data, as: UTF8.self),
+                baseline: draft.baseline,
+                changesRevision: changes.revision,
+                draftRevision: currentDraft.revision,
+                canClaimPriorDiff: draft.canClaimPriorDiff,
+                notice: draft.notice
+            )
+        }
+    }
+
     static func append(
         plan: SessionChangeWritePlan,
         confirmed: Bool,
@@ -274,6 +353,7 @@ enum NativeSessionChangeStore {
             var markdown = String(decoding: current.data, as: UTF8.self)
             if !markdown.hasSuffix("\n") { markdown += "\n" }
             markdown += "\n## \(timestamp)\n\n"
+            markdown += "Session change confirmed from `\(plan.sessionID)`.\n\n"
             markdown += plan.markdown
                 .split(separator: "\n", omittingEmptySubsequences: false)
                 .dropFirst()
@@ -320,16 +400,16 @@ enum NativeSessionChangeStore {
     static func makeHandoffPlan(
         workspacePath: String,
         input: NativeContextPackInput,
+        expectedSourceRevisions: [String: NativeStrictFileRevision],
         maximumUTF8Bytes: Int = 6_144
     ) throws -> NativeHandoffWritePlan {
         try withWorkspace(workspacePath) { fd, root in
-            var revisions: [String: NativeStrictFileRevision] = [:]
-            for name in ["FEATURES.md", "tasks.md", changesFileName] {
-                revisions[name] = try readSnapshot(fd: fd, root: root, name: name, allowMissing: true).revision
+            try requireSourceRevisions(expectedSourceRevisions, fd: fd, root: root)
+            guard input.sourceRevisions == expectedSourceRevisions.mapValues(\.token) else {
+                throw NativeSessionChangeStoreError.stale(root.path)
             }
             var currentInput = input
             currentInput.workspacePath = root.path
-            currentInput.sourceRevisions = revisions.mapValues(\.token)
             let pack = NativeContextPackBuilder.build(
                 input: currentInput,
                 maximumUTF8Bytes: max(0, maximumUTF8Bytes - 512)
@@ -340,7 +420,7 @@ enum NativeSessionChangeStore {
                 workspacePath: root.path,
                 path: root.appendingPathComponent(handoffFileName).path,
                 pack: pack,
-                sourceRevisions: revisions,
+                sourceRevisions: expectedSourceRevisions,
                 handoffRevision: handoff.revision
             )
         }
@@ -387,9 +467,9 @@ enum NativeSessionChangeStore {
             "# Session Change Draft",
             "",
             "Draft only; changes.md remains authoritative.",
-            "",
-            "### Repository delta"
         ]
+        if !input.baselineNotice.isEmpty { lines += ["", "> \(input.baselineNotice)"] }
+        lines += ["", "### Repository delta"]
         for service in Set(input.baseline.repositoryHeads.keys).union(input.currentRepositoryHeads.keys).sorted() {
             lines.append("- \(service): head \(input.baseline.repositoryHeads[service] ?? "missing") -> \(input.currentRepositoryHeads[service] ?? "missing")")
             if let diff = input.repositoryDiffs[service], !diff.isEmpty { lines.append("  - \(firstLine(diff))") }
@@ -400,6 +480,7 @@ enum NativeSessionChangeStore {
             "- FEATURES.md: \(input.baseline.featureRevision ?? "missing") -> \(input.featureRevision ?? "missing")",
             "- tasks.md: \(input.baseline.taskRevision ?? "missing") -> \(input.taskRevision ?? "missing")"
         ]
+        lines += input.featureAndTaskFacts.map { "- \(firstLine($0))" }
         if let test = input.latestTest { lines += ["", "### Latest test", "- \(firstLine(test))"] }
         if !input.sqlAndDeliveryRevisions.isEmpty {
             lines += ["", "### SQL and delivery revisions"]
@@ -415,6 +496,52 @@ enum NativeSessionChangeStore {
 
     private static func firstLine(_ value: String) -> String {
         value.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
+    }
+
+    private static func changeEntries(from data: Data, limit: Int) -> [String] {
+        guard limit > 0 else { return [] }
+        let lines = String(decoding: data, as: UTF8.self)
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map(String.init)
+        var sections: [[String]] = []
+        for line in lines {
+            if line.hasPrefix("## ") { sections.append([line]) }
+            else if !sections.isEmpty { sections[sections.count - 1].append(line) }
+        }
+        return sections.suffix(limit).reversed().map {
+            var lines = $0
+            while lines.last?.isEmpty == true { lines.removeLast() }
+            return lines.joined(separator: "\n")
+        }
+    }
+
+    private static func requireSourceRevisions(
+        _ expected: [String: NativeStrictFileRevision],
+        fd: Int32,
+        root: URL
+    ) throws {
+        guard Set(expected.keys) == Set(["FEATURES.md", "tasks.md", changesFileName]) else {
+            throw NativeSessionChangeStoreError.stale(root.path)
+        }
+        for (name, revision) in expected {
+            guard try readSnapshot(fd: fd, root: root, name: name, allowMissing: true).revision == revision else {
+                throw NativeSessionChangeStoreError.stale(root.appendingPathComponent(name).path)
+            }
+        }
+    }
+
+    private static func strictRevision(
+        _ revision: FeatureDocumentRevision,
+        path: String
+    ) throws -> NativeStrictFileRevision {
+        switch revision {
+        case .missing:
+            return .missing
+        case .regularUTF8(let sha256, let byteCount):
+            return .regularUTF8(sha256: sha256, byteCount: byteCount)
+        case .invalid:
+            throw NativeSessionChangeStoreError.invalidUTF8(path)
+        }
     }
 
     private static func git(_ arguments: [String], at path: String) -> String? {
