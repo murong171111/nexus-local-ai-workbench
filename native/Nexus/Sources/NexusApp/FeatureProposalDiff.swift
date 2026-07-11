@@ -66,7 +66,11 @@ struct FeatureProposalDiff: Hashable, Sendable {
 
     private static func proposalComparable(_ feature: WorkspaceFeature) -> WorkspaceFeature {
         var feature = feature
-        feature.preservedLines = []
+        feature.status = .todo
+        feature.completedAt = nil
+        feature.completedBy = nil
+        feature.completionNote = nil
+        feature.evidenceStale = false
         return feature
     }
 }
@@ -105,6 +109,8 @@ struct ConfirmedFeatureProposalMerge: Hashable, Sendable {
 
 struct FeatureProposalReview: Hashable, Sendable {
     let diff: FeatureProposalDiff?
+    let confirmedRevision: FeatureDocumentRevision?
+    let draftRevision: FeatureDocumentRevision?
     let error: String?
 
     var canConfirm: Bool { diff != nil && error == nil }

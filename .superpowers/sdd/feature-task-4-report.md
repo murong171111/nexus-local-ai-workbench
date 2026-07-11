@@ -1,54 +1,52 @@
-# Feature-Centered Demand Workflow Task 4 Final Report
+# Feature-Centered Demand Workflow Task 4 Review Hardening Report
 
 ## Status
 
 DONE
 
-## Implementation
+## Review Findings Resolved
 
-1. Proposal parsing accepts stable `DRAFT-NNN` additions and existing `F-NNN` changes while the confirmed parser remains `F-NNN` only. Missing, malformed, duplicate, unsafe, and invalid UTF-8 drafts return exact errors without changing either document.
-2. Diff order is deterministic: confirmed order first and draft additions second. Omission proposes cancellation, and new IDs start after the maximum existing ID, including cancelled features.
-3. Merge plans capture both strict revisions, selected item IDs, and edited replacements. Merge reopens the fixed workspace directory, revalidates both documents around the final publication check, applies selected items once, and publishes `FEATURES.md` through the Task 3 strict path.
-4. One `feature.proposal_merged` audit records add/change/cancel counts and both source revisions. Audit failure does not roll back the main write.
-5. Accepted drafts archive with no-overwrite naming only while the draft revision still matches. Archive collision, stale draft, or archive failure is reported separately and does not damage the main write or live draft.
-6. AppState performs proposal load, planning, and merge I/O in detached tasks. Pending merges are workspace-bound and synchronously single-consume. The review UI supports add/change/cancel groups, inline edits, deselection, parse errors, explicit confirmation, and non-competing system dismissal.
+1. Proposal reviews now carry the confirmed and draft strict revisions. Merge requests pass the reviewed revisions into planning, reject either stale document, refresh the review, and use per-workspace refresh generations so older asynchronous results cannot overwrite newer reviews.
+2. Merge reopens the fixed workspace FD, reloads both documents, rebuilds the deterministic diff, and verifies captured documents/items before writing. Selections are limited to actionable IDs; replacements are limited to selected add/change IDs; forged items, assigned IDs, selections, and replacement keys are rejected without changing `FEATURES.md`.
+3. Diff ignores lifecycle and completion history. Change applies only Task 4 scope fields while preserving current status, completion fields, and evidence staleness. Add always writes a clean `todo` feature with no completion history and `evidenceStale=false`.
+4. Proposal parsing rejects malformed `DRAFT-` headings, including nonnumeric IDs, short IDs, and missing titles. Confirmed parsing retains Task 3 ordinary H2 behavior and strict malformed numeric `F-` rejection.
+5. Proposal confirmation now synchronously takes the pending operation before starting asynchronous I/O. Dialog dismissal and explicit cancellation synchronously cancel only an untaken pending operation, leaving in-flight busy/token state intact.
+6. Archive recovery has a post-rename/pre-verify hook. Rollback requires the live draft to remain missing and the archive to retain the original draft identity and fingerprint; otherwise recovery is required and external archive/recovery files are not moved.
 
 ## TDD Evidence
 
-- RED 1: focused compilation failed on missing `parseProposal`, `FeatureProposalDiff`, `makeMergePlan`, and `merge`.
-- GREEN 1: store-focused proposal tests passed 11/11.
-- RED 2: focused compilation failed on missing AppState proposal coordination APIs.
-- GREEN 2: focused proposal tests passed 14/14.
-- RED 3: archive-after-main-write race test failed to compile on missing `beforeArchive` hook.
-- GREEN 3: archive race test passed 1/1 and proves a changed draft is preserved after a successful main write.
-- Compatibility regression: the first UI compile exposed macOS 14-only `ContentUnavailableView`; it was replaced with macOS 13-compatible `VStack`, `Image`, and `Text`.
+- Revision binding/generation RED: compilation failed on missing review revisions and refresh hook. GREEN: focused proposal tests passed 17/17.
+- Plan forgery RED: four forged-plan tests wrote target bytes and produced 8 failures. GREEN: 4/4 passed with target bytes unchanged.
+- Scope-only RED: three tests produced 7 failures, including lost history and forged add lifecycle. GREEN: 3/3 passed.
+- Malformed heading RED: malformed `DRAFT-ABC` and missing-title headings were accepted. GREEN: 1/1 passed.
+- Dialog RED: compilation failed on missing `writeConfirmedFeatureProposal`. GREEN: dismissal, cancellation, and workspace/token tests passed 3/3.
+- Archive recovery RED: compilation failed on the missing post-rename hook. GREEN: hook rollback, external replacement, and directory draft tests passed 3/3.
 
 ## Final Verification
 
 1. `swift test --disable-sandbox --package-path native/Nexus --filter 'FeatureWorkflowTests/testFeatureProposal'`
-   - PASS: 15 tests, 0 failures.
-2. `swift test --disable-sandbox --package-path native/Nexus --filter FeatureWorkflowTests`
-   - PASS: 91 tests, 0 failures (Task 3 baseline 76 plus Task 4 additions 15).
+   - PASS: 30 tests, 0 failures.
+2. `swift test --disable-sandbox --package-path native/Nexus --filter 'FeatureWorkflowTests'`
+   - PASS: 107 tests, 0 failures.
 3. `npm run native:test`
-   - PASS: 321 tests, 0 failures (Native baseline 306 plus Task 4 additions 15).
+   - PASS: 337 tests, 0 failures.
 4. `npm run native:m1-acceptance`
    - PASS: 3 tests, 0 failures.
 5. `git diff --check`
    - PASS: 0 whitespace errors.
 
-## Files And Counts
+## Files Changed In Review Revision
 
-- `native/Nexus/Sources/NexusApp/FeatureProposalDiff.swift`: new, 111 lines.
-- `native/Nexus/Sources/NexusApp/Views/FeatureProposalReviewView.swift`: new, 217 lines.
-- `native/Nexus/Sources/NexusApp/NativeFeatureStore.swift`: +385/-3.
-- `native/Nexus/Sources/NexusApp/AppState.swift`: +177/-0.
-- `native/Nexus/Sources/NexusApp/Views/FeatureWorkspaceView.swift`: +72/-0.
-- `native/Nexus/Tests/NexusAppTests/FeatureWorkflowTests.swift`: +364/-0.
-- `.superpowers/sdd/feature-task-4-report.md`: updated final report.
+- `native/Nexus/Sources/NexusApp/AppState.swift`: +38/-18.
+- `native/Nexus/Sources/NexusApp/FeatureProposalDiff.swift`: +7/-1.
+- `native/Nexus/Sources/NexusApp/NativeFeatureStore.swift`: +98/-29.
+- `native/Nexus/Sources/NexusApp/Views/FeatureProposalReviewView.swift`: +4/-3.
+- `native/Nexus/Tests/NexusAppTests/FeatureWorkflowTests.swift`: regression coverage added.
+- `.superpowers/sdd/feature-task-4-report.md`: review hardening report updated.
 
 ## Self-Review
 
-No Critical, Important, or Minor findings remain. The review removed an unused proposal replacement helper and added deterministic coverage for a draft changing after the confirmed main write but before archive.
+No Critical, Important, or requested Minor findings remain. Changes are limited to Task 4 implementation files, `FeatureWorkflowTests`, and this report; no Task 5+ behavior or dependency was added.
 
 ## Concerns
 

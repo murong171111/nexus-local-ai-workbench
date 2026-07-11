@@ -56,18 +56,19 @@ struct FeatureProposalReviewView: View {
             "确认合并到 \(workspace.name) 的 FEATURES.md",
             isPresented: Binding(
                 get: { appState.pendingFeatureProposalMerge(for: workspace) != nil },
-                set: { _ in }
+                set: { if !$0 { appState.cancelPendingFeatureProposalMerge() } }
             ),
             titleVisibility: .visible
         ) {
             Button("确认合并") {
+                guard let operation = appState.takePendingFeatureProposalMerge() else { return }
                 Task {
-                    await appState.confirmPendingFeatureProposalMerge(confirmed: true)
+                    await appState.writeConfirmedFeatureProposal(operation)
                     if appState.featureProposalReview(for: workspace) == nil { dismiss() }
                 }
             }
             Button("取消", role: .cancel) {
-                Task { await appState.confirmPendingFeatureProposalMerge(confirmed: false) }
+                appState.cancelPendingFeatureProposalMerge()
             }
         }
     }

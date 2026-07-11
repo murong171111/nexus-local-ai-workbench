@@ -541,6 +541,23 @@ final class FeatureWorkflowTests: XCTestCase {
         }
     }
 
+    func testFeatureProposalParserRejectsEveryMalformedDraftPrefixedHeading() {
+        for heading in ["## DRAFT-ABC Bad", "## DRAFT-01 Bad", "## DRAFT-001"] {
+            XCTAssertThrowsError(
+                try NativeFeatureStore.parseProposal(
+                    "\(heading)\n- Status: draft\n- Verification: code\n- Auto complete: true\n"
+                ),
+                heading
+            )
+        }
+        XCTAssertNoThrow(try NativeFeatureStore.parse("## F-series notes\n\nOrdinary prose.\n"))
+        XCTAssertThrowsError(
+            try NativeFeatureStore.parse(
+                "## F-01 Bad\n- Status: todo\n- Verification: code\n- Auto complete: true\n"
+            )
+        )
+    }
+
     func testFeatureProposalDiffSeparatesAddsChangesAndCancellationsDeterministically() throws {
         let confirmed = try NativeFeatureStore.parse(
             featureSource(id: "F-010", title: "Changed")
@@ -558,6 +575,75 @@ final class FeatureWorkflowTests: XCTestCase {
         XCTAssertEqual(diff.items.map(\.kind), [.change, .unchanged, .cancel, .add, .add])
         XCTAssertEqual(diff.items.map(\.id), ["F-010", "F-002", "F-007", "DRAFT-002", "DRAFT-001"])
         XCTAssertEqual(diff.items.compactMap(\.assignedFeatureID), ["F-011", "F-012"])
+    }
+
+    func testFeatureProposalDiffIgnoresLifecycleAndCompletionHistory() throws {
+        let confirmed = try NativeFeatureStore.parse(
+            featureSourceWithHistory(id: "F-001", title: "Same", description: "Same prose")
+        )
+        let draft = try NativeFeatureStore.parseProposal(
+            featureSource(id: "F-001", title: "Same") + "\nSame prose\n"
+        )
+
+        XCTAssertEqual(
+            FeatureProposalDiff.resolve(confirmed: confirmed, draft: draft).items.first?.kind,
+            .unchanged
+        )
+    }
+
+    func testFeatureProposalChangePreservesCurrentLifecycleAndCompletionHistory() throws {
+        let root = try temporaryDemandWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try featureSourceWithHistory(id: "F-001", title: "Done title", description: "Old prose").write(
+            to: root.appendingPathComponent("FEATURES.md"), atomically: true, encoding: .utf8
+        )
+        try (featureSource(id: "F-001", title: "Changed title", status: "todo") + "\nNew prose\n").write(
+            to: root.appendingPathComponent("FEATURES.draft.md"), atomically: true, encoding: .utf8
+        )
+
+        let response = try NativeFeatureStore.merge(
+            plan: NativeFeatureStore.makeMergePlan(workspacePath: root.path),
+            confirmed: true
+        )
+        let feature = try XCTUnwrap(response.document.features.first)
+
+        XCTAssertEqual(feature.title, "Changed title")
+        XCTAssertEqual(feature.description, "New prose")
+        XCTAssertEqual(feature.status, .done)
+        XCTAssertEqual(feature.completedAt, "2026-07-11T01:02:03Z")
+        XCTAssertEqual(feature.completedBy, "Reviewer")
+        XCTAssertEqual(feature.completionNote, "Accepted before proposal")
+        XCTAssertTrue(feature.evidenceStale)
+    }
+
+    func testFeatureProposalAddClearsForgedLifecycleAndCompletionHistory() throws {
+        let root = try featureProposalWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let initial = try NativeFeatureStore.makeMergePlan(
+            workspacePath: root.path,
+            selectedItemIDs: ["DRAFT-001"]
+        )
+        var forged = try XCTUnwrap(initial.items.first { $0.id == "DRAFT-001" }?.proposed)
+        forged.status = .done
+        forged.completedAt = "2026-07-11T01:02:03Z"
+        forged.completedBy = "Forger"
+        forged.completionNote = "Forged history"
+        forged.evidenceStale = true
+        let plan = try NativeFeatureStore.makeMergePlan(
+            workspacePath: root.path,
+            selectedItemIDs: ["DRAFT-001"],
+            replacements: ["DRAFT-001": forged]
+        )
+
+        let added = try XCTUnwrap(
+            NativeFeatureStore.merge(plan: plan, confirmed: true).document.features.first { $0.id == "F-003" }
+        )
+
+        XCTAssertEqual(added.status, .todo)
+        XCTAssertNil(added.completedAt)
+        XCTAssertNil(added.completedBy)
+        XCTAssertNil(added.completionNote)
+        XCTAssertFalse(added.evidenceStale)
     }
 
     func testFeatureProposalMergeAppliesOnlyCapturedSelectionsAndEditsInOneWrite() throws {
@@ -629,6 +715,72 @@ final class FeatureWorkflowTests: XCTestCase {
         }
         XCTAssertEqual(try Data(contentsOf: draft), originalDraft)
         XCTAssertEqual(try String(contentsOf: facts, encoding: .utf8), "external facts")
+    }
+
+    func testFeatureProposalMergeRejectsForgedItemsWithoutChangingFacts() throws {
+        let root = try featureProposalWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let plan = try NativeFeatureStore.makeMergePlan(workspacePath: root.path)
+        var forgedItems = plan.items
+        let index = try XCTUnwrap(forgedItems.firstIndex { $0.id == "F-001" })
+        var forgedFeature = try XCTUnwrap(forgedItems[index].proposed)
+        forgedFeature.title = "Forged item"
+        forgedItems[index] = FeatureProposalItem(
+            id: forgedItems[index].id,
+            kind: forgedItems[index].kind,
+            confirmed: forgedItems[index].confirmed,
+            proposed: forgedFeature,
+            assignedFeatureID: forgedItems[index].assignedFeatureID
+        )
+
+        try assertRejectedProposalMergePreservesFacts(
+            forgedProposalPlan(plan, items: forgedItems),
+            root: root
+        )
+    }
+
+    func testFeatureProposalMergeRejectsForgedAssignedIDWithoutChangingFacts() throws {
+        let root = try featureProposalWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let plan = try NativeFeatureStore.makeMergePlan(workspacePath: root.path)
+        var forgedItems = plan.items
+        let index = try XCTUnwrap(forgedItems.firstIndex { $0.id == "DRAFT-001" })
+        let item = forgedItems[index]
+        forgedItems[index] = FeatureProposalItem(
+            id: item.id,
+            kind: item.kind,
+            confirmed: item.confirmed,
+            proposed: item.proposed,
+            assignedFeatureID: "F-999"
+        )
+
+        try assertRejectedProposalMergePreservesFacts(
+            forgedProposalPlan(plan, items: forgedItems),
+            root: root
+        )
+    }
+
+    func testFeatureProposalMergeRejectsForgedSelectionWithoutChangingFacts() throws {
+        let root = try featureProposalWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let plan = try NativeFeatureStore.makeMergePlan(workspacePath: root.path)
+
+        try assertRejectedProposalMergePreservesFacts(
+            forgedProposalPlan(plan, selectedItemIDs: plan.selectedItemIDs.union(["forged-selection"])),
+            root: root
+        )
+    }
+
+    func testFeatureProposalMergeRejectsForgedReplacementKeyWithoutChangingFacts() throws {
+        let root = try featureProposalWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let plan = try NativeFeatureStore.makeMergePlan(workspacePath: root.path)
+        let cancelReplacement = try XCTUnwrap(plan.items.first { $0.id == "F-002" }?.confirmed)
+
+        try assertRejectedProposalMergePreservesFacts(
+            forgedProposalPlan(plan, replacements: ["F-002": cancelReplacement]),
+            root: root
+        )
     }
 
     func testFeatureProposalLoadRejectsDraftSymlinkAndInvalidUTF8WithoutChangingFacts() throws {
@@ -772,6 +924,71 @@ final class FeatureWorkflowTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: draft, encoding: .utf8), externalDraft)
     }
 
+    func testFeatureProposalArchiveHookFailureSafelyRollsBackOriginalDraft() throws {
+        let root = try featureProposalWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let draft = root.appendingPathComponent("FEATURES.draft.md")
+        let archive = root.appendingPathComponent("FEATURES.draft.accepted-hook-error.md")
+        let original = try Data(contentsOf: draft)
+        let originalInode = try inodeNumber(at: draft)
+        let plan = try NativeFeatureStore.makeMergePlan(workspacePath: root.path)
+
+        let response = try NativeFeatureStore.merge(
+            plan: plan,
+            confirmed: true,
+            archiveTimestamp: "hook-error",
+            afterArchiveRenameBeforeVerify: { throw PublishFailure.injected }
+        )
+
+        XCTAssertNil(response.archivePath)
+        XCTAssertNotNil(response.archiveError)
+        XCTAssertEqual(try Data(contentsOf: draft), original)
+        XCTAssertEqual(try inodeNumber(at: draft), originalInode)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: archive.path))
+    }
+
+    func testFeatureProposalArchiveExternalReplacementRequiresRecoveryWithoutMovingExternalFile() throws {
+        let root = try featureProposalWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let draft = root.appendingPathComponent("FEATURES.draft.md")
+        let archive = root.appendingPathComponent("FEATURES.draft.accepted-external-replacement.md")
+        let recovery = root.appendingPathComponent("original-draft.recovery.md")
+        let original = try Data(contentsOf: draft)
+        let external = featureSource(id: "DRAFT-999", title: "External replacement", status: "draft")
+        let plan = try NativeFeatureStore.makeMergePlan(workspacePath: root.path)
+
+        let response = try NativeFeatureStore.merge(
+            plan: plan,
+            confirmed: true,
+            archiveTimestamp: "external-replacement",
+            afterArchiveRenameBeforeVerify: {
+                try FileManager.default.moveItem(at: archive, to: recovery)
+                try external.write(to: archive, atomically: true, encoding: .utf8)
+            }
+        )
+
+        XCTAssertNil(response.archivePath)
+        XCTAssertTrue(response.archiveError?.contains("archive recovery required") == true)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: draft.path))
+        XCTAssertEqual(try String(contentsOf: archive, encoding: .utf8), external)
+        XCTAssertEqual(try Data(contentsOf: recovery), original)
+    }
+
+    func testFeatureProposalLoadRejectsDirectoryDraftWithoutChangingFacts() throws {
+        let root = try featureProposalWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let facts = root.appendingPathComponent("FEATURES.md")
+        let draft = root.appendingPathComponent("FEATURES.draft.md")
+        let originalFacts = try Data(contentsOf: facts)
+        try FileManager.default.removeItem(at: draft)
+        try FileManager.default.createDirectory(at: draft, withIntermediateDirectories: false)
+
+        XCTAssertThrowsError(try NativeFeatureStore.makeMergePlan(workspacePath: root.path)) {
+            XCTAssertTrue($0.localizedDescription.contains("not a regular file"))
+        }
+        XCTAssertEqual(try Data(contentsOf: facts), originalFacts)
+    }
+
     func testFeatureProposalMissingOrMalformedDraftReturnsExactErrorAndPreservesFacts() throws {
         for source in [nil, featureSource(id: "DRAFT-001", title: "First") + "\n" + featureSource(id: "DRAFT-001", title: "Second")] {
             let root = try temporaryDemandWorkspace()
@@ -852,6 +1069,168 @@ final class FeatureWorkflowTests: XCTestCase {
 
         XCTAssertEqual(plan.selectedItemIDs, ["F-001", "DRAFT-001"])
         XCTAssertEqual(plan.replacements["F-001"]?.title, "Inline edit")
+        XCTAssertEqual(plan.confirmedRevision, appState.featureProposalReview(for: workspace)?.confirmedRevision)
+        XCTAssertEqual(plan.draftRevision, appState.featureProposalReview(for: workspace)?.draftRevision)
+    }
+
+    @MainActor
+    func testFeatureProposalRequestRejectsChangedReviewedRevisionAndRefreshesReview() async throws {
+        let root = try featureProposalWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = demandInputWorkspace(path: root.path)
+        let appState = makeAppState(workspace: workspace, root: root)
+        await appState.refreshFeatureProposal(for: workspace)
+        let reviewedRevision = try XCTUnwrap(appState.featureProposalReview(for: workspace)?.draftRevision)
+        let reviewedItem = try XCTUnwrap(
+            appState.featureProposalReview(for: workspace)?.diff?.items.first { $0.id == "F-001" }
+        )
+        var edited = try XCTUnwrap(reviewedItem.proposed)
+        edited.title = "User edit for reviewed A"
+        appState.updateFeatureProposalItem(
+            itemID: reviewedItem.id,
+            selected: true,
+            replacement: edited,
+            in: workspace
+        )
+        try (
+            featureSource(id: "F-001", title: "Changed proposal B")
+                + "\n" + featureSource(id: "DRAFT-001", title: "Added", status: "draft")
+        ).write(
+            to: root.appendingPathComponent("FEATURES.draft.md"), atomically: true, encoding: .utf8
+        )
+
+        await appState.requestFeatureProposalMerge(in: workspace).value
+
+        XCTAssertNil(appState.pendingFeatureProposalMerge(for: workspace))
+        XCTAssertNotEqual(appState.featureProposalReview(for: workspace)?.draftRevision, reviewedRevision)
+        XCTAssertEqual(
+            appState.featureProposalReview(for: workspace)?.diff?.items.first { $0.id == "F-001" }?.proposed?.title,
+            "Changed proposal B"
+        )
+        XCTAssertTrue(appState.lastError?.contains("changed since confirmation") == true)
+    }
+
+    @MainActor
+    func testFeatureProposalOlderRefreshCannotOverwriteNewerWorkspaceReview() async throws {
+        let root = try featureProposalWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = demandInputWorkspace(path: root.path)
+        let appState = makeAppState(workspace: workspace, root: root)
+        let oldInspectFinished = expectation(description: "old inspect finished")
+        let releaseOldRefresh = DispatchSemaphore(value: 0)
+        let oldRefresh = Task {
+            await appState.refreshFeatureProposal(for: workspace, afterInspect: {
+                oldInspectFinished.fulfill()
+                releaseOldRefresh.wait()
+            })
+        }
+        await fulfillment(of: [oldInspectFinished], timeout: 2)
+        try (
+            featureSource(id: "F-001", title: "Newest proposal")
+                + "\n" + featureSource(id: "DRAFT-001", title: "Added", status: "draft")
+        ).write(
+            to: root.appendingPathComponent("FEATURES.draft.md"), atomically: true, encoding: .utf8
+        )
+
+        await appState.refreshFeatureProposal(for: workspace)
+        releaseOldRefresh.signal()
+        await oldRefresh.value
+
+        XCTAssertEqual(
+            appState.featureProposalReview(for: workspace)?.diff?.items.first { $0.id == "F-001" }?.proposed?.title,
+            "Newest proposal"
+        )
+    }
+
+    @MainActor
+    func testFeatureProposalConfirmationTakeAndCancellationAreSynchronousAndIdempotent() async throws {
+        let root = try featureProposalWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = demandInputWorkspace(path: root.path)
+        let appState = makeAppState(workspace: workspace, root: root)
+        await appState.refreshFeatureProposal(for: workspace)
+        await appState.requestFeatureProposalMerge(in: workspace).value
+
+        XCTAssertNotNil(appState.takePendingFeatureProposalMerge())
+        appState.cancelPendingFeatureProposalMerge()
+        XCTAssertEqual(
+            appState.featureProposalMergeWorkspaceID,
+            workspace.id,
+            "dismissal after confirm must not clear merge busy"
+        )
+        appState.cancelPendingFeatureProposalMerge()
+        XCTAssertEqual(appState.featureProposalMergeWorkspaceID, workspace.id)
+
+        await appState.requestFeatureProposalMerge(in: workspace).value
+        appState.cancelPendingFeatureProposalMerge()
+        XCTAssertNil(appState.pendingFeatureProposalMerge)
+        XCTAssertNil(appState.featureProposalMergeWorkspaceID)
+        appState.cancelPendingFeatureProposalMerge()
+        XCTAssertNil(appState.featureProposalMergeWorkspaceID)
+    }
+
+    @MainActor
+    func testFeatureProposalConfirmThenDialogDismissalCannotCancelInFlightWrite() async throws {
+        let root = try featureProposalWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = demandInputWorkspace(path: root.path)
+        let appState = makeAppState(workspace: workspace, root: root)
+        await appState.refreshFeatureProposal(for: workspace)
+        await appState.requestFeatureProposalMerge(in: workspace).value
+        let operation = try XCTUnwrap(appState.takePendingFeatureProposalMerge())
+        let writeStarted = expectation(description: "proposal write started")
+        let releaseWrite = DispatchSemaphore(value: 0)
+        let write = Task {
+            await appState.writeConfirmedFeatureProposal(operation, beforeWrite: {
+                writeStarted.fulfill()
+                releaseWrite.wait()
+            })
+        }
+        await fulfillment(of: [writeStarted], timeout: 2)
+
+        appState.cancelPendingFeatureProposalMerge()
+        XCTAssertEqual(appState.featureProposalMergeWorkspaceID, workspace.id)
+        releaseWrite.signal()
+        await write.value
+
+        XCTAssertNil(appState.featureProposalMergeWorkspaceID)
+        XCTAssertEqual(appState.featuresByWorkspace[workspace.id]?.features.map(\.id), ["F-001", "F-002", "F-003"])
+    }
+
+    @MainActor
+    func testOldFeatureProposalWriteCannotClearNewWorkspacePendingMerge() async throws {
+        let rootA = try featureProposalWorkspace()
+        let rootB = try featureProposalWorkspace()
+        defer {
+            try? FileManager.default.removeItem(at: rootA)
+            try? FileManager.default.removeItem(at: rootB)
+        }
+        let workspaceA = demandInputWorkspace(id: "proposal-a", path: rootA.path)
+        let workspaceB = demandInputWorkspace(id: "proposal-b", path: rootB.path)
+        let appState = makeAppState(workspaces: [workspaceA, workspaceB], root: rootA)
+        await appState.refreshFeatureProposal(for: workspaceA)
+        await appState.requestFeatureProposalMerge(in: workspaceA).value
+        let operationA = try XCTUnwrap(appState.takePendingFeatureProposalMerge())
+        let writeStarted = expectation(description: "old proposal write started")
+        let releaseWrite = DispatchSemaphore(value: 0)
+        let writeA = Task {
+            await appState.writeConfirmedFeatureProposal(operationA, beforeWrite: {
+                writeStarted.fulfill()
+                releaseWrite.wait()
+            })
+        }
+        await fulfillment(of: [writeStarted], timeout: 2)
+
+        appState.selectedWorkspaceID = workspaceB.id
+        await appState.refreshFeatureProposal(for: workspaceB)
+        await appState.requestFeatureProposalMerge(in: workspaceB).value
+        let pendingB = try XCTUnwrap(appState.pendingFeatureProposalMerge(for: workspaceB))
+        releaseWrite.signal()
+        await writeA.value
+
+        XCTAssertEqual(appState.featureProposalMergeWorkspaceID, workspaceB.id)
+        XCTAssertEqual(appState.pendingFeatureProposalMerge(for: workspaceB), pendingB)
+        XCTAssertNil(appState.lastError)
     }
 
     func testFeatureTaskAttributionRequiresOneValidDetailMarker() {
@@ -2592,6 +2971,36 @@ final class FeatureWorkflowTests: XCTestCase {
         return root
     }
 
+    private func forgedProposalPlan(
+        _ plan: FeatureProposalMergePlan,
+        items: [FeatureProposalItem]? = nil,
+        selectedItemIDs: Set<String>? = nil,
+        replacements: [String: WorkspaceFeature]? = nil
+    ) -> FeatureProposalMergePlan {
+        FeatureProposalMergePlan(
+            workspacePath: plan.workspacePath,
+            confirmedPath: plan.confirmedPath,
+            draftPath: plan.draftPath,
+            confirmedRevision: plan.confirmedRevision,
+            draftRevision: plan.draftRevision,
+            confirmedDocument: plan.confirmedDocument,
+            draftDocument: plan.draftDocument,
+            items: items ?? plan.items,
+            selectedItemIDs: selectedItemIDs ?? plan.selectedItemIDs,
+            replacements: replacements ?? plan.replacements
+        )
+    }
+
+    private func assertRejectedProposalMergePreservesFacts(
+        _ plan: FeatureProposalMergePlan,
+        root: URL
+    ) throws {
+        let facts = root.appendingPathComponent("FEATURES.md")
+        let original = try Data(contentsOf: facts)
+        XCTAssertThrowsError(try NativeFeatureStore.merge(plan: plan, confirmed: true))
+        XCTAssertEqual(try Data(contentsOf: facts), original)
+    }
+
     private func featureSource(
         id: String,
         title: String,
@@ -2602,6 +3011,21 @@ final class FeatureWorkflowTests: XCTestCase {
         - Status: \(status)
         - Verification: code
         - Auto complete: true
+        """ + "\n"
+    }
+
+    private func featureSourceWithHistory(id: String, title: String, description: String) -> String {
+        """
+        ## \(id) \(title)
+        - Status: done
+        - Verification: code
+        - Auto complete: true
+        - Completed at: 2026-07-11T01:02:03Z
+        - Completed by: Reviewer
+        - Completion note: Accepted before proposal
+        - Evidence stale: true
+
+        \(description)
         """ + "\n"
     }
 

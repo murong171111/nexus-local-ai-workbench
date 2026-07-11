@@ -231,6 +231,7 @@ final class AppState: ObservableObject {
     private var featureProposalPlanGeneration = 0
     private var pendingFeatureProposalMergeToken: Int?
     private var activeFeatureProposalMergeToken: Int?
+    private var featureProposalRefreshGenerationsByWorkspace: [WorkspaceSummary.ID: Int] = [:]
     private var demandInputRecoveryWorkspaceIDs = Set<WorkspaceSummary.ID>()
     private var demandAttachmentOperationWorkspaceIDs = Set<WorkspaceSummary.ID>()
     private var demandInputSaveTailsByWorkspace: [WorkspaceSummary.ID: Task<DemandInputSaveResult, Never>] = [:]
@@ -3413,17 +3414,26 @@ final class AppState: ObservableObject {
         }
     }
 
-    func refreshFeatureProposal(for workspace: WorkspaceSummary) async {
+    func refreshFeatureProposal(
+        for workspace: WorkspaceSummary,
+        afterInspect: (@Sendable () -> Void)? = nil
+    ) async {
+        let generation = featureProposalRefreshGenerationsByWorkspace[workspace.id, default: 0] + 1
+        featureProposalRefreshGenerationsByWorkspace[workspace.id] = generation
         featureProposalLoadingWorkspaceID = workspace.id
         defer {
-            if featureProposalLoadingWorkspaceID == workspace.id {
+            if featureProposalLoadingWorkspaceID == workspace.id,
+               featureProposalRefreshGenerationsByWorkspace[workspace.id] == generation {
                 featureProposalLoadingWorkspaceID = nil
             }
         }
         let path = workspace.path
         let review = await Task.detached(priority: .userInitiated) {
-            NativeFeatureStore.inspectProposal(workspacePath: path)
+            let review = NativeFeatureStore.inspectProposal(workspacePath: path)
+            afterInspect?()
+            return review
         }.value
+        guard featureProposalRefreshGenerationsByWorkspace[workspace.id] == generation else { return }
         featureProposalReviewsByWorkspace[workspace.id] = review
         guard let diff = review.diff else {
             featureProposalSelectedItemIDsByWorkspace[workspace.id] = []
@@ -3472,6 +3482,14 @@ final class AppState: ObservableObject {
         lastError = nil
         let path = workspace.path
         let selected = featureProposalSelectedItemIDsByWorkspace[workspace.id] ?? []
+        guard let review = featureProposalReviewsByWorkspace[workspace.id],
+              let confirmedRevision = review.confirmedRevision,
+              let draftRevision = review.draftRevision else {
+            activeFeatureProposalMergeToken = nil
+            featureProposalMergeWorkspaceID = nil
+            lastError = "feature proposal must be refreshed before confirmation"
+            return Task {}
+        }
         let allReplacements = featureProposalReplacementsByWorkspace[workspace.id] ?? [:]
         let replacements = allReplacements.filter { selected.contains($0.key) }
         return Task {
@@ -3480,7 +3498,9 @@ final class AppState: ObservableObject {
                     try NativeFeatureStore.makeMergePlan(
                         workspacePath: path,
                         selectedItemIDs: selected,
-                        replacements: replacements
+                        replacements: replacements,
+                        confirmedRevision: confirmedRevision,
+                        draftRevision: draftRevision
                     )
                 }.value
                 guard generation == featureProposalPlanGeneration else { return }
@@ -3491,6 +3511,7 @@ final class AppState: ObservableObject {
                 activeFeatureProposalMergeToken = nil
                 featureProposalMergeWorkspaceID = nil
                 lastError = error.localizedDescription
+                await refreshFeatureProposal(for: workspace)
             }
         }
     }
@@ -3520,28 +3541,27 @@ final class AppState: ObservableObject {
         }
     }
 
-    func confirmPendingFeatureProposalMerge(confirmed: Bool) async {
-        guard confirmed else {
-            cancelPendingFeatureProposalMerge()
-            return
-        }
-        guard let operation = takePendingFeatureProposalMerge(),
-              activeFeatureProposalMergeToken == operation.token,
-              workspaces.first(where: { $0.id == selectedWorkspaceID })?.path == operation.plan.workspacePath else {
-            return
-        }
+    func writeConfirmedFeatureProposal(
+        _ operation: ConfirmedFeatureProposalMerge,
+        beforeWrite: (@Sendable () -> Void)? = nil
+    ) async {
+        let plan = operation.plan
+        guard activeFeatureProposalMergeToken == operation.token,
+              workspaces.first(where: { $0.id == selectedWorkspaceID })?.path == plan.workspacePath else { return }
+        lastError = nil
         do {
             let auditRoot = auditRootPath
             let response = try await Task.detached(priority: .userInitiated) {
-                try NativeFeatureStore.merge(
-                    plan: operation.plan,
+                beforeWrite?()
+                return try NativeFeatureStore.merge(
+                    plan: plan,
                     confirmed: true,
                     auditRoot: auditRoot,
                     actor: "Nexus Native"
                 )
             }.value
             guard activeFeatureProposalMergeToken == operation.token,
-                  let workspace = workspaces.first(where: { $0.path == operation.plan.workspacePath }) else {
+                  let workspace = workspaces.first(where: { $0.path == plan.workspacePath }) else {
                 return
             }
             featuresByWorkspace[workspace.id] = response.document
@@ -3570,7 +3590,7 @@ final class AppState: ObservableObject {
             activeFeatureProposalMergeToken = nil
             featureProposalMergeWorkspaceID = nil
             lastError = error.localizedDescription
-            if let workspace = workspaces.first(where: { $0.path == operation.plan.workspacePath }) {
+            if let workspace = workspaces.first(where: { $0.path == plan.workspacePath }) {
                 await refreshFeatureProposal(for: workspace)
             }
         }
