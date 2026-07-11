@@ -12,7 +12,8 @@ struct NativeWorkspaceTaskRow {
 
 enum NativeWorkspaceTaskParser {
     private static let featureMarkerPattern = try! NSRegularExpression(
-        pattern: #"(?:^|[\s·;,|])feature\s*=\s*[^\s·;,|]*"#
+        pattern: #"(?:^|[\s·;,|])feature\s*=\s*[^\s·;,|]*"#,
+        options: .caseInsensitive
     )
     static func rows(from content: String, folder: String) -> [NativeWorkspaceTaskRow] {
         var result: [NativeWorkspaceTaskRow] = []

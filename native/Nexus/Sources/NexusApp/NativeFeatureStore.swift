@@ -66,7 +66,8 @@ enum NativeFeatureStore {
         actor: String? = nil,
         afterWorkspaceOpen: (() throws -> Void)? = nil,
         beforeFinalRevisionCheck: (() throws -> Void)? = nil,
-        beforePublish: (() throws -> Void)? = nil
+        beforePublish: (() throws -> Void)? = nil,
+        afterPublishBeforeVerify: (() throws -> Void)? = nil
     ) throws -> FeatureWriteResponse {
         guard confirmed else { throw NativeFeatureStoreError.unconfirmed }
         if case .invalid(let reason) = plan.revision {
@@ -94,7 +95,7 @@ enum NativeFeatureStore {
                 var document = current.document
                 try apply(plan.mutation, actor: mutationActor, to: &document)
                 try validate(document)
-                let data = Data(render(document).utf8)
+                let data = try validatedRenderedData(document)
                 let temporaryName = ".\(fileName).\(UUID().uuidString).tmp"
                 let staged = try createVerifiedTemporaryFile(data, parentFD: workspaceFD, name: temporaryName)
                 var temporaryCleanupIdentity: FileIdentity? = staged.identity
@@ -123,6 +124,7 @@ enum NativeFeatureStore {
                     expectedRevision: plan.revision,
                     staged: staged,
                     expectedData: data,
+                    afterPublishBeforeVerify: afterPublishBeforeVerify,
                     temporaryCleanupIdentity: &temporaryCleanupIdentity
                 )
                 let written = try snapshot(workspaceFD: workspaceFD, path: featurePath)
@@ -171,7 +173,7 @@ enum NativeFeatureStore {
             if let heading = featureHeading(line) {
                 if let current { blocks.append(current) }
                 current = (heading.id, heading.title, [])
-            } else if line.hasPrefix("## F-") {
+            } else if line.range(of: #"^## F-[0-9]"#, options: .regularExpression) != nil {
                 throw NativeFeatureStoreError.invalidHeading(line)
             } else if current == nil {
                 preamble.append(line)
@@ -187,34 +189,76 @@ enum NativeFeatureStore {
             guard ids.insert(block.id).inserted else { throw NativeFeatureStoreError.duplicateID(block.id) }
             return try parseFeature(block)
         }
-        return FeatureDocument(preamble: preamble, features: features)
+        let layouts = Dictionary(uniqueKeysWithValues: blocks.map { block in
+            (
+                block.id,
+                FeatureBlockLayout(lines: block.lines.map { line in
+                    recognizedMetadata(line).map { .metadata($0.label) } ?? .prose(line)
+                })
+            )
+        })
+        return FeatureDocument(preamble: preamble, features: features, layoutsByFeatureID: layouts)
     }
 
     static func render(_ document: FeatureDocument) -> String {
+        guard !document.layoutsByFeatureID.isEmpty else { return canonicalRender(document) }
+        var lines = document.preamble
+        for feature in document.features {
+            guard let layout = document.layoutsByFeatureID[feature.id] else {
+                appendCanonical(feature, to: &lines)
+                continue
+            }
+            lines.append("## \(feature.id) \(feature.title)")
+            var renderedBlock: [String] = []
+            var renderedLabels = Set<String>()
+            var lastMetadataIndex: Int?
+            for item in layout.lines {
+                switch item {
+                case .metadata(let label):
+                    renderedBlock.append(metadataLine(label, feature: feature, includeEmpty: true)!)
+                    renderedLabels.insert(label)
+                    lastMetadataIndex = renderedBlock.endIndex
+                case .prose(let line):
+                    renderedBlock.append(line)
+                }
+            }
+            let missing = metadataLabels.compactMap { label -> String? in
+                guard !renderedLabels.contains(label) else { return nil }
+                return metadataLine(label, feature: feature, includeEmpty: false)
+            }
+            renderedBlock.insert(contentsOf: missing, at: lastMetadataIndex ?? 0)
+            lines.append(contentsOf: renderedBlock)
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func canonicalRender(_ document: FeatureDocument) -> String {
         var lines = document.preamble
         while lines.last == "" { lines.removeLast() }
-        for feature in document.features {
-            if !lines.isEmpty { lines.append("") }
-            lines.append("## \(feature.id) \(feature.title)")
-            lines.append("")
-            lines.append("- Status: \(feature.status.rawValue)")
-            lines.append("- Verification: \(feature.verification.rawValue)")
-            lines.append("- Auto complete: \(feature.autoComplete)")
-            appendList("Source", feature.sources, to: &lines)
-            appendList("Services", feature.services, to: &lines)
-            appendList("Tasks", feature.taskIDs, to: &lines)
-            appendList("Evidence", feature.evidenceIDs, to: &lines)
-            lines.append("- Completed at: \(feature.completedAt ?? "")")
-            lines.append("- Completed by: \(feature.completedBy ?? "")")
-            if let note = feature.completionNote { lines.append("- Completion note: \(note)") }
-            if feature.evidenceStale { lines.append("- Evidence stale: true") }
-            if !feature.preservedLines.isEmpty {
-                if feature.preservedLines.first != "" { lines.append("") }
-                lines.append(contentsOf: feature.preservedLines)
-            }
-        }
+        for feature in document.features { appendCanonical(feature, to: &lines) }
         while lines.last == "" { lines.removeLast() }
         return lines.joined(separator: "\n") + "\n"
+    }
+
+    private static func appendCanonical(_ feature: WorkspaceFeature, to lines: inout [String]) {
+        if !lines.isEmpty, lines.last != "" { lines.append("") }
+        lines.append("## \(feature.id) \(feature.title)")
+        lines.append("")
+        lines.append("- Status: \(feature.status.rawValue)")
+        lines.append("- Verification: \(feature.verification.rawValue)")
+        lines.append("- Auto complete: \(feature.autoComplete)")
+        appendList("Source", feature.sources, to: &lines)
+        appendList("Services", feature.services, to: &lines)
+        appendList("Tasks", feature.taskIDs, to: &lines)
+        appendList("Evidence", feature.evidenceIDs, to: &lines)
+        lines.append("- Completed at: \(feature.completedAt ?? "")")
+        lines.append("- Completed by: \(feature.completedBy ?? "")")
+        if let note = feature.completionNote { lines.append("- Completion note: \(note)") }
+        if feature.evidenceStale { lines.append("- Evidence stale: true") }
+        if !feature.preservedLines.isEmpty {
+            if feature.preservedLines.first != "" { lines.append("") }
+            lines.append(contentsOf: feature.preservedLines)
+        }
     }
 
     private static func parseFeature(
@@ -362,6 +406,67 @@ enum NativeFeatureStore {
         if !normalized.isEmpty { lines.append("- \(label): \(normalized.joined(separator: ", "))") }
     }
 
+    private static func metadataLine(
+        _ label: String,
+        feature: WorkspaceFeature,
+        includeEmpty: Bool
+    ) -> String? {
+        let value: String?
+        switch label {
+        case "Status": value = feature.status.rawValue
+        case "Verification": value = feature.verification.rawValue
+        case "Auto complete": value = String(feature.autoComplete)
+        case "Source": value = normalizedList(feature.sources)
+        case "Services": value = normalizedList(feature.services)
+        case "Tasks": value = normalizedList(feature.taskIDs)
+        case "Evidence": value = normalizedList(feature.evidenceIDs)
+        case "Completed at": value = feature.completedAt
+        case "Completed by": value = feature.completedBy
+        case "Completion note": value = feature.completionNote
+        case "Evidence stale": value = feature.evidenceStale ? "true" : nil
+        default: value = nil
+        }
+        guard includeEmpty || value != nil else { return nil }
+        return "- \(label): \(value ?? "")"
+    }
+
+    private static func normalizedList(_ values: [String]) -> String? {
+        let values = Array(Set(values.filter { !$0.isEmpty })).sorted()
+        return values.isEmpty ? nil : values.joined(separator: ", ")
+    }
+
+    private static func validatedRenderedData(_ document: FeatureDocument) throws -> Data {
+        let rendered = render(document)
+        let parsed: FeatureDocument
+        do {
+            parsed = try parse(rendered)
+        } catch {
+            throw NativeFeatureStoreError.invalidDocument("rendered feature document is invalid: \(error.localizedDescription)")
+        }
+        guard parsed.preamble == document.preamble,
+              normalizedFeatures(parsed.features) == normalizedFeatures(document.features) else {
+            throw NativeFeatureStoreError.invalidDocument("rendered feature document does not match the confirmed mutation")
+        }
+        return Data(rendered.utf8)
+    }
+
+    private static func normalizedFeatures(_ features: [WorkspaceFeature]) -> [WorkspaceFeature] {
+        features.map { feature in
+            var normalized = feature
+            normalized.sources = Array(Set(feature.sources.filter { !$0.isEmpty })).sorted()
+            normalized.services = Array(Set(feature.services.filter { !$0.isEmpty })).sorted()
+            normalized.taskIDs = Array(Set(feature.taskIDs.filter { !$0.isEmpty })).sorted()
+            normalized.evidenceIDs = Array(Set(feature.evidenceIDs.filter { !$0.isEmpty })).sorted()
+            var preservedLines = feature.preservedLines.flatMap {
+                $0.components(separatedBy: "\n")
+            }
+            while preservedLines.first == "" { preservedLines.removeFirst() }
+            while preservedLines.last == "" { preservedLines.removeLast() }
+            normalized.preservedLines = preservedLines
+            return normalized
+        }
+    }
+
     private static func snapshot(workspaceFD: Int32, path: String) throws -> FeatureDocumentSnapshot {
         let fileFD = openat(workspaceFD, fileName, O_RDONLY | O_NOFOLLOW)
         if fileFD < 0 {
@@ -463,6 +568,7 @@ enum NativeFeatureStore {
         expectedRevision: FeatureDocumentRevision,
         staged: OpenTemporaryFile,
         expectedData: Data,
+        afterPublishBeforeVerify: (() throws -> Void)?,
         temporaryCleanupIdentity: inout FileIdentity?
     ) throws {
         switch expectedRevision {
@@ -476,6 +582,7 @@ enum NativeFeatureStore {
                 )
             }
             do {
+                try afterPublishBeforeVerify?()
                 try verifyPublishedFile(
                     parentFD: workspaceFD,
                     name: fileName,
@@ -518,6 +625,7 @@ enum NativeFeatureStore {
             ) == 0 else { throw NativeFeatureStoreError.publicationConflict(path) }
             temporaryCleanupIdentity = previousIdentity
             do {
+                try afterPublishBeforeVerify?()
                 try verifyPublishedFile(
                     parentFD: workspaceFD,
                     name: fileName,
@@ -536,6 +644,24 @@ enum NativeFeatureStore {
                 ) else { throw NativeFeatureStoreError.publicationConflict(temporaryName) }
                 temporaryCleanupIdentity = nil
             } catch {
+                let previousFingerprint = FileContentFingerprint(
+                    byteCount: expectedByteCount,
+                    sha256: expectedSHA256
+                )
+                guard namedFileMatches(
+                    parentFD: workspaceFD,
+                    name: fileName,
+                    identity: staged.identity,
+                    fingerprint: staged.fingerprint
+                ), namedFileMatches(
+                    parentFD: workspaceFD,
+                    name: temporaryName,
+                    identity: previousIdentity,
+                    fingerprint: previousFingerprint
+                ) else {
+                    temporaryCleanupIdentity = nil
+                    throw NativeFeatureStoreError.recoveryRequired(path, temporaryName)
+                }
                 guard renameatx_np(
                     workspaceFD,
                     temporaryName,
@@ -583,6 +709,20 @@ enum NativeFeatureStore {
               let data = try? readData(fileFD),
               FileContentFingerprint(data: data) == fingerprint else { return false }
         return unlinkat(parentFD, name, 0) == 0
+    }
+
+    private static func namedFileMatches(
+        parentFD: Int32,
+        name: String,
+        identity: FileIdentity,
+        fingerprint: FileContentFingerprint
+    ) -> Bool {
+        let fileFD = openat(parentFD, name, O_RDONLY | O_NOFOLLOW)
+        guard fileFD >= 0 else { return false }
+        defer { close(fileFD) }
+        guard (try? fileIdentity(fileFD, path: name)) == identity,
+              let data = try? readData(fileFD) else { return false }
+        return FileContentFingerprint(data: data) == fingerprint
     }
 
     private static func namedRegularFileIdentity(

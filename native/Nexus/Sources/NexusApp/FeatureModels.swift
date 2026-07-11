@@ -38,8 +38,18 @@ struct WorkspaceFeature: Identifiable, Hashable, Sendable {
 struct FeatureDocument: Hashable, Sendable {
     var preamble: [String]
     var features: [WorkspaceFeature]
+    var layoutsByFeatureID: [String: FeatureBlockLayout] = [:]
 
     static let empty = FeatureDocument(preamble: ["# Features", ""], features: [])
+}
+
+struct FeatureBlockLayout: Hashable, Sendable {
+    var lines: [FeatureBlockLine]
+}
+
+enum FeatureBlockLine: Hashable, Sendable {
+    case metadata(String)
+    case prose(String)
 }
 
 enum FeatureDocumentRevision: Hashable, Sendable {
@@ -88,19 +98,4 @@ struct FeatureWriteResponse: Hashable, Sendable {
     let auditEventID: String?
     let auditEventPath: String?
     let auditError: String?
-}
-
-enum FeatureConfirmationDecision {
-    case confirm
-    case cancel
-}
-
-enum FeatureConfirmationPolicy {
-    static func consume(
-        _ pending: inout FeatureWritePlan?,
-        decision: FeatureConfirmationDecision
-    ) -> FeatureWritePlan? {
-        defer { pending = nil }
-        return pending
-    }
 }

@@ -176,10 +176,8 @@ final class AppState: ObservableObject {
         didSet {
             guard selectedWorkspaceID != oldValue else { return }
             featurePlanGeneration += 1
-            if pendingFeatureWrite != nil {
-                pendingFeatureWrite = nil
-                featureWriteWorkspaceID = nil
-            }
+            pendingFeatureWrite = nil
+            featureWriteWorkspaceID = nil
         }
     }
     @Published var workspaces: [WorkspaceSummary]
@@ -3392,17 +3390,23 @@ final class AppState: ObservableObject {
         }
     }
 
-    func requestFeatureWrite(_ mutation: FeatureMutation, in workspace: WorkspaceSummary) {
+    @discardableResult
+    func requestFeatureWrite(
+        _ mutation: FeatureMutation,
+        in workspace: WorkspaceSummary,
+        beforePlan: (@Sendable () -> Void)? = nil
+    ) -> Task<Void, Never> {
         featurePlanGeneration += 1
         let generation = featurePlanGeneration
         pendingFeatureWrite = nil
         featureWriteWorkspaceID = workspace.id
         lastError = nil
         let path = workspace.path
-        Task {
+        return Task {
             do {
                 let plan = try await Task.detached(priority: .userInitiated) {
-                    try NativeFeatureStore.makePlan(workspacePath: path, mutation: mutation)
+                    beforePlan?()
+                    return try NativeFeatureStore.makePlan(workspacePath: path, mutation: mutation)
                 }.value
                 guard generation == featurePlanGeneration else { return }
                 pendingFeatureWrite = plan
@@ -3420,13 +3424,18 @@ final class AppState: ObservableObject {
         return pendingFeatureWrite
     }
 
-    func confirmPendingFeatureWrite(confirmed: Bool) async {
-        let decision: FeatureConfirmationDecision = confirmed ? .confirm : .cancel
-        guard let plan = FeatureConfirmationPolicy.consume(&pendingFeatureWrite, decision: decision) else { return }
-        guard confirmed else {
-            featureWriteWorkspaceID = nil
-            return
-        }
+    func takePendingFeatureWrite() -> FeatureWritePlan? {
+        defer { pendingFeatureWrite = nil }
+        return pendingFeatureWrite
+    }
+
+    func cancelPendingFeatureWrite() {
+        guard pendingFeatureWrite != nil else { return }
+        pendingFeatureWrite = nil
+        featureWriteWorkspaceID = nil
+    }
+
+    func writeConfirmedFeature(_ plan: FeatureWritePlan) async {
         guard workspaces.first(where: { $0.id == selectedWorkspaceID })?.path == plan.workspacePath else {
             featureWriteWorkspaceID = nil
             return

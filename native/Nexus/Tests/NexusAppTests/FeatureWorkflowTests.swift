@@ -66,6 +66,40 @@ final class FeatureWorkflowTests: XCTestCase {
         )
         XCTAssertNoThrow(try NativeFeatureStore.parse("# Features\n\n## Notes\n\nOrdinary prose.\n"))
         XCTAssertNoThrow(try NativeFeatureStore.parse("# Features\n\n## API-Notes\n\nOrdinary prose.\n"))
+        XCTAssertNoThrow(try NativeFeatureStore.parse("# Features\n\n## F-series notes\n\nOrdinary prose.\n"))
+    }
+
+    func testFeatureRenderPreservesOriginalLayoutForMetadataOnlyEdit() throws {
+        let source = """
+        # Features
+
+
+        ## F-001 Snapshot
+        prose before metadata
+        - Status: todo
+
+        prose between fields
+        - Verification: code
+        - Auto complete: true
+        - Source: z.png, a.png
+
+
+        """ + "\n"
+        let document = try NativeFeatureStore.parse(source)
+        var feature = try XCTUnwrap(document.features.first)
+        feature.title = "Renamed"
+        feature.status = .blocked
+        feature.sources = ["b.png", "a.png", "a.png"]
+        var edited = document
+        edited.features[0] = feature
+
+        XCTAssertEqual(
+            NativeFeatureStore.render(edited),
+            source
+                .replacingOccurrences(of: "## F-001 Snapshot", with: "## F-001 Renamed")
+                .replacingOccurrences(of: "- Status: todo", with: "- Status: blocked")
+                .replacingOccurrences(of: "- Source: z.png, a.png", with: "- Source: a.png, b.png")
+        )
     }
 
     func testFeatureEditPreservesOriginalMarkdownWhenDescriptionIsUnchanged() throws {
@@ -116,6 +150,16 @@ final class FeatureWorkflowTests: XCTestCase {
 
         XCTAssertThrowsError(try NativeFeatureStore.write(plan: plan, confirmed: true))
         XCTAssertEqual(try String(contentsOf: featuresURL, encoding: .utf8), original)
+    }
+
+    func testFeatureWriteRejectsCompleteInjectedFeatureBeforePublish() throws {
+        try assertFeatureInjectionRejectedBeforePublish(
+            "\n## F-999 Injected\n- Status: todo\n- Verification: manual\n- Auto complete: false\n"
+        )
+    }
+
+    func testFeatureWriteRejectsMalformedInjectedFeatureBeforePublish() throws {
+        try assertFeatureInjectionRejectedBeforePublish("\n## F-999 Broken\n- Status: todo\n")
     }
 
     func testFeatureWriteRejectsExternalChangeAfterConfirmation() throws {
@@ -214,6 +258,36 @@ final class FeatureWorkflowTests: XCTestCase {
             )
         )
         XCTAssertEqual(try String(contentsOf: featuresURL, encoding: .utf8), "external after check")
+    }
+
+    func testFeatureWritePreservesExternalReplacementAndRecoverableOriginalAfterSwap() throws {
+        let root = try temporaryDemandWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let featuresURL = root.appendingPathComponent("FEATURES.md")
+        let original = "## F-001 Snapshot\n- Status: todo\n- Verification: code\n- Auto complete: true\n"
+        let external = "external replacement"
+        try original.write(to: featuresURL, atomically: true, encoding: .utf8)
+        let plan = try NativeFeatureStore.makePlan(
+            workspacePath: root.path,
+            mutation: .setStatus(id: "F-001", status: .done, completionNote: "manual")
+        )
+
+        XCTAssertThrowsError(
+            try NativeFeatureStore.write(
+                plan: plan,
+                confirmed: true,
+                afterPublishBeforeVerify: {
+                    try external.write(to: featuresURL, atomically: true, encoding: .utf8)
+                }
+            )
+        ) { error in
+            XCTAssertTrue(error.localizedDescription.contains("recovery required"))
+        }
+        XCTAssertEqual(try String(contentsOf: featuresURL, encoding: .utf8), external)
+        let recoveryFiles = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+            .filter { $0.lastPathComponent.hasPrefix(".FEATURES.md.") && $0.pathExtension == "tmp" }
+        XCTAssertEqual(recoveryFiles.count, 1)
+        XCTAssertEqual(try String(contentsOf: recoveryFiles[0], encoding: .utf8), original)
     }
 
     func testFeatureFirstWriteDoesNotOverwriteFileCreatedAfterFinalCheck() throws {
@@ -335,6 +409,9 @@ final class FeatureWorkflowTests: XCTestCase {
             XCTAssertNotNil(attribution.warning, detail)
         }
         XCTAssertEqual(NativeWorkspaceTaskParser.featureAttribution(in: "feature=F-001").id, "F-001")
+        let capitalized = NativeWorkspaceTaskParser.featureAttribution(in: "Feature=F-001")
+        XCTAssertNil(capitalized.id)
+        XCTAssertNotNil(capitalized.warning)
     }
 
     @MainActor
@@ -357,7 +434,7 @@ final class FeatureWorkflowTests: XCTestCase {
         XCTAssertNotNil(appState.pendingFeatureWrite)
         XCTAssertEqual(try String(contentsOf: featuresURL, encoding: .utf8), original)
 
-        await appState.confirmPendingFeatureWrite(confirmed: false)
+        appState.cancelPendingFeatureWrite()
         XCTAssertNil(appState.pendingFeatureWrite)
         XCTAssertEqual(try String(contentsOf: featuresURL, encoding: .utf8), original)
 
@@ -368,7 +445,9 @@ final class FeatureWorkflowTests: XCTestCase {
         for _ in 0..<100 where appState.pendingFeatureWrite == nil {
             try await Task.sleep(nanoseconds: 10_000_000)
         }
-        await appState.confirmPendingFeatureWrite(confirmed: true)
+        if let plan = appState.takePendingFeatureWrite() {
+            await appState.writeConfirmedFeature(plan)
+        }
 
         XCTAssertEqual(appState.featuresByWorkspace[workspace.id]?.features.first?.status, .done)
         XCTAssertNil(appState.pendingFeatureWrite)
@@ -402,12 +481,51 @@ final class FeatureWorkflowTests: XCTestCase {
         appState.selectedWorkspaceID = workspaceB.id
 
         XCTAssertNil(appState.pendingFeatureWrite)
-        await appState.confirmPendingFeatureWrite(confirmed: true)
+        if let plan = appState.takePendingFeatureWrite() {
+            await appState.writeConfirmedFeature(plan)
+        }
         XCTAssertEqual(try String(contentsOf: rootA.appendingPathComponent("FEATURES.md"), encoding: .utf8), source)
         XCTAssertEqual(try String(contentsOf: rootB.appendingPathComponent("FEATURES.md"), encoding: .utf8), source)
     }
 
-    func testFeatureConfirmationConsumesOneDecisionOnly() throws {
+    @MainActor
+    func testFeaturePlanningWorkspaceSwitchClearsBusyAndIgnoresOldPlan() async throws {
+        let rootA = try temporaryDemandWorkspace()
+        let rootB = try temporaryDemandWorkspace()
+        defer {
+            try? FileManager.default.removeItem(at: rootA)
+            try? FileManager.default.removeItem(at: rootB)
+        }
+        let source = "## F-001 Snapshot\n- Status: todo\n- Verification: code\n- Auto complete: true\n"
+        try source.write(to: rootA.appendingPathComponent("FEATURES.md"), atomically: true, encoding: .utf8)
+        let workspaceA = demandInputWorkspace(id: "workspace-a", path: rootA.path)
+        let workspaceB = demandInputWorkspace(id: "workspace-b", path: rootB.path)
+        let appState = makeAppState(workspaces: [workspaceA, workspaceB], root: rootA)
+        let planningStarted = expectation(description: "planning started")
+        let releasePlanning = DispatchSemaphore(value: 0)
+
+        let planningTask = appState.requestFeatureWrite(
+            .setStatus(id: "F-001", status: .done, completionNote: "A"),
+            in: workspaceA,
+            beforePlan: {
+                planningStarted.fulfill()
+                releasePlanning.wait()
+            }
+        )
+        await fulfillment(of: [planningStarted], timeout: 2)
+        XCTAssertEqual(appState.featureWriteWorkspaceID, workspaceA.id)
+
+        appState.selectedWorkspaceID = workspaceB.id
+        XCTAssertNil(appState.featureWriteWorkspaceID)
+        releasePlanning.signal()
+        await planningTask.value
+
+        XCTAssertNil(appState.pendingFeatureWrite)
+        XCTAssertNil(appState.featureWriteWorkspaceID)
+    }
+
+    @MainActor
+    func testFeatureConfirmationTakeAndCancellationAreSynchronousAndIdempotent() throws {
         let root = try temporaryDemandWorkspace()
         defer { try? FileManager.default.removeItem(at: root) }
         let feature = WorkspaceFeature(
@@ -416,7 +534,7 @@ final class FeatureWorkflowTests: XCTestCase {
             description: "", completedAt: nil, completedBy: nil, completionNote: nil,
             evidenceStale: false, preservedLines: []
         )
-        var pending: FeatureWritePlan? = FeatureWritePlan(
+        let plan = FeatureWritePlan(
             workspacePath: root.path,
             path: root.appendingPathComponent("FEATURES.md").path,
             revision: .missing,
@@ -425,8 +543,21 @@ final class FeatureWorkflowTests: XCTestCase {
             mutation: .add(feature)
         )
 
-        XCTAssertNotNil(FeatureConfirmationPolicy.consume(&pending, decision: .confirm))
-        XCTAssertNil(FeatureConfirmationPolicy.consume(&pending, decision: .cancel))
+        let workspace = demandInputWorkspace(path: root.path)
+        let appState = makeAppState(workspace: workspace, root: root)
+
+        appState.pendingFeatureWrite = plan
+        appState.featureWriteWorkspaceID = workspace.id
+        XCTAssertEqual(appState.takePendingFeatureWrite(), plan)
+        appState.cancelPendingFeatureWrite()
+        XCTAssertEqual(appState.featureWriteWorkspaceID, workspace.id, "dismissal after confirm must not clear write busy")
+
+        appState.pendingFeatureWrite = plan
+        appState.cancelPendingFeatureWrite()
+        XCTAssertNil(appState.pendingFeatureWrite)
+        XCTAssertNil(appState.featureWriteWorkspaceID)
+        appState.cancelPendingFeatureWrite()
+        XCTAssertNil(appState.featureWriteWorkspaceID)
     }
 
     @MainActor
@@ -1883,6 +2014,34 @@ final class FeatureWorkflowTests: XCTestCase {
         XCTAssertEqual(summary.prominentPrimaryActionCount, 1)
         XCTAssertTrue(summary.filesAreCollapsed)
         XCTAssertTrue(summary.currentSignalsAreSecondary)
+    }
+
+    private func assertFeatureInjectionRejectedBeforePublish(_ injectedLines: String) throws {
+        let root = try temporaryDemandWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let featuresURL = root.appendingPathComponent("FEATURES.md")
+        let original = "## F-001 Snapshot\n- Status: todo\n- Verification: code\n- Auto complete: true\n"
+        try original.write(to: featuresURL, atomically: true, encoding: .utf8)
+        let expected = try XCTUnwrap(
+            NativeFeatureStore.load(workspacePath: root.path).document.features.first
+        )
+        var replacement = expected
+        replacement.preservedLines.append(injectedLines)
+        let plan = try NativeFeatureStore.makePlan(
+            workspacePath: root.path,
+            mutation: .update(expected: expected, replacement: replacement)
+        )
+        var reachedPublish = false
+
+        XCTAssertThrowsError(
+            try NativeFeatureStore.write(
+                plan: plan,
+                confirmed: true,
+                beforePublish: { reachedPublish = true }
+            )
+        )
+        XCTAssertFalse(reachedPublish)
+        XCTAssertEqual(try String(contentsOf: featuresURL, encoding: .utf8), original)
     }
 
     private func temporaryDemandWorkspace() throws -> URL {

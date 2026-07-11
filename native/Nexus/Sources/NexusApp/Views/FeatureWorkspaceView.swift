@@ -301,15 +301,16 @@ struct FeatureWorkspaceView: View {
             featureConfirmationTitle,
             isPresented: Binding(
                 get: { appState.pendingFeatureWrite(for: workspace) != nil },
-                set: { _ in }
+                set: { if !$0 { appState.cancelPendingFeatureWrite() } }
             ),
             titleVisibility: .visible
         ) {
             Button("确认写入 FEATURES.md") {
-                Task { await appState.confirmPendingFeatureWrite(confirmed: true) }
+                guard let plan = appState.takePendingFeatureWrite() else { return }
+                Task { await appState.writeConfirmedFeature(plan) }
             }
             Button("取消", role: .cancel) {
-                Task { await appState.confirmPendingFeatureWrite(confirmed: false) }
+                appState.cancelPendingFeatureWrite()
             }
         }
     }
