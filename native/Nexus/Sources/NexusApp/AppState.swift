@@ -196,6 +196,11 @@ final class AppState: ObservableObject {
     @Published var demandInputSavingWorkspaceID: WorkspaceSummary.ID?
     @Published var demandInputsByWorkspace: [WorkspaceSummary.ID: DemandInputSnapshot] = [:]
     @Published var demandInputSaveStatusesByWorkspace: [WorkspaceSummary.ID: DemandInputSaveStatus] = [:]
+    @Published var featuresByWorkspace: [WorkspaceSummary.ID: FeatureDocument] = [:]
+    @Published var pendingFeatureWrite: FeatureWritePlan?
+    @Published var featureLoadingWorkspaceID: WorkspaceSummary.ID?
+    @Published var featureWriteWorkspaceID: WorkspaceSummary.ID?
+    private var featurePlanGeneration = 0
     private var demandInputRecoveryWorkspaceIDs = Set<WorkspaceSummary.ID>()
     private var demandAttachmentOperationWorkspaceIDs = Set<WorkspaceSummary.ID>()
     private var demandInputSaveTailsByWorkspace: [WorkspaceSummary.ID: Task<DemandInputSaveResult, Never>] = [:]
@@ -3360,6 +3365,87 @@ final class AppState: ObservableObject {
 
     func demandInputSnapshot(for workspace: WorkspaceSummary) -> DemandInputSnapshot? {
         demandInputsByWorkspace[workspace.id]
+    }
+
+    func refreshFeatures(for workspace: WorkspaceSummary) async {
+        featureLoadingWorkspaceID = workspace.id
+        defer {
+            if featureLoadingWorkspaceID == workspace.id { featureLoadingWorkspaceID = nil }
+        }
+        do {
+            let path = workspace.path
+            let snapshot = try await Task.detached(priority: .userInitiated) {
+                try NativeFeatureStore.load(workspacePath: path)
+            }.value
+            featuresByWorkspace[workspace.id] = snapshot.document
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    func requestFeatureWrite(_ mutation: FeatureMutation, in workspace: WorkspaceSummary) {
+        featurePlanGeneration += 1
+        let generation = featurePlanGeneration
+        pendingFeatureWrite = nil
+        featureWriteWorkspaceID = workspace.id
+        lastError = nil
+        let path = workspace.path
+        Task {
+            do {
+                let plan = try await Task.detached(priority: .userInitiated) {
+                    try NativeFeatureStore.makePlan(workspacePath: path, mutation: mutation)
+                }.value
+                guard generation == featurePlanGeneration else { return }
+                pendingFeatureWrite = plan
+            } catch {
+                guard generation == featurePlanGeneration else { return }
+                featureWriteWorkspaceID = nil
+                lastError = error.localizedDescription
+            }
+        }
+    }
+
+    func confirmPendingFeatureWrite(confirmed: Bool) async {
+        guard let plan = pendingFeatureWrite else { return }
+        pendingFeatureWrite = nil
+        guard confirmed else {
+            featureWriteWorkspaceID = nil
+            return
+        }
+        lastError = nil
+        do {
+            let auditRoot = auditRootPath
+            let response = try await Task.detached(priority: .userInitiated) {
+                try NativeFeatureStore.write(
+                    plan: plan,
+                    confirmed: true,
+                    auditRoot: auditRoot,
+                    actor: "Nexus Native"
+                )
+            }.value
+            guard let workspace = workspaces.first(where: { $0.path == plan.workspacePath }) else {
+                featureWriteWorkspaceID = nil
+                return
+            }
+            featuresByWorkspace[workspace.id] = response.document
+            featureWriteWorkspaceID = nil
+            markLocalWriteFeedback(
+                title: "功能点已更新 / Feature updated",
+                detail: "\(workspace.name) · \(response.document.features.count) features。",
+                workspaceID: workspace.id,
+                workspaceName: workspace.name,
+                documentPath: response.path,
+                documentLabel: "FEATURES.md",
+                systemImage: "checkmark.circle",
+                auditError: response.auditError
+            )
+            if let auditError = response.auditError {
+                lastError = "FEATURES.md 已写入，但审计失败：\(auditError)"
+            }
+        } catch {
+            featureWriteWorkspaceID = nil
+            lastError = error.localizedDescription
+        }
     }
 
     func demandInputSaveStatus(for workspace: WorkspaceSummary) -> DemandInputSaveStatus {

@@ -6,6 +6,8 @@ struct NativeWorkspaceTaskRow {
     let sourceLine: Int
     let cells: [String]
     let snapshot: WorkspaceTaskSnapshot
+    let featureID: String?
+    let featureWarning: String?
 }
 
 enum NativeWorkspaceTaskParser {
@@ -26,12 +28,15 @@ enum NativeWorkspaceTaskParser {
             ) else {
                 continue
             }
+            let attribution = featureAttribution(in: snapshot.detail)
             result.append(
                 NativeWorkspaceTaskRow(
                     index: index,
                     sourceLine: sourceLine,
                     cells: cells,
-                    snapshot: snapshot
+                    snapshot: snapshot,
+                    featureID: attribution.id,
+                    featureWarning: attribution.warning
                 )
             )
         }
@@ -143,5 +148,19 @@ enum NativeWorkspaceTaskParser {
         } ?? rest.endIndex
         let value = rest[..<end].trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
+    }
+
+    static func featureAttribution(in detail: String) -> (id: String?, warning: String?) {
+        let tokens = detail.components(separatedBy: .whitespacesAndNewlines)
+            .flatMap { $0.split(whereSeparator: { "·;,|".contains($0) }) }
+            .map(String.init)
+            .filter { $0.hasPrefix("feature=") }
+        guard !tokens.isEmpty else { return (nil, nil) }
+        guard tokens.count == 1 else { return (nil, "多个 feature= 标记，任务未关联") }
+        let value = String(tokens[0].dropFirst("feature=".count))
+        guard value.range(of: #"^F-[0-9]{3,}$"#, options: .regularExpression) != nil else {
+            return (nil, "feature= 标记格式无效，任务未关联")
+        }
+        return (value, nil)
     }
 }

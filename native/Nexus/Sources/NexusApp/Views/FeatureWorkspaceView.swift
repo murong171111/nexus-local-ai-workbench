@@ -78,6 +78,8 @@ struct FeatureWorkspaceView: View {
     @State private var isAttaching = false
     @State private var pendingMaterials: [URL] = []
     @State private var autosavePolicy = FeatureWorkspaceAutosavePolicy()
+    @State private var isAddingFeature = false
+    @State private var editingFeature: WorkspaceFeature?
 
     private var isSaving: Bool {
         appState.isDemandInputSaveActive(for: workspace)
@@ -201,6 +203,9 @@ struct FeatureWorkspaceView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(isLoading || isSaving)
+
+                Divider()
+                featureList
             }
             .padding(12)
         }
@@ -220,6 +225,7 @@ struct FeatureWorkspaceView: View {
             autosavePolicy.prepareProgrammaticUpdate(loadedDraft)
             draft = loadedDraft
             isLoading = false
+            await appState.refreshFeatures(for: loadingWorkspace)
         }
         .onChange(of: draft) { _ in
             scheduleAutosave()
@@ -277,6 +283,168 @@ struct FeatureWorkspaceView: View {
             Button("取消", role: .cancel) {
                 pendingMaterials = []
             }
+        }
+        .sheet(isPresented: $isAddingFeature) {
+            FeatureEditView(featureID: nextFeatureID) { feature in
+                appState.requestFeatureWrite(.add(feature), in: workspace)
+            }
+        }
+        .sheet(item: $editingFeature) { feature in
+            FeatureEditView(featureID: feature.id, feature: feature) { replacement in
+                appState.requestFeatureWrite(
+                    .update(expected: feature, replacement: replacement),
+                    in: workspace
+                )
+            }
+        }
+        .confirmationDialog(
+            featureConfirmationTitle,
+            isPresented: Binding(
+                get: { appState.pendingFeatureWrite != nil },
+                set: { if !$0 { Task { await appState.confirmPendingFeatureWrite(confirmed: false) } } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("确认写入 FEATURES.md") {
+                Task { await appState.confirmPendingFeatureWrite(confirmed: true) }
+            }
+            Button("取消", role: .cancel) {
+                Task { await appState.confirmPendingFeatureWrite(confirmed: false) }
+            }
+        }
+    }
+
+    private var featureList: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("功能点 / Features")
+                    .font(.headline)
+                Spacer()
+                Button {
+                    isAddingFeature = true
+                } label: {
+                    Label("新增", systemImage: "plus")
+                }
+                .buttonStyle(.bordered)
+                .disabled(appState.featureWriteWorkspaceID != nil)
+            }
+
+            if appState.featureLoadingWorkspaceID == workspace.id {
+                ProgressView()
+                    .controlSize(.small)
+            } else if features.isEmpty {
+                Text("暂无已确认功能点")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(features) { feature in
+                    featureRow(feature)
+                    if feature.id != features.last?.id { Divider() }
+                }
+            }
+
+            ForEach(taskFeatureWarnings, id: \.self) { warning in
+                Label(warning, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+        }
+    }
+
+    private func featureRow(_ feature: WorkspaceFeature) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(feature.id)
+                    .font(.caption.monospaced().weight(.semibold))
+                Text(feature.title)
+                    .lineLimit(2)
+                Spacer()
+                Text(feature.status.rawValue)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            HStack(spacing: 8) {
+                Text("\(feature.verification.rawValue) · \(linkedTaskCount(feature.id)) linked tasks")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button {
+                    editingFeature = feature
+                } label: {
+                    Image(systemName: "pencil")
+                }
+                .help("编辑功能点")
+                featureStateButton(feature)
+                if feature.status != .cancelled {
+                    Button(role: .destructive) {
+                        appState.requestFeatureWrite(
+                            .cancel(id: feature.id, reason: "Cancelled in Nexus"),
+                            in: workspace
+                        )
+                    } label: {
+                        Image(systemName: "xmark.circle")
+                    }
+                    .help("取消功能点")
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+    }
+
+    @ViewBuilder
+    private func featureStateButton(_ feature: WorkspaceFeature) -> some View {
+        if feature.status == .done {
+            Button {
+                appState.requestFeatureWrite(
+                    .setStatus(id: feature.id, status: .todo, completionNote: nil),
+                    in: workspace
+                )
+            } label: {
+                Label("撤销完成", systemImage: "arrow.uturn.backward")
+            }
+        } else if feature.status != .cancelled {
+            Button {
+                appState.requestFeatureWrite(
+                    .setStatus(id: feature.id, status: .done, completionNote: "Manual completion"),
+                    in: workspace
+                )
+            } label: {
+                Label("手动完成", systemImage: "checkmark")
+            }
+        }
+    }
+
+    private var features: [WorkspaceFeature] {
+        appState.featuresByWorkspace[workspace.id]?.features ?? []
+    }
+
+    private var nextFeatureID: String {
+        let next = (features.compactMap { Int($0.id.dropFirst(2)) }.max() ?? 0) + 1
+        return String(format: "F-%03d", next)
+    }
+
+    private func linkedTaskCount(_ featureID: String) -> Int {
+        workspace.tasks.filter {
+            NativeWorkspaceTaskParser.featureAttribution(in: $0.detail).id == featureID
+        }.count
+    }
+
+    private var taskFeatureWarnings: [String] {
+        workspace.tasks.compactMap { task in
+            NativeWorkspaceTaskParser.featureAttribution(in: task.detail).warning.map {
+                "\(task.title): \($0)"
+            }
+        }
+    }
+
+    private var featureConfirmationTitle: String {
+        guard let mutation = appState.pendingFeatureWrite?.mutation else { return "确认功能点变更" }
+        switch mutation {
+        case .add(let feature): return "确认新增 \(feature.id)"
+        case .update(let expected, _): return "确认修改 \(expected.id)"
+        case .setStatus(let id, let status, _): return "确认将 \(id) 设为 \(status.rawValue)"
+        case .cancel(let id, _): return "确认取消 \(id)"
         }
     }
 
