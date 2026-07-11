@@ -12,6 +12,7 @@ DONE
 4. Added descriptor-relative, `O_NOFOLLOW`, strict UTF-8, final revision revalidation, and atomic publication for handoff, baseline, draft, and confirmed change writes. Draft archival and audit failures remain visible separately from the successful main write.
 5. Connected AppState generation, workspace-bound confirmation state, stale-source retries, and the Feature workspace review UI: generate summary, preview, confirmation checkbox, and confirmed `changes.md` write.
 6. Fixed the asynchronous demand-input race so a requirement or link saved while source probing is in progress is included in the generated Codex handoff.
+7. Self-review moved the temporary descriptor close after successful publication verification, preventing a failed rename path from closing the same descriptor twice.
 
 ## TDD Evidence
 
@@ -36,4 +37,4 @@ The confirmed facts and their source revisions come from the same snapshots. Sta
 
 ## Concerns
 
-None at this checkpoint. Task 6 will add evidence evaluation and the more active automatic feature-completion policy; Task 5 only transports and records the evidence inputs.
+The independent reviewer could not start because the Codex subagent account limit was reached. The main review found and fixed the descriptor lifetime defect above; all focused, full Native, and M1 gates were rerun afterward. Task 6 will add evidence evaluation and the more active automatic feature-completion policy; Task 5 only transports and records the evidence inputs.

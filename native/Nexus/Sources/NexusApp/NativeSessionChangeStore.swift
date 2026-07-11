@@ -643,7 +643,6 @@ enum NativeSessionChangeStore {
         do {
             try FileHandle(fileDescriptor: temporaryFD, closeOnDealloc: false).write(contentsOf: data)
             guard fsync(temporaryFD) == 0 else { throw POSIXError(.EIO) }
-            close(temporaryFD)
             switch expected {
             case .missing:
                 guard renameatx_np(fd, temporary, fd, name, UInt32(RENAME_EXCL)) == 0 else {
@@ -660,6 +659,7 @@ enum NativeSessionChangeStore {
             guard try readSnapshot(fd: fd, root: root, name: name).data == data else {
                 throw NativeSessionChangeStoreError.publicationConflict(root.appendingPathComponent(name).path)
             }
+            close(temporaryFD)
         } catch {
             close(temporaryFD)
             _ = unlinkat(fd, temporary, 0)
