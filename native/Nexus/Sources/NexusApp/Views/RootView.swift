@@ -3688,7 +3688,11 @@ private struct WorkspaceBoardCard: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(workspace.name)，分支 \(workspace.branch)，下一步 \(stage.primaryActionLabel)")
+        .accessibilityLabel(
+            "\(workspace.name)，分支 \(workspace.branch)"
+                + (workspace.riskLevel == .low ? "" : "，\(workspace.riskLevel.label)")
+                + "，\(stage.id.shortLabel)，\(stage.reason)，下一步 \(stage.primaryActionLabel)"
+        )
     }
 }
 

@@ -506,7 +506,7 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertFalse(WorkspaceBoardEmptyStateReason.configuredNoDirectories.title.contains("/"))
     }
 
-    func testWorkspaceBoardLaneClassificationUsesAttentionProgressAndArchive() {
+    func testWorkspaceBoardLaneClassificationUsesWorkflowStageNotRisk() {
         func stage(_ id: WorkspaceMainStageID, _ status: WorkflowPathStatus) -> WorkspaceMainStage {
             WorkspaceMainStage(
                 id: id,
@@ -521,26 +521,30 @@ final class ModelBehaviorTests: XCTestCase {
             )
         }
 
-        XCTAssertEqual(
-            WorkspaceBoardLaneID.resolve(isArchived: false, stage: stage(.development, .blocked)),
-            .attention
-        )
-        XCTAssertEqual(
-            WorkspaceBoardLaneID.resolve(isArchived: false, stage: stage(.demandIntake, .review)),
-            .attention
-        )
-        XCTAssertEqual(
-            WorkspaceBoardLaneID.resolve(isArchived: false, stage: stage(.created, .next)),
-            .attention
-        )
-        XCTAssertEqual(
-            WorkspaceBoardLaneID.resolve(isArchived: false, stage: stage(.development, .next)),
-            .active
-        )
-        XCTAssertEqual(
-            WorkspaceBoardLaneID.resolve(isArchived: true, stage: stage(.archived, .archived)),
-            .completed
-        )
+        let cases: [(Bool, WorkspaceMainStageID, WorkflowPathStatus, WorkspaceBoardLaneID)] = [
+            (false, .development, .blocked, .attention),
+            (false, .demandIntake, .pending, .attention),
+            (false, .demandIntake, .review, .attention),
+            (false, .created, .next, .attention),
+            (false, .development, .next, .active),
+            (false, .deliveryCheck, .next, .active),
+            (true, .development, .next, .completed)
+        ]
+
+        for (isArchived, id, status, expected) in cases {
+            XCTAssertEqual(WorkspaceBoardLaneID.resolve(isArchived: isArchived, stage: stage(id, status)), expected)
+        }
+
+        let riskOnly = [RiskLevel.low, .medium, .high].map { riskLevel in
+            workspaceForWorkflowSummary(
+                stage: "scoping",
+                id: "board-risk-\(riskLevel.rawValue)",
+                riskLevel: riskLevel
+            )
+        }
+        let lanes = WorkspaceBoardLane.lanes(for: riskOnly)
+        XCTAssertEqual(Set(lanes.first { $0.id == .attention }?.workspaces.map(\.id) ?? []), Set(riskOnly.map(\.id)))
+        XCTAssertTrue(lanes.first { $0.id == .active }?.workspaces.isEmpty == true)
     }
 
     func testWorkspaceBoardCopyStaysChineseFirstAndFocused() {
@@ -6292,7 +6296,114 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(readyBadges.last?.status, .ready)
     }
 
-    func testWorkspaceBoardLanesOrderProjectsAndLimitCompletedToFive() {
+    func testWorkspaceBoardLanesOrderProjectsAndLimitCompletedToFive() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-board-ordering-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try "# Board\n\n<!-- template-version: 2 -->\n".write(
+            to: root.appendingPathComponent("workspace.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "## F-001 Board\n- Status: todo\n- Verification: code\n- Auto complete: true\n".write(
+            to: root.appendingPathComponent("FEATURES.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let attention = [
+            workspaceForWorkflowSummary(
+                stage: "developing",
+                id: "blocked",
+                folder: "2026-07-01-blocked",
+                path: root.path,
+                branch: "tbd",
+                riskLevel: .low
+            ),
+            workspaceForWorkflowSummary(
+                stage: "developing",
+                id: "review",
+                folder: "2026-07-04-review",
+                path: root.path,
+                riskLevel: .low
+            ),
+            workspaceForWorkflowSummary(
+                stage: "scoping",
+                id: "next-high-new",
+                folder: "2026-07-04-next",
+                riskLevel: .high
+            ),
+            workspaceForWorkflowSummary(
+                stage: "scoping",
+                id: "next-high-old",
+                folder: "2026-07-02-next",
+                riskLevel: .high
+            ),
+            workspaceForWorkflowSummary(
+                stage: "scoping",
+                id: "next-low",
+                folder: "2026-07-05-next",
+                riskLevel: .low
+            )
+        ]
+        XCTAssertEqual(attention.map { $0.mainStage().status }, [.blocked, .review, .next, .next, .next])
+        XCTAssertEqual(
+            attention.map { $0.mainStage().id },
+            [.serviceBranchConfirm, .serviceBranchConfirm, .created, .created, .created]
+        )
+        XCTAssertEqual(
+            WorkspaceBoardLane.lanes(for: attention).first { $0.id == .attention }?.workspaces.map(\.id),
+            ["blocked", "review", "next-high-new", "next-high-old", "next-low"]
+        )
+
+        try writeBranchPolicyFixture(workspaceRoot: root, branch: "feature/board-ordering")
+        let todo = WorkspaceTask(
+            id: "todo",
+            title: "Todo",
+            status: "todo",
+            detail: "Todo",
+            priority: "normal",
+            source: "workspace",
+            sourceEventID: nil,
+            sourceLine: nil
+        )
+        let active = [
+            workspaceForWorkflowSummary(
+                stage: "developing",
+                id: "active-old",
+                name: "Older",
+                folder: "2026-07-02-active",
+                path: root.path,
+                branch: "feature/board-ordering",
+                tasks: [todo]
+            ),
+            workspaceForWorkflowSummary(
+                stage: "developing",
+                id: "active-zulu",
+                name: "Zulu",
+                folder: "2026-07-03-active",
+                path: root.path,
+                branch: "feature/board-ordering",
+                tasks: [todo]
+            ),
+            workspaceForWorkflowSummary(
+                stage: "developing",
+                id: "active-alpha",
+                name: "Alpha",
+                folder: "2026-07-03-active",
+                path: root.path,
+                branch: "feature/board-ordering",
+                tasks: [todo]
+            )
+        ]
+        XCTAssertEqual(active.map { $0.mainStage().status }, [.next, .next, .next])
+        XCTAssertEqual(active.map { $0.mainStage().id }, [.development, .development, .development])
+        XCTAssertEqual(
+            WorkspaceBoardLane.lanes(for: active).first { $0.id == .active }?.workspaces.map(\.id),
+            ["active-alpha", "active-zulu", "active-old"]
+        )
+
         let archived = (1...7).map { index in
             workspaceForWorkflowSummary(
                 stage: "archived",
@@ -6304,12 +6415,14 @@ final class ModelBehaviorTests: XCTestCase {
         let completed = limited.first { $0.id == .completed }
         XCTAssertEqual(limited.map(\.id), [.attention, .active, .completed])
         XCTAssertEqual(completed?.totalCount, 7)
-        XCTAssertEqual(completed?.workspaces.count, 5)
-        XCTAssertEqual(completed?.workspaces.first?.id, "archive-7")
+        XCTAssertEqual(completed?.workspaces.map(\.id), ["archive-7", "archive-6", "archive-5", "archive-4", "archive-3"])
         XCTAssertTrue(completed?.hasHiddenWorkspaces == true)
 
         let expanded = WorkspaceBoardLane.lanes(for: archived, showsAllCompleted: true)
-        XCTAssertEqual(expanded.first { $0.id == .completed }?.workspaces.count, 7)
+        XCTAssertEqual(
+            expanded.first { $0.id == .completed }?.workspaces.map(\.id),
+            ["archive-7", "archive-6", "archive-5", "archive-4", "archive-3", "archive-2", "archive-1"]
+        )
     }
 
     func testWorkspaceSummaryMapsSqlFilesFromBridgeSnapshot() {
