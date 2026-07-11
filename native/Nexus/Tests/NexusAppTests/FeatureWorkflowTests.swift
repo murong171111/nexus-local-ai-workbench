@@ -1393,6 +1393,8 @@ final class FeatureWorkflowTests: XCTestCase {
             links: ["https://example.com/background-copy"],
             attachments: []
         )
+        let concurrentAutosave = await appState.saveDemandInputDraft(currentUI, in: workspace)
+        XCTAssertTrue(concurrentAutosave.succeeded)
         releaseCopy.signal()
         let response = await operation.value
 

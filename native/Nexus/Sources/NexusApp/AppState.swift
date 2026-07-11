@@ -3551,11 +3551,6 @@ final class AppState: ObservableObject {
             for path in copied.copiedRelativePaths where !next.attachments.contains(path) {
                 next.attachments.append(path)
             }
-            demandInputsByWorkspace[workspace.id] = DemandInputSnapshot(
-                draft: next,
-                revision: savedSnapshot.revision,
-                path: savedSnapshot.path
-            )
             var followUpError: String?
             if next != savedSnapshot.draft {
                 let saveResult = await saveDemandInputDraft(next, in: workspace)
