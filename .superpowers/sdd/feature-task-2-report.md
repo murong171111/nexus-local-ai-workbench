@@ -6,7 +6,7 @@ COMPLETE_WITH_ACCEPTED_LIMITATION
 
 ## Final Commit
 
-- `Finalize Native demand concurrency` (pending commit at report update)
+- `55a8378 Preserve concurrent attachment revisions`
 
 ## Final Fixes
 
