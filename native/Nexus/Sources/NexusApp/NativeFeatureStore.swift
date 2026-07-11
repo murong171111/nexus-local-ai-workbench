@@ -212,6 +212,15 @@ enum NativeFeatureStore {
             var renderedBlock: [String] = []
             var renderedLabels = Set<String>()
             var lastMetadataIndex: Int?
+            let layoutProse = layout.lines.compactMap { item -> String? in
+                guard case .prose(let line) = item else { return nil }
+                return line
+            }
+            let replacementProse = feature.preservedLines.flatMap {
+                $0.components(separatedBy: "\n")
+            }
+            let proseChanged = layoutProse != replacementProse
+            var insertedReplacementProse = false
             for item in layout.lines {
                 switch item {
                 case .metadata(let label):
@@ -219,7 +228,12 @@ enum NativeFeatureStore {
                     renderedLabels.insert(label)
                     lastMetadataIndex = renderedBlock.endIndex
                 case .prose(let line):
-                    renderedBlock.append(line)
+                    if !proseChanged {
+                        renderedBlock.append(line)
+                    } else if !insertedReplacementProse {
+                        renderedBlock.append(contentsOf: replacementProse)
+                        insertedReplacementProse = true
+                    }
                 }
             }
             let missing = metadataLabels.compactMap { label -> String? in
@@ -227,6 +241,12 @@ enum NativeFeatureStore {
                 return metadataLine(label, feature: feature, includeEmpty: false)
             }
             renderedBlock.insert(contentsOf: missing, at: lastMetadataIndex ?? 0)
+            if proseChanged, !insertedReplacementProse {
+                renderedBlock.insert(
+                    contentsOf: replacementProse,
+                    at: (lastMetadataIndex ?? 0) + missing.count
+                )
+            }
             lines.append(contentsOf: renderedBlock)
         }
         return lines.joined(separator: "\n")

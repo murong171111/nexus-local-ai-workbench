@@ -168,6 +168,11 @@ struct NativeSetupReadiness: Hashable {
     }
 }
 
+struct ConfirmedFeatureWrite: Sendable {
+    let plan: FeatureWritePlan
+    fileprivate let token: Int
+}
+
 @MainActor
 final class AppState: ObservableObject {
     @Published var query = ""
@@ -177,6 +182,8 @@ final class AppState: ObservableObject {
             guard selectedWorkspaceID != oldValue else { return }
             featurePlanGeneration += 1
             pendingFeatureWrite = nil
+            pendingFeatureWriteToken = nil
+            activeFeatureWriteToken = nil
             featureWriteWorkspaceID = nil
         }
     }
@@ -208,6 +215,8 @@ final class AppState: ObservableObject {
     @Published var featureLoadingWorkspaceID: WorkspaceSummary.ID?
     @Published var featureWriteWorkspaceID: WorkspaceSummary.ID?
     private var featurePlanGeneration = 0
+    private var pendingFeatureWriteToken: Int?
+    private var activeFeatureWriteToken: Int?
     private var demandInputRecoveryWorkspaceIDs = Set<WorkspaceSummary.ID>()
     private var demandAttachmentOperationWorkspaceIDs = Set<WorkspaceSummary.ID>()
     private var demandInputSaveTailsByWorkspace: [WorkspaceSummary.ID: Task<DemandInputSaveResult, Never>] = [:]
@@ -3399,6 +3408,8 @@ final class AppState: ObservableObject {
         featurePlanGeneration += 1
         let generation = featurePlanGeneration
         pendingFeatureWrite = nil
+        pendingFeatureWriteToken = nil
+        activeFeatureWriteToken = generation
         featureWriteWorkspaceID = workspace.id
         lastError = nil
         let path = workspace.path
@@ -3410,8 +3421,10 @@ final class AppState: ObservableObject {
                 }.value
                 guard generation == featurePlanGeneration else { return }
                 pendingFeatureWrite = plan
+                pendingFeatureWriteToken = generation
             } catch {
                 guard generation == featurePlanGeneration else { return }
+                activeFeatureWriteToken = nil
                 featureWriteWorkspaceID = nil
                 lastError = error.localizedDescription
             }
@@ -3424,38 +3437,50 @@ final class AppState: ObservableObject {
         return pendingFeatureWrite
     }
 
-    func takePendingFeatureWrite() -> FeatureWritePlan? {
-        defer { pendingFeatureWrite = nil }
-        return pendingFeatureWrite
+    func takePendingFeatureWrite() -> ConfirmedFeatureWrite? {
+        guard let plan = pendingFeatureWrite, let token = pendingFeatureWriteToken else { return nil }
+        pendingFeatureWrite = nil
+        pendingFeatureWriteToken = nil
+        return ConfirmedFeatureWrite(plan: plan, token: token)
     }
 
     func cancelPendingFeatureWrite() {
-        guard pendingFeatureWrite != nil else { return }
+        guard pendingFeatureWrite != nil, let token = pendingFeatureWriteToken else { return }
         pendingFeatureWrite = nil
-        featureWriteWorkspaceID = nil
+        pendingFeatureWriteToken = nil
+        if activeFeatureWriteToken == token {
+            activeFeatureWriteToken = nil
+            featureWriteWorkspaceID = nil
+        }
     }
 
-    func writeConfirmedFeature(_ plan: FeatureWritePlan) async {
-        guard workspaces.first(where: { $0.id == selectedWorkspaceID })?.path == plan.workspacePath else {
-            featureWriteWorkspaceID = nil
-            return
-        }
+    func writeConfirmedFeature(
+        _ operation: ConfirmedFeatureWrite,
+        beforeWrite: (@Sendable () -> Void)? = nil
+    ) async {
+        let plan = operation.plan
+        guard activeFeatureWriteToken == operation.token,
+              workspaces.first(where: { $0.id == selectedWorkspaceID })?.path == plan.workspacePath else { return }
         lastError = nil
         do {
             let auditRoot = auditRootPath
             let response = try await Task.detached(priority: .userInitiated) {
-                try NativeFeatureStore.write(
+                beforeWrite?()
+                return try NativeFeatureStore.write(
                     plan: plan,
                     confirmed: true,
                     auditRoot: auditRoot,
                     actor: "Nexus Native"
                 )
             }.value
+            guard activeFeatureWriteToken == operation.token else { return }
             guard let workspace = workspaces.first(where: { $0.path == plan.workspacePath }) else {
+                activeFeatureWriteToken = nil
                 featureWriteWorkspaceID = nil
                 return
             }
             featuresByWorkspace[workspace.id] = response.document
+            activeFeatureWriteToken = nil
             featureWriteWorkspaceID = nil
             markLocalWriteFeedback(
                 title: "功能点已更新 / Feature updated",
@@ -3471,6 +3496,8 @@ final class AppState: ObservableObject {
                 lastError = "FEATURES.md 已写入，但审计失败：\(auditError)"
             }
         } catch {
+            guard activeFeatureWriteToken == operation.token else { return }
+            activeFeatureWriteToken = nil
             featureWriteWorkspaceID = nil
             lastError = error.localizedDescription
         }

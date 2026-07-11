@@ -306,8 +306,8 @@ struct FeatureWorkspaceView: View {
             titleVisibility: .visible
         ) {
             Button("确认写入 FEATURES.md") {
-                guard let plan = appState.takePendingFeatureWrite() else { return }
-                Task { await appState.writeConfirmedFeature(plan) }
+                guard let operation = appState.takePendingFeatureWrite() else { return }
+                Task { await appState.writeConfirmedFeature(operation) }
             }
             Button("取消", role: .cancel) {
                 appState.cancelPendingFeatureWrite()
