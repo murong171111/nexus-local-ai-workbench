@@ -100,6 +100,139 @@ enum NativeFeatureStore {
         )
     }
 
+    static func makeLegacyMigrationPlan(
+        proposal: LegacyFeatureMigrationProposal,
+        selectedItemIDs: Set<String>,
+        replacements: [String: WorkspaceFeature]
+    ) throws -> LegacyFeatureMigrationWritePlan {
+        let currentProposal = try LegacyFeatureMigrationAdapter.propose(
+            workspacePath: proposal.workspacePath
+        )
+        guard currentProposal == proposal else {
+            throw NativeFeatureStoreError.staleRevision(expected: "legacy proposal", current: "changed")
+        }
+        let snapshot = try load(workspacePath: proposal.workspacePath)
+        guard snapshot.revision == .missing else {
+            throw NativeFeatureStoreError.staleRevision(
+                expected: FeatureDocumentRevision.missing.label,
+                current: snapshot.revision.label
+            )
+        }
+        let draft = FeatureDocument(preamble: ["# Features", ""], features: proposal.features)
+        let diff = FeatureProposalDiff.resolve(confirmed: .empty, draft: draft)
+        let actionableIDs = Set(diff.actionableItems.map(\.id))
+        guard selectedItemIDs.isSubset(of: actionableIDs),
+              Set(replacements.keys).isSubset(of: selectedItemIDs) else {
+            throw NativeFeatureStoreError.invalidProposalSelection
+        }
+        var document = FeatureDocument.empty
+        for item in diff.actionableItems where selectedItemIDs.contains(item.id) {
+            guard let id = item.assignedFeatureID,
+                  let proposed = replacements[item.id] ?? item.proposed else {
+                throw NativeFeatureStoreError.invalidProposalReplacement(item.id)
+            }
+            document.features.append(newProposalFeature(proposed, id: id))
+        }
+        try validate(document)
+        return LegacyFeatureMigrationWritePlan(
+            workspacePath: proposal.workspacePath,
+            path: snapshot.path,
+            revision: snapshot.revision,
+            sourceProposal: proposal,
+            document: document
+        )
+    }
+
+    static func applyLegacyMigration(
+        plan: LegacyFeatureMigrationWritePlan,
+        confirmed: Bool,
+        actor: String,
+        auditRoot: String? = nil
+    ) throws -> FeatureWriteResponse {
+        guard confirmed else { throw NativeFeatureStoreError.unconfirmedProposal }
+        let workspaceURL = canonicalWorkspaceURL(plan.workspacePath)
+        let featurePath = workspaceURL.appendingPathComponent(fileName).path
+        guard plan.workspacePath == workspaceURL.path,
+              plan.path == featurePath,
+              plan.revision == .missing else {
+            throw NativeFeatureStoreError.malformedPlan(plan.path)
+        }
+        let result = try writeLock(for: plan.workspacePath).withLock {
+            () -> (FeatureDocument, FeatureDocumentRevision) in
+            try withWorkspaceDirectory(workspaceURL) { workspaceFD in
+                let current = try snapshot(workspaceFD: workspaceFD, path: featurePath)
+                try requireRevision(current.revision, expected: .missing)
+                guard try LegacyFeatureMigrationAdapter.propose(workspacePath: plan.workspacePath)
+                    == plan.sourceProposal else {
+                    throw NativeFeatureStoreError.staleRevision(
+                        expected: "legacy proposal", current: "changed"
+                    )
+                }
+                try validate(plan.document)
+                let data = try validatedRenderedData(plan.document)
+                let temporaryName = ".\(fileName).\(UUID().uuidString).tmp"
+                let staged = try createVerifiedTemporaryFile(data, parentFD: workspaceFD, name: temporaryName)
+                var temporaryCleanupIdentity: FileIdentity? = staged.identity
+                defer {
+                    close(staged.fd)
+                    if let temporaryCleanupIdentity {
+                        _ = unlinkNamedFileIfIdentityMatches(
+                            parentFD: workspaceFD,
+                            name: temporaryName,
+                            identity: temporaryCleanupIdentity,
+                            fingerprint: staged.fingerprint
+                        )
+                    }
+                }
+                try requireRevision(
+                    snapshot(workspaceFD: workspaceFD, path: featurePath).revision,
+                    expected: .missing
+                )
+                guard try LegacyFeatureMigrationAdapter.propose(workspacePath: plan.workspacePath)
+                    == plan.sourceProposal else {
+                    throw NativeFeatureStoreError.staleRevision(
+                        expected: "legacy proposal", current: "changed"
+                    )
+                }
+                try replaceFeatureFile(
+                    workspaceFD: workspaceFD,
+                    path: featurePath,
+                    temporaryName: temporaryName,
+                    expectedRevision: .missing,
+                    staged: staged,
+                    expectedData: data,
+                    afterPublishBeforeVerify: nil,
+                    temporaryCleanupIdentity: &temporaryCleanupIdentity
+                )
+                let written = try snapshot(workspaceFD: workspaceFD, path: featurePath)
+                return (written.document, written.revision)
+            }
+        }
+        let audit = NativeAuditEventStore.appendFeedback(
+            auditRoot: auditRoot,
+            event: AuditEventInput(
+                actor: actor,
+                action: "feature.legacy_migrated",
+                target: plan.path,
+                summary: "Confirmed legacy feature migration",
+                metadata: [
+                    "workspace": plan.workspacePath,
+                    "featureCount": String(result.0.features.count),
+                    "sources": plan.sourceProposal.sourcePaths.joined(separator: ","),
+                    "revision": result.1.label
+                ]
+            )
+        )
+        return FeatureWriteResponse(
+            path: plan.path,
+            revision: result.1,
+            document: result.0,
+            auditEventID: audit.response?.event.id,
+            auditEventPath: audit.response?.path,
+            auditError: audit.error
+        )
+    }
+
     static func applyAutoCompletions(
         plan: FeatureAutoCompletionPlan,
         confirmed: Bool,
@@ -128,6 +261,9 @@ enum NativeFeatureStore {
                         expected: plan.revision.label,
                         current: current.revision.label
                     )
+                }
+                for item in plan.items {
+                    try NativeFeatureEvidenceStore.validateSourceRevisions(item.evidence)
                 }
                 var document = current.document
                 var transitions: [FeatureCompletionTransition] = []
@@ -188,6 +324,9 @@ enum NativeFeatureStore {
                     snapshot(workspaceFD: workspaceFD, path: featurePath).revision,
                     expected: plan.revision
                 )
+                for item in plan.items {
+                    try NativeFeatureEvidenceStore.validateSourceRevisions(item.evidence)
+                }
                 try replaceFeatureFile(
                     workspaceFD: workspaceFD,
                     path: featurePath,
@@ -551,6 +690,7 @@ enum NativeFeatureStore {
                     "evidenceIDs": writtenFeature?.evidenceIDs.joined(separator: ",") ?? "",
                     "previousStatus": plan.expectedFeature?.status.rawValue ?? "missing",
                     "nextStatus": writtenFeature?.status.rawValue ?? "missing",
+                    "reason": mutationReason(plan.mutation) ?? "",
                     "sourceRevision": plan.revision.label,
                     "revision": result.1.label
                 ]
@@ -1438,6 +1578,13 @@ enum NativeFeatureStore {
 
     private static func auditSummary(_ mutation: FeatureMutation) -> String {
         "Confirmed feature mutation: \(auditAction(mutation))"
+    }
+
+    private static func mutationReason(_ mutation: FeatureMutation) -> String? {
+        switch mutation {
+        case .revertCompletion(_, let reason), .cancel(_, let reason): reason
+        default: nil
+        }
     }
 
     private static func completionEvidenceIDs(_ evidence: FeatureEvidence) -> [String] {

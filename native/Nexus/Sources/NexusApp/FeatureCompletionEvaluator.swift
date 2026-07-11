@@ -11,6 +11,7 @@ enum FeatureCompletionDecision: String, Hashable, Sendable {
 
 struct FeatureEvidence: Hashable, Sendable {
     let featureID: String
+    let workspacePath: String
     let linkedTaskIDs: [String]
     let incompleteTaskIDs: [String]
     let relatedChangeIDs: [String]
@@ -23,6 +24,7 @@ struct FeatureEvidence: Hashable, Sendable {
     let documentationPaths: [String]
     let blockers: [String]
     let readErrors: [String]
+    let sourceRevisions: [String: String]
 
     var hasExplicitAttribution: Bool {
         !linkedTaskIDs.isEmpty
@@ -110,9 +112,13 @@ enum FeatureCompletionEvaluator {
         case .sql:
             if evidence.formalSQLPaths.isEmpty { missing.append("Formal SQL is missing.") }
             if evidence.rollbackSQLPaths.isEmpty { missing.append("Rollback SQL is missing.") }
+            if evidence.relatedChangeIDs.isEmpty { missing.append("No attributed SQL change.") }
+            if evidence.requiredTestIDs.isEmpty { missing.append("SQL validation evidence is missing.") }
             appendTestFailures(evidence, to: &missing)
         case .documentation:
             if evidence.documentationPaths.isEmpty { missing.append("Documentation evidence is missing.") }
+            if evidence.relatedChangeIDs.isEmpty { missing.append("No attributed document change.") }
+            if evidence.requiredTestIDs.isEmpty { missing.append("Document check evidence is missing.") }
             appendTestFailures(evidence, to: &missing)
         case .manual:
             return (false, ["Manual verification requires user confirmation."])
@@ -139,6 +145,9 @@ enum FeatureCompletionEvaluator {
     ) -> FeatureCompletionEvaluation {
         var staleReasons = evidence.readErrors.map { "Read error: \($0)" }
         staleReasons += evidence.blockers.map { "Blocker: \($0)" }
+        if !evidence.incompleteTaskIDs.isEmpty {
+            staleReasons.append("Incomplete tasks: \(evidence.incompleteTaskIDs.sorted().joined(separator: ", "))")
+        }
         if !evidence.failedOrMissingTestIDs.isEmpty {
             staleReasons.append("Failed or missing tests: \(evidence.failedOrMissingTestIDs.sorted().joined(separator: ", "))")
         }

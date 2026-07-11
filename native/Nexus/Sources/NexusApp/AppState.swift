@@ -227,6 +227,7 @@ final class AppState: ObservableObject {
     @Published var demandInputsByWorkspace: [WorkspaceSummary.ID: DemandInputSnapshot] = [:]
     @Published var demandInputSaveStatusesByWorkspace: [WorkspaceSummary.ID: DemandInputSaveStatus] = [:]
     @Published var featuresByWorkspace: [WorkspaceSummary.ID: FeatureDocument] = [:]
+    @Published var featureRevisionsByWorkspace: [WorkspaceSummary.ID: FeatureDocumentRevision] = [:]
     @Published var featureEvidenceByWorkspace: [WorkspaceSummary.ID: [String: FeatureEvidence]] = [:]
     @Published var featureCompletionEvaluationsByWorkspace: [WorkspaceSummary.ID: [String: FeatureCompletionEvaluation]] = [:]
     @Published var pendingFeatureWrite: FeatureWritePlan?
@@ -238,6 +239,8 @@ final class AppState: ObservableObject {
     @Published var pendingFeatureProposalMerge: FeatureProposalMergePlan?
     @Published var featureProposalLoadingWorkspaceID: WorkspaceSummary.ID?
     @Published var featureProposalMergeWorkspaceID: WorkspaceSummary.ID?
+    @Published var legacyFeatureMigrationProposalsByWorkspace: [WorkspaceSummary.ID: LegacyFeatureMigrationProposal] = [:]
+    @Published var legacyFeatureMigrationLoadingWorkspaceID: WorkspaceSummary.ID?
     @Published var sessionChangeDraftsByWorkspace: [WorkspaceSummary.ID: SessionChangeDraft] = [:]
     @Published var pendingSessionChangeWrite: SessionChangeWritePlan?
     @Published var sessionChangeWriteWorkspaceID: WorkspaceSummary.ID?
@@ -1278,6 +1281,7 @@ final class AppState: ObservableObject {
         do {
             let generatedAt = ISO8601DateFormatter().string(from: Date())
             await refreshFromBridge()
+            let workspaceRefreshSucceeded = agentStatus.title != "Bridge error"
             var response: LocalAutomationCheckResponse
             if agentStatus.title == "Bridge error", workspaces.isEmpty {
                 response = try await bridge.localAutomationCheck(
@@ -1301,10 +1305,9 @@ final class AppState: ObservableObject {
                     target: workspaceRoot
                 )
             }
-            let featureTransitions = await applyFeatureCompletionEvidence(
-                actor: actor,
-                confirmedTrigger: true
-            )
+            let featureTransitions = workspaceRefreshSucceeded
+                ? await applyFeatureCompletionEvidence(actor: actor, confirmedTrigger: true)
+                : []
             response = NativeLocalAutomationCheck.appendingFeatureCompletionSignals(
                 to: response,
                 transitions: featureTransitions
@@ -3449,8 +3452,81 @@ final class AppState: ObservableObject {
                 try NativeFeatureStore.load(workspacePath: path)
             }.value
             featuresByWorkspace[workspace.id] = snapshot.document
+            featureRevisionsByWorkspace[workspace.id] = snapshot.revision
         } catch {
             lastError = error.localizedDescription
+        }
+    }
+
+    func loadLegacyFeatureMigrationProposal(for workspace: WorkspaceSummary) async {
+        guard featureRevisionsByWorkspace[workspace.id] == .missing else { return }
+        legacyFeatureMigrationLoadingWorkspaceID = workspace.id
+        defer {
+            if legacyFeatureMigrationLoadingWorkspaceID == workspace.id {
+                legacyFeatureMigrationLoadingWorkspaceID = nil
+            }
+        }
+        do {
+            let path = workspace.path
+            let proposal = try await Task.detached(priority: .userInitiated) {
+                try LegacyFeatureMigrationAdapter.propose(workspacePath: path)
+            }.value
+            legacyFeatureMigrationProposalsByWorkspace[workspace.id] = proposal
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    @discardableResult
+    func applyLegacyFeatureMigration(
+        for workspace: WorkspaceSummary,
+        selectedItemIDs: Set<String>,
+        confirmed: Bool
+    ) async -> Bool {
+        guard let proposal = legacyFeatureMigrationProposalsByWorkspace[workspace.id],
+              !selectedItemIDs.isEmpty,
+              confirmed else { return false }
+        legacyFeatureMigrationLoadingWorkspaceID = workspace.id
+        defer {
+            if legacyFeatureMigrationLoadingWorkspaceID == workspace.id {
+                legacyFeatureMigrationLoadingWorkspaceID = nil
+            }
+        }
+        do {
+            let auditRoot = auditRootPath
+            let response = try await Task.detached(priority: .userInitiated) {
+                let plan = try NativeFeatureStore.makeLegacyMigrationPlan(
+                    proposal: proposal,
+                    selectedItemIDs: selectedItemIDs,
+                    replacements: [:]
+                )
+                return try NativeFeatureStore.applyLegacyMigration(
+                    plan: plan,
+                    confirmed: confirmed,
+                    actor: "Nexus Native",
+                    auditRoot: auditRoot
+                )
+            }.value
+            featuresByWorkspace[workspace.id] = response.document
+            featureRevisionsByWorkspace[workspace.id] = response.revision
+            legacyFeatureMigrationProposalsByWorkspace[workspace.id] = nil
+            markLocalWriteFeedback(
+                title: "功能点迁移完成 / Features created",
+                detail: "\(workspace.name) · \(response.document.features.count) features；旧文件保持不变。",
+                workspaceID: workspace.id,
+                workspaceName: workspace.name,
+                documentPath: response.path,
+                documentLabel: "FEATURES.md",
+                systemImage: "checkmark.circle",
+                auditError: response.auditError
+            )
+            if let auditError = response.auditError {
+                lastError = "FEATURES.md 已写入，但审计失败：\(auditError)"
+            }
+            return true
+        } catch {
+            lastError = error.localizedDescription
+            return false
         }
     }
 
@@ -3460,7 +3536,7 @@ final class AppState: ObservableObject {
         confirmedTrigger: Bool
     ) async -> [FeatureCompletionTransition] {
         guard confirmedTrigger else { return [] }
-        let currentWorkspaces = workspaces
+        let currentWorkspaces = workspaces.filter { !$0.isArchived }
         let auditRoot = auditRootPath
         let results = await Task.detached(priority: .userInitiated) {
             currentWorkspaces.map { workspace -> FeatureCompletionWorkspaceResult in
@@ -4014,6 +4090,8 @@ final class AppState: ObservableObject {
                 return
             }
             featuresByWorkspace[workspace.id] = response.document
+            featureEvidenceByWorkspace[workspace.id] = nil
+            featureCompletionEvaluationsByWorkspace[workspace.id] = nil
             activeFeatureWriteToken = nil
             featureWriteWorkspaceID = nil
             markLocalWriteFeedback(
@@ -5080,7 +5158,8 @@ final class AppState: ObservableObject {
                     targetBranch: draft.targetBranch,
                     confirmed: draft.confirmed,
                     auditRoot: auditRootPath,
-                    actor: "Nexus Native"
+                    actor: "Nexus Native",
+                    templateVersion: draft.templateVersion
                 )
             )
             setWorkspaceFilter(.all)
@@ -6221,6 +6300,7 @@ struct CreateWorkspaceDraft: Equatable {
     var services: [String]
     var targetBranch: String
     var confirmed: Bool
+    var templateVersion: WorkspaceTemplateVersion = .v2FeatureCentered
 }
 
 private enum AppStateWorktreeSetupPlanError: LocalizedError {

@@ -5,6 +5,7 @@ enum NativeWorkspaceScanner {
     private static let documentSpecs: [(key: String, name: String)] = [
         ("agents", "AGENTS.md"),
         ("workspace", "workspace.md"),
+        ("features", "FEATURES.md"),
         ("status", "STATUS.md"),
         ("services", "services.md"),
         ("branches", "branches.md"),

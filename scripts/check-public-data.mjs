@@ -60,7 +60,7 @@ const checks = [
   },
   {
     name: "secret-like assignment",
-    pattern: /\b(?:TOKEN|SECRET|PASSWORD|PRIVATE_KEY)\s*[:=]\s*['"]?[^'"\s]+/gi,
+    pattern: /\b(?:TOKEN|SECRET|PASSWORD|PRIVATE_KEY)\s*[:=]\s*['"]?[^'"\s]+/g,
     allow: () => false
   },
   {

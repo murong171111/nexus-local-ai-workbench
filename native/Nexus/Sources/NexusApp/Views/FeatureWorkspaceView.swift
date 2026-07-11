@@ -117,6 +117,7 @@ struct FeatureWorkspaceView: View {
     @State private var isAddingFeature = false
     @State private var editingFeature: WorkspaceFeature?
     @State private var isReviewingFeatureProposal = false
+    @State private var isReviewingLegacyMigration = false
     @State private var sessionCodexSummary = ""
     @State private var isSessionChangeConfirmed = false
     @State private var expandedEvidenceFeatureIDs = Set<String>()
@@ -368,6 +369,12 @@ struct FeatureWorkspaceView: View {
             FeatureProposalReviewView(workspace: workspace)
                 .environmentObject(appState)
         }
+        .sheet(isPresented: $isReviewingLegacyMigration) {
+            if let proposal = appState.legacyFeatureMigrationProposalsByWorkspace[workspace.id] {
+                LegacyFeatureMigrationReviewSheet(workspace: workspace, proposal: proposal)
+                    .environmentObject(appState)
+            }
+        }
         .confirmationDialog(
             featureConfirmationTitle,
             isPresented: Binding(
@@ -473,9 +480,27 @@ struct FeatureWorkspaceView: View {
                 ProgressView()
                     .controlSize(.small)
             } else if features.isEmpty {
-                Text("暂无已确认功能点")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                HStack {
+                    Text("暂无已确认功能点")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if canOfferLegacyMigration {
+                        Button {
+                            Task {
+                                await appState.loadLegacyFeatureMigrationProposal(for: workspace)
+                                if appState.legacyFeatureMigrationProposalsByWorkspace[workspace.id] != nil {
+                                    isReviewingLegacyMigration = true
+                                }
+                            }
+                        } label: {
+                            Label("从现有文档生成建议", systemImage: "doc.text.magnifyingglass")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(appState.legacyFeatureMigrationLoadingWorkspaceID == workspace.id)
+                    }
+                }
             } else {
                 ForEach(features) { feature in
                     featureRow(feature)
@@ -717,6 +742,10 @@ struct FeatureWorkspaceView: View {
         return String(format: "F-%03d", next)
     }
 
+    private var canOfferLegacyMigration: Bool {
+        appState.featureRevisionsByWorkspace[workspace.id] == .missing
+    }
+
     private func linkedTaskCount(_ featureID: String) -> Int {
         workspace.tasks.filter {
             NativeWorkspaceTaskParser.featureAttribution(in: $0.detail).id == featureID
@@ -768,5 +797,104 @@ struct FeatureWorkspaceView: View {
         case .idle, .saved:
             return "已自动保存"
         }
+    }
+}
+
+private struct LegacyFeatureMigrationReviewSheet: View {
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+    let workspace: WorkspaceSummary
+    let proposal: LegacyFeatureMigrationProposal
+
+    @State private var selectedItemIDs: Set<String>
+    @State private var isConfirmed = false
+
+    init(workspace: WorkspaceSummary, proposal: LegacyFeatureMigrationProposal) {
+        self.workspace = workspace
+        self.proposal = proposal
+        let items = FeatureProposalDiff.resolve(
+            confirmed: .empty,
+            draft: FeatureDocument(preamble: ["# Features", ""], features: proposal.features)
+        ).actionableItems
+        _selectedItemIDs = State(initialValue: Set(items.map(\.id)))
+    }
+
+    private var items: [FeatureProposalItem] {
+        FeatureProposalDiff.resolve(
+            confirmed: .empty,
+            draft: FeatureDocument(preamble: ["# Features", ""], features: proposal.features)
+        ).actionableItems
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("从现有文档生成建议")
+                    .font(.title3.weight(.semibold))
+                Spacer()
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.borderless)
+                .help("关闭")
+            }
+
+            Text(proposal.sourcePaths.joined(separator: " · "))
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+
+            List(items) { item in
+                Toggle(
+                    isOn: Binding(
+                        get: { selectedItemIDs.contains(item.id) },
+                        set: { selected in
+                            if selected { selectedItemIDs.insert(item.id) }
+                            else { selectedItemIDs.remove(item.id) }
+                        }
+                    )
+                ) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(item.proposed?.title ?? item.id)
+                        Text(item.proposed?.sources.joined(separator: ", ") ?? "")
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .toggleStyle(.checkbox)
+            }
+            .frame(minHeight: 260)
+
+            Toggle("确认创建 FEATURES.md；现有文档保持不变", isOn: $isConfirmed)
+                .toggleStyle(.checkbox)
+
+            HStack {
+                Spacer()
+                Button("取消", role: .cancel) { dismiss() }
+                Button {
+                    Task {
+                        if await appState.applyLegacyFeatureMigration(
+                            for: workspace,
+                            selectedItemIDs: selectedItemIDs,
+                            confirmed: isConfirmed
+                        ) {
+                            dismiss()
+                        }
+                    }
+                } label: {
+                    Label("创建功能点", systemImage: "checkmark")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(
+                    !isConfirmed
+                        || selectedItemIDs.isEmpty
+                        || appState.legacyFeatureMigrationLoadingWorkspaceID == workspace.id
+                )
+            }
+        }
+        .padding(16)
+        .frame(minWidth: 620, minHeight: 460)
     }
 }

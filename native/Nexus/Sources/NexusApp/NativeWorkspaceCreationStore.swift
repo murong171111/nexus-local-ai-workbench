@@ -17,10 +17,13 @@ enum NativeWorkspaceCreationStore {
             throw NativeWorkspaceCreationStoreError.workspaceAlreadyExists(workspaceURL.path)
         }
 
+        let templateVersion = request.templateVersion ?? .v1Legacy
         try fileManager.createDirectory(at: workspaceURL.appendingPathComponent("logs"), withIntermediateDirectories: true)
         try fileManager.createDirectory(at: workspaceURL.appendingPathComponent("sql"), withIntermediateDirectories: true)
         try fileManager.createDirectory(at: workspaceURL.appendingPathComponent("repos"), withIntermediateDirectories: true)
-        try fileManager.createDirectory(at: workspaceURL.appendingPathComponent("scripts"), withIntermediateDirectories: true)
+        if templateVersion == .v1Legacy {
+            try fileManager.createDirectory(at: workspaceURL.appendingPathComponent("scripts"), withIntermediateDirectories: true)
+        }
 
         let services = normalizedServices(request.services)
         let targetBranch = normalizedTargetBranch(request.targetBranch)
@@ -32,7 +35,8 @@ enum NativeWorkspaceCreationStore {
             sourceReposRoot: request.sourceReposRoot,
             services: services,
             targetBranch: targetBranch,
-            createdDate: createdDate
+            createdDate: createdDate,
+            templateVersion: templateVersion
         )
         try updateIndex(
             rootURL: rootURL,
@@ -42,12 +46,17 @@ enum NativeWorkspaceCreationStore {
             services: services
         )
 
-        let generatedFiles = initializationFileReceipt(workspaceURL: workspaceURL, fileManager: fileManager)
+        let generatedFiles = initializationFileReceipt(
+            workspaceURL: workspaceURL,
+            templateVersion: templateVersion,
+            fileManager: fileManager
+        )
         let initializationChecks = initializationChecks(
             workspaceURL: workspaceURL,
             generatedFiles: generatedFiles,
             services: services,
             targetBranch: targetBranch,
+            templateVersion: templateVersion,
             fileManager: fileManager
         )
         let response = CreateWorkspaceResponse(
@@ -114,9 +123,10 @@ enum NativeWorkspaceCreationStore {
         sourceReposRoot: String,
         services: [String],
         targetBranch: String,
-        createdDate: String
+        createdDate: String,
+        templateVersion: WorkspaceTemplateVersion
     ) throws {
-        let files: [(String, String)] = [
+        let legacyFiles: [(String, String)] = [
             ("AGENTS.md", agentsMarkdown(name: name, workspacePath: workspaceURL.path, sourceReposRoot: sourceReposRoot)),
             ("workspace.md", workspaceMarkdown(name: name, createdDate: createdDate, targetBranch: targetBranch, sourceReposRoot: sourceReposRoot)),
             ("STATUS.md", statusMarkdown(createdDate: createdDate, services: services, targetBranch: targetBranch, sourceReposRoot: sourceReposRoot)),
@@ -134,6 +144,21 @@ enum NativeWorkspaceCreationStore {
             ("bootstrap-report.md", bootstrapReportMarkdown(name: name, folder: folder, workspacePath: workspaceURL.path, services: services, targetBranch: targetBranch, sourceReposRoot: sourceReposRoot, createdDate: createdDate)),
             ("scripts/worktree-commands.sh", worktreeCommandsMarkdown(workspaceURL: workspaceURL, services: services, targetBranch: targetBranch, sourceReposRoot: sourceReposRoot))
         ]
+        let featureCenteredFiles: [(String, String)] = [
+            ("workspace.md", v2WorkspaceMarkdown(
+                name: name,
+                createdDate: createdDate,
+                targetBranch: targetBranch,
+                sourceReposRoot: sourceReposRoot
+            )),
+            ("FEATURES.md", "# Features\n\n<!-- template-version: 2 -->\n"),
+            ("tasks.md", "# Tasks\n\n<!-- template-version: 2 -->\n"),
+            ("services.md", servicesMarkdown(services: services, sourceReposRoot: sourceReposRoot)),
+            ("branches.md", branchesMarkdown(services: services, targetBranch: targetBranch, sourceReposRoot: sourceReposRoot)),
+            ("changes.md", "# Changes\n\n<!-- template-version: 2 -->\n"),
+            ("交付记录.md", deliveryRecordMarkdown(name: name, folder: folder, targetBranch: targetBranch, services: services))
+        ]
+        let files = templateVersion == .v2FeatureCentered ? featureCenteredFiles : legacyFiles
         for (relativePath, content) in files {
             let url = workspaceURL.appendingPathComponent(relativePath, isDirectory: false)
             try content.write(to: url, atomically: true, encoding: .utf8)
@@ -156,9 +181,10 @@ enum NativeWorkspaceCreationStore {
 
     private static func initializationFileReceipt(
         workspaceURL: URL,
+        templateVersion: WorkspaceTemplateVersion,
         fileManager: FileManager
     ) -> [WorkspaceInitializationFile] {
-        initializationFileSpecs.map { spec in
+        initializationFileSpecs(for: templateVersion).map { spec in
             let url = workspaceURL.appendingPathComponent(spec.relativePath)
             let exists = spec.kind == "directory"
                 ? fileManager.directoryExists(atPath: url.path)
@@ -177,14 +203,17 @@ enum NativeWorkspaceCreationStore {
         generatedFiles: [WorkspaceInitializationFile],
         services: [String],
         targetBranch: String,
+        templateVersion: WorkspaceTemplateVersion,
         fileManager: FileManager
     ) -> [WorkspaceInitializationCheck] {
         let missingFiles = generatedFiles.filter { !$0.exists }.map(\.relativePath)
-        let statusURL = workspaceURL.appendingPathComponent("STATUS.md")
+        let statusName = templateVersion == .v2FeatureCentered ? "workspace.md" : "STATUS.md"
+        let statusURL = workspaceURL.appendingPathComponent(statusName)
         let statusContent = (try? String(contentsOf: statusURL, encoding: .utf8)) ?? ""
         let statusIsAnalyzing = statusContent.contains("状态: analyzing")
         let reposReady = fileManager.directoryExists(atPath: workspaceURL.appendingPathComponent("repos").path)
-        let scriptReady = fileManager.fileExists(atPath: workspaceURL.appendingPathComponent("scripts/worktree-commands.sh").path)
+        let scriptReady = templateVersion == .v2FeatureCentered
+            || fileManager.fileExists(atPath: workspaceURL.appendingPathComponent("scripts/worktree-commands.sh").path)
 
         return [
             WorkspaceInitializationCheck(
@@ -196,7 +225,7 @@ enum NativeWorkspaceCreationStore {
             WorkspaceInitializationCheck(
                 id: "status-initial-state",
                 label: "初始状态 / Initial status",
-                detail: statusIsAnalyzing ? "STATUS.md 已设置为 analyzing。" : "STATUS.md 未识别到 analyzing 初始状态。",
+                detail: statusIsAnalyzing ? "\(statusName) 已设置为 analyzing。" : "\(statusName) 未识别到 analyzing 初始状态。",
                 status: statusIsAnalyzing ? "pass" : "fail"
             ),
             WorkspaceInitializationCheck(
@@ -214,7 +243,9 @@ enum NativeWorkspaceCreationStore {
             WorkspaceInitializationCheck(
                 id: "worktree-readiness",
                 label: "Worktree 准备 / Worktree readiness",
-                detail: reposReady && scriptReady ? "repos/ 目录和 scripts/worktree-commands.sh 已就绪。" : "repos/ 目录或 worktree 脚本缺失。",
+                detail: reposReady && scriptReady
+                    ? (templateVersion == .v2FeatureCentered ? "repos/ 目录已就绪，worktree 命令按需生成。" : "repos/ 目录和 scripts/worktree-commands.sh 已就绪。")
+                    : "repos/ 目录或 worktree 脚本缺失。",
                 status: reposReady && scriptReady ? "pass" : "fail"
             )
         ]
@@ -239,7 +270,8 @@ enum NativeWorkspaceCreationStore {
                     "services": services.joined(separator: ","),
                     "targetBranch": targetBranch,
                     "workspacesRoot": request.workspacesRoot,
-                    "sourceReposRoot": request.sourceReposRoot
+                    "sourceReposRoot": request.sourceReposRoot,
+                    "templateVersion": (request.templateVersion ?? .v1Legacy).rawValue
                 ]
             )
         )
@@ -259,7 +291,27 @@ private struct WorkspaceInitializationFileSpec {
     let kind: String
 }
 
-private let initializationFileSpecs: [WorkspaceInitializationFileSpec] = [
+private func initializationFileSpecs(
+    for version: WorkspaceTemplateVersion
+) -> [WorkspaceInitializationFileSpec] {
+    if version == .v2FeatureCentered {
+        return [
+            WorkspaceInitializationFileSpec(label: "Workspace", relativePath: "workspace.md", kind: "file"),
+            WorkspaceInitializationFileSpec(label: "Features", relativePath: "FEATURES.md", kind: "file"),
+            WorkspaceInitializationFileSpec(label: "Tasks", relativePath: "tasks.md", kind: "file"),
+            WorkspaceInitializationFileSpec(label: "Services", relativePath: "services.md", kind: "file"),
+            WorkspaceInitializationFileSpec(label: "Branches", relativePath: "branches.md", kind: "file"),
+            WorkspaceInitializationFileSpec(label: "Changes", relativePath: "changes.md", kind: "file"),
+            WorkspaceInitializationFileSpec(label: "交付记录", relativePath: "交付记录.md", kind: "file"),
+            WorkspaceInitializationFileSpec(label: "Logs directory", relativePath: "logs", kind: "directory"),
+            WorkspaceInitializationFileSpec(label: "SQL directory", relativePath: "sql", kind: "directory"),
+            WorkspaceInitializationFileSpec(label: "Repos directory", relativePath: "repos", kind: "directory")
+        ]
+    }
+    return legacyInitializationFileSpecs
+}
+
+private let legacyInitializationFileSpecs: [WorkspaceInitializationFileSpec] = [
     WorkspaceInitializationFileSpec(label: "Agent guide", relativePath: "AGENTS.md", kind: "file"),
     WorkspaceInitializationFileSpec(label: "Workspace", relativePath: "workspace.md", kind: "file"),
     WorkspaceInitializationFileSpec(label: "Status", relativePath: "STATUS.md", kind: "file"),
@@ -345,6 +397,26 @@ private func workspaceMarkdown(name: String, createdDate: String, targetBranch: 
 
     - 工作区已由 Nexus 创建。
     - 服务范围和目标分支可继续确认。
+
+    """
+}
+
+private func v2WorkspaceMarkdown(
+    name: String,
+    createdDate: String,
+    targetBranch: String,
+    sourceReposRoot: String
+) -> String {
+    """
+    # \(name)
+
+    <!-- template-version: 2 -->
+
+    - 需求名称: \(name)
+    - 创建日期: \(createdDate)
+    - 当前状态: analyzing
+    - 目标分支: \(targetBranch)
+    - 源仓库集合: \(sourceReposRoot)
 
     """
 }

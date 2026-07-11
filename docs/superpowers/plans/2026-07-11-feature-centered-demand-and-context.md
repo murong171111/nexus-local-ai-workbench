@@ -1013,7 +1013,7 @@ Document the feature-centered flow, v1/v2 template compatibility, compact contex
 - [ ] **Step 5: Run complete verification**
 
 ```bash
-env PATH=/Users/ks_cj/.local/bin:/Users/ks_cj/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin \
+env PATH=/Users/example/.local/bin:/Users/example/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin \
   CLANG_MODULE_CACHE_PATH=/private/tmp/nexus-swift-module-cache \
   SWIFTPM_MODULECACHE_OVERRIDE=/private/tmp/nexus-swift-module-cache \
   npm run verify

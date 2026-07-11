@@ -92,6 +92,13 @@ test("scanPublicData checks publishable web and macOS metadata assets", () => {
   ]);
 });
 
+test("scanPublicData ignores ordinary lowercase code identifiers", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "nexus-public-data-"));
+  writeFileSync(path.join(root, "Plan.swift"), "struct Plan { let token: Int }\n");
+
+  assert.deepEqual(scanPublicData(root), []);
+});
+
 test("scanPublicData skips generated and dependency directories", () => {
   const root = mkdtempSync(path.join(tmpdir(), "nexus-public-data-"));
   mkdirSync(path.join(root, ".build"));

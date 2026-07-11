@@ -1045,6 +1045,12 @@ final class FeatureWorkflowTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let workspace = demandInputWorkspace(path: root.path)
         let appState = makeAppState(workspace: workspace, root: root)
+        appState.featureEvidenceByWorkspace[workspace.id] = ["F-001": featureEvidence()]
+        appState.featureCompletionEvaluationsByWorkspace[workspace.id] = [
+            "F-001": FeatureCompletionEvaluation(
+                featureID: "F-001", decision: .keepVerifying, reasons: ["old"]
+            )
+        ]
         await appState.refreshFeatureProposal(for: workspace)
         let item = try XCTUnwrap(
             appState.featureProposalReview(for: workspace)?.diff?.items.first(where: { $0.id == "F-001" })
@@ -1301,6 +1307,8 @@ final class FeatureWorkflowTests: XCTestCase {
 
         XCTAssertEqual(appState.featuresByWorkspace[workspace.id]?.features.first?.status, .done)
         XCTAssertNil(appState.pendingFeatureWrite)
+        XCTAssertNil(appState.featureEvidenceByWorkspace[workspace.id])
+        XCTAssertNil(appState.featureCompletionEvaluationsByWorkspace[workspace.id])
     }
 
     @MainActor
@@ -3376,6 +3384,10 @@ final class FeatureWorkflowTests: XCTestCase {
         let completeSQL = FeatureCompletionEvaluator.evaluate(
             feature: sqlFeature,
             evidence: featureEvidence(
+                relatedChangeIDs: ["file:sql/formal/F-001.sql", "file:sql/rollback/F-001.sql"],
+                latestRelatedChangeAt: Date(timeIntervalSince1970: 100),
+                requiredTestIDs: ["sql-validation"],
+                latestTestAt: Date(timeIntervalSince1970: 101),
                 formalSQLPaths: ["sql/formal/F-001.sql"],
                 rollbackSQLPaths: ["sql/rollback/F-001.sql"]
             )
@@ -3392,7 +3404,13 @@ final class FeatureWorkflowTests: XCTestCase {
         XCTAssertEqual(
             FeatureCompletionEvaluator.evaluate(
                 feature: completionFeature(verification: .documentation),
-                evidence: featureEvidence(documentationPaths: ["docs/F-001.md"])
+                evidence: featureEvidence(
+                    relatedChangeIDs: ["file:docs/F-001.md"],
+                    latestRelatedChangeAt: Date(timeIntervalSince1970: 100),
+                    requiredTestIDs: ["docs-check"],
+                    latestTestAt: Date(timeIntervalSince1970: 101),
+                    documentationPaths: ["docs/F-001.md"]
+                )
             ).decision,
             .autoComplete
         )
@@ -3444,13 +3462,33 @@ final class FeatureWorkflowTests: XCTestCase {
         XCTAssertEqual(evaluation.decision, .markEvidenceStale)
     }
 
+    func testDoneFeatureWithReopenedTaskMarksEvidenceStale() {
+        var feature = completionFeature(verification: .code)
+        feature.status = .done
+        feature.completedAt = "2026-07-11T03:00:00Z"
+
+        let evaluation = FeatureCompletionEvaluator.evaluate(
+            feature: feature,
+            evidence: featureEvidence(linkedTaskIDs: ["T-1"], incompleteTaskIDs: ["T-1"])
+        )
+
+        XCTAssertEqual(evaluation.decision, .markEvidenceStale)
+        XCTAssertTrue(evaluation.reasons.contains { $0.contains("T-1") })
+    }
+
     func testFeatureWithoutAutoCompleteAuthorizationAdvancesButDoesNotFinish() {
         var feature = completionFeature(verification: .documentation)
         feature.autoComplete = false
         XCTAssertEqual(
             FeatureCompletionEvaluator.evaluate(
                 feature: feature,
-                evidence: featureEvidence(documentationPaths: ["docs/F-001.md"])
+                evidence: featureEvidence(
+                    relatedChangeIDs: ["file:docs/F-001.md"],
+                    latestRelatedChangeAt: Date(timeIntervalSince1970: 100),
+                    requiredTestIDs: ["docs-check"],
+                    latestTestAt: Date(timeIntervalSince1970: 101),
+                    documentationPaths: ["docs/F-001.md"]
+                )
             ).decision,
             .startProgress
         )
@@ -3459,6 +3497,14 @@ final class FeatureWorkflowTests: XCTestCase {
     func testFeatureEvidenceCollectionUsesOnlyExplicitTasksGitReceiptsAndPaths() throws {
         let root = try sessionChangeWorkspace()
         defer { try? FileManager.default.removeItem(at: root) }
+        for path in ["sql/formal/F-001.sql", "sql/rollback/F-001.sql", "docs/F-001.md"] {
+            let url = root.appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("evidence".utf8).write(to: url)
+        }
+        try "| Task | Status | Detail | Priority |\n| --- | --- | --- | --- |\n| linked | done | feature=F-001 event=T-1 | medium |\n| unrelated | todo | feature=F-002 event=T-2 | high |\n".write(
+            to: root.appendingPathComponent("tasks.md"), atomically: true, encoding: .utf8
+        )
         var feature = completionFeature(verification: .code)
         feature.sources = ["sql/formal/F-001.sql", "sql/rollback/F-001.sql", "docs/F-001.md"]
         feature.evidenceIDs = ["test_order_snapshot"]
@@ -3503,9 +3549,10 @@ final class FeatureWorkflowTests: XCTestCase {
             }
         }
 
-        XCTAssertEqual(evidence.linkedTaskIDs, ["T-1"])
+        XCTAssertEqual(evidence.linkedTaskIDs.count, 1)
+        XCTAssertTrue(evidence.linkedTaskIDs[0].hasSuffix(":T-1"))
         XCTAssertTrue(evidence.incompleteTaskIDs.isEmpty)
-        XCTAssertEqual(evidence.relatedChangeIDs, ["abc123"])
+        XCTAssertTrue(evidence.relatedChangeIDs.contains("abc123"))
         XCTAssertEqual(evidence.requiredTestIDs, ["test_order_snapshot"])
         XCTAssertTrue(evidence.failedOrMissingTestIDs.isEmpty)
         XCTAssertNotNil(evidence.latestTestAt)
@@ -3543,10 +3590,10 @@ final class FeatureWorkflowTests: XCTestCase {
 
         let evidence = NativeFeatureEvidenceStore.collect(
             feature: feature,
-            workspace: featureEvidenceWorkspace(root: root)
+            workspace: demandInputWorkspace(path: root.path)
         )
 
-        XCTAssertEqual(evidence.readErrors, ["declared documentation path is unavailable: docs/missing-F-001.md"])
+        XCTAssertEqual(evidence.readErrors, ["evidence path is unavailable: docs/missing-F-001.md"])
         XCTAssertEqual(
             FeatureCompletionEvaluator.evaluate(feature: feature, evidence: evidence).decision,
             .keepVerifying
@@ -3575,7 +3622,7 @@ final class FeatureWorkflowTests: XCTestCase {
 
         let evidence = NativeFeatureEvidenceStore.collect(
             feature: feature,
-            workspace: featureEvidenceWorkspace(root: root)
+            workspace: demandInputWorkspace(path: root.path)
         )
 
         XCTAssertEqual(evidence.requiredTestIDs, ["test_direct_attribution"])
@@ -3605,7 +3652,7 @@ final class FeatureWorkflowTests: XCTestCase {
 
         let evidence = NativeFeatureEvidenceStore.collect(
             feature: feature,
-            workspace: featureEvidenceWorkspace(root: root)
+            workspace: demandInputWorkspace(path: root.path)
         )
 
         XCTAssertEqual(evidence.readErrors.count, 2)
@@ -3613,6 +3660,168 @@ final class FeatureWorkflowTests: XCTestCase {
         XCTAssertEqual(
             FeatureCompletionEvaluator.evaluate(feature: feature, evidence: evidence).decision,
             .keepVerifying
+        )
+    }
+
+    func testFeatureEvidenceRejectsWorkspaceEscapeAndIntermediateSymlink() throws {
+        let root = try temporaryDemandWorkspace()
+        let external = try temporaryDemandWorkspace()
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: external)
+        }
+        let externalDocument = external.appendingPathComponent("outside.md")
+        try Data("outside".utf8).write(to: externalDocument)
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("docs"), withIntermediateDirectories: true
+        )
+        try FileManager.default.createSymbolicLink(
+            at: root.appendingPathComponent("docs/link"),
+            withDestinationURL: external
+        )
+        let receipt = FeatureEvidenceReceiptDocument(
+            version: 1,
+            receipts: [
+                FeatureEvidenceReceipt(
+                    id: "outside-doc", kind: .documentation, featureIDs: ["F-001"],
+                    status: .passed, recordedAt: "2026-07-11T03:00:00Z",
+                    path: externalDocument.path
+                )
+            ]
+        )
+        try JSONEncoder().encode(receipt).write(to: root.appendingPathComponent("feature-evidence.json"))
+        var feature = completionFeature(verification: .documentation)
+        feature.services = []
+        feature.sources = ["docs/link/outside.md"]
+
+        let evidence = NativeFeatureEvidenceStore.collect(
+            feature: feature,
+            workspace: demandInputWorkspace(path: root.path)
+        )
+
+        XCTAssertTrue(evidence.documentationPaths.isEmpty)
+        XCTAssertTrue(evidence.readErrors.contains { $0.contains("outside workspace") })
+        XCTAssertTrue(evidence.readErrors.contains { $0.contains("unsafe") })
+    }
+
+    func testFeatureEvidenceTreatsReopenedTaskAsIncompleteEvenWhenDetailMentionsDone() throws {
+        let root = try sessionChangeWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try "| Task | Status | Detail | Priority |\n| --- | --- | --- | --- |\n| reopen | todo | previously done; feature=F-001 | high |\n".write(
+            to: root.appendingPathComponent("tasks.md"), atomically: true, encoding: .utf8
+        )
+        var feature = completionFeature(verification: .code)
+        feature.services = []
+
+        let evidence = NativeFeatureEvidenceStore.collect(
+            feature: feature,
+            workspace: demandInputWorkspace(path: root.path)
+        )
+
+        XCTAssertEqual(evidence.linkedTaskIDs.count, 1)
+        XCTAssertEqual(evidence.incompleteTaskIDs, evidence.linkedTaskIDs)
+    }
+
+    func testFeatureEvidenceAcceptsBinaryPDFDocument() throws {
+        let root = try temporaryFeatureWorkspace(
+            "## F-001 PDF\n- Status: verifying\n- Verification: documentation\n- Auto complete: true\n- Source: docs/F-001.pdf\n"
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let document = root.appendingPathComponent("docs/F-001.pdf")
+        try FileManager.default.createDirectory(at: document.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data([0x25, 0x50, 0x44, 0x46, 0x00, 0xFF]).write(to: document)
+        let receipt = FeatureEvidenceReceiptDocument(
+            version: 1,
+            receipts: [
+                FeatureEvidenceReceipt(
+                    id: "pdf-check", kind: .test, featureIDs: ["F-001"], status: .passed,
+                    recordedAt: ISO8601DateFormatter().string(from: Date().addingTimeInterval(5)),
+                    path: nil
+                )
+            ]
+        )
+        try JSONEncoder().encode(receipt).write(to: root.appendingPathComponent("feature-evidence.json"))
+        let feature = try NativeFeatureStore.load(workspacePath: root.path).document.features[0]
+
+        let evidence = NativeFeatureEvidenceStore.collect(
+            feature: feature,
+            workspace: demandInputWorkspace(path: root.path)
+        )
+
+        XCTAssertEqual(evidence.documentationPaths, ["docs/F-001.pdf"])
+        XCTAssertTrue(evidence.readErrors.isEmpty)
+        let evaluation = FeatureCompletionEvaluator.evaluate(feature: feature, evidence: evidence)
+        XCTAssertEqual(evaluation.decision, .autoComplete)
+        let plan = try NativeFeatureStore.makeAutoCompletionPlan(
+            workspacePath: root.path,
+            evaluations: [evaluation],
+            evidenceByFeatureID: [feature.id: evidence]
+        )
+        let response = try NativeFeatureStore.applyAutoCompletions(
+            plan: plan, confirmed: true, actor: "Nexus Local Check"
+        )
+        XCTAssertEqual(response.document.features[0].status, .done)
+    }
+
+    func testFeatureEvidenceGitAttributionRequiresFullDeclaredPath() throws {
+        let root = try temporaryDemandWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        var feature = completionFeature(verification: .code)
+        feature.sources = ["docs/README.md"]
+
+        let evidence = NativeFeatureEvidenceStore.collect(
+            feature: feature,
+            workspace: featureEvidenceWorkspace(root: root)
+        ) { _, arguments in
+            arguments.first == "log"
+                ? "abc123\t2026-07-11T01:00:00Z\tUpdate README.md\n"
+                : ""
+        }
+
+        XCTAssertFalse(evidence.relatedChangeIDs.contains("abc123"))
+    }
+
+    func testFeatureAutoCompletionRejectsReceiptChangedAfterPlan() throws {
+        let root = try temporaryFeatureWorkspace(
+            "## F-001 Docs\n- Status: verifying\n- Verification: documentation\n- Auto complete: true\n- Source: docs/F-001.md\n"
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let document = root.appendingPathComponent("docs/F-001.md")
+        try FileManager.default.createDirectory(at: document.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("documented".utf8).write(to: document)
+        let receiptURL = root.appendingPathComponent("feature-evidence.json")
+        let receipt = FeatureEvidenceReceiptDocument(
+            version: 1,
+            receipts: [
+                FeatureEvidenceReceipt(
+                    id: "docs-check", kind: .test, featureIDs: ["F-001"], status: .passed,
+                    recordedAt: ISO8601DateFormatter().string(from: Date().addingTimeInterval(5)),
+                    path: nil
+                )
+            ]
+        )
+        try JSONEncoder().encode(receipt).write(to: receiptURL)
+        let workspace = featureEvidenceWorkspace(root: root)
+        let snapshot = try NativeFeatureStore.load(workspacePath: root.path)
+        let feature = snapshot.document.features[0]
+        let evidence = NativeFeatureEvidenceStore.collect(feature: feature, workspace: workspace)
+        let evaluation = FeatureCompletionEvaluator.evaluate(feature: feature, evidence: evidence)
+        XCTAssertEqual(evaluation.decision, .autoComplete)
+        let plan = try NativeFeatureStore.makeAutoCompletionPlan(
+            workspacePath: root.path,
+            evaluations: [evaluation],
+            evidenceByFeatureID: [feature.id: evidence]
+        )
+        try Data("{}".utf8).write(to: receiptURL)
+
+        XCTAssertThrowsError(
+            try NativeFeatureStore.applyAutoCompletions(
+                plan: plan, confirmed: true, actor: "Nexus Local Check"
+            )
+        )
+        XCTAssertEqual(
+            try NativeFeatureStore.load(workspacePath: root.path).document.features[0].status,
+            .verifying
         )
     }
 
@@ -3699,7 +3908,13 @@ final class FeatureWorkflowTests: XCTestCase {
         let root = try temporaryFeatureWorkspace(original)
         defer { try? FileManager.default.removeItem(at: root) }
         let snapshot = try NativeFeatureStore.load(workspacePath: root.path)
-        let evidence = featureEvidence(documentationPaths: ["docs/F-001.md"])
+        let evidence = featureEvidence(
+            relatedChangeIDs: ["file:docs/F-001.md"],
+            latestRelatedChangeAt: Date(timeIntervalSince1970: 100),
+            requiredTestIDs: ["docs-check"],
+            latestTestAt: Date(timeIntervalSince1970: 101),
+            documentationPaths: ["docs/F-001.md"]
+        )
         let evaluation = FeatureCompletionEvaluator.evaluate(
             feature: snapshot.document.features[0], evidence: evidence
         )
@@ -3752,7 +3967,13 @@ final class FeatureWorkflowTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let auditBlocker = root.appendingPathComponent("audit-blocker")
         try Data("not a directory".utf8).write(to: auditBlocker)
-        let evidence = featureEvidence(documentationPaths: ["docs/F-001.md"])
+        let evidence = featureEvidence(
+            relatedChangeIDs: ["file:docs/F-001.md"],
+            latestRelatedChangeAt: Date(timeIntervalSince1970: 100),
+            requiredTestIDs: ["docs-check"],
+            latestTestAt: Date(timeIntervalSince1970: 101),
+            documentationPaths: ["docs/F-001.md"]
+        )
         let feature = try NativeFeatureStore.load(workspacePath: root.path).document.features[0]
         let evaluation = FeatureCompletionEvaluator.evaluate(feature: feature, evidence: evidence)
         let plan = try NativeFeatureStore.makeAutoCompletionPlan(
@@ -3783,6 +4004,33 @@ final class FeatureWorkflowTests: XCTestCase {
         )
         defer { try? FileManager.default.removeItem(at: root) }
         let workspace = featureEvidenceWorkspace(root: root)
+        let document = root.appendingPathComponent("docs/F-001.md")
+        try FileManager.default.createDirectory(at: document.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("documented".utf8).write(to: document)
+        let receipt = FeatureEvidenceReceiptDocument(
+            version: 1,
+            receipts: [
+                FeatureEvidenceReceipt(
+                    id: "docs-check",
+                    kind: .test,
+                    featureIDs: ["F-001"],
+                    status: .passed,
+                    recordedAt: ISO8601DateFormatter().string(from: Date().addingTimeInterval(5)),
+                    path: nil
+                )
+            ]
+        )
+        try JSONEncoder().encode(receipt).write(to: root.appendingPathComponent("feature-evidence.json"))
+        let collected = NativeFeatureEvidenceStore.collect(
+            feature: try NativeFeatureStore.load(workspacePath: root.path).document.features[0],
+            workspace: workspace
+        )
+        let collectedEvaluation = FeatureCompletionEvaluator.evaluate(
+            feature: try NativeFeatureStore.load(workspacePath: root.path).document.features[0],
+            evidence: collected
+        )
+        XCTAssertTrue(collected.readErrors.isEmpty, "\(collected.readErrors)")
+        XCTAssertEqual(collectedEvaluation.decision, .autoComplete, "\(collectedEvaluation.reasons)")
         let appState = makeAppState(workspace: workspace, root: root)
         appState.selectedWorkspaceID = workspace.id
 
@@ -3824,6 +4072,48 @@ final class FeatureWorkflowTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testAppStateSkipsAutomaticCompletionForArchivedWorkspace() async throws {
+        let root = try temporaryFeatureWorkspace(
+            "## F-001 Docs\n- Status: verifying\n- Verification: documentation\n- Auto complete: true\n- Source: docs/F-001.md\n"
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = featureEvidenceWorkspace(root: root, archived: true)
+        let appState = makeAppState(workspace: workspace, root: root)
+
+        let transitions = await appState.applyFeatureCompletionEvidence(
+            actor: "Nexus Local Check", confirmedTrigger: true
+        )
+
+        XCTAssertTrue(transitions.isEmpty)
+        XCTAssertEqual(
+            try NativeFeatureStore.load(workspacePath: root.path).document.features[0].status,
+            .verifying
+        )
+    }
+
+    @MainActor
+    func testLocalAutomationCheckDoesNotUseStaleWorkspacesAfterRefreshFailure() async throws {
+        let root = try temporaryFeatureWorkspace(
+            "## F-001 Docs\n- Status: verifying\n- Verification: documentation\n- Auto complete: true\n- Source: docs/F-001.md\n"
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let invalidRoot = root.appendingPathComponent("not-a-directory")
+        try Data("file".utf8).write(to: invalidRoot)
+        let workspace = featureEvidenceWorkspace(root: root)
+        let appState = makeAppState(
+            workspaces: [workspace], root: root, workspaceRoot: invalidRoot.path
+        )
+
+        _ = await appState.runLocalAutomationCheck(actor: "Nexus Local Check")
+
+        XCTAssertEqual(appState.agentStatus.title, "Bridge error")
+        XCTAssertEqual(
+            try NativeFeatureStore.load(workspacePath: root.path).document.features[0].status,
+            .verifying
+        )
+    }
+
     func testFeatureCompletionReversalHasDedicatedAuditActionAndReason() throws {
         let root = try temporaryFeatureWorkspace(
             "## F-001 Snapshot\n- Status: done\n- Verification: code\n- Auto complete: true\n- Completed at: 2026-07-11T03:00:00Z\n- Completed by: Nexus Local Check\n"
@@ -3845,13 +4135,14 @@ final class FeatureWorkflowTests: XCTestCase {
         XCTAssertEqual(response.document.features[0].completionNote, "New acceptance issue")
         XCTAssertNil(response.document.features[0].completedAt)
         XCTAssertFalse(response.document.features[0].evidenceStale)
-        XCTAssertEqual(
-            try NativeAuditEventStore.loadRecent(
+        let event = try XCTUnwrap(
+            NativeAuditEventStore.loadRecent(
                 auditRoot: root.appendingPathComponent("audit").path,
                 limit: 1
-            ).first?.action,
-            "feature.completion_reverted"
+            ).first
         )
+        XCTAssertEqual(event.action, "feature.completion_reverted")
+        XCTAssertEqual(event.metadata["reason"], "New acceptance issue")
     }
 
     func testLocalAutomationCheckSurfacesFeatureCompletionAndStaleEvidenceSignals() {
@@ -3921,6 +4212,398 @@ final class FeatureWorkflowTests: XCTestCase {
         XCTAssertFalse(lines.contains { $0.contains("workspace passed") })
     }
 
+    func testFeatureCenteredWorkflowPreservesDeliveryAndCrossSessionContext() throws {
+        let parent = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-feature-acceptance-\(UUID().uuidString)")
+        let workspacesRoot = parent.appendingPathComponent("workspaces")
+        let sourceReposRoot = parent.appendingPathComponent("sources")
+        let docsRoot = parent.appendingPathComponent("docs")
+        let auditRoot = parent.appendingPathComponent("audit")
+        try FileManager.default.createDirectory(at: workspacesRoot, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: sourceReposRoot, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: docsRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: parent) }
+
+        let created = try NativeWorkspaceCreationStore.create(
+            request: CreateWorkspaceRequest(
+                name: "Feature acceptance",
+                folder: "2026-07-11-feature-acceptance",
+                workspacesRoot: workspacesRoot.path,
+                sourceReposRoot: sourceReposRoot.path,
+                services: ["order-service"],
+                targetBranch: "feature/centered",
+                confirmed: true,
+                auditRoot: auditRoot.path,
+                actor: "Nexus Native",
+                templateVersion: .v2FeatureCentered
+            )
+        )
+        let workspaceURL = URL(fileURLWithPath: created.path)
+        let prototypeURL = parent.appendingPathComponent("prototype.txt")
+        try Data("prototype".utf8).write(to: prototypeURL)
+        _ = try NativeDemandInputStore.save(
+            draft: DemandInputDraft(
+                requirement: "应用内输入需求并由 Codex 梳理功能点。",
+                links: ["https://example.com/prototype"],
+                attachments: []
+            ),
+            workspacePath: workspaceURL.path,
+            expectedRevision: .missing
+        )
+        let attachmentPlan = try NativeDemandInputStore.makeAttachmentPlan(
+            workspacePath: workspaceURL.path,
+            sourceURLs: [prototypeURL]
+        )
+        XCTAssertEqual(
+            try NativeDemandInputStore.copyAttachments(
+                plan: attachmentPlan, confirmed: true
+            ).copiedPaths.count,
+            1
+        )
+
+        let repository = workspaceURL.appendingPathComponent("repos/order-service")
+        try FileManager.default.createDirectory(at: repository, withIntermediateDirectories: true)
+        try runAcceptanceGit(["init"], in: repository)
+        try runAcceptanceGit(["config", "user.name", "Nexus Tests"], in: repository)
+        try runAcceptanceGit(["config", "user.email", "nexus@example.com"], in: repository)
+        try runAcceptanceGit(["checkout", "-b", "feature/centered"], in: repository)
+        let source = repository.appendingPathComponent("Order.swift")
+        try Data("struct OrderSnapshot {}\n".utf8).write(to: source)
+        try runAcceptanceGit(["add", "Order.swift"], in: repository)
+        try runAcceptanceGit(
+            ["commit", "-m", "Implement feature=F-001"],
+            in: repository,
+            environment: [
+                "GIT_AUTHOR_DATE": "2026-07-11T01:00:00Z",
+                "GIT_COMMITTER_DATE": "2026-07-11T01:00:00Z"
+            ]
+        )
+
+        try "## DRAFT-001 Order snapshot\n\n- Status: draft\n- Verification: code\n- Auto complete: true\n- Services: order-service\n- Evidence: feature-check\n".write(
+            to: workspaceURL.appendingPathComponent("FEATURES.draft.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let mergePlan = try NativeFeatureStore.makeMergePlan(workspacePath: workspaceURL.path)
+        let merge = try NativeFeatureStore.merge(
+            plan: mergePlan,
+            confirmed: true,
+            auditRoot: auditRoot.path,
+            actor: "Nexus Native"
+        )
+        XCTAssertEqual(merge.document.features.map(\.id), ["F-001"])
+        try "| Task | Status | Detail | Priority |\n| --- | --- | --- | --- |\n| Implement snapshot | done | feature=F-001 | high |\n".write(
+            to: workspaceURL.appendingPathComponent("tasks.md"), atomically: true, encoding: .utf8
+        )
+        let receipt = FeatureEvidenceReceiptDocument(
+            version: 1,
+            receipts: [
+                FeatureEvidenceReceipt(
+                    id: "feature-check", kind: .test, featureIDs: ["F-001"], status: .passed,
+                    recordedAt: "2026-07-11T02:00:00Z", path: nil
+                )
+            ]
+        )
+        try JSONEncoder().encode(receipt).write(
+            to: workspaceURL.appendingPathComponent("feature-evidence.json")
+        )
+
+        let dashboard = try NativeWorkspaceScanner.scan(
+            workspacesRoot: workspacesRoot.path,
+            sourceReposRoot: sourceReposRoot.path,
+            docsRoot: docsRoot.path
+        )
+        let workspace = WorkspaceSummary(snapshot: try XCTUnwrap(dashboard.workspaces.first))
+        XCTAssertEqual(
+            workspace.services.first.map {
+                URL(fileURLWithPath: $0.worktree).resolvingSymlinksInPath().path
+            },
+            repository.resolvingSymlinksInPath().path
+        )
+        let feature = try XCTUnwrap(merge.document.features.first)
+        let evidence = NativeFeatureEvidenceStore.collect(feature: feature, workspace: workspace)
+        let evaluation = FeatureCompletionEvaluator.evaluate(feature: feature, evidence: evidence)
+        XCTAssertEqual(evaluation.decision, .autoComplete, "\(evaluation.reasons)")
+        let completionPlan = try NativeFeatureStore.makeAutoCompletionPlan(
+            workspacePath: workspaceURL.path,
+            evaluations: [evaluation],
+            evidenceByFeatureID: [feature.id: evidence]
+        )
+        _ = try NativeFeatureStore.applyAutoCompletions(
+            plan: completionPlan,
+            confirmed: true,
+            actor: "Nexus Local Check",
+            completedAt: "2026-07-11T02:30:00Z",
+            auditRoot: auditRoot.path
+        )
+        let completed = try NativeFeatureStore.load(workspacePath: workspaceURL.path).document.features[0]
+        XCTAssertEqual(completed.status, .done)
+
+        try Data("struct OrderSnapshot { let version = 2 }\n".utf8).write(to: source)
+        try runAcceptanceGit(["add", "Order.swift"], in: repository)
+        try runAcceptanceGit(
+            ["commit", "-m", "Extend feature=F-001"],
+            in: repository,
+            environment: [
+                "GIT_AUTHOR_DATE": "2026-07-11T03:00:00Z",
+                "GIT_COMMITTER_DATE": "2026-07-11T03:00:00Z"
+            ]
+        )
+        let staleEvidence = NativeFeatureEvidenceStore.collect(feature: completed, workspace: workspace)
+        XCTAssertEqual(
+            FeatureCompletionEvaluator.evaluate(feature: completed, evidence: staleEvidence).decision,
+            .markEvidenceStale
+        )
+
+        let sessionDraft = try NativeSessionChangeStore.writeDraft(
+            input: SessionChangeDraftInput(
+                workspacePath: workspaceURL.path,
+                baseline: SessionChangeBaseline(
+                    sessionID: "acceptance-session",
+                    workspacePath: workspaceURL.path,
+                    startedAt: "2026-07-11T00:30:00Z",
+                    repositoryHeads: ["order-service": "before"],
+                    featureRevision: "before",
+                    taskRevision: "before"
+                ),
+                currentRepositoryHeads: ["order-service": "after"],
+                repositoryDiffs: ["order-service": "OrderSnapshot version 2"],
+                featureRevision: NativeFeatureStore.inspect(workspacePath: workspaceURL.path).revision.label,
+                taskRevision: "tasks-current",
+                latestTest: "feature-check passed",
+                sqlAndDeliveryRevisions: ["交付记录.md": "delivery-current"],
+                codexSummary: "Feature F-001 completed and changed again"
+            )
+        )
+        _ = try NativeSessionChangeStore.append(
+            plan: NativeSessionChangeStore.makeWritePlan(draft: sessionDraft),
+            confirmed: true,
+            timestamp: "2026-07-11T03:30:00Z",
+            auditRoot: auditRoot.path,
+            actor: "Nexus Native"
+        )
+        let changes = try String(
+            contentsOf: workspaceURL.appendingPathComponent("changes.md"), encoding: .utf8
+        )
+        let pack = NativeContextPackBuilder.build(
+            input: NativeContextPackInput(
+                generatedAt: "2026-07-11T03:31:00Z",
+                workspaceName: workspace.name,
+                workspacePath: workspace.path,
+                selectedFeature: NativeContextFeature(
+                    id: completed.id, title: completed.title,
+                    status: completed.status.rawValue, detail: "evidence needs review"
+                ),
+                activeLinkedTasks: [],
+                blockers: ["F-001 evidence stale"],
+                nextAction: "Review the latest change",
+                services: [
+                    NativeContextService(
+                        name: "order-service", branch: "feature/centered", gitSummary: "clean"
+                    )
+                ],
+                gitSummary: ["order-service: latest commit extends F-001"],
+                latestRelevantCheck: "feature-check passed",
+                confirmedChanges: [changes],
+                evidence: [
+                    NativeContextEvidence(path: "FEATURES.md", summary: "confirmed features"),
+                    NativeContextEvidence(path: "changes.md", summary: "confirmed session changes"),
+                    NativeContextEvidence(path: "交付记录.md", summary: "delivery facts remain available on demand")
+                ],
+                sourceRevisions: ["FEATURES.md": "current", "changes.md": "current"]
+            ),
+            maximumUTF8Bytes: 6_144
+        )
+        XCTAssertLessThanOrEqual(pack.markdown.utf8.count, 6_144)
+        XCTAssertTrue(pack.markdown.contains("F-001"))
+        XCTAssertTrue(pack.markdown.contains("changes.md"))
+        let actions = try NativeAuditEventStore.loadRecent(auditRoot: auditRoot.path, limit: 50)
+            .map(\.action)
+        XCTAssertTrue(actions.contains("feature.auto_completed"))
+        XCTAssertTrue(actions.contains("session.changes_confirmed"))
+    }
+
+    func testV2WorkspaceTemplateDoesNotCreateEmptyProjectionFiles() throws {
+        let parent = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-v2-template-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: parent) }
+
+        let response = try NativeWorkspaceCreationStore.create(
+            request: CreateWorkspaceRequest(
+                name: "Feature centered",
+                folder: "2026-07-11-feature-centered",
+                workspacesRoot: parent.path,
+                sourceReposRoot: parent.appendingPathComponent("sources").path,
+                services: ["order-service"],
+                targetBranch: "feature/centered",
+                confirmed: true,
+                auditRoot: parent.appendingPathComponent("audit").path,
+                actor: "Nexus Native",
+                templateVersion: .v2FeatureCentered
+            )
+        )
+        let root = URL(fileURLWithPath: response.path)
+        for path in [
+            "workspace.md", "FEATURES.md", "tasks.md", "services.md", "branches.md",
+            "changes.md", "交付记录.md", "repos", "sql", "logs"
+        ] {
+            XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent(path).path), path)
+        }
+        for path in [
+            "AGENTS.md", "STATUS.md", "handoff.md", "bootstrap-report.md",
+            "scripts/worktree-commands.sh", "需求/questions.md", "requirements.md", "acceptance.md"
+        ] {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(path).path), path)
+        }
+        XCTAssertTrue(
+            try String(contentsOf: root.appendingPathComponent("FEATURES.md"), encoding: .utf8)
+                .contains("template-version: 2")
+        )
+        let dashboard = try NativeWorkspaceScanner.scan(
+            workspacesRoot: parent.path,
+            sourceReposRoot: parent.appendingPathComponent("sources").path,
+            docsRoot: parent.appendingPathComponent("docs").path
+        )
+        let scanned = try XCTUnwrap(dashboard.workspaces.first)
+        XCTAssertEqual(scanned.state, "scoping")
+        XCTAssertEqual(
+            scanned.links["features"].map { URL(fileURLWithPath: $0).standardizedFileURL.path },
+            root.appendingPathComponent("FEATURES.md").standardizedFileURL.path
+        )
+        XCTAssertFalse(scanned.risks.contains { $0.contains("STATUS.md") || $0.contains("handoff.md") })
+    }
+
+    func testLegacyMigrationOnlyBuildsProposalAndLeavesFilesUntouched() throws {
+        let root = try temporaryDemandWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let demand = root.appendingPathComponent("需求")
+        try FileManager.default.createDirectory(at: demand, withIntermediateDirectories: true)
+        try "# Requirement\n\n- 保存订单快照\n- 支持回滚\n".write(
+            to: demand.appendingPathComponent("requirement.md"), atomically: true, encoding: .utf8
+        )
+        try "# Scope\n\n## 已确认并实现\n\n- 保存订单快照\n".write(
+            to: demand.appendingPathComponent("scope.md"), atomically: true, encoding: .utf8
+        )
+        try "| 需求点 | 状态 | 说明 |\n| --- | --- | --- |\n| 保存订单快照 | 待办 | API 与存储 |\n".write(
+            to: demand.appendingPathComponent("tasks.md"), atomically: true, encoding: .utf8
+        )
+        try "| 任务 | 状态 | 详情 |\n| --- | --- | --- |\n| 实现快照 | todo | 来源待迁移 |\n".write(
+            to: root.appendingPathComponent("tasks.md"), atomically: true, encoding: .utf8
+        )
+        let watched = ["需求/requirement.md", "需求/scope.md", "需求/tasks.md", "tasks.md"]
+        let before = try Dictionary(uniqueKeysWithValues: watched.map { path in
+            (path, try Data(contentsOf: root.appendingPathComponent(path)))
+        })
+
+        let proposal = try LegacyFeatureMigrationAdapter.propose(workspacePath: root.path)
+
+        XCTAssertFalse(proposal.features.isEmpty)
+        XCTAssertTrue(proposal.sourcePaths.contains("需求/requirement.md"))
+        XCTAssertTrue(proposal.features.allSatisfy { $0.verification == .manual })
+        XCTAssertEqual(
+            try Dictionary(uniqueKeysWithValues: watched.map { path in
+                (path, try Data(contentsOf: root.appendingPathComponent(path)))
+            }),
+            before
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("FEATURES.md").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("FEATURES.draft.md").path))
+
+        let diff = FeatureProposalDiff.resolve(
+            confirmed: .empty,
+            draft: FeatureDocument(preamble: ["# Features", ""], features: proposal.features)
+        )
+        let plan = try NativeFeatureStore.makeLegacyMigrationPlan(
+            proposal: proposal,
+            selectedItemIDs: Set(diff.actionableItems.map(\.id)),
+            replacements: Dictionary(uniqueKeysWithValues: diff.actionableItems.compactMap { item in
+                item.proposed.map { (item.id, $0) }
+            })
+        )
+        let response = try NativeFeatureStore.applyLegacyMigration(
+            plan: plan,
+            confirmed: true,
+            actor: "Nexus Native"
+        )
+        XCTAssertFalse(response.document.features.isEmpty)
+        XCTAssertTrue(response.document.features.allSatisfy { $0.id.hasPrefix("F-") })
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("FEATURES.md").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("FEATURES.draft.md").path))
+    }
+
+    func testLegacyMigrationConfirmedWriteRejectsChangedSource() throws {
+        let root = try temporaryDemandWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let demand = root.appendingPathComponent("需求")
+        try FileManager.default.createDirectory(at: demand, withIntermediateDirectories: true)
+        let requirement = demand.appendingPathComponent("requirement.md")
+        try "# Requirement\n\n- 保存订单快照\n".write(to: requirement, atomically: true, encoding: .utf8)
+        let proposal = try LegacyFeatureMigrationAdapter.propose(workspacePath: root.path)
+        let diff = FeatureProposalDiff.resolve(
+            confirmed: .empty,
+            draft: FeatureDocument(preamble: ["# Features", ""], features: proposal.features)
+        )
+        let plan = try NativeFeatureStore.makeLegacyMigrationPlan(
+            proposal: proposal,
+            selectedItemIDs: Set(diff.actionableItems.map(\.id)),
+            replacements: [:]
+        )
+        try "# Requirement\n\n- 外部修改\n".write(to: requirement, atomically: true, encoding: .utf8)
+
+        XCTAssertThrowsError(
+            try NativeFeatureStore.applyLegacyMigration(
+                plan: plan,
+                confirmed: true,
+                actor: "Nexus Native"
+            )
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("FEATURES.md").path))
+    }
+
+    @MainActor
+    func testAppStateOffersAndConfirmsLegacyMigrationOnlyWhenFeaturesAreMissing() async throws {
+        let root = try temporaryDemandWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let demand = root.appendingPathComponent("需求")
+        try FileManager.default.createDirectory(at: demand, withIntermediateDirectories: true)
+        let requirement = demand.appendingPathComponent("requirement.md")
+        let original = "# Requirement\n\n- 保存订单快照\n"
+        try original.write(to: requirement, atomically: true, encoding: .utf8)
+        let workspace = demandInputWorkspace(path: root.path)
+        let appState = makeAppState(workspace: workspace, root: root)
+
+        await appState.refreshFeatures(for: workspace)
+        XCTAssertEqual(appState.featureRevisionsByWorkspace[workspace.id], .missing)
+        await appState.loadLegacyFeatureMigrationProposal(for: workspace)
+        let proposal = try XCTUnwrap(
+            appState.legacyFeatureMigrationProposalsByWorkspace[workspace.id]
+        )
+        let items = FeatureProposalDiff.resolve(
+            confirmed: .empty,
+            draft: FeatureDocument(preamble: ["# Features", ""], features: proposal.features)
+        ).actionableItems
+
+        let unconfirmed = await appState.applyLegacyFeatureMigration(
+            for: workspace,
+            selectedItemIDs: Set(items.map(\.id)),
+            confirmed: false
+        )
+        XCTAssertFalse(unconfirmed)
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: root.appendingPathComponent("FEATURES.md").path)
+        )
+        let migrated = await appState.applyLegacyFeatureMigration(
+            for: workspace,
+            selectedItemIDs: Set(items.map(\.id)),
+            confirmed: true
+        )
+        XCTAssertTrue(migrated)
+        XCTAssertNotEqual(appState.featureRevisionsByWorkspace[workspace.id], .missing)
+        XCTAssertFalse(appState.featuresByWorkspace[workspace.id]?.features.isEmpty ?? true)
+        XCTAssertEqual(try String(contentsOf: requirement, encoding: .utf8), original)
+    }
+
     private func assertFeatureInjectionRejectedBeforePublish(_ injectedLines: String) throws {
         let root = try temporaryDemandWorkspace()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -3972,6 +4655,7 @@ final class FeatureWorkflowTests: XCTestCase {
     }
 
     private func featureEvidence(
+        workspacePath: String = "/tmp/nexus-feature-evidence",
         linkedTaskIDs: [String] = [],
         incompleteTaskIDs: [String] = [],
         relatedChangeIDs: [String] = [],
@@ -3983,10 +4667,12 @@ final class FeatureWorkflowTests: XCTestCase {
         rollbackSQLPaths: [String] = [],
         documentationPaths: [String] = [],
         blockers: [String] = [],
-        readErrors: [String] = []
+        readErrors: [String] = [],
+        sourceRevisions: [String: String] = [:]
     ) -> FeatureEvidence {
         FeatureEvidence(
             featureID: "F-001",
+            workspacePath: workspacePath,
             linkedTaskIDs: linkedTaskIDs,
             incompleteTaskIDs: incompleteTaskIDs,
             relatedChangeIDs: relatedChangeIDs,
@@ -3998,14 +4684,16 @@ final class FeatureWorkflowTests: XCTestCase {
             rollbackSQLPaths: rollbackSQLPaths,
             documentationPaths: documentationPaths,
             blockers: blockers,
-            readErrors: readErrors
+            readErrors: readErrors,
+            sourceRevisions: sourceRevisions
         )
     }
 
     private func featureEvidenceWorkspace(
         root: URL,
         tasks: [WorkspaceTask] = [],
-        riskDetails: [String] = []
+        riskDetails: [String] = [],
+        archived: Bool = false
     ) -> WorkspaceSummary {
         let base = demandInputWorkspace(path: root.path)
         return WorkspaceSummary(
@@ -4014,7 +4702,7 @@ final class FeatureWorkflowTests: XCTestCase {
             folder: base.folder,
             path: base.path,
             branch: base.branch,
-            state: base.state,
+            state: archived ? .archived : base.state,
             riskLevel: base.riskLevel,
             aiState: base.aiState,
             worktreeState: base.worktreeState,
@@ -4052,7 +4740,12 @@ final class FeatureWorkflowTests: XCTestCase {
             risks: riskDetails.map { RiskAlert(title: "risk", detail: $0) },
             healthChecks: base.healthChecks,
             sessionActions: base.sessionActions,
-            lifecycle: base.lifecycle,
+            lifecycle: archived
+                ? WorkspaceLifecycle(
+                    stage: "archived", label: "Archived", detail: "Archived fixture",
+                    progress: 100, nextAction: "Restore", documentKey: "changes"
+                )
+                : base.lifecycle,
             tasks: tasks
         )
     }
@@ -4319,7 +5012,11 @@ final class FeatureWorkflowTests: XCTestCase {
     }
 
     @MainActor
-    private func makeAppState(workspaces: [WorkspaceSummary], root: URL) -> AppState {
+    private func makeAppState(
+        workspaces: [WorkspaceSummary],
+        root: URL,
+        workspaceRoot: String? = nil
+    ) -> AppState {
         let defaultsSuite = "NexusAppTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: defaultsSuite)!
         addTeardownBlock { defaults.removePersistentDomain(forName: defaultsSuite) }
@@ -4327,11 +5024,42 @@ final class FeatureWorkflowTests: XCTestCase {
             workspaces: workspaces,
             agentStatus: AgentStatus(title: "Ready", detail: "Tests", connectedTools: []),
             bridge: PreviewNexusBridge(),
-            workspaceRoot: root.path,
+            workspaceRoot: workspaceRoot ?? root.path,
             sourceReposRoot: root.path,
             docsRoot: root.path,
             applicationSupportRoot: root.appendingPathComponent("application-support").path,
             defaults: defaults
+        )
+    }
+
+    @discardableResult
+    private func runAcceptanceGit(
+        _ arguments: [String],
+        in directory: URL,
+        environment: [String: String] = [:]
+    ) throws -> String {
+        let process = Process()
+        let output = Pipe()
+        let errors = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-C", directory.path] + arguments
+        process.standardOutput = output
+        process.standardError = errors
+        process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, value in value }
+        try process.run()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            let message = String(
+                decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self
+            )
+            throw NSError(
+                domain: "FeatureWorkflowTests.Git",
+                code: Int(process.terminationStatus),
+                userInfo: [NSLocalizedDescriptionKey: message]
+            )
+        }
+        return String(
+            decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self
         )
     }
 

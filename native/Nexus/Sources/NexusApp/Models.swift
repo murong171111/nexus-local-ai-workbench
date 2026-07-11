@@ -929,7 +929,7 @@ struct WorkspaceSummary: Identifiable, Hashable {
             ServiceStatus(
                 name: row.service,
                 branch: row.worktree.branch,
-                worktree: row.worktree.summary,
+                worktree: row.worktreePath,
                 gitSummary: row.source.summary,
                 worktreeExists: row.worktree.exists,
                 sourceExists: row.source.exists

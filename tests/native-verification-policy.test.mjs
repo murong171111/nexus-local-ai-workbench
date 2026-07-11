@@ -24,3 +24,11 @@ test("Native M1 has a stable real-lifecycle acceptance command", () => {
   );
   assert.match(releaseProcess, /npm run native:m1-acceptance/u);
 });
+
+test("feature-centered workflow has a stable real-files acceptance command", () => {
+  assert.match(
+    packageJson.scripts["native:feature-acceptance"],
+    /testFeatureCenteredWorkflowPreservesDeliveryAndCrossSessionContext/u,
+  );
+  assert.match(releaseProcess, /npm run native:feature-acceptance/u);
+});

@@ -918,6 +918,7 @@ private struct CreateWorkspaceSheet: View {
     @State private var selectedServiceNames: Set<String> = []
     @State private var didEditFolder = false
     @State private var serviceQuery = ""
+    @State private var templateVersion = WorkspaceTemplateVersion.v2FeatureCentered
 
     private var manualServices: [String] {
         servicesText
@@ -1208,6 +1209,18 @@ private struct CreateWorkspaceSheet: View {
                                 .textFieldStyle(.roundedBorder)
                             TextField("目标分支，留空则待确认", text: $targetBranch)
                                 .textFieldStyle(.roundedBorder)
+                            Picker("模板", selection: $templateVersion) {
+                                Text("精简 v2").tag(WorkspaceTemplateVersion.v2FeatureCentered)
+                                Text("兼容 v1").tag(WorkspaceTemplateVersion.v1Legacy)
+                            }
+                            .pickerStyle(.segmented)
+                            Text(
+                                templateVersion == .v2FeatureCentered
+                                    ? "创建 7 个事实文件；状态、交接和脚本按需生成。"
+                                    : "创建完整旧版 Markdown 与 worktree 脚本集合。"
+                            )
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                             Text("写入位置：\(destinationPath)")
                                 .font(.system(.caption, design: .monospaced))
                                 .foregroundStyle(.secondary)
@@ -1329,7 +1342,8 @@ private struct CreateWorkspaceSheet: View {
                                 folder: folder.trimmingCharacters(in: .whitespacesAndNewlines),
                                 services: services,
                                 targetBranch: targetBranch.trimmingCharacters(in: .whitespacesAndNewlines),
-                                confirmed: confirmed
+                                confirmed: confirmed,
+                                templateVersion: templateVersion
                             )
                         )
                         if appState.lastError == nil {

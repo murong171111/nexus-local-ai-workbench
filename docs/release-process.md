@@ -20,12 +20,15 @@ Run:
 # Focused real-workspace M1 lifecycle gate
 npm run native:m1-acceptance
 
+# Feature-centered demand, evidence, and cross-session context gate
+npm run native:feature-acceptance
+
 # Complete Native regression and build
 swift test --package-path native/Nexus
 swift build --package-path native/Nexus
 ```
 
-The focused M1 gate creates temporary real workspace files, Git repositories, and worktrees, then proves the Native path through demand intake, scope freeze, task transfer and writeback, delivery, archive, lifecycle proof export, and restore to development. The complete Native suite remains the release regression gate.
+The focused M1 gate creates temporary real workspace files, Git repositories, and worktrees, then proves the Native path through demand intake, scope freeze, task transfer and writeback, delivery, archive, lifecycle proof export, and restore to development. The feature-centered gate proves v2 creation, in-app demand and material capture, Codex proposal confirmation, task/Git/test evidence completion, stale-evidence detection, confirmed session changes, and bounded cross-session context. The complete Native suite remains the release regression gate.
 
 Before publishing an installable artifact, also run the Native app target build once it exists.
 
@@ -40,6 +43,9 @@ Open the built app and verify:
 - Markdown preview opens expected workspace documents.
 - Documents Hub can recover a missing standard document only after confirmation.
 - Workspace creation writes the standard document set.
+- New workspace creation defaults to the compact v2 fact set; v1 remains an explicit compatibility choice.
+- A legacy workspace without `FEATURES.md` can preview selected suggestions and creates the file only after confirmation, without deleting old documents.
+- Feature completion shows attributed task, Git, test, SQL, or document evidence and can be manually reversed with a recorded reason.
 - Widget snapshot is written to Application Support.
 - `nexus://workspace/<folder>` opens the app and focuses the target workspace when it exists.
 - M1 main workflow evidence is ready.

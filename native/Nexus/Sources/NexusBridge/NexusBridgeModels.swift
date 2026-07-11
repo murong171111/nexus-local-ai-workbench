@@ -202,6 +202,11 @@ public struct WidgetSnapshotRequest: Codable, Equatable, Sendable {
     }
 }
 
+public enum WorkspaceTemplateVersion: String, Codable, CaseIterable, Equatable, Sendable {
+    case v1Legacy = "v1-legacy"
+    case v2FeatureCentered = "v2-feature-centered"
+}
+
 public struct CreateWorkspaceRequest: Codable, Equatable, Sendable {
     public let name: String
     public let folder: String
@@ -212,6 +217,7 @@ public struct CreateWorkspaceRequest: Codable, Equatable, Sendable {
     public let confirmed: Bool
     public let auditRoot: String?
     public let actor: String?
+    public let templateVersion: WorkspaceTemplateVersion?
 
     public init(
         name: String,
@@ -222,7 +228,8 @@ public struct CreateWorkspaceRequest: Codable, Equatable, Sendable {
         targetBranch: String,
         confirmed: Bool,
         auditRoot: String? = nil,
-        actor: String? = nil
+        actor: String? = nil,
+        templateVersion: WorkspaceTemplateVersion? = nil
     ) {
         self.name = name
         self.folder = folder
@@ -233,6 +240,7 @@ public struct CreateWorkspaceRequest: Codable, Equatable, Sendable {
         self.confirmed = confirmed
         self.auditRoot = auditRoot
         self.actor = actor
+        self.templateVersion = templateVersion
     }
 }
 

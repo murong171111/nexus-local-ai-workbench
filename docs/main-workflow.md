@@ -1,6 +1,6 @@
 # Nexus Main Workflow
 
-Date: 2026-06-11
+Date: 2026-07-11
 
 This document is the product contract for the Swift Native M1 workflow. It turns Nexus from a collection of useful panels into one requirement lifecycle that the Mac app can guide from start to finish.
 
@@ -14,6 +14,21 @@ At any time, a workspace detail view must answer four questions:
 4. Which file or local check proves the answer?
 
 If a feature cannot answer one of those questions, it is secondary to M1.
+
+## Feature-Centered Demand Flow
+
+The Native Console now treats user demand and confirmed feature facts as the working center:
+
+1. The user writes a free-form requirement and attaches prototype files or links in the app.
+2. Nexus saves the input locally and generates a bounded Codex handoff instead of sending the whole workspace.
+3. Codex writes `FEATURES.draft.md`; Nexus shows additions, changes, and cancellations for explicit confirmation.
+4. Confirmed items receive stable `F-xxx` identifiers in `FEATURES.md`. Users can add, edit, complete, cancel, or reverse completion later.
+5. A local check may complete an authorized feature only when explicitly attributed task, Git, test, SQL, or document evidence is current. A newer change, reopened task, failed check, or blocker marks completed evidence stale rather than silently reopening the feature.
+6. Confirmed session changes are appended to `changes.md`. New Codex conversations receive selected feature facts, active tasks, blockers, service/Git facts, the latest check, recent confirmed changes, and paths for delivery details that remain available on demand.
+
+New workspaces default to the compact v2 fact set: `workspace.md`, `FEATURES.md`, `tasks.md`, `services.md`, `branches.md`, `changes.md`, `交付记录.md`, `repos/`, `sql/`, and `logs/`. Generated projections such as `STATUS.md`, `handoff.md`, and worktree scripts are created only when needed. The full v1 template remains available for compatibility. Existing workspaces are never migrated automatically; when `FEATURES.md` is absent, the app can build a read-only suggestion list from legacy demand files and creates confirmed features only after the user selects and approves them.
+
+The Console keeps one prominent next action. Evidence diagnostics and document inventory remain secondary and expandable so a blocked state always exposes a concrete next step without presenting every file at once.
 
 ## Stage Model
 

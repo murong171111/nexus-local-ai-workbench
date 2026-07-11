@@ -282,6 +282,8 @@ Until then, legacy code is frozen reference, not the product direction.
 - Git/worktree and delivery readiness use Native-owned rules. `[done for M1]`
 - Main path shows one current stage, one blocker summary, one recommended next step, and the primary evidence file. `[done for M1 with WorkspaceStageAnswer, Command Center action hierarchy, truthful empty-state diagnostics, Native onboarding, and post-create visibility recovery]`
 - Real workspace lifecycle acceptance is repeatable with `npm run native:m1-acceptance`, covering Native files and Git from workspace creation through archive, proof export, and restore. `[done]`
+- Feature-centered demand is repeatable with `npm run native:feature-acceptance`, covering compact v2 creation, in-app demand/material capture, confirmed Codex feature proposals, evidence-driven completion and staleness, session change writeback, and bounded cross-session context. `[done]`
+- Legacy workspaces remain readable and can create selected feature suggestions only after explicit confirmation; v1 creation remains available as a compatibility choice. `[done]`
 
 ### M2: Native Local Core
 
