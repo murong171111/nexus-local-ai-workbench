@@ -549,6 +549,7 @@ final class ModelBehaviorTests: XCTestCase {
             atomically: true,
             encoding: .utf8
         )
+        try writeReadyDemandIntakeFixture(workspaceRoot: root)
         try writeBranchPolicyFixture(workspaceRoot: root, branch: "feature/board-risk")
         let todo = WorkspaceTask(
             id: "todo",
@@ -6355,6 +6356,7 @@ final class ModelBehaviorTests: XCTestCase {
             atomically: true,
             encoding: .utf8
         )
+        try writeReadyDemandIntakeFixture(workspaceRoot: root)
 
         let attention = [
             workspaceForWorkflowSummary(
@@ -11698,6 +11700,33 @@ final class ModelBehaviorTests: XCTestCase {
             to: demandDir.appendingPathComponent("delivery.md"),
             atomically: true,
             encoding: .utf8
+        )
+    }
+
+    private func writeReadyDemandIntakeFixture(workspaceRoot: URL) throws {
+        let demandDir = workspaceRoot.appendingPathComponent("需求")
+        try FileManager.default.createDirectory(at: demandDir, withIntermediateDirectories: true)
+        try writeDemandIntakeFixture(
+            demandDir: demandDir,
+            scope: """
+            # 本次开发范围
+
+            ## 已确认并实现
+
+            - 完成工作区看板测试。
+
+            ## 暂不实现
+
+            - 不调整生产流程。
+
+            ## 仍待确认
+
+            - 无 P0 待确认项。
+
+            ## 进入开发条件
+
+            - [x] 本文件已冻结本次开发范围。
+            """ + "\n"
         )
     }
 
