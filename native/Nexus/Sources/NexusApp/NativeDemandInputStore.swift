@@ -51,6 +51,7 @@ enum NativeDemandInputStore {
         fileManager: FileManager = .default,
         afterTempOpen: ((String) throws -> Void)? = nil,
         beforeFinalRevisionCheck: (() throws -> Void)? = nil,
+        beforeDraftPublish: (() throws -> Void)? = nil,
         afterPublishBeforeVerify: (() throws -> Void)? = nil
     ) throws -> DemandInputSaveResponse {
         if case .invalid(let reason) = expectedRevision {
@@ -84,7 +85,8 @@ enum NativeDemandInputStore {
                     _ = unlinkNamedFileIfIdentityMatches(
                         parentFD: demandFD,
                         name: temporaryName,
-                        identity: temporaryCleanupIdentity
+                        identity: temporaryCleanupIdentity,
+                        fingerprint: staged.fingerprint
                     )
                 }
             }
@@ -92,6 +94,7 @@ enum NativeDemandInputStore {
 
             let latest = inspectDraft(demandFD: demandFD, path: draftPath)
             try requireExpectedDraftRevision(latest.revision, expected: expectedRevision, path: draftPath)
+            try beforeDraftPublish?()
             try replaceDraft(
                 demandFD: demandFD,
                 temporaryName: temporaryName,
@@ -315,17 +318,27 @@ enum NativeDemandInputStore {
                     staged: staged,
                     expectedData: expectedData
                 )
+                guard unlinkNamedFileIfIdentityMatches(
+                    parentFD: demandFD,
+                    name: temporaryName,
+                    identity: staged.identity,
+                    fingerprint: staged.fingerprint
+                ) else {
+                    throw NativeDemandInputStoreError.publicationConflict(temporaryName)
+                }
+                temporaryCleanupIdentity = nil
             } catch {
                 guard unlinkNamedFileIfIdentityMatches(
                     parentFD: demandFD,
                     name: draftFileName,
-                    identity: staged.identity
+                    identity: staged.identity,
+                    fingerprint: staged.fingerprint
                 ) else {
                     throw NativeDemandInputStoreError.publicationConflict(draftPath)
                 }
                 throw error
             }
-        case .regularUTF8:
+        case .regularUTF8(let expectedSHA256, let expectedByteCount):
             guard entryKind(at: demandFD, name: draftFileName) == .regular else {
                 let current = inspectDraft(demandFD: demandFD, path: draftPath).revision
                 throw NativeDemandInputStoreError.staleDraft(
@@ -358,6 +371,18 @@ enum NativeDemandInputStore {
                     staged: staged,
                     expectedData: expectedData
                 )
+                guard unlinkNamedFileIfIdentityMatches(
+                    parentFD: demandFD,
+                    name: temporaryName,
+                    identity: previousIdentity,
+                    fingerprint: FileContentFingerprint(
+                        byteCount: expectedByteCount,
+                        sha256: expectedSHA256
+                    )
+                ) else {
+                    throw NativeDemandInputStoreError.publicationConflict(temporaryName)
+                }
+                temporaryCleanupIdentity = nil
             } catch {
                 if renameatx_np(
                     demandFD,
@@ -702,7 +727,8 @@ enum NativeDemandInputStore {
             guard unlinkNamedFileIfIdentityMatches(
                 parentFD: parentFD,
                 name: name,
-                identity: identity
+                identity: identity,
+                fingerprint: FileContentFingerprint(data: data)
             ) else {
                 throw NativeDemandInputStoreError.publicationConflict(name)
             }
@@ -724,7 +750,8 @@ enum NativeDemandInputStore {
             _ = unlinkNamedFileIfIdentityMatches(
                 parentFD: attachmentsFD,
                 name: temporaryName,
-                identity: staged.identity
+                identity: staged.identity,
+                fingerprint: staged.fingerprint
             )
         }
         try beforePublish?(item)
@@ -748,11 +775,20 @@ enum NativeDemandInputStore {
                 staged: staged,
                 expectedData: data
             )
+            guard unlinkNamedFileIfIdentityMatches(
+                parentFD: attachmentsFD,
+                name: temporaryName,
+                identity: staged.identity,
+                fingerprint: staged.fingerprint
+            ) else {
+                throw NativeDemandInputStoreError.publicationConflict(temporaryName)
+            }
         } catch {
             guard unlinkNamedFileIfIdentityMatches(
                 parentFD: attachmentsFD,
                 name: destinationName,
-                identity: staged.identity
+                identity: staged.identity,
+                fingerprint: staged.fingerprint
             ) else {
                 throw NativeDemandInputStoreError.publicationConflict(item.destinationURL.path)
             }
@@ -763,12 +799,18 @@ enum NativeDemandInputStore {
     private static func unlinkNamedFileIfIdentityMatches(
         parentFD: Int32,
         name: String,
-        identity: FileIdentity
+        identity: FileIdentity,
+        fingerprint: FileContentFingerprint
     ) -> Bool {
         let fileFD = openat(parentFD, name, O_RDONLY | O_NOFOLLOW)
         guard fileFD >= 0 else { return false }
         defer { close(fileFD) }
         guard (try? fileIdentity(fileFD, path: name)) == identity else { return false }
+        guard let data = try? readData(fileFD),
+              data.count == fingerprint.byteCount,
+              sha256Hex(data) == fingerprint.sha256 else {
+            return false
+        }
         return unlinkat(parentFD, name, 0) == 0
     }
 
@@ -867,6 +909,25 @@ enum NativeDemandInputStore {
         let identity: FileIdentity
         let byteCount: Int
         let sha256: String
+
+        var fingerprint: FileContentFingerprint {
+            FileContentFingerprint(byteCount: byteCount, sha256: sha256)
+        }
+    }
+
+    private struct FileContentFingerprint {
+        let byteCount: Int
+        let sha256: String
+
+        init(byteCount: Int, sha256: String) {
+            self.byteCount = byteCount
+            self.sha256 = sha256
+        }
+
+        init(data: Data) {
+            byteCount = data.count
+            sha256 = sha256Hex(data)
+        }
     }
 
     private struct FileIdentity: Equatable {

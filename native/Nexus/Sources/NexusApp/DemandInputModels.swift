@@ -1,6 +1,6 @@
 import Foundation
 
-struct DemandInputDraft: Hashable {
+struct DemandInputDraft: Hashable, Sendable {
     var requirement: String
     var links: [String]
     var attachments: [String]
@@ -8,7 +8,7 @@ struct DemandInputDraft: Hashable {
     static let empty = DemandInputDraft(requirement: "", links: [], attachments: [])
 }
 
-enum DemandInputRevision: Hashable {
+enum DemandInputRevision: Hashable, Sendable {
     case missing
     case regularUTF8(sha256: String, byteCount: Int)
     case invalid(reason: String)
@@ -25,13 +25,13 @@ enum DemandInputRevision: Hashable {
     }
 }
 
-struct DemandInputSnapshot: Hashable {
+struct DemandInputSnapshot: Hashable, Sendable {
     let draft: DemandInputDraft
     let revision: DemandInputRevision
     let path: String
 }
 
-struct DemandInputSaveResponse: Hashable {
+struct DemandInputSaveResponse: Hashable, Sendable {
     let path: String
     let revision: DemandInputRevision
     let auditEventID: String?
@@ -39,7 +39,7 @@ struct DemandInputSaveResponse: Hashable {
     let auditError: String?
 }
 
-enum DemandInputSaveResult: Hashable {
+enum DemandInputSaveResult: Hashable, Sendable {
     case saved(DemandInputSnapshot)
     case failed(message: String)
 
@@ -54,32 +54,32 @@ enum DemandInputSaveResult: Hashable {
     }
 }
 
-enum DemandInputSaveStatus: Hashable {
+enum DemandInputSaveStatus: Hashable, Sendable {
     case idle
     case saving
     case saved
     case failed(String)
 }
 
-struct DemandAttachmentPlan: Hashable {
+struct DemandAttachmentPlan: Hashable, Sendable {
     let workspacePath: String
     let expectedDraftRevision: DemandInputRevision
     let items: [DemandAttachmentPlanItem]
 }
 
-struct DemandAttachmentPlanItem: Hashable {
+struct DemandAttachmentPlanItem: Hashable, Sendable {
     let sourceURL: URL
     let destinationURL: URL
     let expectedSizeBytes: Int
     let expectedSHA256: String
 }
 
-struct DemandAttachmentCopyError: Hashable {
+struct DemandAttachmentCopyError: Hashable, Sendable {
     let sourcePath: String
     let message: String
 }
 
-struct DemandAttachmentCopyResponse: Hashable {
+struct DemandAttachmentCopyResponse: Hashable, Sendable {
     let copiedPaths: [String]
     let copiedRelativePaths: [String]
     let errors: [DemandAttachmentCopyError]

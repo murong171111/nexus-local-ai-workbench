@@ -323,6 +323,33 @@ final class FeatureWorkflowTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: draftURL, encoding: .utf8), "external write")
     }
 
+    func testDemandInputSaveRollsBackWhenExistingDraftChangesInPlaceAfterFinalCheck() throws {
+        let root = try temporaryDemandWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let initial = try NativeDemandInputStore.save(
+            draft: DemandInputDraft(requirement: "initial", links: [], attachments: []),
+            workspacePath: root.path,
+            expectedRevision: .missing
+        )
+        let draftURL = URL(fileURLWithPath: initial.path)
+        let inode = try inodeNumber(at: draftURL)
+
+        XCTAssertThrowsError(
+            try NativeDemandInputStore.save(
+                draft: DemandInputDraft(requirement: "Nexus write", links: [], attachments: []),
+                workspacePath: root.path,
+                expectedRevision: initial.revision,
+                beforeDraftPublish: {
+                    try Data("external same-inode update".utf8).write(to: draftURL, options: [])
+                    XCTAssertEqual(try self.inodeNumber(at: draftURL), inode)
+                }
+            )
+        )
+
+        XCTAssertEqual(try inodeNumber(at: draftURL), inode)
+        XCTAssertEqual(try Data(contentsOf: draftURL), Data("external same-inode update".utf8))
+    }
+
     func testDemandInputTempCreationFailurePreservesRegularFileReplacingTemporaryName() throws {
         let root = try temporaryDemandWorkspace()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -345,6 +372,34 @@ final class FeatureWorkflowTests: XCTestCase {
 
         let replacement = try XCTUnwrap(replacementURL)
         XCTAssertEqual(try String(contentsOf: replacement, encoding: .utf8), "external replacement")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: demandURL.appendingPathComponent("intake-draft.md").path))
+    }
+
+    func testDemandInputTempWriteFailurePreservesSameInodeContentWithoutExpectedFingerprint() throws {
+        let root = try temporaryDemandWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let demandURL = root.appendingPathComponent("需求")
+        var temporaryURL: URL?
+        var temporaryInode: UInt64?
+
+        XCTAssertThrowsError(
+            try NativeDemandInputStore.save(
+                draft: DemandInputDraft(requirement: "not published", links: [], attachments: []),
+                workspacePath: root.path,
+                expectedRevision: .missing,
+                afterTempOpen: { temporaryName in
+                    let url = demandURL.appendingPathComponent(temporaryName)
+                    temporaryURL = url
+                    temporaryInode = try self.inodeNumber(at: url)
+                    try Data(repeating: 0x78, count: 16_384).write(to: url, options: [])
+                    XCTAssertEqual(try self.inodeNumber(at: url), temporaryInode)
+                }
+            )
+        )
+
+        let preserved = try XCTUnwrap(temporaryURL)
+        XCTAssertEqual(try inodeNumber(at: preserved), temporaryInode)
+        XCTAssertEqual(try Data(contentsOf: preserved).count, 16_384)
         XCTAssertFalse(FileManager.default.fileExists(atPath: demandURL.appendingPathComponent("intake-draft.md").path))
     }
 
@@ -467,6 +522,29 @@ final class FeatureWorkflowTests: XCTestCase {
 
         XCTAssertEqual(try String(contentsOf: draftURL, encoding: .utf8), "external replacement")
         XCTAssertNotEqual(try NativeDemandInputStore.load(workspacePath: root.path).draft, draft)
+    }
+
+    func testDemandInputFirstSavePreservesPublishedDraftChangedInPlaceBeforeCleanup() throws {
+        let root = try temporaryDemandWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let draftURL = root.appendingPathComponent("需求/intake-draft.md")
+        var publishedInode: UInt64?
+
+        XCTAssertThrowsError(
+            try NativeDemandInputStore.save(
+                draft: DemandInputDraft(requirement: "Nexus staged", links: [], attachments: []),
+                workspacePath: root.path,
+                expectedRevision: .missing,
+                afterPublishBeforeVerify: {
+                    publishedInode = try self.inodeNumber(at: draftURL)
+                    try Data("external same-inode draft".utf8).write(to: draftURL, options: [])
+                    XCTAssertEqual(try self.inodeNumber(at: draftURL), publishedInode)
+                }
+            )
+        )
+
+        XCTAssertEqual(try inodeNumber(at: draftURL), publishedInode)
+        XCTAssertEqual(try Data(contentsOf: draftURL), Data("external same-inode draft".utf8))
     }
 
     func testDemandInputFirstSavePreservesRegularFileReplacingTemporaryName() throws {
@@ -652,6 +730,32 @@ final class FeatureWorkflowTests: XCTestCase {
         try FileManager.default.removeItem(at: destination)
         let retried = try NativeDemandInputStore.copyAttachments(plan: plan, confirmed: true)
         XCTAssertEqual(retried.copiedRelativePaths, ["需求/attachments/prototype.png"])
+    }
+
+    func testDemandAttachmentCopyPreservesPublishedFileChangedInPlaceBeforeCleanup() throws {
+        let fixture = try demandAttachmentFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let plan = try NativeDemandInputStore.makeAttachmentPlan(
+            workspacePath: fixture.workspace.path,
+            sourceURLs: [fixture.source]
+        )
+        let destination = plan.items[0].destinationURL
+        var publishedInode: UInt64?
+
+        let response = try NativeDemandInputStore.copyAttachments(
+            plan: plan,
+            confirmed: true,
+            afterPublishBeforeVerify: { _ in
+                publishedInode = try self.inodeNumber(at: destination)
+                try Data("external same-inode attachment".utf8).write(to: destination, options: [])
+                XCTAssertEqual(try self.inodeNumber(at: destination), publishedInode)
+            }
+        )
+
+        XCTAssertTrue(response.copiedPaths.isEmpty)
+        XCTAssertEqual(response.errors.map(\.sourcePath), [fixture.source.path])
+        XCTAssertEqual(try inodeNumber(at: destination), publishedInode)
+        XCTAssertEqual(try Data(contentsOf: destination), Data("external same-inode attachment".utf8))
     }
 
     func testDemandAttachmentCopyRejectsForgedPlanBeforeCreatingDemandDirectories() throws {
@@ -969,6 +1073,52 @@ final class FeatureWorkflowTests: XCTestCase {
     }
 
     @MainActor
+    func testAppStateAttachmentCopyRunsDiskIOOffMainActorAndMergesCurrentDraft() async throws {
+        let fixture = try demandAttachmentFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let workspace = demandInputWorkspace(path: fixture.workspace.path)
+        let appState = makeAppState(workspace: workspace, root: fixture.root)
+        let captured = DemandInputDraft(requirement: "captured", links: [], attachments: [])
+        var currentUI = captured
+        let copyReachedWrite = expectation(description: "copy reached destination write")
+        let releaseCopy = DispatchSemaphore(value: 0)
+
+        let operation = Task { @MainActor in
+            await appState.attachDemandMaterials(
+                [fixture.source],
+                liveDraft: captured,
+                currentDraft: { currentUI },
+                to: workspace,
+                confirmed: true,
+                beforeDestinationWrite: { _ in
+                    copyReachedWrite.fulfill()
+                    releaseCopy.wait()
+                }
+            )
+        }
+
+        await fulfillment(of: [copyReachedWrite], timeout: 2)
+        appState.query = "main actor remained responsive"
+        currentUI = DemandInputDraft(
+            requirement: "edited while background copy was blocked",
+            links: ["https://example.com/background-copy"],
+            attachments: []
+        )
+        releaseCopy.signal()
+        let response = await operation.value
+
+        let expected = DemandInputDraft(
+            requirement: currentUI.requirement,
+            links: currentUI.links,
+            attachments: ["需求/attachments/prototype.png"]
+        )
+        XCTAssertEqual(appState.query, "main actor remained responsive")
+        XCTAssertEqual(response?.copiedRelativePaths, expected.attachments)
+        XCTAssertEqual(appState.demandInputSnapshot(for: workspace)?.draft, expected)
+        XCTAssertEqual(try NativeDemandInputStore.load(workspacePath: workspace.path).draft, expected)
+    }
+
+    @MainActor
     func testAppStateAttachmentFailureStillSavesLatestUIEdits() async throws {
         let fixture = try demandAttachmentFixture()
         defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -1032,6 +1182,11 @@ final class FeatureWorkflowTests: XCTestCase {
         try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
         try Data("prototype".utf8).write(to: source)
         return (root, workspace, source)
+    }
+
+    private func inodeNumber(at url: URL) throws -> UInt64 {
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        return try XCTUnwrap((attributes[.systemFileNumber] as? NSNumber)?.uint64Value)
     }
 
     private func demandInputWorkspace(path: String) -> WorkspaceSummary {

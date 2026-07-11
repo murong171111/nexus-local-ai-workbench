@@ -3381,7 +3381,10 @@ final class AppState: ObservableObject {
         }
 
         do {
-            let snapshot = try NativeDemandInputStore.load(workspacePath: workspace.path)
+            let workspacePath = workspace.path
+            let snapshot = try await Task.detached(priority: .userInitiated) {
+                try NativeDemandInputStore.load(workspacePath: workspacePath)
+            }.value
             if let recovery = demandInputsByWorkspace[workspace.id],
                demandInputRecoveryWorkspaceIDs.contains(workspace.id) {
                 demandInputsByWorkspace[workspace.id] = DemandInputSnapshot(
@@ -3408,16 +3411,22 @@ final class AppState: ObservableObject {
         }
 
         do {
-            let current = try demandInputsByWorkspace[workspace.id]
-                ?? NativeDemandInputStore.load(workspacePath: workspace.path)
-            let response = try NativeDemandInputStore.save(
-                draft: draft,
-                workspacePath: workspace.path,
-                expectedRevision: current.revision,
-                auditRoot: auditRootPath,
-                actor: "Nexus Native"
-            )
-            let snapshot = try NativeDemandInputStore.load(workspacePath: workspace.path)
+            let current = demandInputsByWorkspace[workspace.id]
+            let workspacePath = workspace.path
+            let auditRoot = auditRootPath
+            let (response, snapshot) = try await Task.detached(priority: .userInitiated) {
+                let baseline = try current
+                    ?? NativeDemandInputStore.load(workspacePath: workspacePath)
+                let response = try NativeDemandInputStore.save(
+                    draft: draft,
+                    workspacePath: workspacePath,
+                    expectedRevision: baseline.revision,
+                    auditRoot: auditRoot,
+                    actor: "Nexus Native"
+                )
+                let snapshot = try NativeDemandInputStore.load(workspacePath: workspacePath)
+                return (response, snapshot)
+            }.value
             demandInputsByWorkspace[workspace.id] = snapshot
             demandInputRecoveryWorkspaceIDs.remove(workspace.id)
             demandInputSaveStatusesByWorkspace[workspace.id] = .saved
@@ -3452,6 +3461,7 @@ final class AppState: ObservableObject {
         currentDraft: (() -> DemandInputDraft)? = nil,
         to workspace: WorkspaceSummary,
         confirmed: Bool,
+        beforeDestinationWrite: (@Sendable (DemandAttachmentPlanItem) throws -> Void)? = nil,
         beforeAttachmentResponse: (() -> Void)? = nil
     ) async -> DemandAttachmentCopyResponse? {
         demandAttachmentOperationWorkspaceIDs.insert(workspace.id)
@@ -3469,17 +3479,22 @@ final class AppState: ObservableObject {
         }
 
         do {
-            let plan = try NativeDemandInputStore.makeAttachmentPlan(
-                workspacePath: workspace.path,
-                sourceURLs: urls
-            )
-            let copied = try NativeDemandInputStore.copyAttachments(
-                plan: plan,
-                confirmed: confirmed,
-                auditRoot: auditRootPath,
-                actor: "Nexus Native",
-                beforeAttachmentResponse: beforeAttachmentResponse
-            )
+            let workspacePath = workspace.path
+            let auditRoot = auditRootPath
+            let copied = try await Task.detached(priority: .userInitiated) {
+                let plan = try NativeDemandInputStore.makeAttachmentPlan(
+                    workspacePath: workspacePath,
+                    sourceURLs: urls
+                )
+                return try NativeDemandInputStore.copyAttachments(
+                    plan: plan,
+                    confirmed: confirmed,
+                    auditRoot: auditRoot,
+                    actor: "Nexus Native",
+                    beforeDestinationWrite: beforeDestinationWrite
+                )
+            }.value
+            beforeAttachmentResponse?()
             var next = currentDraft?() ?? savedSnapshot.draft
             for path in copied.copiedRelativePaths where !next.attachments.contains(path) {
                 next.attachments.append(path)
@@ -3525,7 +3540,6 @@ final class AppState: ObservableObject {
 
     func featureIntakePrompt(for workspace: WorkspaceSummary) -> String {
         let snapshot = demandInputsByWorkspace[workspace.id]
-            ?? (try? NativeDemandInputStore.load(workspacePath: workspace.path))
         let draft = snapshot?.draft ?? .empty
         let materialLines = draft.attachments.isEmpty
             ? ["- None confirmed."]
