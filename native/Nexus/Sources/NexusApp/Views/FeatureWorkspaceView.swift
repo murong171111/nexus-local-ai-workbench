@@ -31,6 +31,36 @@ enum FeatureWorkspaceSessionChangePolicy {
     }
 }
 
+enum FeatureWorkspaceEvidencePresentation {
+    static func lines(
+        evidence: FeatureEvidence,
+        evaluation: FeatureCompletionEvaluation?
+    ) -> [String] {
+        var lines = evaluation?.reasons.map { "判定: \($0)" } ?? []
+        append("任务", evidence.linkedTaskIDs, to: &lines)
+        append("未完成任务", evidence.incompleteTaskIDs, to: &lines)
+        append("变更", evidence.relatedChangeIDs, to: &lines)
+        append("测试", evidence.requiredTestIDs, to: &lines)
+        append("失败或缺失测试", evidence.failedOrMissingTestIDs, to: &lines)
+        append("正式 SQL", evidence.formalSQLPaths, to: &lines)
+        append("回滚 SQL", evidence.rollbackSQLPaths, to: &lines)
+        append("文档", evidence.documentationPaths, to: &lines)
+        append("阻塞", evidence.blockers, to: &lines)
+        append("读取错误", evidence.readErrors, to: &lines)
+        if let date = evidence.latestRelatedChangeAt {
+            lines.append("最近相关变更: \(ISO8601DateFormatter().string(from: date))")
+        }
+        if let date = evidence.latestTestAt {
+            lines.append("最近测试: \(ISO8601DateFormatter().string(from: date))")
+        }
+        return lines
+    }
+
+    private static func append(_ label: String, _ values: [String], to lines: inout [String]) {
+        if !values.isEmpty { lines.append("\(label): \(values.joined(separator: ", "))") }
+    }
+}
+
 @MainActor
 final class FeatureWorkspaceAutosavePolicy {
     private let delayNanoseconds: UInt64
@@ -89,6 +119,9 @@ struct FeatureWorkspaceView: View {
     @State private var isReviewingFeatureProposal = false
     @State private var sessionCodexSummary = ""
     @State private var isSessionChangeConfirmed = false
+    @State private var expandedEvidenceFeatureIDs = Set<String>()
+    @State private var pendingCompletionReversal: WorkspaceFeature?
+    @State private var completionReversalReason = ""
 
     private var isSaving: Bool {
         appState.isDemandInputSaveActive(for: workspace)
@@ -295,6 +328,28 @@ struct FeatureWorkspaceView: View {
             Button("取消", role: .cancel) {
                 pendingMaterials = []
             }
+        }
+        .alert(
+            "填写撤销完成原因",
+            isPresented: Binding(
+                get: { pendingCompletionReversal != nil },
+                set: { if !$0 { pendingCompletionReversal = nil } }
+            )
+        ) {
+            TextField("原因", text: $completionReversalReason)
+            Button("继续") {
+                guard let feature = pendingCompletionReversal else { return }
+                let reason = completionReversalReason.trimmingCharacters(in: .whitespacesAndNewlines)
+                pendingCompletionReversal = nil
+                appState.requestFeatureWrite(
+                    .revertCompletion(id: feature.id, reason: reason),
+                    in: workspace
+                )
+            }
+            .disabled(completionReversalReason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            Button("取消", role: .cancel) { pendingCompletionReversal = nil }
+        } message: {
+            Text("撤销后功能点进入 verifying，并清除原完成时间与完成人。")
         }
         .sheet(isPresented: $isAddingFeature) {
             FeatureEditView(featureID: nextFeatureID) { feature in
@@ -543,6 +598,35 @@ struct FeatureWorkspaceView: View {
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
+            if feature.evidenceStale {
+                Label("证据待复核", systemImage: "exclamationmark.triangle")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.orange)
+            } else if let evaluation = featureEvaluation(feature.id) {
+                Text(evaluationLabel(evaluation.decision))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if let evidence = featureEvidence(feature.id) {
+                DisclosureGroup(
+                    "证据详情",
+                    isExpanded: evidenceExpansionBinding(feature.id)
+                ) {
+                    ForEach(
+                        FeatureWorkspaceEvidencePresentation.lines(
+                            evidence: evidence,
+                            evaluation: featureEvaluation(feature.id)
+                        ),
+                        id: \.self
+                    ) { line in
+                        Text(line)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                }
+                .font(.caption)
+            }
         }
     }
 
@@ -550,10 +634,8 @@ struct FeatureWorkspaceView: View {
     private func featureStateButton(_ feature: WorkspaceFeature) -> some View {
         if feature.status == .done {
             Button {
-                appState.requestFeatureWrite(
-                    .setStatus(id: feature.id, status: .todo, completionNote: nil),
-                    in: workspace
-                )
+                completionReversalReason = ""
+                pendingCompletionReversal = feature
             } label: {
                 Label("撤销完成", systemImage: "arrow.uturn.backward")
             }
@@ -571,6 +653,35 @@ struct FeatureWorkspaceView: View {
 
     private var features: [WorkspaceFeature] {
         appState.featuresByWorkspace[workspace.id]?.features ?? []
+    }
+
+    private func featureEvidence(_ featureID: String) -> FeatureEvidence? {
+        appState.featureEvidenceByWorkspace[workspace.id]?[featureID]
+    }
+
+    private func featureEvaluation(_ featureID: String) -> FeatureCompletionEvaluation? {
+        appState.featureCompletionEvaluationsByWorkspace[workspace.id]?[featureID]
+    }
+
+    private func evidenceExpansionBinding(_ featureID: String) -> Binding<Bool> {
+        Binding(
+            get: { expandedEvidenceFeatureIDs.contains(featureID) },
+            set: { expanded in
+                if expanded { expandedEvidenceFeatureIDs.insert(featureID) }
+                else { expandedEvidenceFeatureIDs.remove(featureID) }
+            }
+        )
+    }
+
+    private func evaluationLabel(_ decision: FeatureCompletionDecision) -> String {
+        switch decision {
+        case .autoComplete: "证据满足，已自动完成"
+        case .markEvidenceStale: "证据待复核"
+        case .requiresManualCompletion: "需要手动完成"
+        case .startProgress: "已发现进展证据"
+        case .keepVerifying: "继续验证"
+        case .noChange: "暂无可归属的新证据"
+        }
     }
 
     private var sessionChangeDraft: SessionChangeDraft? {
@@ -629,6 +740,8 @@ struct FeatureWorkspaceView: View {
         case .update(let expected, _): return "确认在 \(workspace.name) 修改 \(expected.id)"
         case .setStatus(let id, let status, _):
             return "确认在 \(workspace.name) 将 \(id) 设为 \(status.rawValue)"
+        case .revertCompletion(let id, _):
+            return "确认在 \(workspace.name) 撤销 \(id) 完成状态"
         case .cancel(let id, _): return "确认在 \(workspace.name) 取消 \(id)"
         }
     }

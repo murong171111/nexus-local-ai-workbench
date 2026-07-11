@@ -3323,6 +3323,604 @@ final class FeatureWorkflowTests: XCTestCase {
         XCTAssertTrue(summary.currentSignalsAreSecondary)
     }
 
+    func testCodeFeatureAutoCompletesOnlyWithFreshExplicitEvidence() {
+        let changedAt = Date(timeIntervalSince1970: 100)
+        var evidence = featureEvidence(
+            relatedChangeIDs: ["commit-1"],
+            latestRelatedChangeAt: changedAt,
+            requiredTestIDs: ["test-order"],
+            latestTestAt: changedAt.addingTimeInterval(1)
+        )
+        XCTAssertEqual(
+            FeatureCompletionEvaluator.evaluate(
+                feature: completionFeature(verification: .code),
+                evidence: evidence
+            ).decision,
+            .autoComplete
+        )
+
+        evidence.latestTestAt = changedAt.addingTimeInterval(-1)
+        XCTAssertEqual(
+            FeatureCompletionEvaluator.evaluate(
+                feature: completionFeature(verification: .code),
+                evidence: evidence
+            ).decision,
+            .keepVerifying
+        )
+    }
+
+    func testManualFeatureNeverAutoCompletes() {
+        let evaluation = FeatureCompletionEvaluator.evaluate(
+            feature: completionFeature(verification: .manual),
+            evidence: featureEvidence(
+                relatedChangeIDs: ["commit-1"],
+                latestRelatedChangeAt: Date(timeIntervalSince1970: 100),
+                requiredTestIDs: ["test-order"],
+                latestTestAt: Date(timeIntervalSince1970: 101),
+                formalSQLPaths: ["sql/formal/F-001.sql"],
+                rollbackSQLPaths: ["sql/rollback/F-001.sql"],
+                documentationPaths: ["docs/F-001.md"]
+            )
+        )
+
+        XCTAssertEqual(evaluation.decision, .requiresManualCompletion)
+    }
+
+    func testSQLAndDocumentationFeaturesRequireTheirExplicitArtifacts() {
+        let sqlFeature = completionFeature(verification: .sql)
+        let incompleteSQL = FeatureCompletionEvaluator.evaluate(
+            feature: sqlFeature,
+            evidence: featureEvidence(formalSQLPaths: ["sql/formal/F-001.sql"])
+        )
+        XCTAssertEqual(incompleteSQL.decision, .keepVerifying)
+        let completeSQL = FeatureCompletionEvaluator.evaluate(
+            feature: sqlFeature,
+            evidence: featureEvidence(
+                formalSQLPaths: ["sql/formal/F-001.sql"],
+                rollbackSQLPaths: ["sql/rollback/F-001.sql"]
+            )
+        )
+        XCTAssertEqual(completeSQL.decision, .autoComplete)
+
+        XCTAssertEqual(
+            FeatureCompletionEvaluator.evaluate(
+                feature: completionFeature(verification: .documentation),
+                evidence: featureEvidence()
+            ).decision,
+            .noChange
+        )
+        XCTAssertEqual(
+            FeatureCompletionEvaluator.evaluate(
+                feature: completionFeature(verification: .documentation),
+                evidence: featureEvidence(documentationPaths: ["docs/F-001.md"])
+            ).decision,
+            .autoComplete
+        )
+    }
+
+    func testFeatureCompletionBlocksReadErrorsBlockersIncompleteTasksAndMissingAttribution() {
+        let feature = completionFeature(verification: .code)
+        XCTAssertEqual(
+            FeatureCompletionEvaluator.evaluate(
+                feature: feature,
+                evidence: featureEvidence(readErrors: ["git failed"])
+            ).decision,
+            .keepVerifying
+        )
+        XCTAssertEqual(
+            FeatureCompletionEvaluator.evaluate(
+                feature: feature,
+                evidence: featureEvidence(blockers: ["risk open"])
+            ).decision,
+            .keepVerifying
+        )
+        XCTAssertEqual(
+            FeatureCompletionEvaluator.evaluate(
+                feature: feature,
+                evidence: featureEvidence(linkedTaskIDs: ["T-1"], incompleteTaskIDs: ["T-1"])
+            ).decision,
+            .keepVerifying
+        )
+        XCTAssertEqual(
+            FeatureCompletionEvaluator.evaluate(feature: feature, evidence: featureEvidence()).decision,
+            .noChange
+        )
+    }
+
+    func testDoneFeatureWithNewerRelatedChangeMarksEvidenceStale() {
+        var feature = completionFeature(verification: .code)
+        feature.status = .done
+        feature.completedAt = "1970-01-01T00:01:40Z"
+        let evaluation = FeatureCompletionEvaluator.evaluate(
+            feature: feature,
+            evidence: featureEvidence(
+                relatedChangeIDs: ["commit-2"],
+                latestRelatedChangeAt: Date(timeIntervalSince1970: 101),
+                requiredTestIDs: ["test-order"],
+                latestTestAt: Date(timeIntervalSince1970: 100)
+            )
+        )
+
+        XCTAssertEqual(evaluation.decision, .markEvidenceStale)
+    }
+
+    func testFeatureWithoutAutoCompleteAuthorizationAdvancesButDoesNotFinish() {
+        var feature = completionFeature(verification: .documentation)
+        feature.autoComplete = false
+        XCTAssertEqual(
+            FeatureCompletionEvaluator.evaluate(
+                feature: feature,
+                evidence: featureEvidence(documentationPaths: ["docs/F-001.md"])
+            ).decision,
+            .startProgress
+        )
+    }
+
+    func testFeatureEvidenceCollectionUsesOnlyExplicitTasksGitReceiptsAndPaths() throws {
+        let root = try sessionChangeWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        var feature = completionFeature(verification: .code)
+        feature.sources = ["sql/formal/F-001.sql", "sql/rollback/F-001.sql", "docs/F-001.md"]
+        feature.evidenceIDs = ["test_order_snapshot"]
+        let receipts = FeatureEvidenceReceiptDocument(
+            version: 1,
+            receipts: [
+                FeatureEvidenceReceipt(
+                    id: "test_order_snapshot",
+                    kind: .test,
+                    featureIDs: ["F-001"],
+                    status: .passed,
+                    recordedAt: "2026-07-11T02:00:00Z",
+                    path: nil
+                )
+            ]
+        )
+        try JSONEncoder().encode(receipts).write(to: root.appendingPathComponent("feature-evidence.json"))
+        let workspace = featureEvidenceWorkspace(
+            root: root,
+            tasks: [
+                WorkspaceTask(
+                    id: "T-1", title: "linked", status: "done", detail: "feature=F-001",
+                    priority: "medium", source: "tasks.md", sourceEventID: nil, sourceLine: 2
+                ),
+                WorkspaceTask(
+                    id: "T-2", title: "unrelated", status: "todo", detail: "feature=F-002",
+                    priority: "high", source: "tasks.md", sourceEventID: nil, sourceLine: 3
+                )
+            ],
+            riskDetails: ["F-002 unrelated risk"]
+        )
+
+        let evidence = NativeFeatureEvidenceStore.collect(
+            feature: feature,
+            workspace: workspace,
+            now: Date(timeIntervalSince1970: 200)
+        ) { _, arguments in
+            switch arguments.first {
+            case "log": return "abc123\t2026-07-11T01:00:00Z\tImplement feature=F-001\nzzz999\t2026-07-11T01:30:00Z\tUnrelated cleanup\n"
+            case "status": return ""
+            default: throw CocoaError(.fileReadUnknown)
+            }
+        }
+
+        XCTAssertEqual(evidence.linkedTaskIDs, ["T-1"])
+        XCTAssertTrue(evidence.incompleteTaskIDs.isEmpty)
+        XCTAssertEqual(evidence.relatedChangeIDs, ["abc123"])
+        XCTAssertEqual(evidence.requiredTestIDs, ["test_order_snapshot"])
+        XCTAssertTrue(evidence.failedOrMissingTestIDs.isEmpty)
+        XCTAssertNotNil(evidence.latestTestAt)
+        XCTAssertEqual(evidence.formalSQLPaths, ["sql/formal/F-001.sql"])
+        XCTAssertEqual(evidence.rollbackSQLPaths, ["sql/rollback/F-001.sql"])
+        XCTAssertEqual(evidence.documentationPaths, ["docs/F-001.md"])
+        XCTAssertTrue(evidence.blockers.isEmpty)
+        XCTAssertTrue(evidence.readErrors.isEmpty)
+    }
+
+    func testFeatureEvidenceCollectionTreatsMalformedReceiptAndGitFailureAsReadErrors() throws {
+        let root = try sessionChangeWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try Data("{".utf8).write(to: root.appendingPathComponent("feature-evidence.json"))
+        let workspace = featureEvidenceWorkspace(root: root)
+
+        let evidence = NativeFeatureEvidenceStore.collect(
+            feature: completionFeature(verification: .code),
+            workspace: workspace
+        ) { _, _ in
+            throw CocoaError(.fileReadUnknown)
+        }
+
+        XCTAssertEqual(evidence.readErrors.count, 2)
+        XCTAssertTrue(evidence.readErrors.contains { $0.contains("feature-evidence.json") })
+        XCTAssertTrue(evidence.readErrors.contains { $0.contains("order-service") })
+    }
+
+    func testFeatureEvidenceCollectionTreatsMissingDeclaredDocumentAsReadError() throws {
+        let root = try sessionChangeWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        var feature = completionFeature(verification: .documentation)
+        feature.services = []
+        feature.sources = ["docs/missing-F-001.md"]
+
+        let evidence = NativeFeatureEvidenceStore.collect(
+            feature: feature,
+            workspace: featureEvidenceWorkspace(root: root)
+        )
+
+        XCTAssertEqual(evidence.readErrors, ["declared documentation path is unavailable: docs/missing-F-001.md"])
+        XCTAssertEqual(
+            FeatureCompletionEvaluator.evaluate(feature: feature, evidence: evidence).decision,
+            .keepVerifying
+        )
+    }
+
+    func testFeatureEvidenceCollectionAcceptsTestReceiptAttributedByFeatureID() throws {
+        let root = try sessionChangeWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let receipt = FeatureEvidenceReceiptDocument(
+            version: 1,
+            receipts: [
+                FeatureEvidenceReceipt(
+                    id: "test_direct_attribution",
+                    kind: .test,
+                    featureIDs: ["F-001"],
+                    status: .passed,
+                    recordedAt: "2026-07-11T02:00:00Z",
+                    path: nil
+                )
+            ]
+        )
+        try JSONEncoder().encode(receipt).write(to: root.appendingPathComponent("feature-evidence.json"))
+        var feature = completionFeature(verification: .code)
+        feature.services = []
+
+        let evidence = NativeFeatureEvidenceStore.collect(
+            feature: feature,
+            workspace: featureEvidenceWorkspace(root: root)
+        )
+
+        XCTAssertEqual(evidence.requiredTestIDs, ["test_direct_attribution"])
+        XCTAssertTrue(evidence.failedOrMissingTestIDs.isEmpty)
+        XCTAssertNotNil(evidence.latestTestAt)
+    }
+
+    func testFeatureEvidenceCollectionRejectsInvalidReceiptTimeAndMissingArtifact() throws {
+        let root = try sessionChangeWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let receipt = FeatureEvidenceReceiptDocument(
+            version: 1,
+            receipts: [
+                FeatureEvidenceReceipt(
+                    id: "doc_bad",
+                    kind: .documentation,
+                    featureIDs: ["F-001"],
+                    status: .passed,
+                    recordedAt: "not-a-date",
+                    path: "docs/missing.md"
+                )
+            ]
+        )
+        try JSONEncoder().encode(receipt).write(to: root.appendingPathComponent("feature-evidence.json"))
+        var feature = completionFeature(verification: .documentation)
+        feature.services = []
+
+        let evidence = NativeFeatureEvidenceStore.collect(
+            feature: feature,
+            workspace: featureEvidenceWorkspace(root: root)
+        )
+
+        XCTAssertEqual(evidence.readErrors.count, 2)
+        XCTAssertFalse(evidence.documentationPaths.contains("docs/missing.md"))
+        XCTAssertEqual(
+            FeatureCompletionEvaluator.evaluate(feature: feature, evidence: evidence).decision,
+            .keepVerifying
+        )
+    }
+
+    func testFeatureAutoCompletionBatchWritesExactEvidenceAndAudit() throws {
+        let root = try temporaryFeatureWorkspace(
+            "## F-001 Snapshot\n- Status: verifying\n- Verification: code\n- Auto complete: true\n- Evidence: test_order_snapshot\n"
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let evidence = featureEvidence(
+            relatedChangeIDs: ["abc123"],
+            latestRelatedChangeAt: Date(timeIntervalSince1970: 100),
+            requiredTestIDs: ["test_order_snapshot"],
+            latestTestAt: Date(timeIntervalSince1970: 101)
+        )
+        let feature = try NativeFeatureStore.load(workspacePath: root.path).document.features[0]
+        let evaluation = FeatureCompletionEvaluator.evaluate(feature: feature, evidence: evidence)
+        let plan = try NativeFeatureStore.makeAutoCompletionPlan(
+            workspacePath: root.path,
+            evaluations: [evaluation],
+            evidenceByFeatureID: [feature.id: evidence]
+        )
+
+        let response = try NativeFeatureStore.applyAutoCompletions(
+            plan: plan,
+            confirmed: true,
+            actor: "Nexus Local Check",
+            completedAt: "2026-07-11T03:00:00Z",
+            auditRoot: root.appendingPathComponent("audit").path
+        )
+
+        let written = try XCTUnwrap(response.document.features.first)
+        XCTAssertEqual(written.status, .done)
+        XCTAssertEqual(written.completedAt, "2026-07-11T03:00:00Z")
+        XCTAssertEqual(written.completedBy, "Nexus Local Check")
+        XCTAssertTrue(written.completionNote?.contains("abc123") == true)
+        XCTAssertEqual(response.transitions.map(\.action), ["feature.auto_completed"])
+        XCTAssertTrue(response.auditErrors.isEmpty)
+        let event = try XCTUnwrap(
+            NativeAuditEventStore.loadRecent(
+                auditRoot: root.appendingPathComponent("audit").path,
+                limit: 1
+            ).first
+        )
+        XCTAssertEqual(event.action, "feature.auto_completed")
+        XCTAssertEqual(event.metadata["policy"], "code")
+        XCTAssertTrue(event.metadata["evidenceIDs"]?.contains("abc123") == true)
+    }
+
+    func testFeatureAutoCompletionBatchRejectsPassiveOrStaleWriteWithoutMutation() throws {
+        for passive in [true, false] {
+            let original = "## F-001 Snapshot\n- Status: verifying\n- Verification: documentation\n- Auto complete: true\n"
+            let root = try temporaryFeatureWorkspace(original)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let evidence = featureEvidence(documentationPaths: ["docs/F-001.md"])
+            let feature = try NativeFeatureStore.load(workspacePath: root.path).document.features[0]
+            let evaluation = FeatureCompletionEvaluator.evaluate(feature: feature, evidence: evidence)
+            let plan = try NativeFeatureStore.makeAutoCompletionPlan(
+                workspacePath: root.path,
+                evaluations: [evaluation],
+                evidenceByFeatureID: [feature.id: evidence]
+            )
+            if !passive {
+                try (original + "external edit\n").write(
+                    to: root.appendingPathComponent("FEATURES.md"), atomically: true, encoding: .utf8
+                )
+            }
+
+            XCTAssertThrowsError(
+                try NativeFeatureStore.applyAutoCompletions(
+                    plan: plan,
+                    confirmed: !passive,
+                    actor: "Nexus Local Check"
+                )
+            )
+            let current = try String(
+                contentsOf: root.appendingPathComponent("FEATURES.md"), encoding: .utf8
+            )
+            XCTAssertEqual(current, passive ? original : original + "external edit\n")
+        }
+    }
+
+    func testFeatureAutoCompletionPlanRejectsFeatureChangeAfterEvidenceCollection() throws {
+        let original = "## F-001 Docs\n- Status: verifying\n- Verification: documentation\n- Auto complete: true\n- Source: docs/F-001.md\n"
+        let root = try temporaryFeatureWorkspace(original)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let snapshot = try NativeFeatureStore.load(workspacePath: root.path)
+        let evidence = featureEvidence(documentationPaths: ["docs/F-001.md"])
+        let evaluation = FeatureCompletionEvaluator.evaluate(
+            feature: snapshot.document.features[0], evidence: evidence
+        )
+        try original.replacingOccurrences(of: "docs/F-001.md", with: "docs/F-002.md").write(
+            to: root.appendingPathComponent("FEATURES.md"), atomically: true, encoding: .utf8
+        )
+
+        XCTAssertThrowsError(
+            try NativeFeatureStore.makeAutoCompletionPlan(
+                workspacePath: root.path,
+                evaluations: [evaluation],
+                evidenceByFeatureID: ["F-001": evidence],
+                expectedRevision: snapshot.revision
+            )
+        )
+    }
+
+    func testFeatureAutoCompletionMarksDoneEvidenceStaleWithoutReopening() throws {
+        let root = try temporaryFeatureWorkspace(
+            "## F-001 Snapshot\n- Status: done\n- Verification: code\n- Auto complete: true\n- Completed at: 1970-01-01T00:01:40Z\n- Completed by: Nexus Local Check\n"
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let evidence = featureEvidence(
+            relatedChangeIDs: ["new-change"],
+            latestRelatedChangeAt: Date(timeIntervalSince1970: 101)
+        )
+        let feature = try NativeFeatureStore.load(workspacePath: root.path).document.features[0]
+        let evaluation = FeatureCompletionEvaluator.evaluate(feature: feature, evidence: evidence)
+        let plan = try NativeFeatureStore.makeAutoCompletionPlan(
+            workspacePath: root.path,
+            evaluations: [evaluation],
+            evidenceByFeatureID: [feature.id: evidence]
+        )
+
+        let response = try NativeFeatureStore.applyAutoCompletions(
+            plan: plan,
+            confirmed: true,
+            actor: "Nexus Local Check"
+        )
+
+        XCTAssertEqual(response.document.features[0].status, .done)
+        XCTAssertTrue(response.document.features[0].evidenceStale)
+        XCTAssertEqual(response.transitions.map(\.action), ["feature.evidence_stale"])
+    }
+
+    func testFeatureAutoCompletionPreservesWriteWhenAuditFails() throws {
+        let root = try temporaryFeatureWorkspace(
+            "## F-001 Docs\n- Status: verifying\n- Verification: documentation\n- Auto complete: true\n"
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let auditBlocker = root.appendingPathComponent("audit-blocker")
+        try Data("not a directory".utf8).write(to: auditBlocker)
+        let evidence = featureEvidence(documentationPaths: ["docs/F-001.md"])
+        let feature = try NativeFeatureStore.load(workspacePath: root.path).document.features[0]
+        let evaluation = FeatureCompletionEvaluator.evaluate(feature: feature, evidence: evidence)
+        let plan = try NativeFeatureStore.makeAutoCompletionPlan(
+            workspacePath: root.path,
+            evaluations: [evaluation],
+            evidenceByFeatureID: [feature.id: evidence]
+        )
+
+        let response = try NativeFeatureStore.applyAutoCompletions(
+            plan: plan,
+            confirmed: true,
+            actor: "Nexus Local Check",
+            auditRoot: auditBlocker.path
+        )
+
+        XCTAssertEqual(response.document.features[0].status, .done)
+        XCTAssertEqual(response.auditErrors.count, 1)
+        XCTAssertEqual(
+            try NativeFeatureStore.load(workspacePath: root.path).document.features[0].status,
+            .done
+        )
+    }
+
+    @MainActor
+    func testAppStateExplicitFeatureCompletionCheckUpdatesFactsAndEvaluation() async throws {
+        let root = try temporaryFeatureWorkspace(
+            "## F-001 Docs\n- Status: verifying\n- Verification: documentation\n- Auto complete: true\n- Source: docs/F-001.md\n"
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = featureEvidenceWorkspace(root: root)
+        let appState = makeAppState(workspace: workspace, root: root)
+        appState.selectedWorkspaceID = workspace.id
+
+        let transitions = await appState.applyFeatureCompletionEvidence(
+            actor: "Nexus Local Check",
+            confirmedTrigger: true
+        )
+
+        XCTAssertEqual(transitions.map(\.action), ["feature.auto_completed"])
+        XCTAssertEqual(appState.featuresByWorkspace[workspace.id]?.features[0].status, .done)
+        XCTAssertEqual(
+            appState.featureCompletionEvaluationsByWorkspace[workspace.id]?["F-001"]?.decision,
+            .autoComplete
+        )
+        XCTAssertEqual(
+            appState.featureEvidenceByWorkspace[workspace.id]?["F-001"]?.documentationPaths,
+            ["docs/F-001.md"]
+        )
+    }
+
+    @MainActor
+    func testAppStatePassiveFeatureScanCannotWrite() async throws {
+        let root = try temporaryFeatureWorkspace(
+            "## F-001 Docs\n- Status: verifying\n- Verification: documentation\n- Auto complete: true\n- Source: docs/F-001.md\n"
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = featureEvidenceWorkspace(root: root)
+        let appState = makeAppState(workspace: workspace, root: root)
+
+        let transitions = await appState.applyFeatureCompletionEvidence(
+            actor: "Nexus Refresh",
+            confirmedTrigger: false
+        )
+
+        XCTAssertTrue(transitions.isEmpty)
+        XCTAssertEqual(
+            try NativeFeatureStore.load(workspacePath: root.path).document.features[0].status,
+            .verifying
+        )
+    }
+
+    func testFeatureCompletionReversalHasDedicatedAuditActionAndReason() throws {
+        let root = try temporaryFeatureWorkspace(
+            "## F-001 Snapshot\n- Status: done\n- Verification: code\n- Auto complete: true\n- Completed at: 2026-07-11T03:00:00Z\n- Completed by: Nexus Local Check\n"
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let plan = try NativeFeatureStore.makePlan(
+            workspacePath: root.path,
+            mutation: .revertCompletion(id: "F-001", reason: "New acceptance issue")
+        )
+
+        let response = try NativeFeatureStore.write(
+            plan: plan,
+            confirmed: true,
+            auditRoot: root.appendingPathComponent("audit").path,
+            actor: "Reviewer"
+        )
+
+        XCTAssertEqual(response.document.features[0].status, .verifying)
+        XCTAssertEqual(response.document.features[0].completionNote, "New acceptance issue")
+        XCTAssertNil(response.document.features[0].completedAt)
+        XCTAssertFalse(response.document.features[0].evidenceStale)
+        XCTAssertEqual(
+            try NativeAuditEventStore.loadRecent(
+                auditRoot: root.appendingPathComponent("audit").path,
+                limit: 1
+            ).first?.action,
+            "feature.completion_reverted"
+        )
+    }
+
+    func testLocalAutomationCheckSurfacesFeatureCompletionAndStaleEvidenceSignals() {
+        let base = NativeLocalAutomationCheck.response(
+            workspaces: [],
+            generatedAt: "2026-07-11T03:00:00Z"
+        )
+        let transitions = [
+            FeatureCompletionTransition(
+                featureID: "F-001",
+                action: "feature.auto_completed",
+                previousStatus: .verifying,
+                nextStatus: .done,
+                evidenceIDs: ["test_order"]
+            ),
+            FeatureCompletionTransition(
+                featureID: "F-002",
+                action: "feature.evidence_stale",
+                previousStatus: .done,
+                nextStatus: .done,
+                evidenceIDs: ["commit-2"]
+            )
+        ]
+
+        let response = NativeLocalAutomationCheck.appendingFeatureCompletionSignals(
+            to: base,
+            transitions: transitions
+        )
+
+        XCTAssertEqual(response.status, "review")
+        XCTAssertTrue(response.signals.contains { $0.id == "feature.auto-completed" && $0.count == 1 })
+        XCTAssertTrue(response.signals.contains { $0.id == "feature.evidence-stale" && $0.action == "review-feature-evidence" })
+        XCTAssertTrue(response.summary.contains("F-001"))
+        XCTAssertTrue(response.summary.contains("F-002"))
+    }
+
+    func testFeatureEvidencePresentationSurfacesExactSignalsWithoutBroadSuccess() {
+        let evidence = featureEvidence(
+            linkedTaskIDs: ["T-1"],
+            relatedChangeIDs: ["abc123"],
+            latestRelatedChangeAt: Date(timeIntervalSince1970: 100),
+            requiredTestIDs: ["test_order"],
+            latestTestAt: Date(timeIntervalSince1970: 101),
+            formalSQLPaths: ["sql/formal/F-001.sql"],
+            rollbackSQLPaths: ["sql/rollback/F-001.sql"],
+            documentationPaths: ["docs/F-001.md"],
+            blockers: ["risk open"],
+            readErrors: ["git failed"]
+        )
+        let evaluation = FeatureCompletionEvaluation(
+            featureID: "F-001",
+            decision: .keepVerifying,
+            reasons: ["Blocker: risk open"]
+        )
+
+        let lines = FeatureWorkspaceEvidencePresentation.lines(
+            evidence: evidence,
+            evaluation: evaluation
+        )
+
+        for value in [
+            "T-1", "abc123", "test_order", "sql/formal/F-001.sql",
+            "sql/rollback/F-001.sql", "docs/F-001.md", "risk open", "git failed"
+        ] {
+            XCTAssertTrue(lines.contains { $0.contains(value) })
+        }
+        XCTAssertFalse(lines.contains { $0.contains("workspace passed") })
+    }
+
     private func assertFeatureInjectionRejectedBeforePublish(_ injectedLines: String) throws {
         let root = try temporaryDemandWorkspace()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -3349,6 +3947,124 @@ final class FeatureWorkflowTests: XCTestCase {
         )
         XCTAssertFalse(reachedPublish)
         XCTAssertEqual(try String(contentsOf: featuresURL, encoding: .utf8), original)
+    }
+
+    private func completionFeature(
+        verification: FeatureVerificationPolicy
+    ) -> WorkspaceFeature {
+        WorkspaceFeature(
+            id: "F-001",
+            title: "Order snapshot",
+            status: .todo,
+            verification: verification,
+            autoComplete: true,
+            sources: [],
+            services: ["order-service"],
+            taskIDs: [],
+            evidenceIDs: [],
+            description: "",
+            completedAt: nil,
+            completedBy: nil,
+            completionNote: nil,
+            evidenceStale: false,
+            preservedLines: []
+        )
+    }
+
+    private func featureEvidence(
+        linkedTaskIDs: [String] = [],
+        incompleteTaskIDs: [String] = [],
+        relatedChangeIDs: [String] = [],
+        latestRelatedChangeAt: Date? = nil,
+        requiredTestIDs: [String] = [],
+        failedOrMissingTestIDs: [String] = [],
+        latestTestAt: Date? = nil,
+        formalSQLPaths: [String] = [],
+        rollbackSQLPaths: [String] = [],
+        documentationPaths: [String] = [],
+        blockers: [String] = [],
+        readErrors: [String] = []
+    ) -> FeatureEvidence {
+        FeatureEvidence(
+            featureID: "F-001",
+            linkedTaskIDs: linkedTaskIDs,
+            incompleteTaskIDs: incompleteTaskIDs,
+            relatedChangeIDs: relatedChangeIDs,
+            latestRelatedChangeAt: latestRelatedChangeAt,
+            requiredTestIDs: requiredTestIDs,
+            failedOrMissingTestIDs: failedOrMissingTestIDs,
+            latestTestAt: latestTestAt,
+            formalSQLPaths: formalSQLPaths,
+            rollbackSQLPaths: rollbackSQLPaths,
+            documentationPaths: documentationPaths,
+            blockers: blockers,
+            readErrors: readErrors
+        )
+    }
+
+    private func featureEvidenceWorkspace(
+        root: URL,
+        tasks: [WorkspaceTask] = [],
+        riskDetails: [String] = []
+    ) -> WorkspaceSummary {
+        let base = demandInputWorkspace(path: root.path)
+        return WorkspaceSummary(
+            id: base.id,
+            name: base.name,
+            folder: base.folder,
+            path: base.path,
+            branch: base.branch,
+            state: base.state,
+            riskLevel: base.riskLevel,
+            aiState: base.aiState,
+            worktreeState: base.worktreeState,
+            documentLinks: base.documentLinks,
+            sqlFiles: [
+                WorkspaceSqlFile(
+                    relativePath: "sql/formal/F-001.sql",
+                    path: root.appendingPathComponent("sql/formal/F-001.sql").path,
+                    kind: "formal"
+                ),
+                WorkspaceSqlFile(
+                    relativePath: "sql/rollback/F-001.sql",
+                    path: root.appendingPathComponent("sql/rollback/F-001.sql").path,
+                    kind: "rollback"
+                )
+            ],
+            sqlDocuments: [
+                WorkspaceSqlDocument(
+                    relativePath: "docs/F-001.md",
+                    path: root.appendingPathComponent("docs/F-001.md").path,
+                    kind: "documentation"
+                )
+            ],
+            services: [
+                ServiceStatus(
+                    name: "order-service",
+                    branch: "feature/order",
+                    worktree: root.appendingPathComponent("repo").path,
+                    gitSummary: "clean",
+                    worktreeExists: true,
+                    sourceExists: true
+                )
+            ],
+            activities: base.activities,
+            risks: riskDetails.map { RiskAlert(title: "risk", detail: $0) },
+            healthChecks: base.healthChecks,
+            sessionActions: base.sessionActions,
+            lifecycle: base.lifecycle,
+            tasks: tasks
+        )
+    }
+
+    private func temporaryFeatureWorkspace(_ source: String) throws -> URL {
+        let root = try temporaryDemandWorkspace()
+        try source.write(
+            to: root.appendingPathComponent("FEATURES.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        return root
     }
 
     @MainActor

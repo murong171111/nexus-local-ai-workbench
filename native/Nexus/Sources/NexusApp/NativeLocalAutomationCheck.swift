@@ -2,6 +2,65 @@ import Foundation
 import NexusBridge
 
 enum NativeLocalAutomationCheck {
+    static func appendingFeatureCompletionSignals(
+        to response: LocalAutomationCheckResponse,
+        transitions: [FeatureCompletionTransition]
+    ) -> LocalAutomationCheckResponse {
+        let completed = transitions.filter { $0.action == "feature.auto_completed" }
+        let stale = transitions.filter { $0.action == "feature.evidence_stale" }
+        guard !completed.isEmpty || !stale.isEmpty else { return response }
+        var signals = response.signals.filter { $0.id != "workspace.clean" }
+        if !completed.isEmpty {
+            signals.append(
+                LocalAutomationSignal(
+                    id: "feature.auto-completed",
+                    kind: "feature",
+                    severity: "info",
+                    title: "功能点自动完成 / Features completed",
+                    detail: completed.map(\.featureID).sorted().joined(separator: ", "),
+                    count: completed.count,
+                    action: "none"
+                )
+            )
+        }
+        if !stale.isEmpty {
+            signals.append(
+                LocalAutomationSignal(
+                    id: "feature.evidence-stale",
+                    kind: "feature",
+                    severity: "warning",
+                    title: "完成证据待复核 / Evidence needs review",
+                    detail: stale.map(\.featureID).sorted().joined(separator: ", "),
+                    count: stale.count,
+                    action: "review-feature-evidence"
+                )
+            )
+        }
+        let details = [
+            completed.isEmpty ? nil : "completed \(completed.map(\.featureID).sorted().joined(separator: ", "))",
+            stale.isEmpty ? nil : "stale \(stale.map(\.featureID).sorted().joined(separator: ", "))"
+        ].compactMap { $0 }.joined(separator: "; ")
+        return LocalAutomationCheckResponse(
+            generatedAt: response.generatedAt,
+            status: response.status == "attention"
+                ? "attention"
+                : (stale.isEmpty ? response.status : "review"),
+            summary: "\(response.summary) Feature evidence: \(details).",
+            workspaceCount: response.workspaceCount,
+            archivedWorkspaceCount: response.archivedWorkspaceCount,
+            riskCount: response.riskCount,
+            deliveryIssueCount: response.deliveryIssueCount,
+            branchMismatchCount: response.branchMismatchCount,
+            openTaskCount: response.openTaskCount,
+            highPriorityTaskCount: response.highPriorityTaskCount,
+            missingWorktreeCount: response.missingWorktreeCount,
+            dirtyServiceCount: response.dirtyServiceCount,
+            signals: signals,
+            auditEventId: response.auditEventId,
+            auditError: response.auditError
+        )
+    }
+
     static func response(
         workspaces: [WorkspaceSummary],
         generatedAt: String,

@@ -47,7 +47,7 @@ enum NativeFeatureStore {
             expectedFeature = nil
         case .update(let expected, _):
             expectedFeature = expected
-        case .setStatus(let id, _, _), .cancel(let id, _):
+        case .setStatus(let id, _, _), .revertCompletion(let id, _), .cancel(let id, _):
             expectedFeature = snapshot.document.features.first { $0.id == id }
             guard expectedFeature != nil else { throw NativeFeatureStoreError.featureNotFound(id) }
         }
@@ -58,6 +58,183 @@ enum NativeFeatureStore {
             document: snapshot.document,
             expectedFeature: expectedFeature,
             mutation: mutation
+        )
+    }
+
+    static func makeAutoCompletionPlan(
+        workspacePath: String,
+        evaluations: [FeatureCompletionEvaluation],
+        evidenceByFeatureID: [String: FeatureEvidence],
+        expectedRevision: FeatureDocumentRevision? = nil
+    ) throws -> FeatureAutoCompletionPlan {
+        let snapshot = try load(workspacePath: workspacePath)
+        if let expectedRevision { try requireRevision(snapshot.revision, expected: expectedRevision) }
+        var evaluationsByID: [String: FeatureCompletionEvaluation] = [:]
+        for evaluation in evaluations {
+            guard evaluationsByID.updateValue(evaluation, forKey: evaluation.featureID) == nil else {
+                throw NativeFeatureStoreError.malformedPlan(snapshot.path)
+            }
+        }
+        let items = try snapshot.document.features.compactMap { feature -> FeatureAutoCompletionPlanItem? in
+            guard let evaluation = evaluationsByID[feature.id],
+                  [.autoComplete, .markEvidenceStale].contains(evaluation.decision),
+                  let evidence = evidenceByFeatureID[feature.id] else { return nil }
+            guard FeatureCompletionEvaluator.evaluate(feature: feature, evidence: evidence) == evaluation else {
+                throw NativeFeatureStoreError.staleFeature(feature.id)
+            }
+            if evaluation.decision == .autoComplete, !feature.autoComplete {
+                throw NativeFeatureStoreError.unconfirmed
+            }
+            return FeatureAutoCompletionPlanItem(
+                expectedFeature: feature,
+                evaluation: evaluation,
+                evidence: evidence
+            )
+        }
+        return FeatureAutoCompletionPlan(
+            workspacePath: workspacePath,
+            path: snapshot.path,
+            revision: snapshot.revision,
+            document: snapshot.document,
+            items: items
+        )
+    }
+
+    static func applyAutoCompletions(
+        plan: FeatureAutoCompletionPlan,
+        confirmed: Bool,
+        actor: String,
+        completedAt: String = ISO8601DateFormatter().string(from: Date()),
+        auditRoot: String? = nil
+    ) throws -> FeatureAutoCompletionResponse {
+        guard confirmed else { throw NativeFeatureStoreError.unconfirmed }
+        if let item = plan.items.first(where: { $0.evaluation.decision == .autoComplete }),
+           ISO8601DateFormatter().date(from: completedAt) == nil {
+            throw NativeFeatureStoreError.invalidMetadata("Completed at", item.expectedFeature.id)
+        }
+        let workspaceURL = canonicalWorkspaceURL(plan.workspacePath)
+        let featurePath = workspaceURL.appendingPathComponent(fileName).path
+        guard plan.workspacePath == workspaceURL.path, plan.path == featurePath else {
+            throw NativeFeatureStoreError.malformedPlan(plan.path)
+        }
+
+        let result = try writeLock(for: plan.workspacePath).withLock {
+            () -> (FeatureDocument, FeatureDocumentRevision, [FeatureCompletionTransition]) in
+            try withWorkspaceDirectory(workspaceURL) { workspaceFD in
+                let current = try snapshot(workspaceFD: workspaceFD, path: featurePath)
+                try requireRevision(current.revision, expected: plan.revision)
+                guard current.document == plan.document else {
+                    throw NativeFeatureStoreError.staleRevision(
+                        expected: plan.revision.label,
+                        current: current.revision.label
+                    )
+                }
+                var document = current.document
+                var transitions: [FeatureCompletionTransition] = []
+                for item in plan.items {
+                    guard let index = document.features.firstIndex(of: item.expectedFeature),
+                          FeatureCompletionEvaluator.evaluate(
+                            feature: document.features[index], evidence: item.evidence
+                          ) == item.evaluation else {
+                        throw NativeFeatureStoreError.staleFeature(item.expectedFeature.id)
+                    }
+                    let previous = document.features[index].status
+                    let action: String
+                    switch item.evaluation.decision {
+                    case .autoComplete:
+                        guard document.features[index].autoComplete else {
+                            throw NativeFeatureStoreError.unconfirmed
+                        }
+                        document.features[index].status = .done
+                        document.features[index].completedAt = completedAt
+                        document.features[index].completedBy = actor
+                        document.features[index].completionNote = completionEvidenceSummary(item.evidence)
+                        document.features[index].evidenceStale = false
+                        action = "feature.auto_completed"
+                    case .markEvidenceStale:
+                        document.features[index].evidenceStale = true
+                        action = "feature.evidence_stale"
+                    default:
+                        continue
+                    }
+                    transitions.append(
+                        FeatureCompletionTransition(
+                            featureID: item.expectedFeature.id,
+                            action: action,
+                            previousStatus: previous,
+                            nextStatus: document.features[index].status,
+                            evidenceIDs: completionEvidenceIDs(item.evidence)
+                        )
+                    )
+                }
+                guard !transitions.isEmpty else { return (current.document, current.revision, []) }
+                try validate(document)
+                let data = try validatedRenderedData(document)
+                let temporaryName = ".\(fileName).\(UUID().uuidString).tmp"
+                let staged = try createVerifiedTemporaryFile(data, parentFD: workspaceFD, name: temporaryName)
+                var temporaryCleanupIdentity: FileIdentity? = staged.identity
+                defer {
+                    close(staged.fd)
+                    if let temporaryCleanupIdentity {
+                        _ = unlinkNamedFileIfIdentityMatches(
+                            parentFD: workspaceFD,
+                            name: temporaryName,
+                            identity: temporaryCleanupIdentity,
+                            fingerprint: staged.fingerprint
+                        )
+                    }
+                }
+                try requireRevision(
+                    snapshot(workspaceFD: workspaceFD, path: featurePath).revision,
+                    expected: plan.revision
+                )
+                try replaceFeatureFile(
+                    workspaceFD: workspaceFD,
+                    path: featurePath,
+                    temporaryName: temporaryName,
+                    expectedRevision: plan.revision,
+                    staged: staged,
+                    expectedData: data,
+                    afterPublishBeforeVerify: nil,
+                    temporaryCleanupIdentity: &temporaryCleanupIdentity
+                )
+                let written = try snapshot(workspaceFD: workspaceFD, path: featurePath)
+                return (written.document, written.revision, transitions)
+            }
+        }
+
+        var auditErrors: [String] = []
+        for transition in result.2 {
+            let policy = plan.items.first {
+                $0.expectedFeature.id == transition.featureID
+            }?.expectedFeature.verification.rawValue ?? ""
+            let audit = NativeAuditEventStore.appendFeedback(
+                auditRoot: auditRoot,
+                event: AuditEventInput(
+                    actor: actor,
+                    action: transition.action,
+                    target: plan.path,
+                    summary: "Feature evidence transition: \(transition.featureID)",
+                    metadata: [
+                        "workspace": plan.workspacePath,
+                        "featureID": transition.featureID,
+                        "policy": policy,
+                        "previousStatus": transition.previousStatus.rawValue,
+                        "nextStatus": transition.nextStatus.rawValue,
+                        "evidenceIDs": transition.evidenceIDs.joined(separator: ","),
+                        "sourceRevision": plan.revision.label,
+                        "revision": result.1.label
+                    ]
+                )
+            )
+            if let error = audit.error { auditErrors.append("\(transition.featureID): \(error)") }
+        }
+        return FeatureAutoCompletionResponse(
+            path: plan.path,
+            revision: result.1,
+            document: result.0,
+            transitions: result.2,
+            auditErrors: auditErrors
         )
     }
 
@@ -601,6 +778,19 @@ enum NativeFeatureStore {
                 document.features[index].completedAt = nil
                 document.features[index].completedBy = nil
             }
+        case .revertCompletion(let id, let reason):
+            guard let index = document.features.firstIndex(where: { $0.id == id }),
+                  document.features[index].status == .done else {
+                throw NativeFeatureStoreError.staleFeature(id)
+            }
+            guard !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw NativeFeatureStoreError.invalidMetadata("Completion note", id)
+            }
+            document.features[index].status = .verifying
+            document.features[index].completionNote = reason
+            document.features[index].completedAt = nil
+            document.features[index].completedBy = nil
+            document.features[index].evidenceStale = false
         case .cancel(let id, let reason):
             guard let index = document.features.firstIndex(where: { $0.id == id }) else {
                 throw NativeFeatureStoreError.featureNotFound(id)
@@ -1232,7 +1422,7 @@ enum NativeFeatureStore {
         switch mutation {
         case .add(let feature): return feature.id
         case .update(let expected, _): return expected.id
-        case .setStatus(let id, _, _), .cancel(let id, _): return id
+        case .setStatus(let id, _, _), .revertCompletion(let id, _), .cancel(let id, _): return id
         }
     }
 
@@ -1241,12 +1431,28 @@ enum NativeFeatureStore {
         case .add: return "feature.added"
         case .update: return "feature.updated"
         case .setStatus: return "feature.status_changed"
+        case .revertCompletion: return "feature.completion_reverted"
         case .cancel: return "feature.cancelled"
         }
     }
 
     private static func auditSummary(_ mutation: FeatureMutation) -> String {
         "Confirmed feature mutation: \(auditAction(mutation))"
+    }
+
+    private static func completionEvidenceIDs(_ evidence: FeatureEvidence) -> [String] {
+        Array(Set(
+            evidence.linkedTaskIDs
+                + evidence.relatedChangeIDs
+                + evidence.requiredTestIDs
+                + evidence.formalSQLPaths
+                + evidence.rollbackSQLPaths
+                + evidence.documentationPaths
+        )).sorted()
+    }
+
+    private static func completionEvidenceSummary(_ evidence: FeatureEvidence) -> String {
+        "Automatic completion evidence: \(completionEvidenceIDs(evidence).joined(separator: ", "))"
     }
 }
 

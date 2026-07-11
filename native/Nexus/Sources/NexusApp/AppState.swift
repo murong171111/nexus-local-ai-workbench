@@ -227,6 +227,8 @@ final class AppState: ObservableObject {
     @Published var demandInputsByWorkspace: [WorkspaceSummary.ID: DemandInputSnapshot] = [:]
     @Published var demandInputSaveStatusesByWorkspace: [WorkspaceSummary.ID: DemandInputSaveStatus] = [:]
     @Published var featuresByWorkspace: [WorkspaceSummary.ID: FeatureDocument] = [:]
+    @Published var featureEvidenceByWorkspace: [WorkspaceSummary.ID: [String: FeatureEvidence]] = [:]
+    @Published var featureCompletionEvaluationsByWorkspace: [WorkspaceSummary.ID: [String: FeatureCompletionEvaluation]] = [:]
     @Published var pendingFeatureWrite: FeatureWritePlan?
     @Published var featureLoadingWorkspaceID: WorkspaceSummary.ID?
     @Published var featureWriteWorkspaceID: WorkspaceSummary.ID?
@@ -1276,7 +1278,7 @@ final class AppState: ObservableObject {
         do {
             let generatedAt = ISO8601DateFormatter().string(from: Date())
             await refreshFromBridge()
-            let response: LocalAutomationCheckResponse
+            var response: LocalAutomationCheckResponse
             if agentStatus.title == "Bridge error", workspaces.isEmpty {
                 response = try await bridge.localAutomationCheck(
                     request: LocalAutomationCheckRequest(
@@ -1299,12 +1301,22 @@ final class AppState: ObservableObject {
                     target: workspaceRoot
                 )
             }
+            let featureTransitions = await applyFeatureCompletionEvidence(
+                actor: actor,
+                confirmedTrigger: true
+            )
+            response = NativeLocalAutomationCheck.appendingFeatureCompletionSignals(
+                to: response,
+                transitions: featureTransitions
+            )
             lastAutomationRunAt = generatedAt
             lastAutomationCheckActor = actor
             defaults.set(generatedAt, forKey: DefaultsKey.lastAutomationRunAt)
             lastAutomationCheck = response
             if let auditError = response.auditError {
-                lastError = "Automation audit failed: \(auditError)"
+                lastError = [lastError, "Automation audit failed: \(auditError)"]
+                    .compactMap { $0 }
+                    .joined(separator: " · ")
             }
             await sendAutomationNotificationIfNeeded(response)
             return response
@@ -1370,6 +1382,14 @@ final class AppState: ObservableObject {
                 ?? taskCenterItems.first
                 ?? allTaskCenterItems.first {
                 selectTaskCenterItem(item)
+            }
+        case "review-feature-evidence":
+            if let workspace = workspaces.first(where: { workspace in
+                featureCompletionEvaluationsByWorkspace[workspace.id]?.values.contains {
+                    $0.decision == .markEvidenceStale
+                } == true
+            }) {
+                selectedWorkspaceID = workspace.id
             }
         case "refresh":
             await refreshFromBridge()
@@ -3432,6 +3452,75 @@ final class AppState: ObservableObject {
         } catch {
             lastError = error.localizedDescription
         }
+    }
+
+    @discardableResult
+    func applyFeatureCompletionEvidence(
+        actor: String,
+        confirmedTrigger: Bool
+    ) async -> [FeatureCompletionTransition] {
+        guard confirmedTrigger else { return [] }
+        let currentWorkspaces = workspaces
+        let auditRoot = auditRootPath
+        let results = await Task.detached(priority: .userInitiated) {
+            currentWorkspaces.map { workspace -> FeatureCompletionWorkspaceResult in
+                do {
+                    let snapshot = try NativeFeatureStore.load(workspacePath: workspace.path)
+                    let evidence = Dictionary(uniqueKeysWithValues: snapshot.document.features.map { feature in
+                        (feature.id, NativeFeatureEvidenceStore.collect(feature: feature, workspace: workspace))
+                    })
+                    let evaluations = snapshot.document.features.map { feature in
+                        FeatureCompletionEvaluator.evaluate(feature: feature, evidence: evidence[feature.id]!)
+                    }
+                    let plan = try NativeFeatureStore.makeAutoCompletionPlan(
+                        workspacePath: workspace.path,
+                        evaluations: evaluations,
+                        evidenceByFeatureID: evidence,
+                        expectedRevision: snapshot.revision
+                    )
+                    let response = try NativeFeatureStore.applyAutoCompletions(
+                        plan: plan,
+                        confirmed: true,
+                        actor: actor,
+                        auditRoot: auditRoot
+                    )
+                    return FeatureCompletionWorkspaceResult(
+                        workspaceID: workspace.id,
+                        document: response.document,
+                        evidenceByFeatureID: evidence,
+                        evaluationsByFeatureID: Dictionary(
+                            uniqueKeysWithValues: evaluations.map { ($0.featureID, $0) }
+                        ),
+                        transitions: response.transitions,
+                        auditErrors: response.auditErrors,
+                        error: nil
+                    )
+                } catch {
+                    return FeatureCompletionWorkspaceResult(
+                        workspaceID: workspace.id,
+                        document: nil,
+                        evidenceByFeatureID: [:],
+                        evaluationsByFeatureID: [:],
+                        transitions: [],
+                        auditErrors: [],
+                        error: error.localizedDescription
+                    )
+                }
+            }
+        }.value
+
+        var transitions: [FeatureCompletionTransition] = []
+        var errors: [String] = []
+        for result in results {
+            featureEvidenceByWorkspace[result.workspaceID] = result.evidenceByFeatureID
+            featureCompletionEvaluationsByWorkspace[result.workspaceID] = result.evaluationsByFeatureID
+            if let document = result.document { featuresByWorkspace[result.workspaceID] = document }
+            transitions += result.transitions
+            errors += result.auditErrors
+            if let error = result.error { errors.append("\(result.workspaceID): \(error)") }
+        }
+        if !errors.isEmpty { lastError = errors.joined(separator: " · ") }
+        return transitions
     }
 
     func refreshFeatureProposal(

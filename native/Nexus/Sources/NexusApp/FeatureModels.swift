@@ -79,6 +79,7 @@ enum FeatureMutation: Hashable, Sendable {
     case add(WorkspaceFeature)
     case update(expected: WorkspaceFeature, replacement: WorkspaceFeature)
     case setStatus(id: String, status: FeatureStatus, completionNote: String?)
+    case revertCompletion(id: String, reason: String)
     case cancel(id: String, reason: String)
 }
 
@@ -98,4 +99,44 @@ struct FeatureWriteResponse: Hashable, Sendable {
     let auditEventID: String?
     let auditEventPath: String?
     let auditError: String?
+}
+
+struct FeatureAutoCompletionPlanItem: Hashable, Sendable {
+    let expectedFeature: WorkspaceFeature
+    let evaluation: FeatureCompletionEvaluation
+    let evidence: FeatureEvidence
+}
+
+struct FeatureAutoCompletionPlan: Hashable, Sendable {
+    let workspacePath: String
+    let path: String
+    let revision: FeatureDocumentRevision
+    let document: FeatureDocument
+    let items: [FeatureAutoCompletionPlanItem]
+}
+
+struct FeatureCompletionTransition: Hashable, Sendable {
+    let featureID: String
+    let action: String
+    let previousStatus: FeatureStatus
+    let nextStatus: FeatureStatus
+    let evidenceIDs: [String]
+}
+
+struct FeatureAutoCompletionResponse: Hashable, Sendable {
+    let path: String
+    let revision: FeatureDocumentRevision
+    let document: FeatureDocument
+    let transitions: [FeatureCompletionTransition]
+    let auditErrors: [String]
+}
+
+struct FeatureCompletionWorkspaceResult: Sendable {
+    let workspaceID: WorkspaceSummary.ID
+    let document: FeatureDocument?
+    let evidenceByFeatureID: [String: FeatureEvidence]
+    let evaluationsByFeatureID: [String: FeatureCompletionEvaluation]
+    let transitions: [FeatureCompletionTransition]
+    let auditErrors: [String]
+    let error: String?
 }
