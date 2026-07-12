@@ -4538,7 +4538,7 @@ final class AppState: ObservableObject {
         let workspaceServices = workspace.services
         let riskBlockers = workspace.risks.compactMap { risk in
             let value = "\(risk.title): \(risk.detail)"
-            return value.localizedCaseInsensitiveContains(featureID) ? value : nil
+            return NativeWorkspaceTaskParser.containsIdentifierToken(featureID, in: value) ? value : nil
         }
 
         for attempt in 0..<2 {

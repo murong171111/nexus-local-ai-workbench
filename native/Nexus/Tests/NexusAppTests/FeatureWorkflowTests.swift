@@ -2607,7 +2607,13 @@ final class FeatureWorkflowTests: XCTestCase {
         ## prefix-collision
         - F-0020 prefix-only change
         """.write(to: root.appendingPathComponent("changes.md"), atomically: true, encoding: .utf8)
-        let workspace = demandInputWorkspace(path: root.path)
+        let workspace = demandInputWorkspace(
+            path: root.path,
+            risks: [
+                RiskAlert(title: "Selected blocker", detail: "feature F-002 blocks rollout"),
+                RiskAlert(title: "Prefix blocker", detail: "feature F-0020 blocks another rollout")
+            ]
+        )
         let appState = makeAppState(workspace: workspace, root: root)
 
         let prompt = await appState.confirmedFeatureExecutionPrompt(for: workspace, featureID: "F-002")
@@ -2619,10 +2625,12 @@ final class FeatureWorkflowTests: XCTestCase {
         XCTAssertTrue(prompt.contains("F-002 older relevant change"), prompt)
         XCTAssertTrue(prompt.contains("F-002 middle relevant change"))
         XCTAssertTrue(prompt.contains("F-002 newest relevant change"))
+        XCTAssertTrue(prompt.contains("Selected blocker"))
         XCTAssertTrue(prompt.contains("实现并验证已确认功能点"))
         XCTAssertTrue(prompt.contains("order-service"))
         XCTAssertFalse(prompt.contains("F-001"))
         XCTAssertFalse(prompt.contains("F-0020"), prompt)
+        XCTAssertFalse(prompt.contains("Prefix blocker"))
         XCTAssertFalse(prompt.contains("bounded-out old change"))
         XCTAssertFalse(prompt.contains("Selected done task"))
         XCTAssertFalse(prompt.contains("Selected cancelled task"))
@@ -5422,7 +5430,11 @@ final class FeatureWorkflowTests: XCTestCase {
         return try XCTUnwrap((attributes[.systemFileNumber] as? NSNumber)?.uint64Value)
     }
 
-    private func demandInputWorkspace(id: String = "demand-input-workspace", path: String) -> WorkspaceSummary {
+    private func demandInputWorkspace(
+        id: String = "demand-input-workspace",
+        path: String,
+        risks: [RiskAlert] = []
+    ) -> WorkspaceSummary {
         WorkspaceSummary(
             id: id,
             name: "Demand Input",
@@ -5445,7 +5457,7 @@ final class FeatureWorkflowTests: XCTestCase {
                 )
             ],
             activities: [],
-            risks: [],
+            risks: risks,
             lifecycle: WorkspaceLifecycle(
                 stage: "scoping",
                 label: "Demand",
