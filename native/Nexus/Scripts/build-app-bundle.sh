@@ -103,6 +103,11 @@ if [[ -n "$WIDGET_EXTENSION_PATH" ]]; then
   fi
 fi
 
+final_output_app="$OUTPUT_APP"
+staging_root="$(mktemp -d "${TMPDIR:-/tmp}/nexus-app-bundle.XXXXXX")"
+trap 'rm -rf "$staging_root"' EXIT
+OUTPUT_APP="$staging_root/Nexus.app"
+
 contents_dir="$OUTPUT_APP/Contents"
 macos_dir="$contents_dir/MacOS"
 resources_dir="$contents_dir/Resources"
@@ -124,4 +129,8 @@ xattr -cr "$OUTPUT_APP"
 codesign --force --deep --sign - "$OUTPUT_APP"
 codesign --verify --deep --strict "$OUTPUT_APP"
 
-echo "Built $OUTPUT_APP"
+rm -rf "$final_output_app"
+mkdir -p "$(dirname "$final_output_app")"
+ditto "$OUTPUT_APP" "$final_output_app"
+
+echo "Built $final_output_app"
