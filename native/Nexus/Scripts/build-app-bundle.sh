@@ -133,6 +133,9 @@ rm -rf "$final_output_app"
 mkdir -p "$(dirname "$final_output_app")"
 ditto "$OUTPUT_APP" "$final_output_app"
 xattr -cr "$final_output_app"
+xattr -d com.apple.FinderInfo "$final_output_app" 2>/dev/null || true
+codesign --verify --deep --strict "$final_output_app"
+sleep 1
 codesign --verify --deep --strict "$final_output_app"
 
 echo "Built $final_output_app"

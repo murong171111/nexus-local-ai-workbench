@@ -6461,6 +6461,8 @@ final class ModelBehaviorTests: XCTestCase {
         let afterCopy = script[copy.upperBound...]
 
         XCTAssertTrue(afterCopy.contains("xattr -cr \"$final_output_app\""))
+        XCTAssertTrue(afterCopy.contains("xattr -d com.apple.FinderInfo \"$final_output_app\""))
+        XCTAssertTrue(afterCopy.contains("sleep 1"))
         XCTAssertTrue(afterCopy.contains("codesign --verify --deep --strict \"$final_output_app\""))
     }
 
