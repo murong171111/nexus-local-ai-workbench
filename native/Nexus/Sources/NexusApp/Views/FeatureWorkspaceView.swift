@@ -66,6 +66,12 @@ enum FeatureFactsPresentation {
     static func linkedTaskLabel(_ count: Int) -> String {
         "关联任务 \(count)"
     }
+
+    static func linkedTaskCount(for feature: WorkspaceFeature, tasks: [WorkspaceTask]) -> Int {
+        tasks.filter {
+            NativeWorkspaceTaskParser.isLinked(taskID: $0.id, detail: $0.detail, to: feature)
+        }.count
+    }
 }
 
 struct FeatureFactsRow: View {
@@ -74,9 +80,7 @@ struct FeatureFactsRow: View {
     var compact = false
 
     private var linkedTaskCount: Int {
-        workspace.tasks.filter {
-            NativeWorkspaceTaskParser.featureAttribution(in: $0.detail).id == feature.id
-        }.count
+        FeatureFactsPresentation.linkedTaskCount(for: feature, tasks: workspace.tasks)
     }
 
     var body: some View {
@@ -118,6 +122,29 @@ struct FeatureFactsList: View {
     }
 }
 
+enum ConfirmedFeatureDevelopmentPresentation {
+    static func actionableFeatures(in features: [WorkspaceFeature]) -> [WorkspaceFeature] {
+        features.filter {
+            $0.status != .draft && $0.status != .done && $0.status != .cancelled
+        }
+    }
+
+    static func currentFeature(
+        in features: [WorkspaceFeature],
+        selectedID: WorkspaceFeature.ID?
+    ) -> WorkspaceFeature? {
+        let actionable = actionableFeatures(in: features)
+        return selectedID.flatMap { id in actionable.first { $0.id == id } } ?? actionable.first
+    }
+
+    static func remainingFeatures(
+        in features: [WorkspaceFeature],
+        currentFeatureID: WorkspaceFeature.ID?
+    ) -> [WorkspaceFeature] {
+        actionableFeatures(in: features).filter { $0.id != currentFeatureID }
+    }
+}
+
 struct ConfirmedFeatureDevelopmentView: View {
     @EnvironmentObject private var appState: AppState
     let workspace: WorkspaceSummary
@@ -127,14 +154,10 @@ struct ConfirmedFeatureDevelopmentView: View {
     @State private var handedOffEvidence: FeatureEvidence?
 
     private var feature: WorkspaceFeature? {
-        let actionable = features.filter { feature in
-            feature.status != .done && feature.status != .cancelled
-        }
-        if let selectedID = appState.selectedContextFeatureIDsByWorkspace[workspace.id],
-           let selected = actionable.first(where: { $0.id == selectedID }) {
-            return selected
-        }
-        return actionable.first
+        ConfirmedFeatureDevelopmentPresentation.currentFeature(
+            in: features,
+            selectedID: appState.selectedContextFeatureIDsByWorkspace[workspace.id]
+        )
     }
 
     var body: some View {
@@ -171,7 +194,10 @@ struct ConfirmedFeatureDevelopmentView: View {
                         .foregroundStyle(.orange)
                         .textSelection(.enabled)
                 }
-                let remaining = features.filter { $0.id != feature.id }
+                let remaining = ConfirmedFeatureDevelopmentPresentation.remainingFeatures(
+                    in: features,
+                    currentFeatureID: feature.id
+                )
                 if !remaining.isEmpty {
                     Divider()
                     FeatureFactsList(features: remaining, workspace: workspace, compact: true)
@@ -185,9 +211,10 @@ struct ConfirmedFeatureDevelopmentView: View {
     }
 
     private func evidenceSummary(for feature: WorkspaceFeature) -> String {
-        let linkedTasks = workspace.tasks.filter {
-            NativeWorkspaceTaskParser.featureAttribution(in: $0.detail).id == feature.id
-        }
+        let linkedTaskCount = FeatureFactsPresentation.linkedTaskCount(
+            for: feature,
+            tasks: workspace.tasks
+        )
         let state: String
         if feature.evidenceStale {
             state = "证据待复核"
@@ -196,7 +223,7 @@ struct ConfirmedFeatureDevelopmentView: View {
         } else {
             state = "暂无归属证据"
         }
-        return "\(FeatureFactsPresentation.linkedTaskLabel(linkedTasks.count)) · \(state)"
+        return "\(FeatureFactsPresentation.linkedTaskLabel(linkedTaskCount)) · \(state)"
     }
 }
 

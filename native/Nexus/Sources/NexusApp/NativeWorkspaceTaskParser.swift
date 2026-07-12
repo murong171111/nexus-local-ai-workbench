@@ -169,4 +169,21 @@ enum NativeWorkspaceTaskParser {
         }
         return (String(tokens[0].dropFirst("feature=".count)), nil)
     }
+
+    static func isLinked(taskID: String, detail: String, to feature: WorkspaceFeature) -> Bool {
+        feature.taskIDs.contains(taskID) || featureAttribution(in: detail).id == feature.id
+    }
+
+    static func isActiveStatus(_ status: String) -> Bool {
+        let normalized = status.lowercased()
+        return !["done", "closed", "resolved", "完成", "deferred", "延期", "cancel", "取消"]
+            .contains { normalized.contains($0) }
+    }
+
+    static func containsIdentifierToken(_ identifier: String, in text: String) -> Bool {
+        guard !identifier.isEmpty else { return false }
+        return text.split { character in
+            !character.isLetter && !character.isNumber && character != "-" && character != "_"
+        }.contains(Substring(identifier))
+    }
 }

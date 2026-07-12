@@ -2581,6 +2581,7 @@ final class FeatureWorkflowTests: XCTestCase {
         | 任务 | 状态 | 说明 |
         | --- | --- | --- |
         | Selected active task | 进行中 | feature=F-002 event=T-002 |
+        | Selected active legacy detail | 进行中 | feature=F-002 event=T-005 legacy cancelled flow retained for context |
         | Selected done task | 已完成 | feature=F-002 event=T-003 |
         | Selected cancelled task | 已取消 | feature=F-002 event=T-004 |
         | Unrelated active task | 进行中 | feature=F-001 event=T-001 |
@@ -2588,11 +2589,23 @@ final class FeatureWorkflowTests: XCTestCase {
         try """
         # Changes
 
-        ## unrelated
-        - F-001 billing change
+        ## bounded-out
+        - F-002 bounded-out old change
 
-        ## selected
-        - F-002 snapshot change
+        ## older-selected
+        - F-002 older relevant change
+
+        ## unrelated
+        - F-001 unrelated change
+
+        ## middle-selected
+        - F-002 middle relevant change
+
+        ## newest-selected
+        - F-002 newest relevant change
+
+        ## prefix-collision
+        - F-0020 prefix-only change
         """.write(to: root.appendingPathComponent("changes.md"), atomically: true, encoding: .utf8)
         let workspace = demandInputWorkspace(path: root.path)
         let appState = makeAppState(workspace: workspace, root: root)
@@ -2602,10 +2615,15 @@ final class FeatureWorkflowTests: XCTestCase {
         XCTAssertTrue(prompt.contains("F-002"))
         XCTAssertTrue(prompt.contains("Selected feature"))
         XCTAssertTrue(prompt.contains("Selected active task"))
-        XCTAssertTrue(prompt.contains("F-002 snapshot change"))
+        XCTAssertTrue(prompt.contains("Selected active legacy detail"))
+        XCTAssertTrue(prompt.contains("F-002 older relevant change"), prompt)
+        XCTAssertTrue(prompt.contains("F-002 middle relevant change"))
+        XCTAssertTrue(prompt.contains("F-002 newest relevant change"))
         XCTAssertTrue(prompt.contains("实现并验证已确认功能点"))
         XCTAssertTrue(prompt.contains("order-service"))
         XCTAssertFalse(prompt.contains("F-001"))
+        XCTAssertFalse(prompt.contains("F-0020"), prompt)
+        XCTAssertFalse(prompt.contains("bounded-out old change"))
         XCTAssertFalse(prompt.contains("Selected done task"))
         XCTAssertFalse(prompt.contains("Selected cancelled task"))
         XCTAssertFalse(prompt.contains("Unrelated active task"))

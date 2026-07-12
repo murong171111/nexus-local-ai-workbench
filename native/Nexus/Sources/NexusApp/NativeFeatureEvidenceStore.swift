@@ -55,8 +55,7 @@ enum NativeFeatureEvidenceStore {
             readErrors.append("tasks.md: \(error.localizedDescription)")
         }
         let linkedTasks = taskSnapshots.filter { task in
-            feature.taskIDs.contains(task.id)
-                || NativeWorkspaceTaskParser.featureAttribution(in: task.detail).id == feature.id
+            NativeWorkspaceTaskParser.isLinked(taskID: task.id, detail: task.detail, to: feature)
         }
         let linkedTaskIDs = linkedTasks.map(\.id).sorted()
         let missingDeclaredTasks = Set(feature.taskIDs).subtracting(linkedTaskIDs)

@@ -6365,9 +6365,64 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(
             featureView.contains("openConfirmedFeatureInCodex(for: workspace, featureID: feature.id)")
         )
-        XCTAssertTrue(featureView.contains("feature.status != .done && feature.status != .cancelled"))
+        XCTAssertTrue(featureView.contains("ConfirmedFeatureDevelopmentPresentation.currentFeature("))
+        XCTAssertTrue(featureView.contains("$0.status != .draft && $0.status != .done && $0.status != .cancelled"))
         XCTAssertEqual(featureView.components(separatedBy: "Label(\"交给 Codex 开发\"").count - 1, 1)
         XCTAssertFalse(featureView.contains("Codex 处理中"))
+    }
+
+    func testConfirmedFeatureDevelopmentExcludesDraftDoneAndCancelledFromCurrentAndRemaining() throws {
+        func feature(_ id: String, _ status: FeatureStatus) -> WorkspaceFeature {
+            WorkspaceFeature(
+                id: id, title: id, status: status, verification: .code,
+                autoComplete: true, sources: [], services: [], taskIDs: [], evidenceIDs: [],
+                description: "", completedAt: nil, completedBy: nil, completionNote: nil,
+                evidenceStale: false, preservedLines: []
+            )
+        }
+        let features = [
+            feature("DRAFT-001", .draft), feature("F-001", .todo),
+            feature("F-002", .inProgress), feature("F-003", .done),
+            feature("F-004", .cancelled)
+        ]
+
+        let current = ConfirmedFeatureDevelopmentPresentation.currentFeature(
+            in: features,
+            selectedID: "DRAFT-001"
+        )
+        let remaining = ConfirmedFeatureDevelopmentPresentation.remainingFeatures(
+            in: features,
+            currentFeatureID: current?.id
+        )
+
+        XCTAssertEqual(current?.id, "F-001")
+        XCTAssertEqual(remaining.map(\.id), ["F-002"])
+        XCTAssertFalse(remaining.contains { $0.status == .draft })
+    }
+
+    func testFeatureFactsLinkedTaskCountIncludesExplicitTaskIDsAndExactAttribution() {
+        let feature = WorkspaceFeature(
+            id: "F-002", title: "Linked tasks", status: .todo, verification: .code,
+            autoComplete: true, sources: [], services: [], taskIDs: ["explicit-task"], evidenceIDs: [],
+            description: "", completedAt: nil, completedBy: nil, completionNote: nil,
+            evidenceStale: false, preservedLines: []
+        )
+        let tasks = [
+            WorkspaceTask(
+                id: "explicit-task", title: "Explicit", status: "进行中", detail: "no marker",
+                priority: "medium", source: "workspace", sourceEventID: nil, sourceLine: 1
+            ),
+            WorkspaceTask(
+                id: "attributed-task", title: "Attributed", status: "进行中", detail: "feature=F-002",
+                priority: "medium", source: "workspace", sourceEventID: nil, sourceLine: 2
+            ),
+            WorkspaceTask(
+                id: "prefix-task", title: "Prefix", status: "进行中", detail: "feature=F-0020",
+                priority: "medium", source: "workspace", sourceEventID: nil, sourceLine: 3
+            )
+        ]
+
+        XCTAssertEqual(FeatureFactsPresentation.linkedTaskCount(for: feature, tasks: tasks), 2)
     }
 
     func testFeatureFactsLinkedTaskCopyIsChineseFirst() {

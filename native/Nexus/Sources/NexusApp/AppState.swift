@@ -4546,23 +4546,19 @@ final class AppState: ObservableObject {
                 let response = try await Task.detached(priority: .userInitiated) {
                     let source = try NativeSessionChangeStore.contextSourceSnapshot(
                         workspacePath: workspacePath,
-                        workspaceFolder: workspaceFolder
+                        workspaceFolder: workspaceFolder,
+                        changeLimit: .max
                     )
                     guard let feature = source.featureDocument.features.first(where: {
                         $0.id == featureID && $0.status != .cancelled && $0.status != .draft
                     }) else { return nil as NativeHandoffWriteResponse? }
                     let linkedTasks = source.tasks.filter { task in
-                        let status = "\(task.status) \(task.detail)".lowercased()
-                        let isActive = !status.contains("done")
-                            && !status.contains("完成")
-                            && !status.contains("deferred")
-                            && !status.contains("延期")
-                            && !status.contains("cancel")
-                            && !status.contains("取消")
-                        return isActive && (
-                            feature.taskIDs.contains(task.id)
-                                || NativeWorkspaceTaskParser.featureAttribution(in: task.detail).id == feature.id
-                        )
+                        NativeWorkspaceTaskParser.isActiveStatus(task.status)
+                            && NativeWorkspaceTaskParser.isLinked(
+                                taskID: task.id,
+                                detail: task.detail,
+                                to: feature
+                            )
                     }
                     let services = workspaceServices.filter { feature.services.contains($0.name) }
                     let repositoryPaths = Dictionary(uniqueKeysWithValues: services.map { service in
@@ -4609,9 +4605,9 @@ final class AppState: ObservableObject {
                             return "\(service): head=\(repositories.heads[service] ?? "unavailable"), \(diff)"
                         },
                         latestRelevantCheck: latestCheck,
-                        confirmedChanges: source.confirmedChanges.filter {
-                            $0.localizedCaseInsensitiveContains(feature.id)
-                        },
+                        confirmedChanges: Array(source.confirmedChanges.lazy.filter {
+                            NativeWorkspaceTaskParser.containsIdentifierToken(feature.id, in: $0)
+                        }.prefix(3)),
                         evidence: evidencePaths.map { NativeContextEvidence(path: $0, summary: nil) },
                         sourceRevisions: source.sourceRevisions.mapValues(\.token),
                         featureProposal: nil
