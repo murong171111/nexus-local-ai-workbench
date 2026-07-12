@@ -29,6 +29,24 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertNotNil(appState.lastWorkspaceRefreshAt)
     }
 
+    @MainActor
+    func testFailedBridgeRefreshPreservesPreviousRefreshTime() async throws {
+        let appState = appStateForAutomationTests(workspaces: [])
+        await appState.refreshFromBridge()
+        let previousRefreshAt = try XCTUnwrap(appState.lastWorkspaceRefreshAt)
+
+        let invalidRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nexus-refresh-failure-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: invalidRoot) }
+        try Data("file".utf8).write(to: invalidRoot)
+        appState.workspaceRoot = invalidRoot.path
+
+        await appState.refreshFromBridge()
+
+        XCTAssertEqual(appState.agentStatus.title, "Bridge error")
+        XCTAssertEqual(appState.lastWorkspaceRefreshAt, previousRefreshAt)
+    }
+
     func testPreviewBridgeOptionalFeedsAreEmpty() async throws {
         let bridge = PreviewNexusBridge()
 
