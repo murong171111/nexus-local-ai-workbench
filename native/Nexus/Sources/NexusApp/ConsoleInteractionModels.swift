@@ -61,6 +61,26 @@ enum WorkspaceConsoleStageGroup: String, CaseIterable, Hashable {
     }
 }
 
+enum WorkspaceConsoleSurface: Hashable {
+    case featureDemand
+    case development
+    case delivery
+    case archive
+
+    init(_ stageGroup: WorkspaceConsoleStageGroup) {
+        switch stageGroup {
+        case .created, .demandAndFeatures:
+            self = .featureDemand
+        case .development:
+            self = .development
+        case .delivery:
+            self = .delivery
+        case .archive:
+            self = .archive
+        }
+    }
+}
+
 enum WorkspaceConsoleUtilityPanel: String, CaseIterable, Identifiable {
     case features
     case filesAndSQL
@@ -92,6 +112,7 @@ struct WorkspaceConsolePresentation {
     static let defaultUtilityPanel: WorkspaceConsoleUtilityPanel? = nil
 
     let stage: WorkspaceConsoleStageGroup
+    let surface: WorkspaceConsoleSurface
     let reason: String
     let primaryActions: [WorkspaceMainStageAction]
 
@@ -100,8 +121,10 @@ struct WorkspaceConsolePresentation {
     }
 
     static func make(stage: WorkspaceMainStage) -> Self {
-        Self(
-            stage: WorkspaceConsoleStageGroup(stage: stage),
+        let stageGroup = WorkspaceConsoleStageGroup(stage: stage)
+        return Self(
+            stage: stageGroup,
+            surface: WorkspaceConsoleSurface(stageGroup),
             reason: stage.reason,
             primaryActions: [stage.primaryAction]
         )

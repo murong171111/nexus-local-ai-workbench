@@ -6284,7 +6284,47 @@ final class ModelBehaviorTests: XCTestCase {
 
         XCTAssertLessThanOrEqual(presentation.primaryActions.count, 1)
         XCTAssertEqual(presentation.stage, WorkspaceConsoleStageGroup(stage: workspace.mainStage()))
+        XCTAssertEqual(presentation.surface, WorkspaceConsoleSurface(presentation.stage))
         XCTAssertEqual(presentation.reason, workspace.mainStage().reason)
+    }
+
+    func testConsoleStageGroupsMapToDistinctMainSurfaces() {
+        XCTAssertEqual(
+            WorkspaceConsoleStageGroup.allCases.map(WorkspaceConsoleSurface.init),
+            [.featureDemand, .featureDemand, .development, .delivery, .archive]
+        )
+    }
+
+    func testConsoleViewWiresSelectedStageSurfaceAndSharedFeatureFacts() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let views = packageRoot.appendingPathComponent("Sources/NexusApp/Views")
+        let rootView = try String(
+            contentsOf: views.appendingPathComponent("RootView.swift"),
+            encoding: .utf8
+        )
+        let featureView = try String(
+            contentsOf: views.appendingPathComponent("FeatureWorkspaceView.swift"),
+            encoding: .utf8
+        )
+        let header = try XCTUnwrap(
+            rootView.components(separatedBy: "private struct WorkspaceConsoleHeader").last?
+                .components(separatedBy: "private struct WorkspaceConsoleStageRail").first
+        )
+
+        XCTAssertTrue(rootView.contains("@State private var selectedStageGroup"))
+        XCTAssertTrue(rootView.contains("selectedStageGroup = group"))
+        XCTAssertTrue(rootView.contains("switch surface"))
+        XCTAssertTrue(rootView.contains("case .featureDemand:"))
+        XCTAssertTrue(rootView.contains("case .development:"))
+        XCTAssertTrue(rootView.contains("case .delivery:"))
+        XCTAssertTrue(rootView.contains("case .archive:"))
+        XCTAssertFalse(rootView.contains("WorkspaceConsoleFeatureUtility"))
+        XCTAssertFalse(header.contains("ArchivedBadge"))
+        XCTAssertTrue(rootView.contains("FeatureFactsList("))
+        XCTAssertTrue(featureView.contains("FeatureFactsRow("))
     }
 
     func testWorkspaceStageAnswerRequiresRoutedEvidenceFile() {

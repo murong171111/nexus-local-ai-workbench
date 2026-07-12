@@ -86,6 +86,56 @@ enum FeatureWorkspaceEvidencePresentation {
     }
 }
 
+struct FeatureFactsRow: View {
+    let feature: WorkspaceFeature
+    let workspace: WorkspaceSummary
+    var compact = false
+
+    private var linkedTaskCount: Int {
+        workspace.tasks.filter {
+            NativeWorkspaceTaskParser.featureAttribution(in: $0.detail).id == feature.id
+        }.count
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(feature.id)
+                    .font(.caption.monospaced().weight(.semibold))
+                Text(feature.title)
+                    .lineLimit(compact ? 1 : 2)
+                Spacer()
+                Text(feature.status.rawValue)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Text("\(feature.verification.rawValue) · \(linkedTaskCount) linked tasks")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if feature.evidenceStale {
+                Label("证据待复核", systemImage: "exclamationmark.triangle")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.orange)
+            }
+        }
+    }
+}
+
+struct FeatureFactsList: View {
+    let features: [WorkspaceFeature]
+    let workspace: WorkspaceSummary
+    var compact = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(features) { feature in
+                FeatureFactsRow(feature: feature, workspace: workspace, compact: compact)
+                if feature.id != features.last?.id { Divider() }
+            }
+        }
+    }
+}
+
 @MainActor
 final class FeatureWorkspaceAutosavePolicy {
     private let delayNanoseconds: UInt64
@@ -801,20 +851,8 @@ struct FeatureWorkspaceView: View {
 
     private func featureRow(_ feature: WorkspaceFeature) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(feature.id)
-                    .font(.caption.monospaced().weight(.semibold))
-                Text(feature.title)
-                    .lineLimit(2)
-                Spacer()
-                Text(feature.status.rawValue)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            FeatureFactsRow(feature: feature, workspace: workspace)
             HStack(spacing: 8) {
-                Text("\(feature.verification.rawValue) · \(linkedTaskCount(feature.id)) linked tasks")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
                 Spacer()
                 Button {
                     editingFeature = feature
@@ -837,11 +875,7 @@ struct FeatureWorkspaceView: View {
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
-            if feature.evidenceStale {
-                Label("证据待复核", systemImage: "exclamationmark.triangle")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.orange)
-            } else if let evaluation = featureEvaluation(feature.id) {
+            if !feature.evidenceStale, let evaluation = featureEvaluation(feature.id) {
                 Text(evaluationLabel(evaluation.decision))
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -1018,12 +1052,6 @@ struct FeatureWorkspaceView: View {
     private var canOfferLegacyMigration: Bool {
         !workspace.usesFeatureCenteredWorkflow
             && appState.featureRevisionsByWorkspace[workspace.id] == .missing
-    }
-
-    private func linkedTaskCount(_ featureID: String) -> Int {
-        workspace.tasks.filter {
-            NativeWorkspaceTaskParser.featureAttribution(in: $0.detail).id == featureID
-        }.count
     }
 
     private var taskFeatureWarnings: [String] {

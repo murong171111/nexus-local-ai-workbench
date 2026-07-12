@@ -2537,6 +2537,7 @@ private struct WorkspaceConsoleView: View {
     @Binding var isSettingsPresented: Bool
     let backToGlobal: () -> Void
     @State private var navigationTarget: WorkspaceConsoleTarget?
+    @State private var selectedStageGroup: WorkspaceConsoleStageGroup?
     @State private var selectedUtilityPanel = WorkspaceConsolePresentation.defaultUtilityPanel
     @FocusState private var demandInputFocused: Bool
 
@@ -2544,6 +2545,9 @@ private struct WorkspaceConsoleView: View {
         ScrollViewReader { proxy in
             if let workspace = appState.selectedWorkspace {
                 let stage = mainStage(for: workspace)
+                let currentStageGroup = WorkspaceConsoleStageGroup(stage: stage)
+                let visibleStageGroup = selectedStageGroup ?? currentStageGroup
+                let surface = WorkspaceConsoleSurface(visibleStageGroup)
 
                 GeometryReader { geometry in
                     let usesOverlayDrawer = geometry.size.width < 1060
@@ -2555,7 +2559,10 @@ private struct WorkspaceConsoleView: View {
                         Divider()
 
                         HStack(spacing: 0) {
-                            WorkspaceConsoleStageRail(stage: stage) { group in
+                            WorkspaceConsoleStageRail(
+                                stage: stage,
+                                selectedGroup: visibleStageGroup
+                            ) { group in
                                 navigate(to: group, proxy: proxy)
                             }
                             .frame(width: 146)
@@ -2564,17 +2571,19 @@ private struct WorkspaceConsoleView: View {
                             VStack(spacing: 0) {
                                 WorkspaceConsoleFocusBand(
                                     stage: stage,
-                                    showsAction: !WorkspaceConsoleLayoutPolicy().focusesFeatureFlow(
-                                        usesFeatureCenteredWorkflow: workspace.usesFeatureCenteredWorkflow,
-                                        stageID: stage.id
-                                    ),
+                                    showsAction: surface != .featureDemand,
                                     action: { run(stage.primaryAction, in: workspace, proxy: proxy) }
                                 )
                                 .padding(18)
 
                                 ZStack(alignment: .trailing) {
                                     ScrollView {
-                                        demandInput(for: workspace)
+                                        stageSurface(
+                                            surface,
+                                            workspace: workspace,
+                                            stage: stage,
+                                            proxy: proxy
+                                        )
                                             .frame(maxWidth: .infinity, alignment: .topLeading)
                                             .padding(.horizontal, 18)
                                             .padding(.bottom, 18)
@@ -2603,6 +2612,7 @@ private struct WorkspaceConsoleView: View {
                 }
                 .background(NexusPalette.background)
                 .onChange(of: workspace.id) { _ in
+                    selectedStageGroup = nil
                     selectedUtilityPanel = WorkspaceConsolePresentation.defaultUtilityPanel
                 }
             } else {
@@ -2619,16 +2629,82 @@ private struct WorkspaceConsoleView: View {
     }
 
     private func navigate(to group: WorkspaceConsoleStageGroup, proxy: ScrollViewProxy) {
+        selectedStageGroup = group
         switch group {
         case .created, .demandAndFeatures:
             routeToDemandInput(proxy)
-        case .development:
-            selectedUtilityPanel = .features
-        case .delivery:
-            selectedUtilityPanel = .evidenceAndChecks
-        case .archive:
-            selectedUtilityPanel = .changesAndHandoffs
+        case .development, .delivery, .archive:
+            break
         }
+    }
+
+    @ViewBuilder
+    private func stageSurface(
+        _ surface: WorkspaceConsoleSurface,
+        workspace: WorkspaceSummary,
+        stage: WorkspaceMainStage,
+        proxy: ScrollViewProxy
+    ) -> some View {
+        switch surface {
+        case .featureDemand:
+            demandInput(for: workspace)
+        case .development:
+            VStack(alignment: .leading, spacing: 16) {
+                stageSummary(stage, workspace: workspace, proxy: proxy)
+                SectionBlock(title: "开发功能点") {
+                    let features = appState.featuresByWorkspace[workspace.id]?.features ?? []
+                    if features.isEmpty {
+                        Text("暂无已确认功能点")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        FeatureFactsList(features: features, workspace: workspace)
+                    }
+                }
+                WorkspaceConsoleSummaryStrip(workspace: workspace)
+            }
+        case .delivery:
+            VStack(alignment: .leading, spacing: 16) {
+                stageSummary(stage, workspace: workspace, proxy: proxy)
+                WorkspaceConsoleEvidenceGroups(
+                    workspace: workspace,
+                    stage: stage,
+                    openDocument: { key, fallback in
+                        Task {
+                            await appState.loadDocument(
+                                path: documentPath(for: key, fallback: fallback, in: workspace)
+                            )
+                        }
+                    },
+                    openSql: {
+                        Task { await appState.openSqlReviewDocument(in: workspace) }
+                    }
+                )
+            }
+        case .archive:
+            VStack(alignment: .leading, spacing: 16) {
+                stageSummary(stage, workspace: workspace, proxy: proxy)
+                SectionBlock(title: "变更与交接记录") {
+                    ActivityTimelineView(events: workspace.activities)
+                }
+            }
+        }
+    }
+
+    private func stageSummary(
+        _ stage: WorkspaceMainStage,
+        workspace: WorkspaceSummary,
+        proxy: ScrollViewProxy
+    ) -> some View {
+        WorkspaceMainStageSummaryView(
+            stage: stage,
+            showsAction: false,
+            action: {},
+            evidenceAction: { link in
+                guard let action = link.action else { return }
+                run(action, in: workspace, proxy: proxy)
+            }
+        )
     }
 
     private func utilityDrawer(
@@ -2824,9 +2900,6 @@ private struct WorkspaceConsoleHeader: View {
                 if workspace.riskLevel != .low {
                     RiskBadge(level: workspace.riskLevel)
                 }
-                if workspace.isArchived {
-                    ArchivedBadge()
-                }
             }
         }
     }
@@ -2834,16 +2907,17 @@ private struct WorkspaceConsoleHeader: View {
 
 private struct WorkspaceConsoleStageRail: View {
     let stage: WorkspaceMainStage
+    let selectedGroup: WorkspaceConsoleStageGroup
     let action: (WorkspaceConsoleStageGroup) -> Void
 
-    private var activeGroup: WorkspaceConsoleStageGroup {
+    private var currentGroup: WorkspaceConsoleStageGroup {
         WorkspaceConsoleStageGroup(stage: stage.id)
     }
 
     var body: some View {
         VStack(spacing: 8) {
             ForEach(WorkspaceConsoleStageGroup.allCases, id: \.self) { group in
-                let isActive = group == activeGroup
+                let isActive = group == selectedGroup
                 let isCompleted = completedGroups.contains(group)
 
                 Button {
@@ -2870,7 +2944,7 @@ private struct WorkspaceConsoleStageRail: View {
                         .stroke(isActive ? NexusPalette.accent.opacity(0.25) : .clear)
                 }
                 .accessibilityLabel(label(for: group))
-                .accessibilityValue(isActive ? "当前阶段" : (isCompleted ? "已完成" : "未开始"))
+                .accessibilityValue(accessibilityValue(for: group, isSelected: isActive, isCompleted: isCompleted))
             }
             Spacer()
         }
@@ -2879,8 +2953,17 @@ private struct WorkspaceConsoleStageRail: View {
 
     private var completedGroups: Set<WorkspaceConsoleStageGroup> {
         let groups = WorkspaceConsoleStageGroup.allCases
-        guard let activeIndex = groups.firstIndex(of: activeGroup) else { return [] }
+        guard let activeIndex = groups.firstIndex(of: currentGroup) else { return [] }
         return Set(groups.prefix(activeIndex))
+    }
+
+    private func accessibilityValue(
+        for group: WorkspaceConsoleStageGroup,
+        isSelected: Bool,
+        isCompleted: Bool
+    ) -> String {
+        let stageValue = group == currentGroup ? "当前阶段" : (isCompleted ? "已完成" : "未开始")
+        return isSelected ? "已选择，\(stageValue)" : stageValue
     }
 
     private func label(for group: WorkspaceConsoleStageGroup) -> String {
@@ -2990,6 +3073,7 @@ private struct WorkspaceConsoleUtilityRail: View {
 }
 
 private struct WorkspaceConsoleUtilityDrawer: View {
+    @EnvironmentObject private var appState: AppState
     let panel: WorkspaceConsoleUtilityPanel
     let workspace: WorkspaceSummary
     let stage: WorkspaceMainStage
@@ -3027,7 +3111,16 @@ private struct WorkspaceConsoleUtilityDrawer: View {
     private var utilityContent: some View {
         switch panel {
         case .features:
-            WorkspaceConsoleFeatureUtility(workspace: workspace)
+            SectionBlock(title: "功能点") {
+                let features = appState.featuresByWorkspace[workspace.id]?.features ?? []
+                if features.isEmpty {
+                    Text("暂无已确认功能点")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    FeatureFactsList(features: features, workspace: workspace, compact: true)
+                }
+            }
         case .filesAndSQL:
             WorkspaceConsoleDocumentPanel(
                 workspace: workspace,
@@ -3050,41 +3143,6 @@ private struct WorkspaceConsoleUtilityDrawer: View {
                     ActivityTimelineView(events: workspace.activities)
                 }
                 NextStepQueueView(actions: workspace.sessionActions, runAction: runSessionAction)
-            }
-        }
-    }
-}
-
-private struct WorkspaceConsoleFeatureUtility: View {
-    @EnvironmentObject private var appState: AppState
-    let workspace: WorkspaceSummary
-
-    private var features: [WorkspaceFeature] {
-        appState.featuresByWorkspace[workspace.id]?.features ?? []
-    }
-
-    var body: some View {
-        SectionBlock(title: "功能点") {
-            if features.isEmpty {
-                Text("暂无已确认功能点")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(features) { feature in
-                        HStack(alignment: .top, spacing: 8) {
-                            Image(systemName: feature.status == .done ? "checkmark.circle.fill" : "circle")
-                                .foregroundStyle(feature.status == .done ? NexusPalette.success : .secondary)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(feature.title)
-                                    .font(.caption.weight(.semibold))
-                                Text("\(feature.id) · \(feature.status.rawValue)")
-                                    .font(.caption2.monospaced())
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
             }
         }
     }
@@ -5750,9 +5808,22 @@ private struct WorkspaceStatusDiagnosticCardView: View {
 
 private struct WorkspaceMainStageSummaryView: View {
     let stage: WorkspaceMainStage
+    let showsAction: Bool
     let action: () -> Void
     let evidenceAction: (WorkspaceMainStageEvidenceLink) -> Void
     @State private var evidenceExpanded = false
+
+    init(
+        stage: WorkspaceMainStage,
+        showsAction: Bool = true,
+        action: @escaping () -> Void,
+        evidenceAction: @escaping (WorkspaceMainStageEvidenceLink) -> Void
+    ) {
+        self.stage = stage
+        self.showsAction = showsAction
+        self.action = action
+        self.evidenceAction = evidenceAction
+    }
 
     private var answer: WorkspaceStageAnswer {
         stage.answer
@@ -5788,11 +5859,13 @@ private struct WorkspaceMainStageSummaryView: View {
 
                     Spacer()
 
-                    Button(action: action) {
-                        Label(stage.primaryActionLabel, systemImage: stage.primaryActionSystemImage)
+                    if showsAction {
+                        Button(action: action) {
+                            Label(stage.primaryActionLabel, systemImage: stage.primaryActionSystemImage)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
                 }
 
                 HStack(spacing: 8) {
