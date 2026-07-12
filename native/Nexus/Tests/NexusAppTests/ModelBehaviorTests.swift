@@ -6319,6 +6319,10 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(presentation.stage, WorkspaceConsoleStageGroup(stage: workspace.mainStage()))
         XCTAssertEqual(presentation.surface, WorkspaceConsoleSurface(presentation.stage))
         XCTAssertEqual(presentation.reason, workspace.mainStage().reason)
+        XCTAssertFalse(WorkspaceConsolePresentation.showsFocusAction(surface: .development, stageID: .development))
+        XCTAssertTrue(WorkspaceConsolePresentation.showsFocusAction(surface: .development, stageID: .worktreeSetup))
+        XCTAssertTrue(WorkspaceConsolePresentation.canHandOffConfirmedFeature(stageID: .development))
+        XCTAssertFalse(WorkspaceConsolePresentation.canHandOffConfirmedFeature(stageID: .worktreeSetup))
     }
 
     func testConsoleStageGroupsMapToDistinctMainSurfaces() {
@@ -6432,6 +6436,32 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(featureView.contains("$0.status != .draft && $0.status != .done && $0.status != .cancelled"))
         XCTAssertEqual(featureView.components(separatedBy: "Label(\"交给 Codex 开发\"").count - 1, 1)
         XCTAssertFalse(featureView.contains("Codex 处理中"))
+        XCTAssertTrue(rootView.contains("WorkspaceConsolePresentation.showsFocusAction("))
+        XCTAssertTrue(rootView.contains("WorkspaceConsolePresentation.canHandOffConfirmedFeature("))
+
+        let confirmedList = try XCTUnwrap(
+            featureView.components(separatedBy: "private var confirmedFeatureList").last?
+                .components(separatedBy: "private var handoffFailureFeedback").first
+        )
+        XCTAssertTrue(confirmedList.contains("featureRow(feature)"))
+        XCTAssertTrue(confirmedList.contains("isAddingFeature = true"))
+        XCTAssertTrue(featureView.contains("private func selectFeature(_ feature: WorkspaceFeature)"))
+    }
+
+    func testAppBundleBuildSanitizesAndVerifiesDeclaredOutput() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let script = try String(
+            contentsOf: packageRoot.appendingPathComponent("Scripts/build-app-bundle.sh"),
+            encoding: .utf8
+        )
+        let copy = try XCTUnwrap(script.range(of: "ditto \"$OUTPUT_APP\" \"$final_output_app\""))
+        let afterCopy = script[copy.upperBound...]
+
+        XCTAssertTrue(afterCopy.contains("xattr -cr \"$final_output_app\""))
+        XCTAssertTrue(afterCopy.contains("codesign --verify --deep --strict \"$final_output_app\""))
     }
 
     func testConfirmedFeatureDevelopmentExcludesDraftDoneAndCancelledFromCurrentAndRemaining() throws {

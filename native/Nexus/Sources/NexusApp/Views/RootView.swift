@@ -2540,6 +2540,7 @@ private struct WorkspaceConsoleView: View {
     @State private var navigationTarget: WorkspaceConsoleTarget?
     @State private var selectedStageGroup: WorkspaceConsoleStageGroup?
     @State private var selectedUtilityPanel = WorkspaceConsolePresentation.defaultUtilityPanel
+    @State private var isDocumentViewerPresented = false
     @FocusState private var demandInputFocused: Bool
 
     var body: some View {
@@ -2574,7 +2575,10 @@ private struct WorkspaceConsoleView: View {
                             VStack(spacing: 0) {
                                 WorkspaceConsoleFocusBand(
                                     stage: stage,
-                                    showsAction: surface != .featureDemand,
+                                    showsAction: WorkspaceConsolePresentation.showsFocusAction(
+                                        surface: surface,
+                                        stageID: stage.id
+                                    ),
                                     action: { run(stage.primaryAction, in: workspace, proxy: proxy) }
                                 )
                                 .padding(18)
@@ -2617,6 +2621,14 @@ private struct WorkspaceConsoleView: View {
                 .onChange(of: workspace.id) { _ in
                     selectedStageGroup = nil
                     selectedUtilityPanel = WorkspaceConsolePresentation.defaultUtilityPanel
+                    isDocumentViewerPresented = false
+                    appState.clearDocumentPreview()
+                }
+                .sheet(isPresented: $isDocumentViewerPresented, onDismiss: {
+                    appState.clearDocumentPreview()
+                }) {
+                    WorkspaceConsoleDocumentViewerSheet(workspace: workspace)
+                        .environmentObject(appState)
                 }
             } else {
                 ScrollView {
@@ -2654,7 +2666,13 @@ private struct WorkspaceConsoleView: View {
         case .development:
             VStack(alignment: .leading, spacing: 12) {
                 let features = appState.featuresByWorkspace[workspace.id]?.features ?? []
-                ConfirmedFeatureDevelopmentView(workspace: workspace, features: features)
+                ConfirmedFeatureDevelopmentView(
+                    workspace: workspace,
+                    features: features,
+                    isExecutionReady: WorkspaceConsolePresentation.canHandOffConfirmedFeature(
+                        stageID: stage.id
+                    )
+                )
                     .environmentObject(appState)
                 WorkspaceConsoleStageGateLine(label: "开发下一步", value: stage.primaryActionLabel)
             }
@@ -2677,11 +2695,17 @@ private struct WorkspaceConsoleView: View {
             stage: stage,
             close: { selectedUtilityPanel = nil },
             openDocument: { key, fallback in
+                isDocumentViewerPresented = true
                 Task {
                     await appState.loadDocument(path: documentPath(for: key, fallback: fallback, in: workspace))
                 }
             },
+            openPath: { path in
+                isDocumentViewerPresented = true
+                Task { await appState.loadDocument(path: path) }
+            },
             openSql: {
+                isDocumentViewerPresented = true
                 Task { await appState.openSqlReviewDocument(in: workspace) }
             },
             runSessionAction: { action in
@@ -3051,6 +3075,7 @@ private struct WorkspaceConsoleUtilityDrawer: View {
     let stage: WorkspaceMainStage
     let close: () -> Void
     let openDocument: (String, String) -> Void
+    let openPath: (String) -> Void
     let openSql: () -> Void
     let runSessionAction: (WorkspaceSessionAction) -> Void
 
@@ -3097,6 +3122,7 @@ private struct WorkspaceConsoleUtilityDrawer: View {
             WorkspaceConsoleDocumentPanel(
                 workspace: workspace,
                 openDocument: openDocument,
+                openPath: openPath,
                 openSql: openSql
             )
         case .evidenceAndChecks:
@@ -3208,28 +3234,112 @@ private struct WorkspaceConsoleEvidenceGroups: View {
     }
 }
 
+private let consoleStandardDocumentLinks = [
+    ConsoleFileLink(key: "workspace", label: "workspace.md", fallback: "workspace.md", systemImage: "doc.text"),
+    ConsoleFileLink(key: "status", label: "STATUS.md", fallback: "STATUS.md", systemImage: "gauge.with.dots.needle.67percent"),
+    ConsoleFileLink(key: "services", label: "services.md", fallback: "services.md", systemImage: "square.stack.3d.up"),
+    ConsoleFileLink(key: "branches", label: "branches.md", fallback: "branches.md", systemImage: "arrow.triangle.branch"),
+    ConsoleFileLink(key: "requirements", label: "requirements.md", fallback: "requirements.md", systemImage: "text.badge.checkmark"),
+    ConsoleFileLink(key: "acceptance", label: "acceptance.md", fallback: "acceptance.md", systemImage: "checkmark.seal"),
+    ConsoleFileLink(key: "changes", label: "changes.md", fallback: "changes.md", systemImage: "clock.arrow.circlepath"),
+    ConsoleFileLink(key: "tasks", label: "tasks.md", fallback: "tasks.md", systemImage: "checklist"),
+    ConsoleFileLink(key: "delivery", label: "交付记录.md", fallback: "交付记录.md", systemImage: "shippingbox"),
+    ConsoleFileLink(key: "handoff", label: "handoff.md", fallback: "handoff.md", systemImage: "point.3.connected.trianglepath.dotted"),
+    ConsoleFileLink(key: "worktreeScript", label: "worktree-commands.sh", fallback: "scripts/worktree-commands.sh", systemImage: "terminal")
+]
+
 private struct WorkspaceConsoleDocumentPanel: View {
-    @EnvironmentObject private var appState: AppState
-    @State private var recoveryEntry: ResolvedWorkspaceDocumentEntry?
     let workspace: WorkspaceSummary
     let openDocument: (String, String) -> Void
+    let openPath: (String) -> Void
     let openSql: () -> Void
 
     private var standardEntries: [ConsoleFileLink] {
-        [
-            ConsoleFileLink(key: "workspace", label: "workspace.md", fallback: "workspace.md", systemImage: "doc.text"),
-            ConsoleFileLink(key: "status", label: "STATUS.md", fallback: "STATUS.md", systemImage: "gauge.with.dots.needle.67percent"),
-            ConsoleFileLink(key: "services", label: "services.md", fallback: "services.md", systemImage: "square.stack.3d.up"),
-            ConsoleFileLink(key: "branches", label: "branches.md", fallback: "branches.md", systemImage: "arrow.triangle.branch"),
-            ConsoleFileLink(key: "requirements", label: "requirements.md", fallback: "requirements.md", systemImage: "text.badge.checkmark"),
-            ConsoleFileLink(key: "acceptance", label: "acceptance.md", fallback: "acceptance.md", systemImage: "checkmark.seal"),
-            ConsoleFileLink(key: "changes", label: "changes.md", fallback: "changes.md", systemImage: "clock.arrow.circlepath"),
-            ConsoleFileLink(key: "tasks", label: "tasks.md", fallback: "tasks.md", systemImage: "checklist"),
-            ConsoleFileLink(key: "delivery", label: "交付记录.md", fallback: "交付记录.md", systemImage: "shippingbox"),
-            ConsoleFileLink(key: "handoff", label: "handoff.md", fallback: "handoff.md", systemImage: "point.3.connected.trianglepath.dotted"),
-            ConsoleFileLink(key: "worktreeScript", label: "worktree-commands.sh", fallback: "scripts/worktree-commands.sh", systemImage: "terminal")
-        ]
+        consoleStandardDocumentLinks
     }
+
+    var body: some View {
+        SectionBlock(title: "文档查看") {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("常用文档")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text("点击文档后在大窗口中查看")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button {
+                        openSql()
+                    } label: {
+                        Label("SQL 复查", systemImage: "cylinder.split.1x2")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 132), spacing: 8)], alignment: .leading, spacing: 8) {
+                    ForEach(standardEntries) { link in
+                        Button {
+                            openDocument(link.key, link.fallback)
+                        } label: {
+                            Label(link.label, systemImage: link.systemImage)
+                                .font(.caption.weight(.medium))
+                                .lineLimit(1)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                }
+
+                if !workspace.sqlFiles.isEmpty || !workspace.sqlDocuments.isEmpty {
+                    DisclosureGroup("SQL 文件") {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8)], alignment: .leading, spacing: 8) {
+                            ForEach(workspace.sqlDocuments, id: \.path) { file in
+                                Button {
+                                    openPath(file.path)
+                                } label: {
+                                    Label(file.fileName, systemImage: "doc.text")
+                                        .font(.caption.weight(.medium))
+                                        .lineLimit(1)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
+
+                            ForEach(workspace.sqlFiles, id: \.path) { file in
+                                Button {
+                                    openPath(file.path)
+                                } label: {
+                                    Label(file.fileName, systemImage: file.kind == "rollback" ? "arrow.uturn.backward.circle" : "doc.plaintext")
+                                        .font(.caption.weight(.medium))
+                                        .lineLimit(1)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
+                        }
+                        .padding(.top, 6)
+                    }
+                }
+
+            }
+        }
+    }
+
+    private func documentPath(for link: ConsoleFileLink) -> String {
+        workspace.documentLinks[link.key] ?? "\(workspace.path)/\(link.fallback)"
+    }
+}
+
+private struct WorkspaceConsoleDocumentViewerSheet: View {
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+    @State private var recoveryEntry: ResolvedWorkspaceDocumentEntry?
+    let workspace: WorkspaceSummary
 
     private var activePreview: DocumentSnapshot? {
         guard let document = appState.documentPreview, document.path.hasPrefix(workspace.path) else {
@@ -3257,8 +3367,7 @@ private struct WorkspaceConsoleDocumentPanel: View {
     }
 
     private var activeFocusHint: DocumentFocusHint? {
-        guard let hint = appState.documentFocusHint,
-              activeDocumentPath == hint.path else {
+        guard let hint = appState.documentFocusHint, activeDocumentPath == hint.path else {
             return nil
         }
         return hint
@@ -3269,150 +3378,59 @@ private struct WorkspaceConsoleDocumentPanel: View {
               error.message.localizedCaseInsensitiveContains("does not exist") else {
             return nil
         }
-
-        return standardEntries
-            .map { link in
-                let entry = WorkspaceDocumentEntry(
+        return consoleStandardDocumentLinks.compactMap { link in
+            let path = workspace.documentLinks[link.key] ?? "\(workspace.path)/\(link.fallback)"
+            guard path == error.path else { return nil }
+            return ResolvedWorkspaceDocumentEntry(
+                entry: WorkspaceDocumentEntry(
                     key: link.key,
                     label: link.label,
                     description: "标准工作区文档",
                     systemImage: link.systemImage,
                     fallbackRelativePath: link.fallback
-                )
-                return ResolvedWorkspaceDocumentEntry(
-                    entry: entry,
-                    path: workspace.documentLinks[link.key] ?? "\(workspace.path)/\(link.fallback)"
-                )
-            }
-            .first { $0.path == error.path }
+                ),
+                path: path
+            )
+        }.first
     }
 
     var body: some View {
-        SectionBlock(title: "文档查看") {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text("常用文档")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Text("点击后在下方预览，不离开 Console")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button {
-                        openSql()
-                    } label: {
-                        Label("SQL 复查", systemImage: "cylinder.split.1x2")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
-
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 132), spacing: 8)], alignment: .leading, spacing: 8) {
-                    ForEach(standardEntries) { link in
-                        Button {
-                            openDocument(link.key, link.fallback)
-                        } label: {
-                            Label(link.label, systemImage: link.systemImage)
-                                .font(.caption.weight(.medium))
-                                .lineLimit(1)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(activeDocumentPath == documentPath(for: link) ? NexusPalette.accent : nil)
-                        .controlSize(.small)
-                    }
-                }
-
-                if !workspace.sqlFiles.isEmpty || !workspace.sqlDocuments.isEmpty {
-                    DisclosureGroup("SQL 文件") {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8)], alignment: .leading, spacing: 8) {
-                            ForEach(workspace.sqlDocuments, id: \.path) { file in
-                                Button {
-                                    Task {
-                                        await appState.loadDocument(path: file.path)
-                                    }
-                                } label: {
-                                    Label(file.fileName, systemImage: "doc.text")
-                                        .font(.caption.weight(.medium))
-                                        .lineLimit(1)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                            }
-
-                            ForEach(workspace.sqlFiles, id: \.path) { file in
-                                Button {
-                                    Task {
-                                        await appState.loadDocument(path: file.path)
-                                    }
-                                } label: {
-                                    Label(file.fileName, systemImage: file.kind == "rollback" ? "arrow.uturn.backward.circle" : "doc.plaintext")
-                                        .font(.caption.weight(.medium))
-                                        .lineLimit(1)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                            }
-                        }
-                        .padding(.top, 6)
-                    }
-                }
-
-                documentPreviewContent
+        Group {
+            if let loadingPath = activeLoadingPath {
+                NativeDocumentLoadingView(path: loadingPath)
+            } else if let error = activeDocumentError {
+                NativeDocumentErrorView(
+                    error: error,
+                    canCreateDocument: recoverableEntry != nil,
+                    isCreatingDocument: appState.isCreatingDocument,
+                    retryAction: { Task { await appState.loadDocument(path: error.path) } },
+                    copyPathAction: { copyToPasteboard(error.path) },
+                    finderAction: { Task { await appState.openWorkspaceInFinder(workspace) } },
+                    createAction: { recoveryEntry = recoverableEntry }
+                )
+            } else if let document = activePreview {
+                NativeDocumentPreview(
+                    document: document,
+                    focusHint: activeFocusHint,
+                    copyPathAction: { copyToPasteboard(document.path) },
+                    closeAction: {
+                        appState.clearDocumentPreview()
+                        dismiss()
+                    },
+                    fillsAvailableSpace: true
+                )
+            } else {
+                NativeDocumentEmptyState()
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(18)
+        .background(NexusPalette.background)
+        .frame(minWidth: 920, minHeight: 680)
         .sheet(item: $recoveryEntry) { entry in
             CreateMissingDocumentSheet(workspace: workspace, entry: entry)
                 .environmentObject(appState)
         }
-    }
-
-    @ViewBuilder
-    private var documentPreviewContent: some View {
-        if let loadingPath = activeLoadingPath {
-            NativeDocumentLoadingView(path: loadingPath)
-        } else if let error = activeDocumentError {
-            NativeDocumentErrorView(
-                error: error,
-                canCreateDocument: recoverableEntry != nil,
-                isCreatingDocument: appState.isCreatingDocument,
-                retryAction: {
-                    Task {
-                        await appState.loadDocument(path: error.path)
-                    }
-                },
-                copyPathAction: {
-                    copyToPasteboard(error.path)
-                },
-                finderAction: {
-                    Task {
-                        await appState.openWorkspaceInFinder(workspace)
-                    }
-                },
-                createAction: {
-                    recoveryEntry = recoverableEntry
-                }
-            )
-        } else if let document = activePreview {
-            NativeDocumentPreview(
-                document: document,
-                focusHint: activeFocusHint,
-                copyPathAction: {
-                    copyToPasteboard(document.path)
-                },
-                closeAction: {
-                    appState.clearDocumentPreview()
-                }
-            )
-        } else {
-            NativeDocumentEmptyState()
-        }
-    }
-
-    private func documentPath(for link: ConsoleFileLink) -> String {
-        workspace.documentLinks[link.key] ?? "\(workspace.path)/\(link.fallback)"
     }
 }
 
@@ -9135,6 +9153,7 @@ private struct NativeDocumentPreview: View {
     let focusHint: DocumentFocusHint?
     let copyPathAction: () -> Void
     let closeAction: () -> Void
+    var fillsAvailableSpace = false
     @State private var mode: NativeDocumentMode = .source
 
     private var presentation: WorkspaceDocumentPresentation {
@@ -9252,7 +9271,10 @@ private struct NativeDocumentPreview: View {
                         .textSelection(.enabled)
                 }
             }
-            .frame(minHeight: 220, maxHeight: 420)
+            .frame(
+                minHeight: fillsAvailableSpace ? 500 : 220,
+                maxHeight: fillsAvailableSpace ? .infinity : 420
+            )
             .padding(10)
             .background(NexusPalette.panel)
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -9262,6 +9284,11 @@ private struct NativeDocumentPreview: View {
             }
         }
         .padding(10)
+        .frame(
+            maxWidth: .infinity,
+            maxHeight: fillsAvailableSpace ? .infinity : nil,
+            alignment: .topLeading
+        )
         .background(NexusPalette.badge)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .onChange(of: document.path) { _ in

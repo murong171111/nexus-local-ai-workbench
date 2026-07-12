@@ -132,5 +132,7 @@ codesign --verify --deep --strict "$OUTPUT_APP"
 rm -rf "$final_output_app"
 mkdir -p "$(dirname "$final_output_app")"
 ditto "$OUTPUT_APP" "$final_output_app"
+xattr -cr "$final_output_app"
+codesign --verify --deep --strict "$final_output_app"
 
 echo "Built $final_output_app"

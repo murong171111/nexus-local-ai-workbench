@@ -149,6 +149,7 @@ struct ConfirmedFeatureDevelopmentView: View {
     @EnvironmentObject private var appState: AppState
     let workspace: WorkspaceSummary
     let features: [WorkspaceFeature]
+    let isExecutionReady: Bool
 
     @State private var handedOffFeature: WorkspaceFeature?
     @State private var handedOffEvidence: FeatureEvidence?
@@ -175,17 +176,19 @@ struct ConfirmedFeatureDevelopmentView: View {
                             .foregroundStyle(.green)
                     }
                     Spacer()
-                    Button {
-                        Task {
-                            if await appState.openConfirmedFeatureInCodex(for: workspace, featureID: feature.id) {
-                                handedOffFeature = feature
-                                handedOffEvidence = appState.featureEvidenceByWorkspace[workspace.id]?[feature.id]
+                    if isExecutionReady {
+                        Button {
+                            Task {
+                                if await appState.openConfirmedFeatureInCodex(for: workspace, featureID: feature.id) {
+                                    handedOffFeature = feature
+                                    handedOffEvidence = appState.featureEvidenceByWorkspace[workspace.id]?[feature.id]
+                                }
                             }
+                        } label: {
+                            Label("交给 Codex 开发", systemImage: "sparkles")
                         }
-                    } label: {
-                        Label("交给 Codex 开发", systemImage: "sparkles")
+                        .buttonStyle(.borderedProminent)
                     }
-                    .buttonStyle(.borderedProminent)
                 }
                 if appState.lastError?.contains("功能点交接") == true
                     || appState.lastError?.contains("未找到已确认功能点") == true {
@@ -200,7 +203,19 @@ struct ConfirmedFeatureDevelopmentView: View {
                 )
                 if !remaining.isEmpty {
                     Divider()
-                    FeatureFactsList(features: remaining, workspace: workspace, compact: true)
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(remaining) { item in
+                            Button {
+                                selectFeature(item)
+                            } label: {
+                                FeatureFactsRow(feature: item, workspace: workspace, compact: true)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("选择功能点 \(item.id) \(item.title)")
+                            if item.id != remaining.last?.id { Divider() }
+                        }
+                    }
                 }
             } else {
                 Text("暂无未完成的已确认功能点")
@@ -208,6 +223,10 @@ struct ConfirmedFeatureDevelopmentView: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private func selectFeature(_ feature: WorkspaceFeature) {
+        appState.selectedContextFeatureIDsByWorkspace[workspace.id] = feature.id
     }
 
     private func evidenceSummary(for feature: WorkspaceFeature) -> String {
@@ -887,9 +906,22 @@ struct FeatureWorkspaceView: View {
 
     private var confirmedFeatureList: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("已确认功能点")
-                .font(.headline)
-            FeatureFactsList(features: features, workspace: workspace, compact: true)
+            HStack {
+                Text("已确认功能点")
+                    .font(.headline)
+                Spacer()
+                Button {
+                    isAddingFeature = true
+                } label: {
+                    Label("新增功能点", systemImage: "plus")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+            ForEach(features) { feature in
+                featureRow(feature)
+                if feature.id != features.last?.id { Divider() }
+            }
             ForEach(taskFeatureWarnings, id: \.self) { warning in
                 Label(warning, systemImage: "exclamationmark.triangle")
                     .font(.caption)

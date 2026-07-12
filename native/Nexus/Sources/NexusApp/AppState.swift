@@ -4533,9 +4533,6 @@ final class AppState: ObservableObject {
         let evidencePaths = fixedEvidence
             + (sqlEvidence.isEmpty ? ["\(workspacePath)/sql"] : sqlEvidence)
             + [deliveryDocumentPath(for: workspace)]
-        let latestCheck = lastAutomationCheck.map {
-            "\($0.status) at \($0.generatedAt): \($0.summary)"
-        }
         let workspaceName = workspace.name
         let workspaceServices = workspace.services
         let riskBlockers = workspace.risks.compactMap { risk in
@@ -4606,7 +4603,7 @@ final class AppState: ObservableObject {
                             let diff = repositories.diffs[service].flatMap { $0.isEmpty ? nil : $0 } ?? "clean"
                             return "\(service): head=\(repositories.heads[service] ?? "unavailable"), \(diff)"
                         },
-                        latestRelevantCheck: latestCheck,
+                        latestRelevantCheck: nil,
                         confirmedChanges: Array(source.confirmedChanges.lazy.filter {
                             NativeWorkspaceTaskParser.containsIdentifierToken(feature.id, in: $0)
                         }.prefix(3)),
@@ -4692,26 +4689,26 @@ final class AppState: ObservableObject {
             ? Self.defaultCodexURL
             : codexURL.trimmingCharacters(in: .whitespacesAndNewlines)
         let didOpen = URL(string: rawURL).map { NSWorkspace.shared.open($0) } ?? false
+        lastError = nil
         if didOpen {
             markCodexHandoff(
-                title: "Codex 已打开 / Feature intake copied",
+                title: "已交接 / Codex opened",
                 detail: "\(workspace.name) · 需求草稿与确认材料已复制到剪贴板。",
                 systemImage: "sparkles",
                 sectionTitle: "功能提案 / Feature proposal",
                 clipboardLabel: "Feature intake prompt is on the clipboard"
             )
         } else {
-            lastError = "Could not open Codex URL: \(rawURL)"
             markCodexHandoff(
-                title: "需求上下文已复制 / Open Codex manually",
+                title: "已交接 / Open Codex manually",
                 detail: "\(workspace.name) · Codex 未能打开，提示词仍保留在剪贴板。",
-                systemImage: "exclamationmark.triangle",
+                systemImage: "doc.on.clipboard",
                 sectionTitle: "功能提案 / Feature proposal",
                 clipboardLabel: "Feature intake prompt is on the clipboard"
             )
         }
         await recordWorkspaceAction(
-            action: "feature_intake.opened",
+            action: "feature_intake.handed_off",
             target: "\(workspace.path)/FEATURES.draft.md",
             summary: "Copied feature intake prompt and attempted to open Codex",
             metadata: [
@@ -4722,7 +4719,7 @@ final class AppState: ObservableObject {
             ],
             workspaceOverride: workspace
         )
-        return didOpen
+        return true
     }
 
     private func normalizedDemandIntakeLine(label: String, value: String) -> String? {

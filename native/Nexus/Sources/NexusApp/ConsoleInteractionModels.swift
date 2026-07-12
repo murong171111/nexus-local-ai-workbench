@@ -215,6 +215,19 @@ struct WorkspaceConsolePresentation {
             primaryActions: [stage.primaryAction]
         )
     }
+
+    static func showsFocusAction(
+        surface: WorkspaceConsoleSurface,
+        stageID: WorkspaceMainStageID
+    ) -> Bool {
+        if surface == .featureDemand { return false }
+        if surface == .development { return stageID != .development }
+        return true
+    }
+
+    static func canHandOffConfirmedFeature(stageID: WorkspaceMainStageID) -> Bool {
+        stageID == .development
+    }
 }
 
 struct WorkspaceConsoleLayoutPolicy: Hashable {

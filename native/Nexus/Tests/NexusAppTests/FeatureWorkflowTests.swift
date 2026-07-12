@@ -2615,6 +2615,7 @@ final class FeatureWorkflowTests: XCTestCase {
             ]
         )
         let appState = makeAppState(workspace: workspace, root: root)
+        appState.lastAutomationCheck = .preview(generatedAt: "2026-07-11T04:00:00Z")
 
         let prompt = await appState.confirmedFeatureExecutionPrompt(for: workspace, featureID: "F-002")
 
@@ -2637,6 +2638,7 @@ final class FeatureWorkflowTests: XCTestCase {
         XCTAssertFalse(prompt.contains("Unrelated active task"))
         XCTAssertFalse(prompt.contains("FEATURES.draft.md"))
         XCTAssertFalse(prompt.contains("Prepare a feature proposal"))
+        XCTAssertFalse(prompt.contains("Preview automation check"))
         XCTAssertLessThanOrEqual(prompt.utf8.count, 6_144)
         XCTAssertEqual(prompt, try String(contentsOf: root.appendingPathComponent("handoff.md"), encoding: .utf8))
     }
@@ -2714,6 +2716,22 @@ final class FeatureWorkflowTests: XCTestCase {
         XCTAssertFalse(appState.codexHandoffFeedback?.title.contains("处理中") == true)
         XCTAssertTrue(appState.lastCopiedCodexHandoffPayload?.contains("F-001") == true)
         XCTAssertTrue(appState.workspaces.first?.activities.first?.title.contains("已交接") == true)
+    }
+
+    @MainActor
+    func testFeatureIntakeCopiedHandoffSucceedsWhenCodexNeedsManualOpen() async throws {
+        let root = try sessionChangeWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workspace = demandInputWorkspace(path: root.path)
+        let appState = makeAppState(workspace: workspace, root: root)
+        appState.codexURL = "not a url"
+
+        let didHandOff = await appState.openFeatureIntakeInCodex(for: workspace)
+
+        XCTAssertTrue(didHandOff)
+        XCTAssertNil(appState.lastError)
+        XCTAssertTrue(appState.codexHandoffFeedback?.title.contains("已交接") == true)
+        XCTAssertTrue(appState.lastCopiedCodexHandoffPayload?.contains("FEATURES.draft.md") == true)
     }
 
     @MainActor
