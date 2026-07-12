@@ -6270,6 +6270,23 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(answer.canAnswerCurrentState)
     }
 
+    func testConsoleUtilityPanelsAreChineseFirstAndClosedByDefault() {
+        XCTAssertEqual(
+            WorkspaceConsoleUtilityPanel.allCases.map(\.label),
+            ["功能点", "文件与 SQL", "证据与检查", "变更与交接记录"]
+        )
+        XCTAssertNil(WorkspaceConsolePresentation.defaultUtilityPanel)
+    }
+
+    func testConsolePresentationExposesOnePrimaryAction() {
+        let workspace = workspaceForWorkflowSummary(stage: "developing")
+        let presentation = WorkspaceConsolePresentation.make(for: workspace)
+
+        XCTAssertLessThanOrEqual(presentation.primaryActions.count, 1)
+        XCTAssertEqual(presentation.stage, WorkspaceConsoleStageGroup(stage: workspace.mainStage()))
+        XCTAssertEqual(presentation.reason, workspace.mainStage().reason)
+    }
+
     func testWorkspaceStageAnswerRequiresRoutedEvidenceFile() {
         let stage = WorkspaceMainStage(
             id: .development,

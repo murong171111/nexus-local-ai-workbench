@@ -55,7 +55,8 @@ struct RootView: View {
             if primarySurface == .project {
                 WorkspaceConsoleView(
                     isCreateWorkspacePresented: $isCreateWorkspacePresented,
-                    isSettingsPresented: $isSettingsPresented
+                    isSettingsPresented: $isSettingsPresented,
+                    backToGlobal: { primarySurface = .global }
                 )
             } else {
                 WorkspaceBoardView(
@@ -2534,112 +2535,126 @@ private struct WorkspaceConsoleView: View {
     @EnvironmentObject private var appState: AppState
     @Binding var isCreateWorkspacePresented: Bool
     @Binding var isSettingsPresented: Bool
+    let backToGlobal: () -> Void
     @State private var navigationTarget: WorkspaceConsoleTarget?
+    @State private var selectedUtilityPanel = WorkspaceConsolePresentation.defaultUtilityPanel
     @FocusState private var demandInputFocused: Bool
 
     var body: some View {
         ScrollViewReader { proxy in
-            ScrollView {
-                if let workspace = appState.selectedWorkspace {
-                    let stage = mainStage(for: workspace)
-                    let focusesFeatureFlow = WorkspaceConsoleLayoutPolicy().focusesFeatureFlow(
-                        usesFeatureCenteredWorkflow: workspace.usesFeatureCenteredWorkflow,
-                        stageID: stage.id
-                    )
+            if let workspace = appState.selectedWorkspace {
+                let stage = mainStage(for: workspace)
 
-                    VStack(alignment: .leading, spacing: 16) {
-                        WorkspaceConsoleHeader(workspace: workspace)
-                        WorkspaceConsoleStageRail(stage: stage)
-                        WorkspaceConsoleFocusBand(
-                            stage: stage,
-                            showsAction: !focusesFeatureFlow,
-                            action: { run(stage.primaryAction, in: workspace, proxy: proxy) }
-                        )
+                GeometryReader { geometry in
+                    let usesOverlayDrawer = geometry.size.width < 1060
 
-                        if focusesFeatureFlow {
-                            demandInput(for: workspace)
-                                .frame(maxWidth: .infinity, alignment: .topLeading)
-                        } else {
-                            ViewThatFits(in: .horizontal) {
-                                HStack(alignment: .top, spacing: 16) {
-                                    demandInput(for: workspace)
-                                        .frame(maxWidth: .infinity, alignment: .topLeading)
-                                    WorkspaceConsoleCurrentSignals(stage: stage)
-                                        .frame(width: 280, alignment: .topLeading)
-                                }
+                    VStack(spacing: 0) {
+                        WorkspaceConsoleHeader(workspace: workspace, backToGlobal: backToGlobal)
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 12)
+                        Divider()
 
-                                VStack(alignment: .leading, spacing: 16) {
-                                    demandInput(for: workspace)
-                                    WorkspaceConsoleCurrentSignals(stage: stage)
-                                }
+                        HStack(spacing: 0) {
+                            WorkspaceConsoleStageRail(stage: stage) { group in
+                                navigate(to: group, proxy: proxy)
                             }
-                        }
+                            .frame(width: 146)
+                            Divider()
 
-                        WorkspaceConsoleEvidenceDisclosure(
-                            workspace: workspace,
-                            stage: stage,
-                            openDocument: { key, fallback in
-                                Task {
-                                    await appState.loadDocument(path: documentPath(for: key, fallback: fallback, in: workspace))
-                                }
-                            },
-                            openSql: {
-                                Task {
-                                    await appState.openSqlReviewDocument(in: workspace)
-                                }
-                            }
-                        )
-                        .environmentObject(appState)
-
-                        DisclosureGroup("更多状态 / More status") {
-                            VStack(alignment: .leading, spacing: 12) {
-                                WorkspaceConsoleSummaryStrip(workspace: workspace)
-
-                                NextStepQueueView(actions: workspace.sessionActions) { action in
-                                    run(action, in: workspace, proxy: proxy)
-                                }
-
-                                WorkflowStatusView(
-                                    workspace: workspace,
-                                    completeTaskAction: { task in
-                                        appState.requestTaskStatusUpdate(task, in: workspace, status: "已完成")
-                                    },
-                                    deferTaskAction: { task in
-                                        appState.requestTaskStatusUpdate(task, in: workspace, status: "延期")
-                                    },
-                                    openTaskDocumentAction: { task in
-                                        Task {
-                                            await appState.openTaskSource(task, in: workspace)
-                                        }
-                                    },
-                                    taskCodexAction: { task in
-                                        Task {
-                                            await appState.openTaskInCodex(task, in: workspace)
-                                        }
-                                    },
-                                    lifecycleAction: { transition in
-                                        appState.requestLifecycleStatusUpdate(transition, in: workspace)
-                                    }
+                            VStack(spacing: 0) {
+                                WorkspaceConsoleFocusBand(
+                                    stage: stage,
+                                    showsAction: !WorkspaceConsoleLayoutPolicy().focusesFeatureFlow(
+                                        usesFeatureCenteredWorkflow: workspace.usesFeatureCenteredWorkflow,
+                                        stageID: stage.id
+                                    ),
+                                    action: { run(stage.primaryAction, in: workspace, proxy: proxy) }
                                 )
-                                .environmentObject(appState)
+                                .padding(18)
+
+                                ZStack(alignment: .trailing) {
+                                    ScrollView {
+                                        demandInput(for: workspace)
+                                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                                            .padding(.horizontal, 18)
+                                            .padding(.bottom, 18)
+                                    }
+
+                                    if usesOverlayDrawer, let panel = selectedUtilityPanel {
+                                        utilityDrawer(panel, workspace: workspace, stage: stage, proxy: proxy)
+                                            .frame(width: 390)
+                                            .background(NexusPalette.background)
+                                            .shadow(color: .black.opacity(0.16), radius: 12, x: -4)
+                                    }
+                                }
                             }
-                            .padding(.top, 8)
+
+                            Divider()
+                            WorkspaceConsoleUtilityRail(selection: $selectedUtilityPanel)
+                                .frame(width: 42)
+
+                            if !usesOverlayDrawer, let panel = selectedUtilityPanel {
+                                Divider()
+                                utilityDrawer(panel, workspace: workspace, stage: stage, proxy: proxy)
+                                    .frame(width: 390)
+                            }
                         }
-                        .padding(12)
-                        .background(NexusPalette.panel)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     }
-                    .padding(18)
-                } else {
+                }
+                .background(NexusPalette.background)
+                .onChange(of: workspace.id) { _ in
+                    selectedUtilityPanel = WorkspaceConsolePresentation.defaultUtilityPanel
+                }
+            } else {
+                ScrollView {
                     WorkspaceConsoleEmptyStateView(
                         isCreateWorkspacePresented: $isCreateWorkspacePresented,
                         isSettingsPresented: $isSettingsPresented
                     )
                     .padding(18)
                 }
+                .background(NexusPalette.background)
             }
-            .background(NexusPalette.background)
         }
+    }
+
+    private func navigate(to group: WorkspaceConsoleStageGroup, proxy: ScrollViewProxy) {
+        switch group {
+        case .created, .demandAndFeatures:
+            routeToDemandInput(proxy)
+        case .development:
+            selectedUtilityPanel = .features
+        case .delivery:
+            selectedUtilityPanel = .evidenceAndChecks
+        case .archive:
+            selectedUtilityPanel = .changesAndHandoffs
+        }
+    }
+
+    private func utilityDrawer(
+        _ panel: WorkspaceConsoleUtilityPanel,
+        workspace: WorkspaceSummary,
+        stage: WorkspaceMainStage,
+        proxy: ScrollViewProxy
+    ) -> some View {
+        WorkspaceConsoleUtilityDrawer(
+            panel: panel,
+            workspace: workspace,
+            stage: stage,
+            close: { selectedUtilityPanel = nil },
+            openDocument: { key, fallback in
+                Task {
+                    await appState.loadDocument(path: documentPath(for: key, fallback: fallback, in: workspace))
+                }
+            },
+            openSql: {
+                Task { await appState.openSqlReviewDocument(in: workspace) }
+            },
+            runSessionAction: { action in
+                run(action, in: workspace, proxy: proxy)
+            }
+        )
+        .environmentObject(appState)
     }
 
     private func mainStage(for workspace: WorkspaceSummary) -> WorkspaceMainStage {
@@ -2782,9 +2797,17 @@ private struct WorkspaceConsoleView: View {
 
 private struct WorkspaceConsoleHeader: View {
     let workspace: WorkspaceSummary
+    let backToGlobal: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .center, spacing: 12) {
+            Button(action: backToGlobal) {
+                Image(systemName: "chevron.left")
+            }
+            .buttonStyle(.bordered)
+            .help("返回全局工作台")
+            .accessibilityLabel("返回全局工作台")
+
             VStack(alignment: .leading, spacing: 5) {
                 Text("控制台 / Console")
                     .font(.caption.weight(.semibold))
@@ -2792,18 +2815,15 @@ private struct WorkspaceConsoleHeader: View {
                 Text(workspace.name)
                     .font(.title2.weight(.semibold))
                     .lineLimit(1)
-                Text(workspace.path)
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
             }
 
             Spacer()
 
             VStack(alignment: .trailing, spacing: 8) {
                 Pill(label: workspace.branch, systemImage: "arrow.triangle.branch")
-                RiskBadge(level: workspace.riskLevel)
+                if workspace.riskLevel != .low {
+                    RiskBadge(level: workspace.riskLevel)
+                }
                 if workspace.isArchived {
                     ArchivedBadge()
                 }
@@ -2814,35 +2834,53 @@ private struct WorkspaceConsoleHeader: View {
 
 private struct WorkspaceConsoleStageRail: View {
     let stage: WorkspaceMainStage
+    let action: (WorkspaceConsoleStageGroup) -> Void
 
     private var activeGroup: WorkspaceConsoleStageGroup {
         WorkspaceConsoleStageGroup(stage: stage.id)
     }
 
     var body: some View {
-        HStack(spacing: 8) {
+        VStack(spacing: 8) {
             ForEach(WorkspaceConsoleStageGroup.allCases, id: \.self) { group in
                 let isActive = group == activeGroup
+                let isCompleted = completedGroups.contains(group)
 
-                VStack(spacing: 4) {
-                    Image(systemName: systemImage(for: group))
-                        .font(.caption.weight(.semibold))
-                    Text(label(for: group))
-                        .font(.caption.weight(.semibold))
-                        .lineLimit(1)
+                Button {
+                    action(group)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: isCompleted ? "checkmark.circle.fill" : systemImage(for: group))
+                            .font(.caption.weight(.semibold))
+                            .frame(width: 16)
+                        Text(label(for: group))
+                            .font(.caption.weight(.semibold))
+                            .lineLimit(2)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 10)
                 }
-                .foregroundStyle(isActive ? stage.status.color : .secondary)
-                .frame(maxWidth: .infinity, minHeight: 48)
-                .background(isActive ? stage.status.color.opacity(0.10) : NexusPalette.panel)
+                .buttonStyle(.plain)
+                .foregroundStyle(isActive ? NexusPalette.accent : (isCompleted ? NexusPalette.success : .secondary))
+                .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                .background(isActive ? NexusPalette.accent.opacity(0.10) : Color.clear)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(isActive ? stage.status.color.opacity(0.25) : .clear)
+                        .stroke(isActive ? NexusPalette.accent.opacity(0.25) : .clear)
                 }
                 .accessibilityLabel(label(for: group))
-                .accessibilityValue(isActive ? "当前阶段" : "")
+                .accessibilityValue(isActive ? "当前阶段" : (isCompleted ? "已完成" : "未开始"))
             }
+            Spacer()
         }
+        .padding(10)
+    }
+
+    private var completedGroups: Set<WorkspaceConsoleStageGroup> {
+        let groups = WorkspaceConsoleStageGroup.allCases
+        guard let activeIndex = groups.firstIndex(of: activeGroup) else { return [] }
+        return Set(groups.prefix(activeIndex))
     }
 
     private func label(for group: WorkspaceConsoleStageGroup) -> String {
@@ -2900,11 +2938,6 @@ private struct WorkspaceConsoleFocusBand: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    if showsAction {
-                        Text("激活后将进入下一步所需的工作区操作。")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
                 }
 
                 Spacer()
@@ -2929,64 +2962,79 @@ private struct WorkspaceConsoleFocusBand: View {
 
 }
 
-private struct WorkspaceConsoleCurrentSignals: View {
-    let stage: WorkspaceMainStage
+private struct WorkspaceConsoleUtilityRail: View {
+    @Binding var selection: WorkspaceConsoleUtilityPanel?
 
     var body: some View {
-        SectionBlock(title: "当前信号 / Current signals") {
-            VStack(alignment: .leading, spacing: 10) {
-                signalRow(
-                    label: "当前动作",
-                    value: stage.primaryActionLabel,
-                    systemImage: stage.primaryActionSystemImage,
-                    tone: NexusPalette.accent
-                )
-                if stage.status == .blocked {
-                    signalRow(
-                        label: "阻塞原因",
-                        value: stage.blockerSummary,
-                        systemImage: "xmark.octagon",
-                        tone: stage.status.color
-                    )
-                } else if stage.status != .ready {
-                    signalRow(
-                        label: "注意信号",
-                        value: stage.status.displayLabel,
-                        systemImage: stage.id.systemImage,
-                        tone: stage.status.color
-                    )
+        VStack(spacing: 8) {
+            ForEach(WorkspaceConsoleUtilityPanel.allCases) { panel in
+                Button {
+                    selection = selection == panel ? nil : panel
+                } label: {
+                    Image(systemName: panel.systemImage)
+                        .frame(width: 30, height: 30)
                 }
+                .buttonStyle(.plain)
+                .foregroundStyle(selection == panel ? NexusPalette.accent : .secondary)
+                .background(selection == panel ? NexusPalette.accent.opacity(0.10) : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .help(panel.label)
+                .accessibilityLabel(panel.label)
+                .accessibilityHint(selection == panel ? "关闭工具抽屉" : "打开工具抽屉")
+                .accessibilityValue(selection == panel ? "已打开" : "已关闭")
             }
+            Spacer()
         }
-    }
-
-    private func signalRow(label: String, value: String, systemImage: String, tone: Color) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: systemImage)
-                .font(.caption)
-                .foregroundStyle(tone)
-                .frame(width: 15)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                Text(value)
-                    .font(.caption.weight(.medium))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
+        .padding(.vertical, 10)
     }
 }
 
-private struct WorkspaceConsoleEvidenceDisclosure: View {
-    @State private var isExpanded = false
+private struct WorkspaceConsoleUtilityDrawer: View {
+    let panel: WorkspaceConsoleUtilityPanel
     let workspace: WorkspaceSummary
     let stage: WorkspaceMainStage
+    let close: () -> Void
     let openDocument: (String, String) -> Void
     let openSql: () -> Void
+    let runSessionAction: (WorkspaceSessionAction) -> Void
 
     var body: some View {
-        DisclosureGroup(isExpanded: $isExpanded) {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Label(panel.label, systemImage: panel.systemImage)
+                    .font(.headline)
+                Spacer()
+                Button(action: close) {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.plain)
+                .help("关闭工具抽屉")
+                .accessibilityLabel("关闭工具抽屉")
+            }
+            .padding(14)
+            Divider()
+
+            ScrollView {
+                utilityContent
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .padding(14)
+            }
+        }
+        .background(NexusPalette.background)
+    }
+
+    @ViewBuilder
+    private var utilityContent: some View {
+        switch panel {
+        case .features:
+            WorkspaceConsoleFeatureUtility(workspace: workspace)
+        case .filesAndSQL:
+            WorkspaceConsoleDocumentPanel(
+                workspace: workspace,
+                openDocument: openDocument,
+                openSql: openSql
+            )
+        case .evidenceAndChecks:
             VStack(alignment: .leading, spacing: 16) {
                 WorkspaceConsoleEvidenceGroups(
                     workspace: workspace,
@@ -2994,20 +3042,51 @@ private struct WorkspaceConsoleEvidenceDisclosure: View {
                     openDocument: openDocument,
                     openSql: openSql
                 )
-                WorkspaceConsoleDocumentPanel(
-                    workspace: workspace,
-                    openDocument: openDocument,
-                    openSql: openSql
-                )
+                WorkspaceConsoleSummaryStrip(workspace: workspace)
             }
-            .padding(.top, 8)
-        } label: {
-            Label("证据与文件 / Evidence & files", systemImage: "folder")
-                .font(.subheadline.weight(.semibold))
+        case .changesAndHandoffs:
+            VStack(alignment: .leading, spacing: 16) {
+                SectionBlock(title: "变更记录") {
+                    ActivityTimelineView(events: workspace.activities)
+                }
+                NextStepQueueView(actions: workspace.sessionActions, runAction: runSessionAction)
+            }
         }
-        .padding(12)
-        .background(NexusPalette.panel)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct WorkspaceConsoleFeatureUtility: View {
+    @EnvironmentObject private var appState: AppState
+    let workspace: WorkspaceSummary
+
+    private var features: [WorkspaceFeature] {
+        appState.featuresByWorkspace[workspace.id]?.features ?? []
+    }
+
+    var body: some View {
+        SectionBlock(title: "功能点") {
+            if features.isEmpty {
+                Text("暂无已确认功能点")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(features) { feature in
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: feature.status == .done ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(feature.status == .done ? NexusPalette.success : .secondary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(feature.title)
+                                    .font(.caption.weight(.semibold))
+                                Text("\(feature.id) · \(feature.status.rawValue)")
+                                    .font(.caption2.monospaced())
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

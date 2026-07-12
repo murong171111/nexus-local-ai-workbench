@@ -3542,7 +3542,7 @@ final class FeatureWorkflowTests: XCTestCase {
         XCTAssertEqual(summary.stageGroups, [.created, .demandAndFeatures, .development, .delivery, .archive])
         XCTAssertEqual(summary.prominentPrimaryActionCount, 1)
         XCTAssertTrue(summary.filesAreCollapsed)
-        XCTAssertTrue(summary.currentSignalsAreSecondary)
+        XCTAssertFalse(summary.hasPermanentCurrentSignals)
         XCTAssertTrue(policy.focusesFeatureFlow(usesFeatureCenteredWorkflow: true, stageID: .created))
         XCTAssertTrue(policy.focusesFeatureFlow(usesFeatureCenteredWorkflow: true, stageID: .demandIntake))
         XCTAssertFalse(policy.focusesFeatureFlow(usesFeatureCenteredWorkflow: true, stageID: .development))

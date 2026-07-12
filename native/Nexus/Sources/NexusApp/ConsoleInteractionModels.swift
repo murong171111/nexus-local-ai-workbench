@@ -55,20 +55,71 @@ enum WorkspaceConsoleStageGroup: String, CaseIterable, Hashable {
             self = .archive
         }
     }
+
+    init(stage: WorkspaceMainStage) {
+        self.init(stage: stage.id)
+    }
+}
+
+enum WorkspaceConsoleUtilityPanel: String, CaseIterable, Identifiable {
+    case features
+    case filesAndSQL
+    case evidenceAndChecks
+    case changesAndHandoffs
+
+    var id: Self { self }
+
+    var label: String {
+        switch self {
+        case .features: "功能点"
+        case .filesAndSQL: "文件与 SQL"
+        case .evidenceAndChecks: "证据与检查"
+        case .changesAndHandoffs: "变更与交接记录"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .features: "list.bullet.rectangle"
+        case .filesAndSQL: "folder"
+        case .evidenceAndChecks: "checkmark.seal"
+        case .changesAndHandoffs: "clock.arrow.circlepath"
+        }
+    }
+}
+
+struct WorkspaceConsolePresentation {
+    static let defaultUtilityPanel: WorkspaceConsoleUtilityPanel? = nil
+
+    let stage: WorkspaceConsoleStageGroup
+    let reason: String
+    let primaryActions: [WorkspaceMainStageAction]
+
+    static func make(for workspace: WorkspaceSummary) -> Self {
+        make(stage: workspace.mainStage())
+    }
+
+    static func make(stage: WorkspaceMainStage) -> Self {
+        Self(
+            stage: WorkspaceConsoleStageGroup(stage: stage),
+            reason: stage.reason,
+            primaryActions: [stage.primaryAction]
+        )
+    }
 }
 
 struct WorkspaceConsoleLayoutPolicy: Hashable {
     let stageGroups = WorkspaceConsoleStageGroup.allCases
     let prominentPrimaryActionCount = 1
     let filesAreCollapsed = true
-    let currentSignalsAreSecondary = true
+    let hasPermanentCurrentSignals = false
 
     var auditSummary: WorkspaceConsoleLayoutAuditSummary {
         WorkspaceConsoleLayoutAuditSummary(
             stageGroups: stageGroups,
             prominentPrimaryActionCount: prominentPrimaryActionCount,
             filesAreCollapsed: filesAreCollapsed,
-            currentSignalsAreSecondary: currentSignalsAreSecondary
+            hasPermanentCurrentSignals: hasPermanentCurrentSignals
         )
     }
 
@@ -84,5 +135,5 @@ struct WorkspaceConsoleLayoutAuditSummary: Hashable {
     let stageGroups: [WorkspaceConsoleStageGroup]
     let prominentPrimaryActionCount: Int
     let filesAreCollapsed: Bool
-    let currentSignalsAreSecondary: Bool
+    let hasPermanentCurrentSignals: Bool
 }
