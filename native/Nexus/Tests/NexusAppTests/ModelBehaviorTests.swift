@@ -4820,6 +4820,37 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(snapshot.tasks?.map(\.priority), ["high", "medium"])
     }
 
+    func testNativeWorkspaceScannerReturnsCanonicalWorkspacePaths() throws {
+        let root = URL(fileURLWithPath: "/tmp")
+            .appendingPathComponent("nexus-native-canonical-scan-\(UUID().uuidString)")
+        let workspace = root.appendingPathComponent("canonical-workspace")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        try "# Canonical Workspace\n".write(
+            to: workspace.appendingPathComponent("workspace.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "# Features\n".write(
+            to: workspace.appendingPathComponent("FEATURES.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let dashboard = try NativeWorkspaceScanner.scan(
+            workspacesRoot: root.path,
+            sourceReposRoot: "/tmp/source-repos",
+            docsRoot: "/tmp/docs"
+        )
+        let snapshot = try XCTUnwrap(dashboard.workspaces.first)
+
+        XCTAssertEqual(snapshot.path, workspace.standardizedFileURL.path)
+        XCTAssertEqual(
+            NativeFeatureStore.inspectProposal(workspacePath: snapshot.path).error,
+            "feature proposal draft is missing: \(snapshot.path)/FEATURES.draft.md"
+        )
+    }
+
     func testNativeWorkspaceScannerBuildsConservativeLifecycleFromMarkdownEvidence() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nexus-native-lifecycle-scan-\(UUID().uuidString)")

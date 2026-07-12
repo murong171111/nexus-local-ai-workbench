@@ -74,6 +74,7 @@ enum NativeWorkspaceScanner {
             includingPropertiesForKeys: [.isDirectoryKey],
             options: [.skipsHiddenFiles]
         )
+        .map(\.standardizedFileURL)
         .filter { isWorkspaceDirectory($0, fileManager: fileManager) }
         .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
     }
