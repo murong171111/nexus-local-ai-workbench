@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -28,31 +29,6 @@ enum FeatureWorkspaceDraftPolicy {
 enum FeatureWorkspaceSessionChangePolicy {
     static func canWrite(hasDraft: Bool, confirmed: Bool, isBusy: Bool) -> Bool {
         hasDraft && confirmed && !isBusy
-    }
-}
-
-enum FeatureWorkspacePresentation {
-    enum Phase: Equatable {
-        case editing
-        case waiting
-        case proposalReady
-        case proposalInvalid
-        case confirmed
-    }
-
-    static func phase(
-        hasConfirmedFeatures: Bool,
-        didHandoff: Bool,
-        review: FeatureProposalReview?
-    ) -> Phase {
-        if didHandoff { return .waiting }
-        if review?.diff != nil { return .proposalReady }
-        if let error = review?.error,
-           !error.contains("feature proposal draft is missing") {
-            return .proposalInvalid
-        }
-        if hasConfirmedFeatures { return .confirmed }
-        return didHandoff ? .waiting : .editing
     }
 }
 
@@ -326,15 +302,17 @@ struct FeatureWorkspaceView: View {
                         .textSelection(.enabled)
                 }
 
-                    Button {
-                        startCodexHandoff()
-                    } label: {
-                        Label("交给 Codex 梳理功能点", systemImage: "sparkles")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(isLoading || isSaving)
-                    if canOfferLegacyMigration {
-                        legacyMigrationButton
+                    if presentationPhase == .editing {
+                        Button {
+                            startCodexHandoff()
+                        } label: {
+                            Label("交给 Codex 梳理功能点", systemImage: "sparkles")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(isLoading || isSaving)
+                        if canOfferLegacyMigration {
+                            legacyMigrationButton
+                        }
                     }
                 } else {
                     demandSummary
@@ -544,24 +522,15 @@ struct FeatureWorkspaceView: View {
     }
 
     private var presentationLabel: String {
-        switch presentationPhase {
-        case .editing: return "填写需求"
-        case .waiting: return "等待 Codex"
-        case .proposalReady: return "待审阅"
-        case .proposalInvalid: return "提案需修正"
-        case .confirmed: return "功能点已确认"
-        }
+        presentationPhase.label
     }
 
     private var showsDemandEditor: Bool {
-        presentationPhase == .editing || isDemandExpanded
+        presentationPhase.demandIsExpanded || isDemandExpanded
     }
 
     private var showsFeatureList: Bool {
-        switch presentationPhase {
-        case .proposalReady, .proposalInvalid, .confirmed: return true
-        case .editing, .waiting: return false
-        }
+        presentationPhase.proposalIsVisible || presentationPhase.showsConfirmedFeatures
     }
 
     private var demandSummary: some View {
@@ -591,19 +560,31 @@ struct FeatureWorkspaceView: View {
 
     private var waitingForCodex: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("等待 Codex 梳理功能点", systemImage: "sparkles")
+            Label("已交接", systemImage: "checkmark.circle")
                 .font(.subheadline.weight(.semibold))
-            Text("在 Codex 中完成需求梳理后返回 Nexus，应用会自动检查 FEATURES.draft.md。")
+            Text("Nexus 已保存交接内容。返回应用或手动刷新后会检查 FEATURES.draft.md。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Button {
-                refreshWorkspaceAfterCodex()
-            } label: {
-                Label("检查生成结果", systemImage: "arrow.clockwise")
+            Text(FeatureWorkspacePresentation.recovery(for: .waiting).message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Button {
+                    startCodexHandoff()
+                } label: {
+                    Label("继续与 Codex 讨论", systemImage: "bubble.left.and.bubble.right")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isLoading || isSaving)
+                Button {
+                    refreshWorkspaceAfterCodex()
+                } label: {
+                    Label("刷新提案", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+                .disabled(appState.featureProposalLoadingWorkspaceID == workspace.id)
             }
-            .buttonStyle(.borderedProminent)
             .controlSize(.small)
-            .disabled(appState.featureProposalLoadingWorkspaceID == workspace.id)
         }
         .padding(.vertical, 8)
     }
@@ -635,7 +616,10 @@ struct FeatureWorkspaceView: View {
         await appState.refreshFeatures(for: target)
         await appState.refreshFeatureProposal(for: target)
         guard !Task.isCancelled, appState.selectedWorkspaceID == target.id else { return }
-        isAwaitingCodex = false
+        isAwaitingCodex = FeatureWorkspacePresentation.keepsWaitingAfterRefresh(
+            wasWaiting: isAwaitingCodex,
+            review: appState.featureProposalReview(for: target)
+        )
     }
 
     private var legacyMigrationButton: some View {
@@ -729,7 +713,7 @@ struct FeatureWorkspaceView: View {
                 Button {
                     appState.requestFeatureProposalMerge(in: workspace)
                 } label: {
-                    Label("确认功能点", systemImage: "checkmark")
+                    Label("确认 \(selectedProposalCount) 个功能点", systemImage: "checkmark")
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!canRequestProposalMerge)
@@ -746,12 +730,25 @@ struct FeatureWorkspaceView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
+            Text(proposalDraftPath)
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+            Text(FeatureWorkspacePresentation.recovery(for: .proposalInvalid).message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
             HStack {
+                Button {
+                    openProposalDraft()
+                } label: {
+                    Label("打开提案文件", systemImage: "doc.text")
+                }
+                .buttonStyle(.bordered)
                 Spacer()
                 Button {
                     startCodexHandoff()
                 } label: {
-                    Label("重新让 Codex 梳理", systemImage: "sparkles")
+                    Label("重新生成交接", systemImage: "sparkles")
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(isSaving)
@@ -761,23 +758,9 @@ struct FeatureWorkspaceView: View {
 
     private var confirmedFeatureList: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("已确认功能点")
-                    .font(.headline)
-                Spacer()
-                Button {
-                    isAddingFeature = true
-                } label: {
-                    Label("新增", systemImage: "plus")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(appState.featureWriteWorkspaceID != nil)
-            }
-            ForEach(features) { feature in
-                featureRow(feature)
-                if feature.id != features.last?.id { Divider() }
-            }
+            Text("已确认功能点")
+                .font(.headline)
+            FeatureFactsList(features: features, workspace: workspace, compact: true)
             ForEach(taskFeatureWarnings, id: \.self) { warning in
                 Label(warning, systemImage: "exclamationmark.triangle")
                     .font(.caption)
@@ -997,6 +980,21 @@ struct FeatureWorkspaceView: View {
         guard featureProposalReview?.canConfirm == true else { return false }
         let selected = appState.featureProposalSelectedItemIDsByWorkspace[workspace.id] ?? []
         return !selected.isEmpty && appState.featureProposalMergeWorkspaceID == nil
+    }
+
+    private var selectedProposalCount: Int {
+        (appState.featureProposalSelectedItemIDsByWorkspace[workspace.id] ?? []).count
+    }
+
+    private var proposalDraftPath: String {
+        "\(workspace.path)/FEATURES.draft.md"
+    }
+
+    private func openProposalDraft() {
+        guard NSWorkspace.shared.open(URL(fileURLWithPath: proposalDraftPath)) else {
+            appState.lastError = "无法打开提案文件：\(proposalDraftPath)"
+            return
+        }
     }
 
     private func proposalSelectedBinding(_ item: FeatureProposalItem) -> Binding<Bool> {

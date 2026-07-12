@@ -1626,6 +1626,63 @@ final class FeatureWorkflowTests: XCTestCase {
         )
     }
 
+    func testFeatureWorkspaceUsesTruthfulStageCopy() {
+        XCTAssertEqual(FeatureWorkspacePresentation.Phase.editing.label, "填写需求")
+        XCTAssertEqual(FeatureWorkspacePresentation.Phase.waiting.label, "已交接")
+        XCTAssertEqual(FeatureWorkspacePresentation.Phase.proposalReady.label, "审阅功能点")
+        XCTAssertEqual(FeatureWorkspacePresentation.Phase.proposalInvalid.label, "提案需修正")
+        XCTAssertEqual(FeatureWorkspacePresentation.Phase.confirmed.label, "开始开发")
+    }
+
+    func testFeatureWorkspacePhaseMetadataDrivesItsVisibleSurface() {
+        XCTAssertTrue(FeatureWorkspacePresentation.Phase.editing.demandIsExpanded)
+        XCTAssertFalse(FeatureWorkspacePresentation.Phase.waiting.demandIsExpanded)
+        XCTAssertTrue(FeatureWorkspacePresentation.Phase.proposalReady.proposalIsVisible)
+        XCTAssertTrue(FeatureWorkspacePresentation.Phase.proposalInvalid.proposalIsVisible)
+        XCTAssertTrue(FeatureWorkspacePresentation.Phase.confirmed.showsConfirmedFeatures)
+        XCTAssertTrue(FeatureWorkspacePresentation.Phase.allCases.allSatisfy { $0.prominentActionCount == 1 })
+    }
+
+    func testWaitingAndInvalidStatesExplainRecoveryWithoutChangingFacts() {
+        let waiting = FeatureWorkspacePresentation.recovery(for: .waiting)
+        let invalid = FeatureWorkspacePresentation.recovery(for: .proposalInvalid)
+
+        XCTAssertFalse(waiting.factsChanged)
+        XCTAssertTrue(waiting.message.contains("需求、链接和材料已保留"))
+        XCTAssertTrue(waiting.message.contains("FEATURES.md 未更改"))
+        XCTAssertFalse(invalid.factsChanged)
+        XCTAssertTrue(invalid.message.contains("FEATURES.md 未更改"))
+    }
+
+    func testFeatureWorkspaceRefreshKeepsTruthfulWaitingOnlyWhileProposalIsMissing() throws {
+        let missing = FeatureProposalReview(
+            diff: nil,
+            confirmedRevision: nil,
+            draftRevision: nil,
+            error: "feature proposal draft is missing: /workspace/FEATURES.draft.md"
+        )
+        let invalid = FeatureProposalReview(
+            diff: nil,
+            confirmedRevision: nil,
+            draftRevision: nil,
+            error: "missing valid Status metadata for DRAFT-001"
+        )
+        let draft = try NativeFeatureStore.parseProposal(
+            featureSource(id: "DRAFT-001", title: "Review me", status: "draft")
+        )
+        let ready = FeatureProposalReview(
+            diff: FeatureProposalDiff.resolve(confirmed: .empty, draft: draft),
+            confirmedRevision: .missing,
+            draftRevision: .regularUTF8(sha256: "draft", byteCount: 1),
+            error: nil
+        )
+
+        XCTAssertTrue(FeatureWorkspacePresentation.keepsWaitingAfterRefresh(wasWaiting: true, review: missing))
+        XCTAssertFalse(FeatureWorkspacePresentation.keepsWaitingAfterRefresh(wasWaiting: true, review: invalid))
+        XCTAssertFalse(FeatureWorkspacePresentation.keepsWaitingAfterRefresh(wasWaiting: true, review: ready))
+        XCTAssertFalse(FeatureWorkspacePresentation.keepsWaitingAfterRefresh(wasWaiting: false, review: missing))
+    }
+
     func testFeatureCenteredMainStageRoutesDemandAndProposalWithoutLegacyPrecheck() throws {
         let root = try temporaryDemandWorkspace()
         defer { try? FileManager.default.removeItem(at: root) }

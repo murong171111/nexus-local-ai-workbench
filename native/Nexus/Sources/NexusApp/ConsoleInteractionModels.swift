@@ -1,5 +1,76 @@
 import Foundation
 
+enum FeatureWorkspacePresentation {
+    enum Phase: CaseIterable, Equatable {
+        case editing
+        case waiting
+        case proposalReady
+        case proposalInvalid
+        case confirmed
+
+        var label: String {
+            switch self {
+            case .editing: "填写需求"
+            case .waiting: "已交接"
+            case .proposalReady: "审阅功能点"
+            case .proposalInvalid: "提案需修正"
+            case .confirmed: "开始开发"
+            }
+        }
+
+        var demandIsExpanded: Bool { self == .editing }
+        var proposalIsVisible: Bool { self == .proposalReady || self == .proposalInvalid }
+        var showsConfirmedFeatures: Bool { self == .confirmed }
+        var prominentActionCount: Int { 1 }
+    }
+
+    struct Recovery: Equatable {
+        let factsChanged: Bool
+        let message: String
+    }
+
+    static func phase(
+        hasConfirmedFeatures: Bool,
+        didHandoff: Bool,
+        review: FeatureProposalReview?
+    ) -> Phase {
+        if didHandoff { return .waiting }
+        if review?.diff != nil { return .proposalReady }
+        if let error = review?.error,
+           !error.contains("feature proposal draft is missing") {
+            return .proposalInvalid
+        }
+        if hasConfirmedFeatures { return .confirmed }
+        return .editing
+    }
+
+    static func recovery(for phase: Phase) -> Recovery {
+        switch phase {
+        case .waiting:
+            Recovery(
+                factsChanged: false,
+                message: "需求、链接和材料已保留；FEATURES.md 未更改。"
+            )
+        case .proposalInvalid:
+            Recovery(
+                factsChanged: false,
+                message: "需求和提案草稿已保留；FEATURES.md 未更改。"
+            )
+        case .editing, .proposalReady, .confirmed:
+            Recovery(factsChanged: false, message: "FEATURES.md 未更改。")
+        }
+    }
+
+    static func keepsWaitingAfterRefresh(
+        wasWaiting: Bool,
+        review: FeatureProposalReview?
+    ) -> Bool {
+        guard wasWaiting, let review else { return wasWaiting }
+        guard review.diff == nil else { return false }
+        return review.error?.contains("feature proposal draft is missing") == true
+    }
+}
+
 enum NexusPrimarySurface: String, CaseIterable, Identifiable {
     case global
     case project
