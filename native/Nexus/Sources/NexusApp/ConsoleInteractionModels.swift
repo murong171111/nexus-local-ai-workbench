@@ -1,5 +1,20 @@
 import Foundation
 
+enum NexusPrimarySurface: String, CaseIterable, Identifiable {
+    case global
+    case project
+
+    var id: Self { self }
+
+    var label: String {
+        self == .global ? "全局" : "当前项目"
+    }
+
+    func isAvailable(hasSelection: Bool) -> Bool {
+        self == .global || hasSelection
+    }
+}
+
 enum WorkspaceConsoleTarget: String, Hashable {
     case demandInput
     case features

@@ -38,9 +38,10 @@ private func localCheckSummaryPayload(
 
 struct RootView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.scenePhase) private var scenePhase
     @State private var isCreateWorkspacePresented = false
     @State private var isSettingsPresented = false
-    @State private var primarySurface: NexusPrimarySurface = .console
+    @State private var primarySurface: NexusPrimarySurface = .global
 
     var body: some View {
         VStack(spacing: 0) {
@@ -51,7 +52,7 @@ struct RootView: View {
             )
             Divider()
 
-            if primarySurface == .console {
+            if primarySurface == .project {
                 WorkspaceConsoleView(
                     isCreateWorkspacePresented: $isCreateWorkspacePresented,
                     isSettingsPresented: $isSettingsPresented
@@ -61,13 +62,24 @@ struct RootView: View {
                     isCreateWorkspacePresented: $isCreateWorkspacePresented,
                     isSettingsPresented: $isSettingsPresented
                 ) {
-                    primarySurface = .console
+                    primarySurface = .project
                 }
             }
         }
         .background(NexusPalette.background)
         .task {
             await appState.refreshFromBridge()
+        }
+        .onChange(of: scenePhase) { phase in
+            guard phase == .active else { return }
+            Task {
+                await appState.refreshFromBridge()
+            }
+        }
+        .onChange(of: appState.selectedWorkspaceID) { selectedWorkspaceID in
+            if selectedWorkspaceID == nil {
+                primarySurface = .global
+            }
         }
         .task {
             await appState.refreshAutomationNotificationStatus()
@@ -126,141 +138,134 @@ struct RootView: View {
     }
 }
 
-private enum NexusPrimarySurface: String, CaseIterable, Identifiable {
-    case console = "Console"
-    case board = "Board"
-
-    var id: String { rawValue }
-
-    var label: String {
-        switch self {
-        case .console:
-            "控制台"
-        case .board:
-            "面板"
-        }
-    }
-}
-
 private struct TopCommandBar: View {
     @EnvironmentObject private var appState: AppState
     @Binding var primarySurface: NexusPrimarySurface
     @Binding var isCreateWorkspacePresented: Bool
     @Binding var isSettingsPresented: Bool
+    @State private var isSearchPresented = false
     @FocusState private var searchFocused: Bool
 
     var body: some View {
         HStack(spacing: 12) {
-            Picker("视图 / View", selection: $primarySurface) {
+            Text("NEXUS")
+                .font(.system(size: 13, weight: .bold, design: .monospaced))
+
+            Picker("主界面", selection: $primarySurface) {
                 ForEach(NexusPrimarySurface.allCases) { surface in
-                    Text("\(surface.label) / \(surface.rawValue)")
+                    Text(surface.label)
                         .tag(surface)
+                        .disabled(!surface.isAvailable(hasSelection: appState.selectedWorkspace != nil))
                 }
             }
             .pickerStyle(.segmented)
-            .frame(width: 184)
+            .frame(width: 164)
 
-            ZStack(alignment: .topLeading) {
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.secondary)
-                    TextField("搜索工作区、文档、SQL、任务...", text: $appState.query)
-                        .textFieldStyle(.plain)
-                        .focused($searchFocused)
-                        .onSubmit {
-                            appState.openSelectedSearchResult()
-                        }
-                        .task(id: appState.query) {
-                            try? await Task.sleep(nanoseconds: 160_000_000)
-                            guard !Task.isCancelled else { return }
-                            await appState.searchForCurrentQuery()
-                        }
-                }
-                .padding(.horizontal, 12)
-                .frame(height: 36)
-                .background(NexusPalette.panel)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            Button {
+                isSearchPresented = true
+            } label: {
+                Image(systemName: "magnifyingglass")
+            }
+            .buttonStyle(.bordered)
+            .help("搜索工作区、文档、SQL、任务")
+            .popover(isPresented: $isSearchPresented, arrowEdge: .top) {
+                VStack(spacing: 0) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(.secondary)
+                        TextField("搜索工作区、文档、SQL、任务...", text: $appState.query)
+                            .textFieldStyle(.plain)
+                            .focused($searchFocused)
+                            .onSubmit {
+                                appState.openSelectedSearchResult()
+                                isSearchPresented = false
+                            }
+                            .task(id: appState.query) {
+                                try? await Task.sleep(nanoseconds: 160_000_000)
+                                guard !Task.isCancelled else { return }
+                                await appState.searchForCurrentQuery()
+                            }
+                    }
+                    .padding(.horizontal, 12)
+                    .frame(height: 36)
+                    .background(NexusPalette.panel)
 
-                if appState.hasSearchQuery {
                     NativeSearchPopover()
-                        .offset(y: 42)
-                        .zIndex(20)
+                }
+                .onMoveCommand { direction in
+                    guard searchFocused else { return }
+                    switch direction {
+                    case .up:
+                        appState.moveSearchSelection(-1)
+                    case .down:
+                        appState.moveSearchSelection(1)
+                    default:
+                        break
+                    }
+                }
+                .onExitCommand {
+                    guard searchFocused else { return }
+                    appState.clearSearch()
+                    isSearchPresented = false
                 }
             }
-            .frame(maxWidth: 560)
-            .zIndex(10)
-            .onMoveCommand { direction in
-                guard searchFocused else { return }
-                switch direction {
-                case .up:
-                    appState.moveSearchSelection(-1)
-                case .down:
-                    appState.moveSearchSelection(1)
-                default:
-                    break
-                }
-            }
-            .onExitCommand {
-                guard searchFocused else { return }
-                appState.clearSearch()
-            }
-
-            Button {
-                Task {
-                    await appState.rebuildSearchIndex()
-                }
-            } label: {
-                Label("Index", systemImage: "externaldrive.badge.magnifyingglass")
-            }
-            .buttonStyle(.bordered)
-
-            Button {
-                Task {
-                    await appState.refreshFromBridge()
-                }
-            } label: {
-                Label(appState.isLoading ? "Loading" : "Refresh", systemImage: "arrow.clockwise")
-            }
-            .buttonStyle(.bordered)
-            .disabled(appState.isLoading)
-
-            Button {
-                Task {
-                    await appState.runLocalAutomationCheck()
-                }
-            } label: {
-                Label(
-                    appState.isRunningAutomationCheck ? "Checking" : "Checks",
-                    systemImage: "checklist.checked"
-                )
-            }
-            .buttonStyle(.bordered)
-            .disabled(appState.isRunningAutomationCheck)
 
             Spacer()
 
-            Label(appState.bridgeMode, systemImage: "point.3.connected.trianglepath.dotted")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Menu {
+                Button {
+                    Task {
+                        await appState.rebuildSearchIndex()
+                    }
+                } label: {
+                    Label("重建索引", systemImage: "externaldrive.badge.magnifyingglass")
+                }
 
-            Text(appState.selectedWorkspace?.folder ?? "No workspace")
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+                Button {
+                    Task {
+                        await appState.refreshFromBridge()
+                    }
+                } label: {
+                    Label("立即刷新", systemImage: "arrow.clockwise")
+                }
+                .disabled(appState.isLoading)
+
+                Button {
+                    Task {
+                        await appState.runLocalAutomationCheck()
+                    }
+                } label: {
+                    Label("运行检查", systemImage: "checklist.checked")
+                }
+                .disabled(appState.isRunningAutomationCheck)
+
+                Divider()
+
+                Button {
+                    isSettingsPresented = true
+                } label: {
+                    Label("设置", systemImage: "gearshape")
+                }
+
+                Button {
+                    Task {
+                        await appState.checkNativeEnvironment()
+                    }
+                } label: {
+                    Label("诊断", systemImage: "stethoscope")
+                }
+                .disabled(appState.isCheckingNativeEnvironment)
+            } label: {
+                Image(systemName: "ellipsis.circle")
+            }
+            .help("更多工具")
 
             Button {
                 isCreateWorkspacePresented = true
             } label: {
-                Label("New Workspace", systemImage: "plus")
+                Label("新建工作区", systemImage: "plus")
             }
             .buttonStyle(.borderedProminent)
-
-            Button {
-                isSettingsPresented = true
-            } label: {
-                Label("Settings", systemImage: "gearshape")
-            }
-            .buttonStyle(.bordered)
         }
         .padding(.horizontal, 18)
         .frame(height: 58)

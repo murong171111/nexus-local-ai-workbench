@@ -12,6 +12,23 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(appState.agentStatus.title, "Loading")
     }
 
+    func testPrimarySurfacesAreGlobalAndCurrentProject() {
+        XCTAssertEqual(NexusPrimarySurface.global.label, "全局")
+        XCTAssertEqual(NexusPrimarySurface.project.label, "当前项目")
+        XCTAssertFalse(NexusPrimarySurface.project.isAvailable(hasSelection: false))
+        XCTAssertTrue(NexusPrimarySurface.project.isAvailable(hasSelection: true))
+    }
+
+    @MainActor
+    func testSuccessfulBridgeRefreshRecordsRefreshTime() async {
+        let appState = appStateForAutomationTests(workspaces: [])
+        XCTAssertNil(appState.lastWorkspaceRefreshAt)
+
+        await appState.refreshFromBridge()
+
+        XCTAssertNotNil(appState.lastWorkspaceRefreshAt)
+    }
+
     func testPreviewBridgeOptionalFeedsAreEmpty() async throws {
         let bridge = PreviewNexusBridge()
 

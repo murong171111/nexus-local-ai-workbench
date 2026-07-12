@@ -215,6 +215,7 @@ final class AppState: ObservableObject {
     @Published var ideURL: String
     @Published var refreshIntervalSeconds: Int
     @Published var isLoading = false
+    @Published private(set) var lastWorkspaceRefreshAt: Date?
     @Published var isDocumentLoading = false
     @Published var isCreatingWorkspace = false
     @Published var isSettingUpWorktrees = false
@@ -1119,6 +1120,7 @@ final class AppState: ObservableObject {
             let enrichedWorkspaces = Self.workspaces(mappedWorkspaces, applyingNativeAuditEvents: nativeAuditEvents)
             demandIntakeStatusesByWorkspace = Self.nativeDemandIntakeStatuses(for: enrichedWorkspaces)
             workspaces = enrichedWorkspaces
+            lastWorkspaceRefreshAt = Date()
             codexSessionLinksByWorkspace = Self.loadCodexSessionLinks(for: enrichedWorkspaces)
             if selectedWorkspaceID == nil || !enrichedWorkspaces.contains(where: { $0.id == selectedWorkspaceID }) {
                 selectedWorkspaceID = enrichedWorkspaces.first?.id
