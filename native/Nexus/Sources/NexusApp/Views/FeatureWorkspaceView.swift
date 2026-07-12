@@ -86,6 +86,12 @@ enum FeatureWorkspaceEvidencePresentation {
     }
 }
 
+enum FeatureFactsPresentation {
+    static func linkedTaskLabel(_ count: Int) -> String {
+        "关联任务 \(count)"
+    }
+}
+
 struct FeatureFactsRow: View {
     let feature: WorkspaceFeature
     let workspace: WorkspaceSummary
@@ -109,7 +115,7 @@ struct FeatureFactsRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            Text("\(feature.verification.rawValue) · \(linkedTaskCount) linked tasks")
+            Text("\(feature.verification.rawValue) · \(FeatureFactsPresentation.linkedTaskLabel(linkedTaskCount))")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             if feature.evidenceStale {

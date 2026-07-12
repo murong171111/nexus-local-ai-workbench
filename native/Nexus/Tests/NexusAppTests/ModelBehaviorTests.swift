@@ -6313,6 +6313,10 @@ final class ModelBehaviorTests: XCTestCase {
             rootView.components(separatedBy: "private struct WorkspaceConsoleHeader").last?
                 .components(separatedBy: "private struct WorkspaceConsoleStageRail").first
         )
+        let mainSurface = try XCTUnwrap(
+            rootView.components(separatedBy: "private func stageSurface(").last?
+                .components(separatedBy: "private func utilityDrawer(").first
+        )
 
         XCTAssertTrue(rootView.contains("@State private var selectedStageGroup"))
         XCTAssertTrue(rootView.contains("selectedStageGroup = group"))
@@ -6325,6 +6329,19 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertFalse(header.contains("ArchivedBadge"))
         XCTAssertTrue(rootView.contains("FeatureFactsList("))
         XCTAssertTrue(featureView.contains("FeatureFactsRow("))
+        for forbidden in [
+            "WorkspaceConsoleSummaryStrip",
+            "WorkspaceConsoleEvidenceGroups",
+            "WorkspaceMainStageSummaryView",
+            "ActivityTimelineView",
+            "SectionBlock"
+        ] {
+            XCTAssertFalse(mainSurface.contains(forbidden), "main surface must not render \(forbidden)")
+        }
+    }
+
+    func testFeatureFactsLinkedTaskCopyIsChineseFirst() {
+        XCTAssertEqual(FeatureFactsPresentation.linkedTaskLabel(3), "关联任务 3")
     }
 
     func testWorkspaceStageAnswerRequiresRoutedEvidenceFile() {

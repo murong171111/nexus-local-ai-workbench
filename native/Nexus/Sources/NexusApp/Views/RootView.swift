@@ -2581,8 +2581,7 @@ private struct WorkspaceConsoleView: View {
                                         stageSurface(
                                             surface,
                                             workspace: workspace,
-                                            stage: stage,
-                                            proxy: proxy
+                                            stage: stage
                                         )
                                             .frame(maxWidth: .infinity, alignment: .topLeading)
                                             .padding(.horizontal, 18)
@@ -2642,69 +2641,28 @@ private struct WorkspaceConsoleView: View {
     private func stageSurface(
         _ surface: WorkspaceConsoleSurface,
         workspace: WorkspaceSummary,
-        stage: WorkspaceMainStage,
-        proxy: ScrollViewProxy
+        stage: WorkspaceMainStage
     ) -> some View {
         switch surface {
         case .featureDemand:
             demandInput(for: workspace)
         case .development:
-            VStack(alignment: .leading, spacing: 16) {
-                stageSummary(stage, workspace: workspace, proxy: proxy)
-                SectionBlock(title: "开发功能点") {
-                    let features = appState.featuresByWorkspace[workspace.id]?.features ?? []
-                    if features.isEmpty {
-                        Text("暂无已确认功能点")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        FeatureFactsList(features: features, workspace: workspace)
-                    }
+            VStack(alignment: .leading, spacing: 12) {
+                let features = appState.featuresByWorkspace[workspace.id]?.features ?? []
+                if features.isEmpty {
+                    Text("暂无已确认功能点")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    FeatureFactsList(features: features, workspace: workspace, compact: true)
                 }
-                WorkspaceConsoleSummaryStrip(workspace: workspace)
+                WorkspaceConsoleStageGateLine(label: "开发下一步", value: stage.primaryActionLabel)
             }
         case .delivery:
-            VStack(alignment: .leading, spacing: 16) {
-                stageSummary(stage, workspace: workspace, proxy: proxy)
-                WorkspaceConsoleEvidenceGroups(
-                    workspace: workspace,
-                    stage: stage,
-                    openDocument: { key, fallback in
-                        Task {
-                            await appState.loadDocument(
-                                path: documentPath(for: key, fallback: fallback, in: workspace)
-                            )
-                        }
-                    },
-                    openSql: {
-                        Task { await appState.openSqlReviewDocument(in: workspace) }
-                    }
-                )
-            }
+            WorkspaceConsoleStageGateLine(label: "交付门禁", value: stage.primaryActionLabel)
         case .archive:
-            VStack(alignment: .leading, spacing: 16) {
-                stageSummary(stage, workspace: workspace, proxy: proxy)
-                SectionBlock(title: "变更与交接记录") {
-                    ActivityTimelineView(events: workspace.activities)
-                }
-            }
+            WorkspaceConsoleStageGateLine(label: "归档门禁", value: stage.primaryActionLabel)
         }
-    }
-
-    private func stageSummary(
-        _ stage: WorkspaceMainStage,
-        workspace: WorkspaceSummary,
-        proxy: ScrollViewProxy
-    ) -> some View {
-        WorkspaceMainStageSummaryView(
-            stage: stage,
-            showsAction: false,
-            action: {},
-            evidenceAction: { link in
-                guard let action = link.action else { return }
-                run(action, in: workspace, proxy: proxy)
-            }
-        )
     }
 
     private func utilityDrawer(
@@ -2868,6 +2826,22 @@ private struct WorkspaceConsoleView: View {
         default:
             return "\(workspace.path)/\(fallback)"
         }
+    }
+}
+
+private struct WorkspaceConsoleStageGateLine: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(label)
+                .font(.caption.weight(.semibold))
+            Text(value)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 
