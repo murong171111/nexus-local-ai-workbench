@@ -218,6 +218,10 @@ struct WorkspaceConsolePresentation {
 }
 
 struct WorkspaceConsoleLayoutPolicy: Hashable {
+    static func usesOverlayDrawer(availableWidth: CGFloat) -> Bool {
+        availableWidth < 1_320
+    }
+
     let stageGroups = WorkspaceConsoleStageGroup.allCases
     let prominentPrimaryActionCount = 1
     let filesAreCollapsed = true

@@ -6295,6 +6295,30 @@ final class ModelBehaviorTests: XCTestCase {
         )
     }
 
+    func testConsoleDrawerOverlaysUntilAdjacentLayoutHasReadableCenterWidth() {
+        XCTAssertTrue(WorkspaceConsoleLayoutPolicy.usesOverlayDrawer(availableWidth: 1_165))
+        XCTAssertTrue(WorkspaceConsoleLayoutPolicy.usesOverlayDrawer(availableWidth: 1_319))
+        XCTAssertFalse(WorkspaceConsoleLayoutPolicy.usesOverlayDrawer(availableWidth: 1_320))
+    }
+
+    func testConsoleFirstViewportCopyIsChineseOnly() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let rootView = try String(
+            contentsOf: packageRoot.appendingPathComponent("Sources/NexusApp/Views/RootView.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(rootView.contains(".labelsHidden()"))
+        XCTAssertFalse(rootView.contains("控制台 / Console"))
+        XCTAssertFalse(rootView.contains("现在该做什么 / Focus"))
+        XCTAssertEqual(RiskLevel.low.label, "低风险")
+        XCTAssertEqual(RiskLevel.medium.label, "中风险")
+        XCTAssertEqual(RiskLevel.high.label, "高风险")
+    }
+
     func testConsoleViewWiresSelectedStageSurfaceAndSharedFeatureFacts() throws {
         let packageRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

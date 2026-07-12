@@ -160,6 +160,7 @@ private struct TopCommandBar: View {
                 }
             }
             .pickerStyle(.segmented)
+            .labelsHidden()
             .frame(width: 164)
 
             Button {
@@ -2550,7 +2551,9 @@ private struct WorkspaceConsoleView: View {
                 let surface = WorkspaceConsoleSurface(visibleStageGroup)
 
                 GeometryReader { geometry in
-                    let usesOverlayDrawer = geometry.size.width < 1060
+                    let usesOverlayDrawer = WorkspaceConsoleLayoutPolicy.usesOverlayDrawer(
+                        availableWidth: geometry.size.width
+                    )
 
                     VStack(spacing: 0) {
                         WorkspaceConsoleHeader(workspace: workspace, backToGlobal: backToGlobal)
@@ -2856,10 +2859,7 @@ private struct WorkspaceConsoleHeader: View {
             .help("返回全局工作台")
             .accessibilityLabel("返回全局工作台")
 
-            VStack(alignment: .leading, spacing: 5) {
-                Text("控制台 / Console")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 0) {
                 Text(workspace.name)
                     .font(.title2.weight(.semibold))
                     .lineLimit(1)
@@ -2983,7 +2983,7 @@ private struct WorkspaceConsoleFocusBand: View {
                     .frame(width: 24)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("现在该做什么 / Focus")
+                    Text("现在该做什么")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                     Text(stage.primaryActionLabel)
@@ -3129,11 +3129,11 @@ private struct WorkspaceConsoleEvidenceGroups: View {
     private var groups: [ConsoleFileGroup] {
         [
             ConsoleFileGroup(
-                title: "当前阶段 / Current",
+                title: "当前阶段",
                 files: currentStageFiles
             ),
             ConsoleFileGroup(
-                title: "常用 / Core",
+                title: "常用",
                 files: [
                     ConsoleFileLink(key: "status", label: "STATUS.md", fallback: "STATUS.md", systemImage: "gauge.with.dots.needle.67percent"),
                     ConsoleFileLink(key: "tasks", label: "tasks.md", fallback: "tasks.md", systemImage: "checklist"),
@@ -3142,7 +3142,7 @@ private struct WorkspaceConsoleEvidenceGroups: View {
                 ]
             ),
             ConsoleFileGroup(
-                title: "需求 / Demand",
+                title: "需求",
                 files: [
                     ConsoleFileLink(key: "requirement", label: "requirement.md", fallback: "需求/requirement.md", systemImage: "text.quote"),
                     ConsoleFileLink(key: "scope", label: "scope.md", fallback: "需求/scope.md", systemImage: "scope"),
@@ -3151,7 +3151,7 @@ private struct WorkspaceConsoleEvidenceGroups: View {
                 ]
             ),
             ConsoleFileGroup(
-                title: "SQL / Scripts",
+                title: "SQL 与脚本",
                 files: [
                     ConsoleFileLink(key: "sql", label: "SQL 复查", fallback: "sql", systemImage: "cylinder.split.1x2", opensSqlReview: true),
                     ConsoleFileLink(key: "worktreeScript", label: "worktree-commands.sh", fallback: "scripts/worktree-commands.sh", systemImage: "terminal")
@@ -3288,7 +3288,7 @@ private struct WorkspaceConsoleDocumentPanel: View {
     }
 
     var body: some View {
-        SectionBlock(title: "文档查看 / Document viewer") {
+        SectionBlock(title: "文档查看") {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text("常用文档")
@@ -3324,7 +3324,7 @@ private struct WorkspaceConsoleDocumentPanel: View {
                 }
 
                 if !workspace.sqlFiles.isEmpty || !workspace.sqlDocuments.isEmpty {
-                    DisclosureGroup("SQL 文件 / SQL files") {
+                    DisclosureGroup("SQL 文件") {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8)], alignment: .leading, spacing: 8) {
                             ForEach(workspace.sqlDocuments, id: \.path) { file in
                                 Button {

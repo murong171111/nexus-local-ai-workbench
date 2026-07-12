@@ -399,11 +399,11 @@ enum RiskLevel: String, Hashable {
     var label: String {
         switch self {
         case .low:
-            "低风险 / Low"
+            "低风险"
         case .medium:
-            "中风险 / Medium"
+            "中风险"
         case .high:
-            "高风险 / High"
+            "高风险"
         }
     }
 

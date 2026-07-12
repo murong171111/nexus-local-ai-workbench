@@ -207,7 +207,7 @@ struct WorkspaceDocumentPresentation: Hashable {
 
         if isMarkdown {
             return WorkspaceDocumentPresentation(
-                label: "Markdown 预览 / Markdown",
+                label: "Markdown 预览",
                 detail: "标准 Markdown 工作区文档可在预览和源码之间切换。",
                 systemImage: "doc.richtext",
                 prefersSource: false,
