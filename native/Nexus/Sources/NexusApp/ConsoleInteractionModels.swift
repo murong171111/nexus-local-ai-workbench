@@ -220,12 +220,18 @@ struct WorkspaceConsolePresentation {
         surface: WorkspaceConsoleSurface,
         stageID: WorkspaceMainStageID
     ) -> Bool {
-        if surface == .featureDemand { return false }
+        if surface == .featureDemand {
+            return stageID != .created && stageID != .demandIntake
+        }
         if surface == .development { return stageID != .development }
         return true
     }
 
     static func canHandOffConfirmedFeature(stageID: WorkspaceMainStageID) -> Bool {
+        stageID == .development
+    }
+
+    static func canBeginDevelopment(stageID: WorkspaceMainStageID) -> Bool {
         stageID == .development
     }
 }

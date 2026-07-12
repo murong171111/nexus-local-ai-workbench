@@ -235,6 +235,7 @@ final class AppState: ObservableObject {
     @Published var featureLoadingWorkspaceID: WorkspaceSummary.ID?
     @Published var featureWriteWorkspaceID: WorkspaceSummary.ID?
     @Published var featureProposalReviewsByWorkspace: [WorkspaceSummary.ID: FeatureProposalReview] = [:]
+    @Published private(set) var featureIntakeHandoffWorkspaceIDs = Set<WorkspaceSummary.ID>()
     @Published var featureProposalSelectedItemIDsByWorkspace: [WorkspaceSummary.ID: Set<String>] = [:]
     @Published var featureProposalReplacementsByWorkspace: [WorkspaceSummary.ID: [String: WorkspaceFeature]] = [:]
     @Published var featureProposalAdditionalFeaturesByWorkspace: [WorkspaceSummary.ID: [WorkspaceFeature]] = [:]
@@ -3626,6 +3627,11 @@ final class AppState: ObservableObject {
         }.value
         guard featureProposalRefreshGenerationsByWorkspace[workspace.id] == generation else { return }
         featureProposalReviewsByWorkspace[workspace.id] = review
+        let draftIsStillMissing = review.diff == nil
+            && review.error?.contains("feature proposal draft is missing") == true
+        if !draftIsStillMissing {
+            featureIntakeHandoffWorkspaceIDs.remove(workspace.id)
+        }
         if previousDraftRevision != review.draftRevision {
             featureProposalAdditionalFeaturesByWorkspace[workspace.id] = []
         }
@@ -3644,6 +3650,10 @@ final class AppState: ObservableObject {
 
     func featureProposalReview(for workspace: WorkspaceSummary) -> FeatureProposalReview? {
         featureProposalReviewsByWorkspace[workspace.id]
+    }
+
+    func isFeatureIntakeHandedOff(for workspace: WorkspaceSummary) -> Bool {
+        featureIntakeHandoffWorkspaceIDs.contains(workspace.id)
     }
 
     func featureProposalItems(for workspace: WorkspaceSummary) -> [FeatureProposalItem] {
@@ -4684,6 +4694,7 @@ final class AppState: ObservableObject {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(prompt, forType: .string)
         lastCopiedCodexHandoffPayload = prompt
+        featureIntakeHandoffWorkspaceIDs.insert(workspace.id)
 
         let rawURL = codexURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? Self.defaultCodexURL
@@ -5875,6 +5886,8 @@ final class AppState: ObservableObject {
             return "验证 PR 已交接 / Validation PR handoff"
         case "feature_execution.handed_off":
             return "已交接 / Feature handed off"
+        case "feature_intake.handed_off":
+            return "需求已交接 / Feature intake handed off"
         case "workspace_task.source_located":
             return "任务来源已定位 / Task source located"
         case "codex_agent_event.copied":

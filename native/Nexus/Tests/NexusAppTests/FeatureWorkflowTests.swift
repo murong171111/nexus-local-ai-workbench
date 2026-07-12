@@ -2732,6 +2732,16 @@ final class FeatureWorkflowTests: XCTestCase {
         XCTAssertNil(appState.lastError)
         XCTAssertTrue(appState.codexHandoffFeedback?.title.contains("已交接") == true)
         XCTAssertTrue(appState.lastCopiedCodexHandoffPayload?.contains("FEATURES.draft.md") == true)
+        XCTAssertTrue(appState.isFeatureIntakeHandedOff(for: workspace))
+
+        await appState.refreshFeatureProposal(for: workspace)
+        XCTAssertTrue(appState.isFeatureIntakeHandedOff(for: workspace))
+
+        try featureSource(id: "DRAFT-001", title: "Proposed", status: "draft").write(
+            to: root.appendingPathComponent("FEATURES.draft.md"), atomically: true, encoding: .utf8
+        )
+        await appState.refreshFeatureProposal(for: workspace)
+        XCTAssertFalse(appState.isFeatureIntakeHandedOff(for: workspace))
     }
 
     @MainActor

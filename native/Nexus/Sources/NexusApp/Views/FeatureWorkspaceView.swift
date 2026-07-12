@@ -293,6 +293,7 @@ struct FeatureWorkspaceView: View {
     @Environment(\.scenePhase) private var scenePhase
     let workspace: WorkspaceSummary
     let demandInputFocused: FocusState<Bool>.Binding
+    let canBeginDevelopment: Bool
     let onBeginDevelopment: () -> Void
 
     @State private var draft = DemandInputDraft.empty
@@ -310,7 +311,6 @@ struct FeatureWorkspaceView: View {
     @State private var pendingCompletionReversal: WorkspaceFeature?
     @State private var completionReversalReason = ""
     @State private var isDemandExpanded = false
-    @State private var isAwaitingCodex = false
     @State private var refreshTask: Task<Void, Never>?
     @State private var handoffTask: Task<Void, Never>?
     @State private var handoffFailure: FeatureWorkspacePresentation.HandoffFailure?
@@ -484,7 +484,6 @@ struct FeatureWorkspaceView: View {
             refreshTask?.cancel()
             handoffTask?.cancel()
             isDemandExpanded = false
-            isAwaitingCodex = false
             handoffFailure = nil
         }
         .onChange(of: scenePhase) { phase in
@@ -647,7 +646,7 @@ struct FeatureWorkspaceView: View {
     private var presentationPhase: FeatureWorkspacePresentation.Phase {
         FeatureWorkspacePresentation.phase(
             hasConfirmedFeatures: !features.isEmpty,
-            didHandoff: isAwaitingCodex,
+            didHandoff: appState.isFeatureIntakeHandedOff(for: workspace),
             review: featureProposalReview
         )
     }
@@ -741,7 +740,6 @@ struct FeatureWorkspaceView: View {
             guard !Task.isCancelled, appState.selectedWorkspaceID == target.id else { return }
             if didOpen {
                 isDemandExpanded = false
-                isAwaitingCodex = true
                 handoffFailure = nil
             } else {
                 handoffFailure = FeatureWorkspacePresentation.handoffFailure(
@@ -763,10 +761,6 @@ struct FeatureWorkspaceView: View {
         await appState.refreshFeatureProposal(for: target)
         guard !Task.isCancelled, appState.selectedWorkspaceID == target.id else { return }
         handoffFailure = nil
-        isAwaitingCodex = FeatureWorkspacePresentation.keepsWaitingAfterRefresh(
-            wasWaiting: isAwaitingCodex,
-            review: appState.featureProposalReview(for: target)
-        )
     }
 
     private var legacyMigrationButton: some View {
@@ -927,14 +921,16 @@ struct FeatureWorkspaceView: View {
                     .font(.caption)
                     .foregroundStyle(.orange)
             }
-            HStack {
-                Spacer()
-                Button {
-                    onBeginDevelopment()
-                } label: {
-                    Label("进入开发", systemImage: "arrow.right.circle")
+            if canBeginDevelopment {
+                HStack {
+                    Spacer()
+                    Button {
+                        onBeginDevelopment()
+                    } label: {
+                        Label("进入开发", systemImage: "arrow.right.circle")
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
-                .buttonStyle(.borderedProminent)
             }
         }
     }

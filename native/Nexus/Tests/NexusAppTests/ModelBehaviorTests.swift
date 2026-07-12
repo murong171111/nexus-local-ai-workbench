@@ -6321,8 +6321,12 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(presentation.reason, workspace.mainStage().reason)
         XCTAssertFalse(WorkspaceConsolePresentation.showsFocusAction(surface: .development, stageID: .development))
         XCTAssertTrue(WorkspaceConsolePresentation.showsFocusAction(surface: .development, stageID: .worktreeSetup))
+        XCTAssertFalse(WorkspaceConsolePresentation.showsFocusAction(surface: .featureDemand, stageID: .demandIntake))
+        XCTAssertTrue(WorkspaceConsolePresentation.showsFocusAction(surface: .featureDemand, stageID: .serviceBranchConfirm))
         XCTAssertTrue(WorkspaceConsolePresentation.canHandOffConfirmedFeature(stageID: .development))
         XCTAssertFalse(WorkspaceConsolePresentation.canHandOffConfirmedFeature(stageID: .worktreeSetup))
+        XCTAssertTrue(WorkspaceConsolePresentation.canBeginDevelopment(stageID: .development))
+        XCTAssertFalse(WorkspaceConsolePresentation.canBeginDevelopment(stageID: .serviceBranchConfirm))
     }
 
     func testConsoleStageGroupsMapToDistinctMainSurfaces() {
@@ -6446,6 +6450,7 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(confirmedList.contains("featureRow(feature)"))
         XCTAssertTrue(confirmedList.contains("isAddingFeature = true"))
         XCTAssertTrue(featureView.contains("private func selectFeature(_ feature: WorkspaceFeature)"))
+        XCTAssertTrue(featureView.contains("let canBeginDevelopment: Bool"))
     }
 
     func testAppBundleBuildSanitizesAndVerifiesDeclaredOutput() throws {

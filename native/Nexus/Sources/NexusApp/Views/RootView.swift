@@ -2695,18 +2695,15 @@ private struct WorkspaceConsoleView: View {
             stage: stage,
             close: { selectedUtilityPanel = nil },
             openDocument: { key, fallback in
-                isDocumentViewerPresented = true
-                Task {
-                    await appState.loadDocument(path: documentPath(for: key, fallback: fallback, in: workspace))
-                }
+                openDocumentInViewer(
+                    path: documentPath(for: key, fallback: fallback, in: workspace)
+                )
             },
             openPath: { path in
-                isDocumentViewerPresented = true
-                Task { await appState.loadDocument(path: path) }
+                openDocumentInViewer(path: path)
             },
             openSql: {
-                isDocumentViewerPresented = true
-                Task { await appState.openSqlReviewDocument(in: workspace) }
+                openSQLInViewer(workspace: workspace)
             },
             runSessionAction: { action in
                 run(action, in: workspace, proxy: proxy)
@@ -2723,6 +2720,9 @@ private struct WorkspaceConsoleView: View {
         FeatureWorkspaceView(
             workspace: workspace,
             demandInputFocused: $demandInputFocused,
+            canBeginDevelopment: WorkspaceConsolePresentation.canBeginDevelopment(
+                stageID: mainStage(for: workspace).id
+            ),
             onBeginDevelopment: { navigate(to: .development, proxy: proxy) }
         )
             .environmentObject(appState)
@@ -2741,15 +2741,13 @@ private struct WorkspaceConsoleView: View {
         }
 
         if action.documentKey == "sql" {
-            Task {
-                await appState.openSqlReviewDocument(in: workspace)
-            }
+            openSQLInViewer(workspace: workspace)
             return
         }
 
-        Task {
-            await appState.loadDocument(path: documentPath(for: action.documentKey, fallback: "handoff.md", in: workspace))
-        }
+        openDocumentInViewer(
+            path: documentPath(for: action.documentKey, fallback: "handoff.md", in: workspace)
+        )
     }
 
     private func run(_ action: WorkspaceMainStageAction, in workspace: WorkspaceSummary, proxy: ScrollViewProxy) {
@@ -2760,27 +2758,21 @@ private struct WorkspaceConsoleView: View {
             routeToDemandInput(proxy)
         case .document(let key):
             if key == "sql" {
-                Task {
-                    await appState.openSqlReviewDocument(in: workspace)
-                }
+                openSQLInViewer(workspace: workspace)
                 return
             }
-            Task {
-                await appState.loadDocument(path: documentPath(for: key, fallback: "handoff.md", in: workspace))
-            }
+            openDocumentInViewer(
+                path: documentPath(for: key, fallback: "handoff.md", in: workspace)
+            )
         case .path(let path):
-            Task {
-                await appState.loadDocument(path: path)
-            }
+            openDocumentInViewer(path: path)
         case .task(let id):
             if let task = workspace.tasks.first(where: { $0.id == id }) {
-                Task {
-                    await appState.openTaskSource(task, in: workspace)
-                }
+                openTaskInViewer(task, workspace: workspace)
             } else {
-                Task {
-                    await appState.loadDocument(path: documentPath(for: "tasks", fallback: "tasks.md", in: workspace))
-                }
+                openDocumentInViewer(
+                    path: documentPath(for: "tasks", fallback: "tasks.md", in: workspace)
+                )
             }
         case .transferDemandTasks:
             routeToDemandInput(proxy)
@@ -2808,6 +2800,24 @@ private struct WorkspaceConsoleView: View {
                 await appState.openWorkspaceInCodex(workspace)
             }
         }
+    }
+
+    private func openDocumentInViewer(path: String) {
+        appState.clearDocumentPreview()
+        isDocumentViewerPresented = true
+        Task { await appState.loadDocument(path: path) }
+    }
+
+    private func openSQLInViewer(workspace: WorkspaceSummary) {
+        appState.clearDocumentPreview()
+        isDocumentViewerPresented = true
+        Task { await appState.openSqlReviewDocument(in: workspace) }
+    }
+
+    private func openTaskInViewer(_ task: WorkspaceTask, workspace: WorkspaceSummary) {
+        appState.clearDocumentPreview()
+        isDocumentViewerPresented = true
+        Task { await appState.openTaskSource(task, in: workspace) }
     }
 
     private func routeToDemandInput(_ proxy: ScrollViewProxy) {
