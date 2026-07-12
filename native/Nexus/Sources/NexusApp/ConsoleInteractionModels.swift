@@ -21,11 +21,14 @@ enum FeatureWorkspacePresentation {
         var demandIsExpanded: Bool { self == .editing }
         var proposalIsVisible: Bool { self == .proposalReady || self == .proposalInvalid }
         var showsConfirmedFeatures: Bool { self == .confirmed }
-        var prominentActionCount: Int { 1 }
     }
 
     struct Recovery: Equatable {
         let factsChanged: Bool
+        let message: String
+    }
+
+    struct HandoffFailure: Equatable {
         let message: String
     }
 
@@ -68,6 +71,18 @@ enum FeatureWorkspacePresentation {
         guard wasWaiting, let review else { return wasWaiting }
         guard review.diff == nil else { return false }
         return review.error?.contains("feature proposal draft is missing") == true
+    }
+
+    static func handoffFailure(demandWasSaved: Bool, detail: String) -> HandoffFailure {
+        let detail = detail.trimmingCharacters(in: .whitespacesAndNewlines)
+        if demandWasSaved {
+            return HandoffFailure(
+                message: "交接生成或打开失败：\(detail)。需求已保存，FEATURES.md 未更改。请重新生成交接。"
+            )
+        }
+        return HandoffFailure(
+            message: "需求保存失败：\(detail)。需求草稿和 FEATURES.md 未更改。请展开需求检查后重试。"
+        )
     }
 }
 

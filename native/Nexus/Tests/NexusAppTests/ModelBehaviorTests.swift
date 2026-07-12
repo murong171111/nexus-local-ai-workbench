@@ -6329,6 +6329,12 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertFalse(header.contains("ArchivedBadge"))
         XCTAssertTrue(rootView.contains("FeatureFactsList("))
         XCTAssertTrue(featureView.contains("FeatureFactsRow("))
+        XCTAssertTrue(featureView.contains("let onBeginDevelopment: () -> Void"))
+        XCTAssertTrue(featureView.contains("Label(\"进入开发\", systemImage: \"arrow.right.circle\")"))
+        XCTAssertTrue(featureView.contains("onBeginDevelopment()"))
+        XCTAssertTrue(
+            rootView.contains("onBeginDevelopment: { navigate(to: .development, proxy: proxy) }")
+        )
         for forbidden in [
             "WorkspaceConsoleSummaryStrip",
             "WorkspaceConsoleEvidenceGroups",

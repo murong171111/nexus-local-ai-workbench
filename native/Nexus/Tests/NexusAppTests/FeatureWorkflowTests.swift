@@ -1640,7 +1640,6 @@ final class FeatureWorkflowTests: XCTestCase {
         XCTAssertTrue(FeatureWorkspacePresentation.Phase.proposalReady.proposalIsVisible)
         XCTAssertTrue(FeatureWorkspacePresentation.Phase.proposalInvalid.proposalIsVisible)
         XCTAssertTrue(FeatureWorkspacePresentation.Phase.confirmed.showsConfirmedFeatures)
-        XCTAssertTrue(FeatureWorkspacePresentation.Phase.allCases.allSatisfy { $0.prominentActionCount == 1 })
     }
 
     func testWaitingAndInvalidStatesExplainRecoveryWithoutChangingFacts() {
@@ -1681,6 +1680,28 @@ final class FeatureWorkflowTests: XCTestCase {
         XCTAssertFalse(FeatureWorkspacePresentation.keepsWaitingAfterRefresh(wasWaiting: true, review: invalid))
         XCTAssertFalse(FeatureWorkspacePresentation.keepsWaitingAfterRefresh(wasWaiting: true, review: ready))
         XCTAssertFalse(FeatureWorkspacePresentation.keepsWaitingAfterRefresh(wasWaiting: false, review: missing))
+    }
+
+    func testFeatureWorkspaceSaveFailureExplainsUnchangedFactsAndRecovery() {
+        let failure = FeatureWorkspacePresentation.handoffFailure(
+            demandWasSaved: false,
+            detail: "磁盘空间不足"
+        )
+
+        XCTAssertTrue(failure.message.contains("需求保存失败：磁盘空间不足"))
+        XCTAssertTrue(failure.message.contains("需求草稿和 FEATURES.md 未更改"))
+        XCTAssertTrue(failure.message.contains("展开需求检查后重试"))
+    }
+
+    func testFeatureWorkspaceOpenFailureExplainsSavedDemandAndRecovery() {
+        let failure = FeatureWorkspacePresentation.handoffFailure(
+            demandWasSaved: true,
+            detail: "无法打开 Codex URL"
+        )
+
+        XCTAssertTrue(failure.message.contains("交接生成或打开失败：无法打开 Codex URL"))
+        XCTAssertTrue(failure.message.contains("需求已保存，FEATURES.md 未更改"))
+        XCTAssertTrue(failure.message.contains("重新生成交接"))
     }
 
     func testFeatureCenteredMainStageRoutesDemandAndProposalWithoutLegacyPrecheck() throws {

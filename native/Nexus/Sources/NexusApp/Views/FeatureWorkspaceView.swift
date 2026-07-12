@@ -165,6 +165,7 @@ struct FeatureWorkspaceView: View {
     @Environment(\.scenePhase) private var scenePhase
     let workspace: WorkspaceSummary
     let demandInputFocused: FocusState<Bool>.Binding
+    let onBeginDevelopment: () -> Void
 
     @State private var draft = DemandInputDraft.empty
     @State private var isLoading = false
@@ -184,6 +185,7 @@ struct FeatureWorkspaceView: View {
     @State private var isAwaitingCodex = false
     @State private var refreshTask: Task<Void, Never>?
     @State private var handoffTask: Task<Void, Never>?
+    @State private var handoffFailure: FeatureWorkspacePresentation.HandoffFailure?
 
     private var isSaving: Bool {
         appState.isDemandInputSaveActive(for: workspace)
@@ -355,6 +357,7 @@ struct FeatureWorkspaceView: View {
             handoffTask?.cancel()
             isDemandExpanded = false
             isAwaitingCodex = false
+            handoffFailure = nil
         }
         .onChange(of: scenePhase) { phase in
             guard phase == .active else { return }
@@ -568,6 +571,7 @@ struct FeatureWorkspaceView: View {
             Text(FeatureWorkspacePresentation.recovery(for: .waiting).message)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            handoffFailureFeedback
             HStack(spacing: 8) {
                 Button {
                     startCodexHandoff()
@@ -592,16 +596,30 @@ struct FeatureWorkspaceView: View {
     private func startCodexHandoff() {
         autosavePolicy.cancel()
         handoffTask?.cancel()
+        handoffFailure = nil
         let target = workspace
         let capturedDraft = draft
         handoffTask = Task {
             let result = await appState.saveDemandInputDraft(capturedDraft, in: target)
-            guard result.succeeded else { return }
+            guard !Task.isCancelled, appState.selectedWorkspaceID == target.id else { return }
+            guard result.succeeded else {
+                handoffFailure = FeatureWorkspacePresentation.handoffFailure(
+                    demandWasSaved: false,
+                    detail: result.message ?? appState.lastError ?? "未知错误"
+                )
+                return
+            }
             let didOpen = await appState.openFeatureIntakeInCodex(for: target)
             guard !Task.isCancelled, appState.selectedWorkspaceID == target.id else { return }
             if didOpen {
                 isDemandExpanded = false
                 isAwaitingCodex = true
+                handoffFailure = nil
+            } else {
+                handoffFailure = FeatureWorkspacePresentation.handoffFailure(
+                    demandWasSaved: true,
+                    detail: appState.lastError ?? "未能生成或打开交接"
+                )
             }
         }
     }
@@ -616,6 +634,7 @@ struct FeatureWorkspaceView: View {
         await appState.refreshFeatures(for: target)
         await appState.refreshFeatureProposal(for: target)
         guard !Task.isCancelled, appState.selectedWorkspaceID == target.id else { return }
+        handoffFailure = nil
         isAwaitingCodex = FeatureWorkspacePresentation.keepsWaitingAfterRefresh(
             wasWaiting: isAwaitingCodex,
             review: appState.featureProposalReview(for: target)
@@ -737,6 +756,7 @@ struct FeatureWorkspaceView: View {
             Text(FeatureWorkspacePresentation.recovery(for: .proposalInvalid).message)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            handoffFailureFeedback
             HStack {
                 Button {
                     openProposalDraft()
@@ -766,6 +786,25 @@ struct FeatureWorkspaceView: View {
                     .font(.caption)
                     .foregroundStyle(.orange)
             }
+            HStack {
+                Spacer()
+                Button {
+                    onBeginDevelopment()
+                } label: {
+                    Label("进入开发", systemImage: "arrow.right.circle")
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var handoffFailureFeedback: some View {
+        if let handoffFailure {
+            Label(handoffFailure.message, systemImage: "exclamationmark.triangle")
+                .font(.caption)
+                .foregroundStyle(.orange)
+                .textSelection(.enabled)
         }
     }
 

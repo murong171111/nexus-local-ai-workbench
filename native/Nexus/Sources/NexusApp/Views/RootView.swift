@@ -2581,7 +2581,8 @@ private struct WorkspaceConsoleView: View {
                                         stageSurface(
                                             surface,
                                             workspace: workspace,
-                                            stage: stage
+                                            stage: stage,
+                                            proxy: proxy
                                         )
                                             .frame(maxWidth: .infinity, alignment: .topLeading)
                                             .padding(.horizontal, 18)
@@ -2641,11 +2642,12 @@ private struct WorkspaceConsoleView: View {
     private func stageSurface(
         _ surface: WorkspaceConsoleSurface,
         workspace: WorkspaceSummary,
-        stage: WorkspaceMainStage
+        stage: WorkspaceMainStage,
+        proxy: ScrollViewProxy
     ) -> some View {
         switch surface {
         case .featureDemand:
-            demandInput(for: workspace)
+            demandInput(for: workspace, proxy: proxy)
         case .development:
             VStack(alignment: .leading, spacing: 12) {
                 let features = appState.featuresByWorkspace[workspace.id]?.features ?? []
@@ -2695,10 +2697,11 @@ private struct WorkspaceConsoleView: View {
         appState.mainWorkflowStage(for: workspace)
     }
 
-    private func demandInput(for workspace: WorkspaceSummary) -> some View {
+    private func demandInput(for workspace: WorkspaceSummary, proxy: ScrollViewProxy) -> some View {
         FeatureWorkspaceView(
             workspace: workspace,
-            demandInputFocused: $demandInputFocused
+            demandInputFocused: $demandInputFocused,
+            onBeginDevelopment: { navigate(to: .development, proxy: proxy) }
         )
             .environmentObject(appState)
             .id(WorkspaceConsoleTarget.demandInput)
