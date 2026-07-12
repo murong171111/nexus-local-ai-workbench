@@ -620,9 +620,29 @@ final class ModelBehaviorTests: XCTestCase {
     func testWorkspaceBoardCopyStaysChineseFirstAndFocused() {
         XCTAssertEqual(WorkspaceBoardCopy.title, "工作区")
         XCTAssertEqual(WorkspaceBoardCopy.titleHelp, "Board")
+        XCTAssertEqual(WorkspaceBoardCopy.attentionTitle, "需要你处理")
+        XCTAssertEqual(WorkspaceBoardCopy.activeTitle, "进行中")
+        XCTAssertEqual(WorkspaceBoardCopy.completedTitle, "最近完成")
         XCTAssertEqual(WorkspaceBoardCopy.activeWorkspaceCount(2), "2 个活跃项目")
-        XCTAssertEqual(WorkspaceBoardCopy.showAllCompleted, "查看全部")
+        XCTAssertEqual(WorkspaceBoardCopy.showAll, "查看全部")
         XCTAssertEqual(WorkspaceBoardCopy.showRecentCompleted, "收起")
+    }
+
+    func testWorkspaceBoardSummaryCountsActiveAndAttentionWorkspaces() {
+        let attention = workspaceForWorkflowSummary(stage: "scoping", id: "board-summary-attention")
+        let active = workspaceForWorkflowSummary(stage: "developing", id: "board-summary-active")
+        let completed = workspaceForWorkflowSummary(stage: "archived", id: "board-summary-completed")
+        let lanes = [
+            WorkspaceBoardLane(id: .attention, workspaces: [attention], totalCount: 1),
+            WorkspaceBoardLane(id: .active, workspaces: [active], totalCount: 1),
+            WorkspaceBoardLane(id: .completed, workspaces: [completed], totalCount: 1)
+        ]
+
+        let summary = WorkspaceBoardSummary(lanes: lanes, lastRefreshAt: nil)
+
+        XCTAssertEqual(summary.activeCount, 2)
+        XCTAssertEqual(summary.attentionCount, 1)
+        XCTAssertNil(summary.lastRefreshAt)
     }
 
     func testWorkspaceBoardCardKeepsRoundedStageAwareTreatment() throws {
@@ -642,6 +662,7 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertTrue(card.contains(".background(workspace.isArchived ? NexusPalette.preview : NexusPalette.badge)"))
         XCTAssertTrue(card.contains(".clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))"))
         XCTAssertTrue(card.contains(".stroke(stage.status.color.opacity(workspace.isArchived ? 0.16 : 0.22), lineWidth: 1)"))
+        XCTAssertTrue(card.contains("WorkspaceBoardCopy.cardAccessibilityLabel"))
     }
 
     func testNativeStatusDiagnosticsReportsDirectoriesIndexWidgetAndAuditTarget() throws {

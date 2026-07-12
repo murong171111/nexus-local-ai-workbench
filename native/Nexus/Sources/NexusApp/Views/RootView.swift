@@ -3494,13 +3494,17 @@ private struct WorkspaceBoardView: View {
         )
     }
 
-    private var summary: WorkspaceListSummary {
+    private var listSummary: WorkspaceListSummary {
         WorkspaceListSummary(workspaces: workspaces)
+    }
+
+    private var boardSummary: WorkspaceBoardSummary {
+        WorkspaceBoardSummary(lanes: lanes, lastRefreshAt: appState.lastWorkspaceRefreshAt)
     }
 
     private var emptyStateReason: WorkspaceBoardEmptyStateReason? {
         WorkspaceBoardEmptyStateReason.resolve(
-            summary: summary,
+            summary: listSummary,
             visibleCount: workspaces.count,
             readiness: appState.setupReadiness
         )
@@ -3516,7 +3520,7 @@ private struct WorkspaceBoardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             WorkspaceBoardHeader(
-                activeCount: summary.activeWorkspaceCount
+                summary: boardSummary
             )
             Divider()
 
@@ -3539,7 +3543,7 @@ private struct WorkspaceBoardView: View {
             } else {
                 ScrollView {
                     ViewThatFits(in: .horizontal) {
-                        HStack(alignment: .top, spacing: 12) {
+                        WorkspaceBoardWideLaneLayout {
                             ForEach(lanes) { lane in
                                 laneView(lane)
                             }
@@ -3572,6 +3576,10 @@ private struct WorkspaceBoardView: View {
         WorkspaceBoardLaneView(
             lane: lane,
             showsAllCompleted: $showsAllCompleted,
+            featureProgress: { workspace in
+                guard lane.id == .active else { return nil }
+                return WorkspaceBoardFeatureProgress(document: appState.featuresByWorkspace[workspace.id])
+            },
             openWorkspace: { workspace in
                 appState.select(workspace)
                 openConsole()
@@ -3581,15 +3589,21 @@ private struct WorkspaceBoardView: View {
 }
 
 private struct WorkspaceBoardHeader: View {
-    let activeCount: Int
+    let summary: WorkspaceBoardSummary
 
     var body: some View {
-        HStack {
+        HStack(spacing: 12) {
             Text(WorkspaceBoardCopy.title)
                 .font(.title3.weight(.semibold))
                 .help(WorkspaceBoardCopy.titleHelp)
-            Text(WorkspaceBoardCopy.activeWorkspaceCount(activeCount))
+            Text(WorkspaceBoardCopy.activeWorkspaceCount(summary.activeCount))
                 .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+            Text(WorkspaceBoardCopy.attentionWorkspaceCount(summary.attentionCount))
+                .font(.caption.monospaced())
+                .foregroundStyle(summary.attentionCount == 0 ? .secondary : NexusPalette.warning)
+            Text(WorkspaceBoardCopy.refreshTime(summary.lastRefreshAt))
+                .font(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
         }
@@ -3601,6 +3615,7 @@ private struct WorkspaceBoardHeader: View {
 private struct WorkspaceBoardLaneView: View {
     let lane: WorkspaceBoardLane
     @Binding var showsAllCompleted: Bool
+    let featureProgress: (WorkspaceSummary) -> WorkspaceBoardFeatureProgress?
     let openWorkspace: (WorkspaceSummary) -> Void
 
     private var tone: Color {
@@ -3635,20 +3650,29 @@ private struct WorkspaceBoardLaneView: View {
             }
 
             if lane.workspaces.isEmpty {
-                Text("暂无")
+                Text("暂无\(lane.title)项目")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 56)
+                    .padding(.vertical, 2)
             } else {
                 ForEach(lane.workspaces) { workspace in
-                    WorkspaceBoardCard(workspace: workspace) {
-                        openWorkspace(workspace)
+                    if lane.id == .completed {
+                        WorkspaceBoardCompletedRow(workspace: workspace) {
+                            openWorkspace(workspace)
+                        }
+                    } else {
+                        WorkspaceBoardCard(
+                            workspace: workspace,
+                            featureProgress: featureProgress(workspace)
+                        ) {
+                            openWorkspace(workspace)
+                        }
                     }
                 }
             }
         }
         .padding(10)
-        .frame(minWidth: 260, maxWidth: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(NexusPalette.panel)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
@@ -3660,6 +3684,7 @@ private struct WorkspaceBoardLaneView: View {
 
 private struct WorkspaceBoardCard: View {
     let workspace: WorkspaceSummary
+    let featureProgress: WorkspaceBoardFeatureProgress?
     let openConsole: () -> Void
 
     private var stage: WorkspaceMainStage {
@@ -3695,8 +3720,14 @@ private struct WorkspaceBoardCard: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
 
+                if let featureProgress {
+                    Text(featureProgress.label)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 HStack {
-                    Text("下一步：\(stage.primaryActionLabel)")
+                    Text(WorkspaceBoardCopy.destination(for: stage))
                         .font(.caption.weight(.medium))
                         .foregroundStyle(NexusPalette.accent)
                     Spacer()
@@ -3714,11 +3745,85 @@ private struct WorkspaceBoardCard: View {
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(
-            "\(workspace.name)，分支 \(workspace.branch)"
-                + (workspace.riskLevel == .low ? "" : "，\(workspace.riskLevel.label)")
-                + "，\(stage.id.shortLabel)，\(stage.reason)，下一步 \(stage.primaryActionLabel)"
-        )
+        .accessibilityLabel(WorkspaceBoardCopy.cardAccessibilityLabel(workspace: workspace, stage: stage))
+    }
+}
+
+private struct WorkspaceBoardCompletedRow: View {
+    let workspace: WorkspaceSummary
+    let openConsole: () -> Void
+
+    private var stage: WorkspaceMainStage {
+        workspace.mainStage()
+    }
+
+    var body: some View {
+        Button(action: openConsole) {
+            HStack(spacing: 8) {
+                Text(workspace.name)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Text(workspace.branch)
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Text(stage.id.shortLabel)
+                    .font(.system(size: 10))
+                    .foregroundStyle(NexusPalette.success)
+            }
+            .padding(.vertical, 7)
+            .padding(.horizontal, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(NexusPalette.preview)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(WorkspaceBoardCopy.completedRowAccessibilityLabel(workspace: workspace, stage: stage))
+    }
+}
+
+private struct WorkspaceBoardWideLaneLayout: Layout {
+    private let weights: [CGFloat] = [1.35, 1, 0.64]
+    private let spacing: CGFloat = 12
+
+    func sizeThatFits(
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) -> CGSize {
+        let width = max(proposal.width ?? minimumWidth, minimumWidth)
+        let height = subviews.enumerated().map { index, subview in
+            subview.sizeThatFits(ProposedViewSize(width: laneWidth(index: index, totalWidth: width), height: nil)).height
+        }.max() ?? 0
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) {
+        var x = bounds.minX
+        for (index, subview) in subviews.enumerated() {
+            let width = laneWidth(index: index, totalWidth: bounds.width)
+            subview.place(
+                at: CGPoint(x: x, y: bounds.minY),
+                anchor: .topLeading,
+                proposal: ProposedViewSize(width: width, height: bounds.height)
+            )
+            x += width + spacing
+        }
+    }
+
+    private var minimumWidth: CGFloat { 1_005 }
+
+    private func laneWidth(index: Int, totalWidth: CGFloat) -> CGFloat {
+        let availableWidth = totalWidth - spacing * CGFloat(max(0, weights.count - 1))
+        let totalWeight = weights.reduce(0, +)
+        return availableWidth * weights[index] / totalWeight
     }
 }
 

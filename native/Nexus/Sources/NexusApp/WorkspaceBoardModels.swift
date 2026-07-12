@@ -9,9 +9,9 @@ enum WorkspaceBoardLaneID: String, CaseIterable, Hashable, Identifiable {
 
     var title: String {
         switch self {
-        case .attention: "待处理"
-        case .active: "进行中"
-        case .completed: "已完成"
+        case .attention: WorkspaceBoardCopy.attentionTitle
+        case .active: WorkspaceBoardCopy.activeTitle
+        case .completed: WorkspaceBoardCopy.completedTitle
         }
     }
 
@@ -77,11 +77,75 @@ struct WorkspaceBoardLane: Hashable, Identifiable {
 struct WorkspaceBoardCopy: Hashable {
     static let title = "工作区"
     static let titleHelp = "Board"
-    static let showAllCompleted = "查看全部"
+    static let attentionTitle = "需要你处理"
+    static let activeTitle = "进行中"
+    static let completedTitle = "最近完成"
+    static let showAll = "查看全部"
+    static let showAllCompleted = showAll
     static let showRecentCompleted = "收起"
 
     static func activeWorkspaceCount(_ count: Int) -> String {
         "\(count) 个活跃项目"
+    }
+
+    static func attentionWorkspaceCount(_ count: Int) -> String {
+        "\(count) 个需要处理"
+    }
+
+    static func refreshTime(_ date: Date?) -> String {
+        guard let date else { return "尚未自动刷新" }
+        return "自动刷新：\(date.formatted(date: .abbreviated, time: .shortened))"
+    }
+
+    static func destination(for stage: WorkspaceMainStage) -> String {
+        "进入项目 · \(stage.primaryActionLabel)"
+    }
+
+    static func cardAccessibilityLabel(workspace: WorkspaceSummary, stage: WorkspaceMainStage) -> String {
+        [
+            workspace.name,
+            "分支 \(workspace.branch)",
+            workspace.riskLevel == .low ? nil : workspace.riskLevel.label,
+            stage.id.shortLabel,
+            stage.reason,
+            destination(for: stage)
+        ]
+        .compactMap { $0 }
+        .joined(separator: "，")
+    }
+
+    static func completedRowAccessibilityLabel(workspace: WorkspaceSummary, stage: WorkspaceMainStage) -> String {
+        [workspace.name, "分支 \(workspace.branch)", stage.id.shortLabel, destination(for: stage)]
+            .joined(separator: "，")
+    }
+}
+
+struct WorkspaceBoardSummary: Equatable {
+    let activeCount: Int
+    let attentionCount: Int
+    let lastRefreshAt: Date?
+
+    init(lanes: [WorkspaceBoardLane], lastRefreshAt: Date?) {
+        let attention = lanes.first { $0.id == .attention }?.workspaces.count ?? 0
+        let active = lanes.first { $0.id == .active }?.workspaces.count ?? 0
+        activeCount = attention + active
+        attentionCount = attention
+        self.lastRefreshAt = lastRefreshAt
+    }
+}
+
+struct WorkspaceBoardFeatureProgress: Hashable {
+    let completedCount: Int
+    let totalCount: Int
+
+    init?(document: FeatureDocument?) {
+        guard let document, !document.features.isEmpty else { return nil }
+        completedCount = document.features.filter { $0.status == .done }.count
+        totalCount = document.features.count
+    }
+
+    var label: String {
+        "已确认功能点 \(completedCount)/\(totalCount)"
     }
 }
 
