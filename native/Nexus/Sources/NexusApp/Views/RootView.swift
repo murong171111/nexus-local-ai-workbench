@@ -2651,13 +2651,8 @@ private struct WorkspaceConsoleView: View {
         case .development:
             VStack(alignment: .leading, spacing: 12) {
                 let features = appState.featuresByWorkspace[workspace.id]?.features ?? []
-                if features.isEmpty {
-                    Text("暂无已确认功能点")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    FeatureFactsList(features: features, workspace: workspace, compact: true)
-                }
+                ConfirmedFeatureDevelopmentView(workspace: workspace, features: features)
+                    .environmentObject(appState)
                 WorkspaceConsoleStageGateLine(label: "开发下一步", value: stage.primaryActionLabel)
             }
         case .delivery:

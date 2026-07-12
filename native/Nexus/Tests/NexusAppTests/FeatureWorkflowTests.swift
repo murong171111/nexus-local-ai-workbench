@@ -2555,6 +2555,142 @@ final class FeatureWorkflowTests: XCTestCase {
     }
 
     @MainActor
+    func testConfirmedFeatureExecutionPromptIsScopedToSelectedFeatureAndBudget() async throws {
+        let root = try sessionChangeWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try """
+        # Features
+
+        ## F-001 Unrelated feature
+        - Status: todo
+        - Verification: code
+        - Auto complete: true
+        - Services: billing-service
+
+        ## F-002 Selected feature
+        - Status: in_progress
+        - Verification: sql
+        - Auto complete: true
+        - Services: order-service
+
+        Persist order snapshots with rollback SQL.
+        """.write(to: root.appendingPathComponent("FEATURES.md"), atomically: true, encoding: .utf8)
+        try """
+        # Tasks
+
+        | 任务 | 状态 | 说明 |
+        | --- | --- | --- |
+        | Selected active task | 进行中 | feature=F-002 event=T-002 |
+        | Selected done task | 已完成 | feature=F-002 event=T-003 |
+        | Selected cancelled task | 已取消 | feature=F-002 event=T-004 |
+        | Unrelated active task | 进行中 | feature=F-001 event=T-001 |
+        """.write(to: root.appendingPathComponent("tasks.md"), atomically: true, encoding: .utf8)
+        try """
+        # Changes
+
+        ## unrelated
+        - F-001 billing change
+
+        ## selected
+        - F-002 snapshot change
+        """.write(to: root.appendingPathComponent("changes.md"), atomically: true, encoding: .utf8)
+        let workspace = demandInputWorkspace(path: root.path)
+        let appState = makeAppState(workspace: workspace, root: root)
+
+        let prompt = await appState.confirmedFeatureExecutionPrompt(for: workspace, featureID: "F-002")
+
+        XCTAssertTrue(prompt.contains("F-002"))
+        XCTAssertTrue(prompt.contains("Selected feature"))
+        XCTAssertTrue(prompt.contains("Selected active task"))
+        XCTAssertTrue(prompt.contains("F-002 snapshot change"))
+        XCTAssertTrue(prompt.contains("实现并验证已确认功能点"))
+        XCTAssertTrue(prompt.contains("order-service"))
+        XCTAssertFalse(prompt.contains("F-001"))
+        XCTAssertFalse(prompt.contains("Selected done task"))
+        XCTAssertFalse(prompt.contains("Selected cancelled task"))
+        XCTAssertFalse(prompt.contains("Unrelated active task"))
+        XCTAssertFalse(prompt.contains("FEATURES.draft.md"))
+        XCTAssertFalse(prompt.contains("Prepare a feature proposal"))
+        XCTAssertLessThanOrEqual(prompt.utf8.count, 6_144)
+        XCTAssertEqual(prompt, try String(contentsOf: root.appendingPathComponent("handoff.md"), encoding: .utf8))
+    }
+
+    @MainActor
+    func testConfirmedFeatureExecutionMissingFeatureDoesNotOpenCodexOrChangeFacts() async throws {
+        let root = try sessionChangeWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try featureSource(id: "F-001", title: "Confirmed").write(
+            to: root.appendingPathComponent("FEATURES.md"), atomically: true, encoding: .utf8
+        )
+        let workspace = demandInputWorkspace(path: root.path)
+        let appState = makeAppState(workspace: workspace, root: root)
+        appState.lastCopiedCodexHandoffPayload = "existing payload"
+        let originalFeatures = try Data(contentsOf: root.appendingPathComponent("FEATURES.md"))
+        let originalTasks = try Data(contentsOf: root.appendingPathComponent("tasks.md"))
+        let originalChanges = try Data(contentsOf: root.appendingPathComponent("changes.md"))
+
+        let didOpen = await appState.openConfirmedFeatureInCodex(for: workspace, featureID: "MISSING")
+
+        XCTAssertFalse(didOpen)
+        XCTAssertTrue(appState.lastError?.contains("未找到已确认功能点") == true)
+        XCTAssertTrue(appState.lastError?.contains("事实未更改") == true)
+        XCTAssertTrue(appState.lastError?.contains("刷新功能点后重试") == true)
+        XCTAssertEqual(appState.lastCopiedCodexHandoffPayload, "existing payload")
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent("FEATURES.md")), originalFeatures)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent("tasks.md")), originalTasks)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent("changes.md")), originalChanges)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("handoff.md").path))
+    }
+
+    @MainActor
+    func testConfirmedFeatureExecutionContextWriteFailureDoesNotOpenCodexOrChangeFacts() async throws {
+        let root = try sessionChangeWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try featureSource(id: "F-001", title: "Confirmed").write(
+            to: root.appendingPathComponent("FEATURES.md"), atomically: true, encoding: .utf8
+        )
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("handoff.md"), withIntermediateDirectories: true)
+        let workspace = demandInputWorkspace(path: root.path)
+        let appState = makeAppState(workspace: workspace, root: root)
+        appState.lastCopiedCodexHandoffPayload = "existing payload"
+        let originalFeatures = try Data(contentsOf: root.appendingPathComponent("FEATURES.md"))
+        let originalTasks = try Data(contentsOf: root.appendingPathComponent("tasks.md"))
+        let originalChanges = try Data(contentsOf: root.appendingPathComponent("changes.md"))
+
+        let didOpen = await appState.openConfirmedFeatureInCodex(for: workspace, featureID: "F-001")
+
+        XCTAssertFalse(didOpen)
+        XCTAssertTrue(appState.lastError?.contains("交接生成失败") == true)
+        XCTAssertTrue(appState.lastError?.contains("事实未更改") == true)
+        XCTAssertTrue(appState.lastError?.contains("检查上下文文件后重试") == true)
+        XCTAssertEqual(appState.lastCopiedCodexHandoffPayload, "existing payload")
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent("FEATURES.md")), originalFeatures)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent("tasks.md")), originalTasks)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent("changes.md")), originalChanges)
+    }
+
+    @MainActor
+    func testConfirmedFeatureExecutionPreparedHandoffIsTruthfullyRecordedWhenCodexNeedsManualOpen() async throws {
+        let root = try sessionChangeWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try featureSource(id: "F-001", title: "Confirmed").write(
+            to: root.appendingPathComponent("FEATURES.md"), atomically: true, encoding: .utf8
+        )
+        let workspace = demandInputWorkspace(path: root.path)
+        let appState = makeAppState(workspace: workspace, root: root)
+        appState.codexURL = "not a url"
+
+        let didOpen = await appState.openConfirmedFeatureInCodex(for: workspace, featureID: "F-001")
+
+        XCTAssertTrue(didOpen)
+        XCTAssertNil(appState.lastError)
+        XCTAssertTrue(appState.codexHandoffFeedback?.title.contains("已交接") == true)
+        XCTAssertFalse(appState.codexHandoffFeedback?.title.contains("处理中") == true)
+        XCTAssertTrue(appState.lastCopiedCodexHandoffPayload?.contains("F-001") == true)
+        XCTAssertTrue(appState.workspaces.first?.activities.first?.title.contains("已交接") == true)
+    }
+
+    @MainActor
     func testFeatureIntakePromptRebuildsOnceWhenHandoffSourceTurnsStale() async throws {
         let root = try sessionChangeWorkspace()
         defer { try? FileManager.default.removeItem(at: root) }

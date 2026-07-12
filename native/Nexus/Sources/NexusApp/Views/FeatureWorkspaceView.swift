@@ -118,6 +118,88 @@ struct FeatureFactsList: View {
     }
 }
 
+struct ConfirmedFeatureDevelopmentView: View {
+    @EnvironmentObject private var appState: AppState
+    let workspace: WorkspaceSummary
+    let features: [WorkspaceFeature]
+
+    @State private var handedOffFeature: WorkspaceFeature?
+    @State private var handedOffEvidence: FeatureEvidence?
+
+    private var feature: WorkspaceFeature? {
+        let actionable = features.filter { feature in
+            feature.status != .done && feature.status != .cancelled
+        }
+        if let selectedID = appState.selectedContextFeatureIDsByWorkspace[workspace.id],
+           let selected = actionable.first(where: { $0.id == selectedID }) {
+            return selected
+        }
+        return actionable.first
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let feature {
+                FeatureFactsRow(feature: feature, workspace: workspace)
+                Text(evidenceSummary(for: feature))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack {
+                    if handedOffFeature == feature,
+                       handedOffEvidence == appState.featureEvidenceByWorkspace[workspace.id]?[feature.id] {
+                        Label("已交接", systemImage: "checkmark.circle")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.green)
+                    }
+                    Spacer()
+                    Button {
+                        Task {
+                            if await appState.openConfirmedFeatureInCodex(for: workspace, featureID: feature.id) {
+                                handedOffFeature = feature
+                                handedOffEvidence = appState.featureEvidenceByWorkspace[workspace.id]?[feature.id]
+                            }
+                        }
+                    } label: {
+                        Label("交给 Codex 开发", systemImage: "sparkles")
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                if appState.lastError?.contains("功能点交接") == true
+                    || appState.lastError?.contains("未找到已确认功能点") == true {
+                    Label(appState.lastError ?? "", systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .textSelection(.enabled)
+                }
+                let remaining = features.filter { $0.id != feature.id }
+                if !remaining.isEmpty {
+                    Divider()
+                    FeatureFactsList(features: remaining, workspace: workspace, compact: true)
+                }
+            } else {
+                Text("暂无未完成的已确认功能点")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func evidenceSummary(for feature: WorkspaceFeature) -> String {
+        let linkedTasks = workspace.tasks.filter {
+            NativeWorkspaceTaskParser.featureAttribution(in: $0.detail).id == feature.id
+        }
+        let state: String
+        if feature.evidenceStale {
+            state = "证据待复核"
+        } else if let evidence = appState.featureEvidenceByWorkspace[workspace.id]?[feature.id] {
+            state = "证据：\(evidence.relatedChangeIDs.count) 项变更，\(evidence.requiredTestIDs.count) 项检查"
+        } else {
+            state = "暂无归属证据"
+        }
+        return "\(FeatureFactsPresentation.linkedTaskLabel(linkedTasks.count)) · \(state)"
+    }
+}
+
 @MainActor
 final class FeatureWorkspaceAutosavePolicy {
     private let delayNanoseconds: UInt64

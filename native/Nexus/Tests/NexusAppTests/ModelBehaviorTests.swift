@@ -6346,6 +6346,30 @@ final class ModelBehaviorTests: XCTestCase {
         }
     }
 
+    func testConfirmedFeatureExecutionDevelopmentSurfaceUsesOneScopedPrimaryAction() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let views = packageRoot.appendingPathComponent("Sources/NexusApp/Views")
+        let rootView = try String(
+            contentsOf: views.appendingPathComponent("RootView.swift"), encoding: .utf8
+        )
+        let featureView = try String(
+            contentsOf: views.appendingPathComponent("FeatureWorkspaceView.swift"), encoding: .utf8
+        )
+
+        XCTAssertTrue(rootView.contains("ConfirmedFeatureDevelopmentView("))
+        XCTAssertTrue(featureView.contains("struct ConfirmedFeatureDevelopmentView: View"))
+        XCTAssertTrue(featureView.contains("Label(\"交给 Codex 开发\", systemImage: \"sparkles\")"))
+        XCTAssertTrue(
+            featureView.contains("openConfirmedFeatureInCodex(for: workspace, featureID: feature.id)")
+        )
+        XCTAssertTrue(featureView.contains("feature.status != .done && feature.status != .cancelled"))
+        XCTAssertEqual(featureView.components(separatedBy: "Label(\"交给 Codex 开发\"").count - 1, 1)
+        XCTAssertFalse(featureView.contains("Codex 处理中"))
+    }
+
     func testFeatureFactsLinkedTaskCopyIsChineseFirst() {
         XCTAssertEqual(FeatureFactsPresentation.linkedTaskLabel(3), "关联任务 3")
     }

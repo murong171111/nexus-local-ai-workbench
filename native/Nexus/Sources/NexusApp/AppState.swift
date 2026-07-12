@@ -4514,6 +4514,173 @@ final class AppState: ObservableObject {
         return ""
     }
 
+    func confirmedFeatureExecutionPrompt(
+        for workspace: WorkspaceSummary,
+        featureID: String
+    ) async -> String {
+        let workspacePath = workspace.path
+        let workspaceFolder = workspace.folder
+        let fixedEvidence = [
+            workspace.documentLinks["features"] ?? "\(workspacePath)/FEATURES.md",
+            workspace.documentLinks["tasks"] ?? "\(workspacePath)/tasks.md",
+            workspace.documentLinks["changes"] ?? "\(workspacePath)/changes.md",
+            workspace.documentLinks["services"] ?? "\(workspacePath)/services.md",
+            workspace.documentLinks["branches"] ?? "\(workspacePath)/branches.md"
+        ]
+        let sqlEvidence = workspace.sqlFiles.map(\.path) + workspace.sqlDocuments.map(\.path)
+        let evidencePaths = fixedEvidence
+            + (sqlEvidence.isEmpty ? ["\(workspacePath)/sql"] : sqlEvidence)
+            + [deliveryDocumentPath(for: workspace)]
+        let latestCheck = lastAutomationCheck.map {
+            "\($0.status) at \($0.generatedAt): \($0.summary)"
+        }
+        let workspaceName = workspace.name
+        let workspaceServices = workspace.services
+        let riskBlockers = workspace.risks.compactMap { risk in
+            let value = "\(risk.title): \(risk.detail)"
+            return value.localizedCaseInsensitiveContains(featureID) ? value : nil
+        }
+
+        for attempt in 0..<2 {
+            do {
+                let response = try await Task.detached(priority: .userInitiated) {
+                    let source = try NativeSessionChangeStore.contextSourceSnapshot(
+                        workspacePath: workspacePath,
+                        workspaceFolder: workspaceFolder
+                    )
+                    guard let feature = source.featureDocument.features.first(where: {
+                        $0.id == featureID && $0.status != .cancelled && $0.status != .draft
+                    }) else { return nil as NativeHandoffWriteResponse? }
+                    let linkedTasks = source.tasks.filter { task in
+                        let status = "\(task.status) \(task.detail)".lowercased()
+                        let isActive = !status.contains("done")
+                            && !status.contains("完成")
+                            && !status.contains("deferred")
+                            && !status.contains("延期")
+                            && !status.contains("cancel")
+                            && !status.contains("取消")
+                        return isActive && (
+                            feature.taskIDs.contains(task.id)
+                                || NativeWorkspaceTaskParser.featureAttribution(in: task.detail).id == feature.id
+                        )
+                    }
+                    let services = workspaceServices.filter { feature.services.contains($0.name) }
+                    let repositoryPaths = Dictionary(uniqueKeysWithValues: services.map { service in
+                        let path = service.worktree.hasPrefix("/")
+                            ? service.worktree
+                            : "\(workspacePath)/repos/\(service.name)"
+                        return (service.name, path)
+                    })
+                    let repositories = NativeSessionChangeStore.repositorySnapshot(
+                        pathsByService: repositoryPaths
+                    )
+                    var blockers = linkedTasks.compactMap { task -> String? in
+                        let status = "\(task.status) \(task.detail)".lowercased()
+                        guard status.contains("blocked") || status.contains("阻塞") else { return nil }
+                        return "\(task.id): \(task.title)"
+                    } + riskBlockers
+                    if feature.status == .blocked {
+                        blockers.insert("\(feature.id): \(feature.description)", at: 0)
+                    }
+                    let input = NativeContextPackInput(
+                        generatedAt: ISO8601DateFormatter().string(from: Date()),
+                        workspaceName: workspaceName,
+                        workspacePath: workspacePath,
+                        selectedFeature: NativeContextFeature(
+                            id: feature.id,
+                            title: feature.title,
+                            status: feature.status.rawValue,
+                            detail: feature.description
+                        ),
+                        activeLinkedTasks: linkedTasks.map {
+                            NativeContextTask(id: $0.id, title: $0.title, status: $0.status, detail: $0.detail)
+                        },
+                        blockers: blockers,
+                        nextAction: "实现并验证已确认功能点；完成后更新相关任务、changes.md 和交付证据。",
+                        services: services.map {
+                            NativeContextService(
+                                name: $0.name,
+                                branch: $0.branch,
+                                gitSummary: "worktree=\($0.worktree), \($0.gitSummary)"
+                            )
+                        },
+                        gitSummary: repositories.heads.keys.sorted().map { service in
+                            let diff = repositories.diffs[service].flatMap { $0.isEmpty ? nil : $0 } ?? "clean"
+                            return "\(service): head=\(repositories.heads[service] ?? "unavailable"), \(diff)"
+                        },
+                        latestRelevantCheck: latestCheck,
+                        confirmedChanges: source.confirmedChanges.filter {
+                            $0.localizedCaseInsensitiveContains(feature.id)
+                        },
+                        evidence: evidencePaths.map { NativeContextEvidence(path: $0, summary: nil) },
+                        sourceRevisions: source.sourceRevisions.mapValues(\.token),
+                        featureProposal: nil
+                    )
+                    let plan = try NativeSessionChangeStore.makeHandoffPlan(
+                        workspacePath: workspacePath,
+                        input: input,
+                        expectedSourceRevisions: source.sourceRevisions
+                    )
+                    return try NativeSessionChangeStore.writeHandoff(plan: plan)
+                }.value
+                guard let response else {
+                    lastError = "未找到已确认功能点 \(featureID)；FEATURES.md、tasks.md 和 changes.md 事实未更改。刷新功能点后重试。"
+                    return ""
+                }
+                lastError = nil
+                return response.markdown
+            } catch let error as NativeSessionChangeStoreError {
+                if attempt == 0, case .stale = error { continue }
+                lastError = "已确认功能点交接生成失败：\(error.localizedDescription)；FEATURES.md、tasks.md 和 changes.md 事实未更改。检查上下文文件后重试。"
+                return ""
+            } catch {
+                lastError = "已确认功能点交接生成失败：\(error.localizedDescription)；FEATURES.md、tasks.md 和 changes.md 事实未更改。检查上下文文件后重试。"
+                return ""
+            }
+        }
+        return ""
+    }
+
+    @discardableResult
+    func openConfirmedFeatureInCodex(
+        for workspace: WorkspaceSummary,
+        featureID: String
+    ) async -> Bool {
+        let prompt = await confirmedFeatureExecutionPrompt(for: workspace, featureID: featureID)
+        guard !prompt.isEmpty else { return false }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(prompt, forType: .string)
+        lastCopiedCodexHandoffPayload = prompt
+
+        let rawURL = codexURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? Self.defaultCodexURL
+            : codexURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let didOpen = URL(string: rawURL).map { NSWorkspace.shared.open($0) } ?? false
+        lastError = nil
+        markCodexHandoff(
+            title: "已交接 / Confirmed feature handoff",
+            detail: didOpen
+                ? "\(workspace.name) · \(featureID) 已复制并打开 Codex。"
+                : "\(workspace.name) · \(featureID) 已复制；请手动打开 Codex 后粘贴。",
+            systemImage: didOpen ? "sparkles" : "doc.on.clipboard",
+            sectionTitle: "已确认功能点 / Confirmed feature",
+            clipboardLabel: "Confirmed feature execution prompt is on the clipboard"
+        )
+        await recordWorkspaceAction(
+            action: "feature_execution.handed_off",
+            target: "\(workspace.path)/handoff.md",
+            summary: "已交接 \(featureID) 的已确认功能点开发上下文",
+            metadata: [
+                "tool": "Codex",
+                "codexUrl": rawURL,
+                "opened": "\(didOpen)",
+                "featureId": featureID
+            ],
+            workspaceOverride: workspace
+        )
+        return true
+    }
+
     @discardableResult
     func openFeatureIntakeInCodex(for workspace: WorkspaceSummary) async -> Bool {
         await loadDemandInput(for: workspace)
@@ -5711,6 +5878,8 @@ final class AppState: ObservableObject {
             return "worktree 结果已交接 / Worktree result opened"
         case "codex_validation_pr_handoff.opened":
             return "验证 PR 已交接 / Validation PR handoff"
+        case "feature_execution.handed_off":
+            return "已交接 / Feature handed off"
         case "workspace_task.source_located":
             return "任务来源已定位 / Task source located"
         case "codex_agent_event.copied":
