@@ -641,9 +641,11 @@ final class AppState: ObservableObject {
             let writtenPaths = try NativeWidgetSnapshotStore.write(
                 snapshot: snapshot,
                 applicationSupportRoot: applicationSupportRootPath,
-                appGroupURL: FileManager.default.containerURL(
-                    forSecurityApplicationGroupIdentifier: Self.widgetAppGroupIdentifier
-                ),
+                appGroupURL: applicationSupportRootOverride == nil
+                    ? FileManager.default.containerURL(
+                        forSecurityApplicationGroupIdentifier: Self.widgetAppGroupIdentifier
+                    )
+                    : nil,
                 fileName: Self.widgetSnapshotFileName
             )
             widgetSnapshotStoragePaths = writtenPaths

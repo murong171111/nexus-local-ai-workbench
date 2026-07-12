@@ -273,6 +273,8 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(workspace.mainStage().id, .created)
         XCTAssertEqual(appState.mainWorkflowStage(for: workspace).id, .created)
         XCTAssertEqual(appState.mainWorkflowStage(for: workspace).primaryAction, .demandIntake)
+        XCTAssertEqual(appState.widgetSnapshotStoragePaths.count, 1)
+        XCTAssertTrue(appState.widgetSnapshotStoragePaths[0].hasPrefix(applicationSupportRoot.path))
     }
 
     func testNativeModelLayeringKeepsWorkflowLogicOutOfBaseModels() throws {
