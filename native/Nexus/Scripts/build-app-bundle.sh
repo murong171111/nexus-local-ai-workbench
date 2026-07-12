@@ -14,7 +14,7 @@ usage() {
 Usage: build-app-bundle.sh [--configuration release|debug] [--arch arm64] [--arch x86_64] [--output path/to/Nexus.app] [--widget-extension path/to/NexusWidget.appex] [--disable-sandbox]
 
 Builds the SwiftPM NexusNative executable and wraps it in a local macOS Nexus.app bundle.
-The bundle is unsigned by default; signing, notarization, and DMG packaging remain separate M3 steps.
+The bundle receives an ad-hoc local signature; Developer ID signing, notarization, and DMG packaging remain separate M3 steps.
 Use --widget-extension to embed an already-built WidgetKit extension at Nexus.app/Contents/PlugIns/NexusWidget.appex.
 USAGE
 }
@@ -119,5 +119,9 @@ if [[ -n "$WIDGET_EXTENSION_PATH" ]]; then
   mkdir -p "$plugins_dir"
   cp -R "$WIDGET_EXTENSION_PATH" "$plugins_dir/NexusWidget.appex"
 fi
+
+xattr -cr "$OUTPUT_APP"
+codesign --force --deep --sign - "$OUTPUT_APP"
+codesign --verify --deep --strict "$OUTPUT_APP"
 
 echo "Built $OUTPUT_APP"

@@ -6310,10 +6310,16 @@ final class ModelBehaviorTests: XCTestCase {
             contentsOf: packageRoot.appendingPathComponent("Sources/NexusApp/Views/RootView.swift"),
             encoding: .utf8
         )
+        let featureView = try String(
+            contentsOf: packageRoot.appendingPathComponent("Sources/NexusApp/Views/FeatureWorkspaceView.swift"),
+            encoding: .utf8
+        )
 
         XCTAssertTrue(rootView.contains(".labelsHidden()"))
         XCTAssertFalse(rootView.contains("控制台 / Console"))
         XCTAssertFalse(rootView.contains("现在该做什么 / Focus"))
+        XCTAssertFalse(featureView.contains("需求与功能点 / Demand & Features"))
+        XCTAssertFalse(featureView.contains("本次变化 / Session Changes"))
         XCTAssertEqual(RiskLevel.low.label, "低风险")
         XCTAssertEqual(RiskLevel.medium.label, "中风险")
         XCTAssertEqual(RiskLevel.high.label, "高风险")

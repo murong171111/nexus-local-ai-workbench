@@ -313,7 +313,7 @@ struct FeatureWorkspaceView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("需求与功能点 / Demand & Features")
+                Text("需求与功能点")
                     .font(.headline)
                 Spacer()
                 Text(presentationLabel)
@@ -920,7 +920,7 @@ struct FeatureWorkspaceView: View {
     private var sessionChangeReview: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("本次变化 / Session Changes")
+                Text("本次变化")
                     .font(.headline)
                 Spacer()
                 if sessionChangeDraft == nil {
