@@ -619,7 +619,6 @@ final class ModelBehaviorTests: XCTestCase {
 
     func testWorkspaceBoardCopyStaysChineseFirstAndFocused() {
         XCTAssertEqual(WorkspaceBoardCopy.title, "工作区")
-        XCTAssertEqual(WorkspaceBoardCopy.titleHelp, "Board")
         XCTAssertEqual(WorkspaceBoardCopy.attentionTitle, "需要你处理")
         XCTAssertEqual(WorkspaceBoardCopy.activeTitle, "进行中")
         XCTAssertEqual(WorkspaceBoardCopy.completedTitle, "最近完成")
@@ -643,6 +642,50 @@ final class ModelBehaviorTests: XCTestCase {
         XCTAssertEqual(summary.activeCount, 2)
         XCTAssertEqual(summary.attentionCount, 1)
         XCTAssertNil(summary.lastRefreshAt)
+    }
+
+    func testWorkspaceBoardFeatureProgressRequiresAuthoritativeRevision() {
+        let feature = WorkspaceFeature(
+            id: "F-001", title: "Board progress", status: .done, verification: .code,
+            autoComplete: true, sources: [], services: [], taskIDs: [], evidenceIDs: [],
+            description: "", completedAt: nil, completedBy: nil, completionNote: nil,
+            evidenceStale: false, preservedLines: []
+        )
+        let document = FeatureDocument(preamble: ["# Features"], features: [feature])
+
+        XCTAssertNil(WorkspaceBoardFeatureProgress(document: document, revision: nil))
+        XCTAssertNil(WorkspaceBoardFeatureProgress(document: document, revision: .missing))
+        XCTAssertNil(WorkspaceBoardFeatureProgress(document: document, revision: .invalid(reason: "bad file")))
+
+        let progress = WorkspaceBoardFeatureProgress(
+            document: document,
+            revision: .regularUTF8(sha256: "test", byteCount: 1)
+        )
+        XCTAssertEqual(progress?.completedCount, 1)
+        XCTAssertEqual(progress?.totalCount, 1)
+    }
+
+    func testWorkspaceBoardHeadingAndLanesAreUnframed() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(
+            contentsOf: packageRoot.appendingPathComponent("Sources/NexusApp/Views/RootView.swift"),
+            encoding: .utf8
+        )
+        let headerStart = try XCTUnwrap(source.range(of: "private struct WorkspaceBoardHeader"))
+        let headerTail = source[headerStart.lowerBound...]
+        let headerEnd = try XCTUnwrap(headerTail.range(of: "\nprivate struct WorkspaceBoardLaneView"))
+        let header = headerTail[..<headerEnd.lowerBound]
+        let laneTail = headerTail[headerEnd.lowerBound...]
+        let laneEnd = try XCTUnwrap(laneTail.range(of: "\nprivate struct WorkspaceBoardCard"))
+        let lane = laneTail[..<laneEnd.lowerBound]
+
+        XCTAssertTrue(header.contains("Text(WorkspaceBoardCopy.title)"))
+        XCTAssertFalse(header.contains(".help("))
+        XCTAssertFalse(lane.contains(".background(NexusPalette.panel)"))
+        XCTAssertFalse(lane.contains(".stroke(NexusPalette.border, lineWidth: 1)"))
     }
 
     func testWorkspaceBoardCardKeepsRoundedStageAwareTreatment() throws {

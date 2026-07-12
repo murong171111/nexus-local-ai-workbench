@@ -3578,7 +3578,10 @@ private struct WorkspaceBoardView: View {
             showsAllCompleted: $showsAllCompleted,
             featureProgress: { workspace in
                 guard lane.id == .active else { return nil }
-                return WorkspaceBoardFeatureProgress(document: appState.featuresByWorkspace[workspace.id])
+                return WorkspaceBoardFeatureProgress(
+                    document: appState.featuresByWorkspace[workspace.id],
+                    revision: appState.featureRevisionsByWorkspace[workspace.id]
+                )
             },
             openWorkspace: { workspace in
                 appState.select(workspace)
@@ -3595,7 +3598,6 @@ private struct WorkspaceBoardHeader: View {
         HStack(spacing: 12) {
             Text(WorkspaceBoardCopy.title)
                 .font(.title3.weight(.semibold))
-                .help(WorkspaceBoardCopy.titleHelp)
             Text(WorkspaceBoardCopy.activeWorkspaceCount(summary.activeCount))
                 .font(.caption.monospaced())
                 .foregroundStyle(.secondary)
@@ -3673,12 +3675,6 @@ private struct WorkspaceBoardLaneView: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .background(NexusPalette.panel)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(NexusPalette.border, lineWidth: 1)
-        }
     }
 }
 

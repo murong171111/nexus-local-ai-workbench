@@ -76,7 +76,6 @@ struct WorkspaceBoardLane: Hashable, Identifiable {
 
 struct WorkspaceBoardCopy: Hashable {
     static let title = "工作区"
-    static let titleHelp = "Board"
     static let attentionTitle = "需要你处理"
     static let activeTitle = "进行中"
     static let completedTitle = "最近完成"
@@ -138,8 +137,10 @@ struct WorkspaceBoardFeatureProgress: Hashable {
     let completedCount: Int
     let totalCount: Int
 
-    init?(document: FeatureDocument?) {
-        guard let document, !document.features.isEmpty else { return nil }
+    init?(document: FeatureDocument?, revision: FeatureDocumentRevision?) {
+        guard let document,
+              case .some(.regularUTF8(_, _)) = revision,
+              !document.features.isEmpty else { return nil }
         completedCount = document.features.filter { $0.status == .done }.count
         totalCount = document.features.count
     }
